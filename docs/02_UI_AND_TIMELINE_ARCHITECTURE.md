@@ -1198,11 +1198,275 @@ Segment → Generation IR → ComfyUI
 - Asset Panel 最终尺寸
 - Segment Browser 卡片密度
 - Inspector / Prompt 是否拆成两个 Panel
-- Timeline 默认高度
-- Track Header 视觉
-- Segment 色彩体系
-- Guide / Reference 具体颜色
-- Panel 最大化交互
-- 是否支持自由 Dock
 
-这些问题不会阻塞当前产品架构，可以在看到真实参考后再决定。
+---
+
+# 44. 当前视觉参考方向（2026-09-28）
+
+当前新增两类视觉参考。
+
+## 44.1 TerryComfyLauncher 的参考价值
+
+参考仓库：
+
+~~~text
+https://github.com/terry-xu-2077/TerryComfyLauncher
+~~~
+
+TerryComfyLauncher 的价值不在于复用它的亮色、圆角或具体组件，而在于它已经证明一种设计方法：
+
+> **先理解视觉参考的设计语言，再根据真实产品功能重新落地，而不是逐像素模仿参考图。**
+
+从 TerryComfyLauncher 中值得继承的方法包括：
+
+- 主次层级非常明确
+- 一个页面只突出一个主要任务
+- 背景、卡片、控件之间靠层次差而不是大量描边区分
+- Accent 使用克制
+- Secondary 信息保持低对比
+- Hover / Active 有明显但不过度的反馈
+- 信息密度偏紧凑，但不会显得工程化
+- 视觉元素有轻微“材质感”，但不牺牲可读性
+- 复杂功能被包装成直观的操作，不让用户感知底层复杂度
+
+TerryDirector 不直接采用 TerryComfyLauncher 的亮色或大圆角风格。
+
+TerryDirector 应将这套方法转译为：
+
+> **Studio Dark 下更专业、更稳重、更偏影视制作工具的版本。**
+
+建议视觉倾向：
+
+- 深灰黑背景，不使用纯黑
+- 面板层级靠 1～2 级明度差区分
+- 圆角明显减少，主要集中在卡片、弹层、小型控制组
+- Timeline / Monitor / Inspector 等核心工作区尽量保持更硬朗的矩形结构
+- Accent 只用于 Selected、Playhead、Primary Action、重要生成状态
+- 阴影比 TerryComfyLauncher 更弱，更多使用边界明度和 Surface 层级
+- 避免“手机 App 放大到桌面”的感觉
+
+---
+
+## 44.2 时间线视觉参考
+
+当前提供的移动端时间线参考图可作为 **交互层级和视觉组织** 的参考，而不是直接复制移动端布局。
+
+值得借鉴：
+
+- 播放头始终是最强视觉锚点
+- Time Ruler 简洁
+- Clip 本身就是主要交互对象
+- Selected Clip 的边界非常明确
+- 当前操作只突出一个目标
+- Timeline 背景保持安静
+- 不使用大量传统 NLE 工程按钮占满界面
+- 颜色集中在当前选择和主要状态上
+
+桌面版 TerryDirector 应保留这种“少轨道、强焦点”的方向。
+
+---
+
+# 45. TerryDirector 时间线改为两条 Segment Lane
+
+当前产品不需要 Premiere 那样大量 Video / Audio Track。
+
+TerryDirector 的核心任务是：
+
+> **处理两个相邻生成片段的重叠与承接。**
+
+因此第一版 Timeline 明确收敛为 **两条 Segment Lane**：
+
+~~~text
+                 Playhead
+                    │
+                    ▼
+Time  ──────── 00:05 ───────── 00:10 ───────── 00:15
+
+Lane A   [ Segment 01 ──────────────── ]
+Lane B                 [ Segment 02 ──────────────── ]
+                        <── overlap ──>
+~~~
+
+两条 Lane 的意义不是传统 NLE 的 V1 / V2。
+
+它们表示：
+
+~~~text
+Lane A = 当前片段 / 前一个片段
+Lane B = 下一片段 / 与当前片段发生承接的片段
+~~~
+
+### 这样设计的优势
+
+1. 用户一眼就能看懂两个片段如何重叠。
+2. overlap 成为视觉中心，而不是隐藏在参数里。
+3. 拖动第二个片段起点就是调整承接长度。
+4. 不需要 Track Targeting、轨道锁、轨道同步等传统 NLE 复杂度。
+5. Timeline 高度可以非常克制，把更多空间留给 Monitor、Prompt 和素材。
+6. 两条 Lane 非常适合做高性能 Canvas 渲染。
+
+---
+
+## 45.1 Lane 内部不再拆独立音视频轨
+
+一个 Segment Clip 可以在内部表达：
+
+- 视频
+- 绑定音频
+- Guide
+- Reference
+- Generated Output
+
+也就是说不为了“音频存在”再增加 A1 / A2 轨道。
+
+例如：
+
+~~~text
+┌ Segment 02 ─────────────────────┐
+│ thumbnail strip                 │
+│ ▁▂▃▅▆▃▂ waveform (optional)     │
+└─────────────────────────────────┘
+~~~
+
+Audio 可以作为 Clip 内部第二层信息显示。
+
+只有未来真实需求证明需要独立音轨编辑时，再增加专门的 Audio Lane。
+
+---
+
+## 45.2 参考素材不必都进入 Timeline
+
+以下素材优先挂在 Segment 上：
+
+- Picture Reference
+- Audio Reference
+- Character Reference
+- Style Reference
+
+这些在：
+
+- Segment Inspector
+- Reference Strip
+- Prompt 引用标签
+
+中显示即可。
+
+只有具有明确时间区间意义的素材才进入 Timeline，例如：
+
+- Reference Video
+- Fixed Guide
+- Generated Segment
+- Locked Audio 区间（如确实需要时间可视化）
+
+这样 Timeline 不会演变成素材仓库。
+
+---
+
+## 45.3 两条 Lane 的自动轮换
+
+当用户向后工作时：
+
+~~~text
+Segment 01 + Segment 02
+        ↓
+确认 Segment 02
+        ↓
+Segment 02 成为 Lane A
+Segment 03 进入 Lane B
+~~~
+
+也就是说 Timeline 可以像一个“连续镜头工作台”：
+
+~~~text
+A = 已确认 / 当前来源
+B = 正在制作的下一段
+~~~
+
+但在缩放到全片视图时，仍然可以显示完整项目中的所有 Segment；两条 Lane 只是交替排布：
+
+~~~text
+Lane A: S01 ─────────      S03 ─────────      S05 ─────
+Lane B:       S02 ─────────      S04 ─────────
+~~~
+
+这样所有连续 Segment 都能在 **两条 Lane 内表达任意长度的项目**。
+
+---
+
+## 45.4 Overlap 是核心交互区
+
+Overlap 应拥有独立视觉语义。
+
+例如：
+
+~~~text
+Lane A  [───────────────]
+Lane B           [───────────────]
+                 █████
+                 OVERLAP
+~~~
+
+选中 overlap 时 Inspector 显示：
+
+- overlap frames
+- overlap seconds
+- continuity mode
+- video continuation
+- audio continuation
+- Guide / Drift 状态
+
+直接拖动 Lane B 左边缘：
+
+~~~text
+← 增大 overlap
+→ 减小 overlap
+~~~
+
+吸附到 H3 合法帧网格时，画面实时显示实际帧数。
+
+---
+
+# 46. 第一版前端 Demo 的目标
+
+第一版 Demo 不接 ComfyUI，也不做真实项目后端。
+
+目标只验证：
+
+> **TerryDirector 的视觉语言 + 导演工作区布局 + 两条 Lane Timeline 的手感。**
+
+Demo 需要包含：
+
+- Studio Dark 工作区
+- Project / Segment Browser
+- Monitor
+- Inspector
+- Prompt 区
+- 两条 Lane Timeline
+- Time Ruler
+- Playhead
+- 两个或多个交替排列的 Segment
+- overlap
+- Clip 选中
+- Drag
+- Trim
+- Zoom
+- Pan
+- Snap
+- Segment Card 与 Timeline 联动
+- 假生成状态
+- 假版本切换
+
+可以使用 Fake Data。
+
+Demo 阶段不实现：
+
+- ComfyUI
+- Workflow
+- 模型
+- 真实 Proxy
+- 后端
+- 项目持久化
+- AI Prompt
+
+这样 UI 和 Timeline 手感可以独立快速迭代。
+
