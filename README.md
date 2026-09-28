@@ -19,6 +19,7 @@ TerryDirector 是一个面向 AI 视频生成的 **ComfyUI 内置导演工作台
 
 - [产品与技术决策](docs/01_PRODUCT_AND_TECH_DECISIONS.md)
 - [UI 与时间线架构](docs/02_UI_AND_TIMELINE_ARCHITECTURE.md)
+- [视觉与主题颜色契约](docs/03_VISUAL_THEME_CONTRACT.md)
 
 ## 当前开发原则
 
