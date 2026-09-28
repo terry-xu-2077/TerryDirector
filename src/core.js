@@ -20,20 +20,27 @@
   function bounds(clips, id, mode) {
     const i = clips.findIndex(c => c.id === id), c = clips[i];
     if (!c) return { min: 0, max: 0 };
-    const same = clips.filter(x => x.lane === c.lane && x.id !== id);
-    const before = same.filter(x => x.start <= c.start), after = same.filter(x => x.start > c.start);
-    const left = before.length ? Math.max(...before.map(x => x.end)) : 0;
-    const right = after.length ? Math.min(...after.map(x => x.start)) : Infinity;
-    if (mode === 'left') return { min: Math.max(left, i ? clips[i - 1].start + 1 : 0), max: c.end - FPS };
-    if (mode === 'right') return { min: c.start + FPS, max: right };
-    return {
-      min: Math.max(left, i ? clips[i - 1].start + 1 : 0),
-      max: Math.min(right - (c.end - c.start), clips[i + 1] ? clips[i + 1].start - 1 : Infinity)
+    const prev = clips[i - 1], next = clips[i + 1];
+    const prev2 = clips[i - 2], next2 = clips[i + 2];
+    const duration = c.end - c.start;
+    // One visual row, chronological order, at most two overlapping clips.
+    // Adjacent clips may overlap; non-adjacent clips may only touch.
+    // Keep each clip's head/tail exposed rather than hiding a whole clip.
+    const left = Math.max(0, prev ? prev.start + 1 : 0, prev2 ? prev2.end : 0);
+    const right = Math.min(next ? next.end - 1 : Infinity, next2 ? next2.start : Infinity);
+    let range;
+    if (mode === 'left') range = { min: left, max: Math.min(c.end - FPS, next ? next.start - 1 : Infinity) };
+    else if (mode === 'right') range = { min: Math.max(c.start + FPS, prev ? prev.end + 1 : 0), max: right };
+    else range = {
+      min: Math.max(left, prev ? prev.end - duration + 1 : 0),
+      max: Math.min(right - duration, next ? next.start - 1 : Infinity)
     };
+    const unchanged = mode === 'right' ? c.end : c.start;
+    return range.min > range.max ? { min: unchanged, max: unchanged } : range;
   }
   function editClip(clips, id, mode, frame) {
     const c = clips.find(x => x.id === id);
-    if (!c) return clips;
+    if (!c || !Number.isFinite(frame)) return clips;
     const b = bounds(clips, id, mode), next = clamp(Math.round(frame), b.min, b.max);
     return clips.map(x => {
       if (x.id !== id) return x;

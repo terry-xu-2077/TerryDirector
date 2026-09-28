@@ -57,6 +57,8 @@
   --td-timeline-clip-selected: color-mix(in srgb, var(--td-violet-mid) 58%, var(--td-neutral-surface));
   --td-timeline-clip-edge: var(--td-violet-mid);
   --td-timeline-clip-highlight: color-mix(in srgb, var(--td-violet-highlight) 45%, var(--td-violet-mid));
+  --td-timeline-progress: var(--td-status-success);
+  --td-timeline-progress-track: color-mix(in srgb, var(--td-status-success) 18%, transparent);
   --td-timeline-waveform: var(--td-violet-highlight);
   --td-folder-back: color-mix(in srgb, var(--td-neutral-surface) 78%, var(--td-violet-mid));
   --td-folder-front: color-mix(in srgb, var(--td-neutral-elevated) 84%, var(--td-violet-mid));

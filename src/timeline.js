@@ -1,4 +1,4 @@
-/* Independent, two-layer Canvas timeline. No rendering framework in the drag loop.
+/* Single-row timeline on two independent Canvas layers. No rendering framework in the drag loop.
  * Public boundary: setClips / select / setFrame / callbacks / destroy.
  * Overlap is drawn from TDCore.intersection; it is deliberately absent from hitTest. */
 (function () {
@@ -26,7 +26,7 @@
       this.resize(); this.fit();
     }
     readTheme() {
-      const names = {bg:'timeline-bg',grid:'timeline-grid',ruler:'timeline-ruler',playhead:'timeline-playhead',selection:'timeline-selection',snap:'timeline-snap',overlap:'timeline-overlap',clip:'timeline-clip',selected:'timeline-clip-selected',edge:'timeline-clip-edge',highlight:'timeline-clip-highlight',wave:'timeline-waveform',text:'text-main',muted:'text-secondary',inset:'bg-inset',border:'border',effect:'effect'};
+      const names = {bg:'timeline-bg',grid:'timeline-grid',ruler:'timeline-ruler',playhead:'timeline-playhead',selection:'timeline-selection',snap:'timeline-snap',overlap:'timeline-overlap',clip:'timeline-clip',selected:'timeline-clip-selected',edge:'timeline-clip-edge',highlight:'timeline-clip-highlight',wave:'timeline-waveform',text:'text-main',muted:'text-secondary',inset:'bg-inset',border:'border',effect:'effect',progress:'timeline-progress',progressTrack:'timeline-progress-track',success:'status-success',warning:'status-warning'};
       this.theme = {};
       const probe = document.createElement('span'); probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none'; document.body.append(probe);
       for (const [key,value] of Object.entries(names)) { probe.style.color = `var(--td-${value})`; this.theme[key] = getComputedStyle(probe).color; }
@@ -39,8 +39,8 @@
       this.clampScroll(); this.invalidate();
     }
     get total() { return Math.max(C.FPS, ...this.clips.map(c=>c.end)); }
-    get trackHeight() { return Math.max(38,Math.min(65,(this.height-this.ruler-38)/2-6)); }
-    y(lane) { return this.ruler+10+lane*(this.trackHeight+12); }
+    get trackHeight() { return Math.max(48,Math.min(82,this.height-this.ruler-10-54)); }
+    y() { return this.ruler+10; }
     x(frame) { return this.inset+frame*this.ppf-this.scroll; }
     frameAt(x) { return Math.max(0,Math.round((x-this.inset+this.scroll)/this.ppf)); }
     point(e) { const r=this.host.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
@@ -61,9 +61,22 @@
       this.options.onPlay?.(true);this.invalidate(false);
     }
     stop() { if(this.playing){this.playing=false;this.options.onPlay?.(false);} }
+    edgeAt(c,p) {
+      const left=Math.abs(p.x-this.x(c.start)),right=Math.abs(p.x-this.x(c.end));
+      const threshold=Math.min(9,(c.end-c.start)*this.ppf/3);
+      return Math.min(left,right)<=threshold?(left<=right?'left':'right'):'move';
+    }
     hitTest(p) {
-      // There is intentionally no overlap branch here: only actual clip geometry.
-      return [...this.clips].reverse().find(c=>p.y>=this.y(c.lane)&&p.y<=this.y(c.lane)+this.trackHeight&&p.x>=Math.max(this.inset,this.x(c.start)-5)&&p.x<=this.x(c.end)+5);
+      // Later clips sit in front. The passive overlap and its callout never hit.
+      if(p.y<this.y()||p.y>this.y()+this.trackHeight||p.x<this.inset)return;
+      const front=[...this.clips].reverse().find(c=>p.x>=this.x(c.start)&&p.x<=this.x(c.end));
+      const selected=this.clips.find(c=>c.id===this.selected);
+      // A selected earlier clip can still be trimmed at its concealed tail.
+      if(selected&&this.edgeAt(selected,p)!=='move'){
+        const distance=c=>Math.min(Math.abs(p.x-this.x(c.start)),Math.abs(p.x-this.x(c.end)));
+        if(!front||distance(selected)<distance(front))return selected;
+      }
+      return front;
     }
     down(e) {
       if(e.button!==0&&e.button!==1)return;
@@ -73,14 +86,14 @@
       if(e.button===1||this.hand){this.drag={mode:'pan',origin:p,scroll:this.scroll,pointer:e.pointerId};this.overlay.style.cursor='grabbing';return;}
       const c=this.hitTest(p);
       if(p.y<this.ruler||(!c&&Math.abs(this.x(this.frame)-p.x)<7)||!c){this.drag={mode:'seek',pointer:e.pointerId};this.setFrame(this.frameAt(p.x));return;}
-      const mode=Math.abs(p.x-this.x(c.start))<9?'left':Math.abs(p.x-this.x(c.end))<9?'right':'move';
+      const mode=this.edgeAt(c,p);
       this.selected=c.id;this.options.onSelect?.(c.id);
       this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p};
       this.overlay.style.cursor=mode==='move'?'grabbing':'ew-resize';this.invalidate();
     }
     move(e) {
       const p=this.point(e);
-      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;this.overlay.style.cursor=this.hand?'grab':c?(Math.min(Math.abs(p.x-this.x(c.start)),Math.abs(p.x-this.x(c.end)))<9?'ew-resize':'grab'):'default';this.invalidate();return;}
+      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;this.overlay.title=activity?.completedAt?`${c.name} · 完成于 ${new Date(activity.completedAt).toLocaleString()} · ${activity.example?'示例记录':'模拟生成'}`:'';this.overlay.style.cursor=this.hand?'grab':c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
       const d=this.drag;
       if(d.mode==='pan'){this.scroll=d.scroll+d.origin.x-p.x;this.clampScroll();this.invalidate();return;}
       if(d.mode==='seek'){this.setFrame(this.frameAt(p.x));return;}
@@ -93,7 +106,7 @@
       let value=initial+delta;this.snapFrame=null;
       if(this.snapEnabled&&!alt){const targets=[0,this.frame,...d.original.filter(c=>c.id!==d.id).flatMap(c=>[c.start,c.end])];const offsets=d.mode==='move'?[0,d.end-d.start]:[0];const result=C.snap(value,offsets,targets,7/this.ppf);value=result.value;this.snapFrame=result.target;}
       this.clips=C.editClip(d.original,d.id,d.mode,value);
-      const edited=this.clips.find(c=>c.id===d.id),actual=d.mode==='right'?edited.end:edited.start;
+      const edited=this.clips.find(c=>c.id===d.id);if(!edited)return;const actual=d.mode==='right'?edited.end:edited.start;
       if(Math.abs(actual-value)>.5)this.snapFrame=null;
       this.options.onPreview?.(this.clips);this.invalidate();
     }
@@ -102,12 +115,12 @@
       const d=this.drag;this.drag=null;this.snapFrame=null;
       if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);
       this.overlay.style.cursor=this.hand?'grab':'default';
-      if(d.original)this.options.onCommit?.(this.clips,d.original);
+      if(d.original){this.options.onCommit?.(this.clips,d.original);this.options.onDragEnd?.();}
       this.clampScroll();this.invalidate();
     }
     cancel() {
       if(!this.drag)return;const d=this.drag;this.drag=null;this.snapFrame=null;
-      if(d.original){this.clips=d.original;this.options.onPreview?.(this.clips);}
+      if(d.original){this.clips=d.original;this.options.onPreview?.(this.clips);this.options.onDragEnd?.();}
       this.overlay.style.cursor='default';this.invalidate();
     }
     image(src) {
@@ -124,29 +137,68 @@
       const start=Math.floor(this.frameAt(this.inset)/step)*step;
       ctx.font='10px Consolas, monospace';ctx.textBaseline='middle';
       for(let f=start;this.x(f)<w;f+=step){const x=this.x(f);if(x<this.inset)continue;ctx.strokeStyle=t.grid;ctx.beginPath();ctx.moveTo(x+.5,29);ctx.lineTo(x+.5,h-5);ctx.stroke();ctx.fillStyle=t.ruler;const text=step<C.FPS?`${Math.floor(f/C.FPS)}s ${f%C.FPS}f`:`${String(Math.floor(f/(C.FPS*60))).padStart(2,'0')}:${String(Math.floor(f/C.FPS)%60).padStart(2,'0')}`;ctx.fillText(text,x+4,14);if(step/2*this.ppf>15){ctx.beginPath();ctx.moveTo(x+step/2*this.ppf,26);ctx.lineTo(x+step/2*this.ppf,30);ctx.stroke();}}
-      for(let lane=0;lane<2;lane++){const y=this.y(lane);ctx.font='11px Consolas, monospace';ctx.fillStyle=t.ruler;ctx.fillText(lane?'B':'A',27,y+this.trackHeight/2);ctx.strokeStyle=t.grid;ctx.beginPath();ctx.moveTo(this.inset,y+this.trackHeight+6);ctx.lineTo(w,y+this.trackHeight+6);ctx.stroke();}
+      ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.ruler;
+      ctx.fillText('片段',20,this.y()+this.trackHeight/2);
       ctx.save();ctx.beginPath();ctx.rect(this.inset,30,w-this.inset,h);ctx.clip();
       this.clips.forEach((c,i)=>{
-        const x=this.x(c.start),width=(c.end-c.start)*this.ppf,y=this.y(c.lane),ch=this.trackHeight;
+        const x=this.x(c.start),width=(c.end-c.start)*this.ppf,y=this.y(),ch=this.trackHeight;
         if(x+width<this.inset-10||x>w+10)return;
         const selected=c.id===this.selected;
         let fill=t.clip;
         if(selected){const g=ctx.createLinearGradient(x,y,x+width,y+ch);g.addColorStop(0,t.selected);g.addColorStop(1,t.highlight);fill=g;}
-        this.rect(ctx,x,y,width,ch,7,fill,selected?t.selection:t.border);
-        ctx.save();ctx.beginPath();ctx.roundRect(x+1,y+1,Math.max(1,width-2),ch-2,6);ctx.clip();
+        this.rect(ctx,x,y,width,ch,8,fill,selected?t.selection:t.border);
+        ctx.save();ctx.beginPath();ctx.roundRect(x+1,y+1,Math.max(1,width-2),ch-2,7);ctx.clip();
         const img=this.image(this.options.getImage?.(c));
-        if(img&&width>66){ctx.globalAlpha=selected?.13:.11;const iw=(ch-8)*img.naturalWidth/img.naturalHeight;for(let xx=Math.max(x,x+Math.floor((this.inset-x)/iw)*iw);xx<x+width;xx+=iw)ctx.drawImage(img,xx,y+4,iw,ch-8);ctx.globalAlpha=1;}
-        ctx.fillStyle=selected?t.selection:t.edge;ctx.fillRect(x+7,y+10,2,ch-20);
-        this.rect(ctx,x+15,y+10,43,20,4,selected?t.selected:t.inset);
-        ctx.font='11px "Segoe UI",sans-serif';ctx.fillStyle=t.text;ctx.fillText(`片段 ${i+1}`,x+21,y+19);
-        ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';this.label(ctx,c.name,x+66,y+19,width-76);
-        ctx.font='10px "Segoe UI",sans-serif';ctx.fillStyle=t.muted;
-        this.label(ctx,`${((c.end-c.start)/C.FPS).toFixed(1)}s  ·  ${c.status==='running'?'模拟生成中':c.versions.length?`v${String(c.version+1).padStart(2,'0')}  演示版本`:'待生成'}`,x+17,y+ch-11,width-30);
-        if(this.showWave){ctx.strokeStyle=t.wave;ctx.globalAlpha=.25;ctx.beginPath();for(let xx=x+width*.52;xx<x+width-12;xx+=3){const a=3+5*Math.abs(Math.sin(xx*.053+i)*Math.cos(xx*.081));ctx.moveTo(xx,y+ch-14-a);ctx.lineTo(xx,y+ch-14+a);}ctx.stroke();ctx.globalAlpha=1;}
+        if(img&&width>66){ctx.globalAlpha=selected?.08:.045;const iw=(ch-8)*img.naturalWidth/img.naturalHeight;for(let xx=Math.max(x,x+Math.floor((this.inset-x)/iw)*iw);xx<x+width;xx+=iw)ctx.drawImage(img,xx,y+4,iw,ch-8);ctx.globalAlpha=1;}
+        const badge=`片段 ${i+1}`;
+        ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';const badgeWidth=ctx.measureText(badge).width+14;
+        this.rect(ctx,x+13,y+10,badgeWidth,23,5,t.inset);
+        ctx.fillStyle=t.text;ctx.fillText(badge,x+20,y+21.5);
+        const duration=`${Number(((c.end-c.start)/C.FPS).toFixed(2))}s`,dx=x+badgeWidth+24;
+        ctx.font='12px Consolas,monospace';ctx.fillText(duration,dx,y+21.5);
+        const descriptionX=dx+ctx.measureText(duration).width+13;
+        ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.muted;
+        this.label(ctx,c.name,descriptionX,y+21.5,width-(descriptionX-x)-12);
+        const activity=this.options.getActivity?.(c)||{status:'idle',progress:0};
+        const running=activity.status==='running',done=activity.status==='completed';
+        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=done?t.success:running?t.progress:t.ruler;
+        ctx.beginPath();ctx.arc(x+16,y+ch-19,2.5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle=t.muted;
+        const seconds=Number((activity.elapsedSeconds||0).toFixed(1));
+        const text=running?`模拟生成 ${Math.round((activity.progress||0)*100)}% · 已用 ${seconds}s`:done?`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`:'待生成';
+        this.label(ctx,text,x+24,y+ch-19,width-35);
+        if(running){const span=Math.max(0,width-18);this.rect(ctx,x+9,y+ch-7,span,4,2,t.progressTrack);this.rect(ctx,x+9,y+ch-7,span*C.clamp(activity.progress||0,0,1),4,2,t.progress);}
+        if(this.showWave&&ch>=70){ctx.strokeStyle=t.wave;ctx.globalAlpha=.18;ctx.beginPath();for(let xx=x+13;xx<x+width-12;xx+=3){const a=2+3*Math.abs(Math.sin(xx*.053+i)*Math.cos(xx*.081));ctx.moveTo(xx,y+ch-36-a);ctx.lineTo(xx,y+ch-36+a);}ctx.stroke();ctx.globalAlpha=1;}
         ctx.restore();
-        if(selected||this.hover===c.id){for(const hx of [x+2,x+width-6])this.rect(ctx,hx,y+13,4,ch-26,2,t.text);}
       });
+      // Draw actual clip handles last; overlaps have no handles of their own.
+      for(const c of this.clips.filter(c=>c.id===this.selected||c.id===this.hover)){
+        const x=this.x(c.start),end=this.x(c.end),y=this.y(),ch=this.trackHeight;
+        for(const hx of [x+2,end-6])this.rect(ctx,hx,y+12,4,ch-24,2,t.text);
+      }
       ctx.restore();
+    }
+    overlapCallouts(ctx) {
+      const left=this.inset+4,right=this.width-5,bottom=this.y()+this.trackHeight+3;
+      const items=C.overlaps(this.clips).map(o=>{
+        const x=this.x(o.start),width=o.frames*this.ppf;
+        const focused=[this.selected,this.hover,this.drag?.id].some(id=>id===o.a||id===o.b);
+        const text=`${Number((o.frames/C.FPS).toFixed(2))}s`;
+        return {...o,x,width,focused,text};
+      }).filter(o=>o.x+o.width>left&&o.x<right&&(o.focused||o.width>20));
+      ctx.font='11px Consolas,monospace';
+      const placed=[];
+      // Prioritise the active pair when zoomed so far out labels cannot all fit.
+      items.sort((a,b)=>Number(b.focused)-Number(a.focused)||a.start-b.start);
+      for(const o of items){
+        const width=ctx.measureText(o.text).width+18;if(right-left<width)continue;
+        const anchor=C.clamp(o.x+o.width/2,left,right),preferred=C.clamp(anchor-width/2,left,right-width);
+        const candidates=[preferred,left,right-width,...placed.flatMap(p=>[p.x-width-8,p.x+p.width+8])];
+        const fit=candidates.filter(x=>x>=left&&x+width<=right&&placed.every(p=>x+width+8<=p.x||x>=p.x+p.width+8)).sort((a,b)=>Math.abs(a-preferred)-Math.abs(b-preferred))[0];
+        if(fit===undefined)continue;
+        placed.push({...o,anchor,x:fit,width,y:bottom+18,height:23,bottom});
+      }
+      return placed;
     }
     drawOverlay() {
       const ctx=this.ox,t=this.theme,w=this.width,h=this.height;ctx.clearRect(0,0,w,h);
@@ -155,14 +207,19 @@
         const x=this.x(o.start),width=o.frames*this.ppf;
         if(x+width<this.inset||x>w)continue;
         const focused=[this.selected,this.hover,this.drag?.id].some(id=>id===o.a||id===o.b);
-        const top=this.y(0)-3,bottom=this.y(1)+this.trackHeight+3;
-        ctx.globalAlpha=focused?.075:.035;this.rect(ctx,x,top,width,bottom-top,7,t.overlap);
-        ctx.globalAlpha=focused?.63:.25;this.rect(ctx,x,top,width,bottom-top,7,null,t.overlap);ctx.globalAlpha=1;
-        // Passive duration bubble: drawing only, never a DOM button or hit target.
-        const text=`${(o.frames/C.FPS).toFixed(o.frames%C.FPS?2:1)}s`;
-        ctx.font='10px Consolas, monospace';const tw=ctx.measureText(text).width+15;
-        const cx=C.clamp(x+width/2,this.inset+tw/2+2,w-tw/2-3),by=Math.min(h-15,bottom+14);
-        if(focused||width>22){ctx.strokeStyle=t.overlap;ctx.globalAlpha=focused?.75:.32;ctx.beginPath();ctx.moveTo(cx,bottom);ctx.lineTo(cx,by-7);ctx.stroke();this.rect(ctx,cx-tw/2,by-8,tw,16,8,t.bg,t.overlap);ctx.globalAlpha=1;ctx.fillStyle=focused?t.overlap:t.ruler;ctx.textBaseline='middle';ctx.fillText(text,cx-tw/2+7,by);}
+        const top=this.y()-3,bottom=this.y()+this.trackHeight+3;
+        ctx.globalAlpha=focused?.10:.05;this.rect(ctx,x,top,width,bottom-top,8,t.overlap);
+        ctx.globalAlpha=focused?.85:.40;this.rect(ctx,x,top,width,bottom-top,8,null,t.overlap);ctx.globalAlpha=1;
+      }
+      // Duration labels ALWAYS sit below the frame, connected by a visible leader.
+      // The label lane is reserved by trackHeight, never clamped into the overlap.
+      for(const label of this.overlapCallouts(ctx)){
+        const center=label.x+label.width/2;
+        ctx.strokeStyle=t.overlap;ctx.globalAlpha=label.focused?.9:.55;ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(label.anchor,label.bottom);ctx.lineTo(label.anchor,label.bottom+8);ctx.lineTo(center,label.y);ctx.stroke();
+        this.rect(ctx,label.x,label.y,label.width,label.height,11,t.inset,t.overlap);
+        ctx.globalAlpha=1;ctx.fillStyle=label.focused?t.overlap:t.muted;ctx.textBaseline='middle';
+        ctx.fillText(label.text,label.x+9,label.y+label.height/2);
       }
       if(this.snapFrame!==null){const x=this.x(this.snapFrame);ctx.setLineDash([3,4]);ctx.strokeStyle=t.snap;ctx.beginPath();ctx.moveTo(x,30);ctx.lineTo(x,h);ctx.stroke();ctx.setLineDash([]);}
       ctx.restore();

@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const C = require('../src/core.js');
 const clips = [
-  {id:'a',start:0,end:192,lane:0},
-  {id:'b',start:144,end:360,lane:1},
-  {id:'c',start:312,end:528,lane:0},
-  {id:'d',start:480,end:672,lane:1},
+  {id:'a',start:0,end:192},
+  {id:'b',start:144,end:360},
+  {id:'c',start:312,end:528},
+  {id:'d',start:480,end:672},
 ];
 test('half-open ranges: touching endpoints do not overlap',()=>{
  assert.equal(C.intersection({start:0,end:192},{start:192,end:400}).frames,0);
@@ -28,10 +28,10 @@ test('trim changes only the requested edge',()=>{
  assert.equal(n[1].end,360);assert.equal(n[1].start,168);
 });
 test('minimum duration is one second',()=>{
- const n=C.editClip(clips,'b','right',145);
- assert.equal(n[1].end-n[1].start,24);
+ const n=C.editClip([{id:'only',start:0,end:240}],'only','right',5);
+ assert.equal(n[0].end-n[0].start,24);
 });
-test('same-lane collision is constrained',()=>{
+test('non-adjacent clips cannot overlap in the single row',()=>{
  const n=C.editClip(clips,'b','move',460);
  assert.ok(n[1].end<=n[3].start);
 });
@@ -52,4 +52,23 @@ test('no-op commits do not dirty undo history',()=>{
 });
 test('timecode and empty sequences',()=>{
  assert.equal(C.timecode(48),'00:00:02:00');assert.equal(C.timecode(49),'00:00:02:01');assert.deepEqual(C.overlaps([]),[]);
+});
+
+test('adjacent same-row clips are allowed to overlap',()=>{
+ const n=C.editClip(clips,'b','move',160);
+ assert.equal(C.intersection(n[0],n[1]).frames,32);
+});
+test('a trim cannot hide the next clip entirely',()=>{
+ const n=C.editClip(clips,'a','right',900);
+ assert.ok(n[0].end<n[1].end);
+ assert.equal(C.intersection(n[0],n[2]).frames,0);
+});
+test('large drags/trims retain chronological order and forbid triple overlaps',()=>{
+ for(const c of clips)for(const mode of ['move','left','right'])for(const f of [-100,1,100,300,600,1000]){
+  const n=C.editClip(clips,c.id,mode,f);
+  n.forEach((x,i)=>{assert.ok(x.end-x.start>=24);if(i) {assert.ok(x.start>n[i-1].start);assert.ok(x.end>n[i-1].end);} if(i>1)assert.equal(C.intersection(x,n[i-2]).frames,0);});
+ }
+});
+test('non-finite edits leave the sequence unchanged',()=>{
+ assert.equal(C.editClip(clips,'a','move',NaN),clips);
 });
