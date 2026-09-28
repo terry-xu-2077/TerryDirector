@@ -1,1478 +1,164 @@
 # TerryDirector UI 与时间线架构
 
-> 状态：UI / UX 基线  
-> 目的：根据 TerryDirector 已确定的功能，定义界面信息架构、工作区关系和时间线交互技术原则。  
-> 本文先固定“功能结构与体验原则”，不把当前布局当成最终视觉稿。后续可以根据视觉参考、前端 Demo 或其他 AI 生成的模板调整外观与面板比例，但不能牺牲时间线体验和核心工作流。
+> 当前基线：2026-09-28 · 已按最终讨论整合。  
+> 本文替代此前逐节追加、相互冲突的 UI 探索描述。原有产品范围仍见 01，配色见 03。  
+> 当前开始制作前端交互 Demo，**不是开始开发 ComfyUI 后端**。
 
----
+## 1. 已确定的方向
 
-## 1. UI 核心目标
+TerryDirector 是 ComfyUI 插件提供的独立浏览器导演工作台，不再制作桌面应用。正式产品仍以 React 工作区配合独立时间线交互模块为目标。当前仅验证布局、视觉和手感。
 
-TerryDirector 的 UI 需要同时满足两件事：
+全界面只使用“片段”“时间线片段”，不使用英文对象名称作为用户文案。参考专业剪辑工具的直接操作感，但不复制完整剪辑器的轨道、工具和运行系统。
 
-1. 比传统 ComfyUI 节点工作流更适合项目化、素材化和连续视频创作。
-2. 时间线交互必须接近专业 NLE，尤其 Adobe Premiere Pro 的直接、稳定和丝滑感。
+一级界面只有项目首页与导演工作区。时间线常驻主工作区，不能藏在弹窗里。
 
-TerryDirector 不是 Premiere 的复制品。它借鉴 Premiere 的时间线手感、面板式工作区、拖拽与裁剪、缩放、播放头、吸附、多轨视觉组织和高密度专业工具布局，但产品目标仍然是：
+## 2. 视觉基线
 
-> **AI 视频生成导演工作台，而不是完整非线性剪辑软件。**
+- 项目文件夹、任务卡片、提示标签和参数控件继承 Terry UI / Studio Dark。
+- 配色采用已提取的完整灰蓝、紫蓝、粉紫、暖色综合色板，不限定五个源颜色。
+- 主工作面以灰蓝中间色为主，不能把所有大面积表面都做成近黑色。
+- 普通片段使用中性灰蓝和细色边；当前片段才有克制的紫色强调。播放头为粉紫色视觉锚点。
+- 不复制参考中的厚重硬件旋钮、亮色钱包外壳或手机式大圆角。核心工作区保持矩形，卡片及控件保留适当圆角。
+- 日期时间线参考用于弱刻度、安静背景、清晰片段块及边缘把手；用户绘制的草图用于重叠关系和下方时长反馈。
 
----
+完整颜色所有权与未来换色接口见 [视觉主题文档](03_VISUAL_THEME_CONTRACT.md)。组件和 Canvas 都从同一套语义颜色取值，不各自保存色板；当前不做主题设置 UI。
 
-## 2. 视觉基础
+## 3. 工作区结构
 
-TerryDirector 默认使用 **Terry React UI Library / Studio Dark**。
+```text
+顶部：项目入口 / 项目名称 / 少量全局操作
 
-规则：
+左侧：片段或素材浏览器
+中央：画面预览 / 播放控制 / 版本 / 片段提示词
+右侧：当前片段的时间、承接、参考、生成参数
 
-- 仅暗色，不提供亮色 / 暗色切换。
-- 项目首页使用 ProjectFolderCard 视觉语言。
-- Segment / 任务浏览使用 TaskCard 视觉语言。
-- Prompt 标签使用 PromptTag。
-- 参数区优先使用 Studio Dark 的 Segmented Control、Sliding Tabs、Select、Number Field、Switch。
-- Studio Dark 负责颜色、控件几何、卡片质感和参数控件；TerryDirector 自身负责导演工作区、时间线、素材浏览器、Monitor、Prompt、Inspector 和结果版本等业务 UI。
+底部：两条时间线 / 时间尺 / 播放头 / 缩放与少量编辑工具
+```
 
----
+面板比例可以随视觉反馈调整。先支持分隔线调整尺寸与预览最大化，不实现复杂自由停靠系统。桌面是主要创作场景，窄屏提供查看与基础操作布局，不承诺与桌面相同的信息密度。
 
-## 3. 一级界面
+## 4. 项目与素材浏览
 
-初期只需要两个一级界面：
+项目首页保留项目文件夹视觉，展示封面、标题、简介和数量，不堆生成参数或工程状态。
 
-~~~text
-项目首页
-   ↓
-导演工作区
-~~~
+工作区左侧“片段 / 素材”为同一面板的两种内容。片段卡片与时间线引用同一份片段数据，单击同步选择、参数、提示词和版本。卡片 / 紧凑列表只是视图变化。
 
-避免重新制造大量一级页面和导航。
+素材支持本地导入与预览。添加参考优先通过双击素材或拖到时间线片段完成。图片、角色与普通音频参考不因为存在就额外创建轨道。
 
-### 项目首页
+## 5. 画面预览与提示词
 
-只负责：
+预览区区分时间线预演、当前片段和素材预览。版本选择不覆盖旧版本。时间线预演的播放头不能等待媒体解码才响应拖动。
 
-- 创建项目
-- 打开项目
-- 最近项目
-- 基础项目管理
+提示词保留两组互相独立的选择：
 
-项目卡显示：
+- 用户提示词 / AI 增强：决定实际使用哪份内容。
+- 可视化 / 文本：决定同一内容的表现方式。
 
-- 项目名称
-- 封面
-- 简介
-- 最近修改日期
-- Segment 数量
-- 素材数量
-- 已生成数量
-- 少量状态提示
+可视化和文本互相切换不能丢失标签或原文。当前 Demo 的可视化是只读预览，编辑在文本模式完成；正式可编辑的可视化编辑器留待后续，不伪装成已实现。
 
-不要在首页加入生成参数、Queue 工程字段或大量 Badge。
+## 6. 时间线：固定两条片段行
 
----
+```text
+时间尺       00:00       00:06       00:08       00:15
+A            [ 片段 1 ---------------- ]
+B                         [ 片段 2 ------------------- ]
+                           < 自动重叠 >
+```
 
-## 4. 导演工作区
+两条行用于前后片段交错排布，不是视频合成的上下层级。A/B 不代表谁覆盖谁，也不需要轨道锁、静音、独奏或轨道目标系统。
 
-建议功能布局：
+全片按这两行延伸，新片段默认交替追加。选择某个片段不应突然交换行位置。初期不允许把第三个片段挤入同一时段，或让同一行的片段互相遮住；遇到同一行边界时直接约束移动 / 裁剪，不自动增加轨道。
 
-~~~text
-┌───────────────────────────────────────────────────────────┐
-│ Project / Toolbar / 当前项目 / 运行状态                    │
-├─────────────────┬──────────────────────────┬──────────────┤
-│                 │                          │              │
-│ Project / Asset │        Monitor           │  Inspector   │
-│ Segment Browser │                          │  Prompt      │
-│                 │                          │  Parameters  │
-│                 │                          │              │
-├─────────────────┴──────────────────────────┴──────────────┤
-│                                                           │
-│                         Timeline                          │
-│                                                           │
-└───────────────────────────────────────────────────────────┘
-~~~
+音频与引导信息可以作为片段内部提示或参数，当前不额外铺设多条音频轨道。只有实际需求证明必须独立编辑音频时间关系时才扩展。
 
-这只是功能布局基线，不是最终视觉稿。
+## 7. 重叠区：被动反馈，不是可编辑对象
 
-后续可根据视觉参考调整：
+**用户移动片段，系统产生重叠；不能反过来编辑重叠区改变片段。**
 
-- 面板比例
-- 面板位置
-- 顶部工具栏结构
-- Monitor 尺寸
-- Inspector 宽度
-- Timeline 默认高度
-- 素材 / Segment 浏览方式
+用户直接操作的只有：
 
-但 **Timeline 必须始终属于主工作区，而不是藏在二级弹窗中。**
+1. 拖动片段本体：保持时长不变，改变位置。
+2. 拖动片段左 / 右边缘：改变对应起止时间。
 
----
+重叠区根据两段时间交集实时出现、变长、变短或消失。它没有独立选择 ID、拖动把手、裁剪光标、右键菜单或编辑命令。下方时长气泡也是反馈，不是输入框。
 
-## 5. 面板原则
+### 7.1 唯一时间事实
 
-主面板应支持：
+项目使用整数帧和半开区间 `[startFrame, endFrame)`；结束帧不包含在该片段内。
 
-- 拖动分隔线调整尺寸
-- 双击或快捷动作恢复默认尺寸
-- 必要时最大化当前面板
-- 内部随尺寸自适应
-- 不通过整个页面滚动掩盖布局问题
+```js
+const start = Math.max(a.startFrame, b.startFrame);
+const end = Math.min(a.endFrame, b.endFrame);
+const overlapFrames = Math.max(0, end - start);
+```
 
-初期不急于实现 Premiere 那样自由 Dock / Undock 任意面板。
+例如 24 fps 下 `[0,192)` 与 `[144,360)` 的交集为 `[144,192)`，即 48 帧、2 秒。首尾刚好相接时交集为零。
 
-先做好：
+项目不同时保存另一份可以独立变化的重叠长度。执行编译时按片段起止时间计算；如果执行快照需要重叠帧数，再作为派生结果记录。
 
-> **稳定固定区域 + 可拖动 Split Pane。**
+### 7.2 显示状态
 
-等真实使用证明需要自由 Dock，再扩展。
+| 状态 | 表现 |
+| --- | --- |
+| 无交集 | 不显示重叠区或重叠时长 |
+| 有交集 | 相同横向时间范围出现低透明度色带和细边界 |
+| 参与重叠的片段被悬停 / 选中 | 相应交集反馈略加强，显示时长 |
+| 片段正在移动 / 裁剪 | 实时计算交集，时长气泡实时更新 |
+| 离开交集 | 反馈自动消失，不残留一个“重叠对象” |
 
----
+色带是绘制层，不截获原片段的事件。在两行之间拖动色带也不能改变片段。边缘白色把手只属于片段本体，不属于重叠区。
 
-## 6. Project / Asset Panel
+### 7.3 参数面板
 
-左侧 Project Panel 负责两类内容。
+选中一个片段时，参数面板只读展示它与前一个片段的交集、秒数和帧数。没有前段或没有交集时明确展示独立 / 无重叠。
 
-### Assets
+承接方式、声音连续性等属于片段配置；它们与“直接编辑重叠长度”不同。当前 Demo 这些选项只改变演示数据，不声称已执行模型连续性采样。
 
-- 图片
-- 视频
-- 音频
-- 搜索
-- 类型筛选
-- 外部拖入
-- 缩略图 / 列表切换
-- 素材元数据
-- 删除
-- 重命名
+### 7.4 不等于叠化
 
-### Segments
+时间线上的重叠不自动表示视频透明度混合、音频交叉淡化或最终镜头叠化。它表示生成承接所使用的共同时间区间。正式去重、连续性与音频处理由执行链决定。
 
-同一面板可以切换：
+当前静帧时间线预演在共同区间保留前片段示例画面，前片段结束后进入后片段，不用一段交叉淡化冒充真实生成连续性。
 
-~~~text
-素材 | 片段
-~~~
+## 8. 高频交互与撤销
 
-Segment 支持：
+时间线维护可视范围、缩放、滚动、播放头和临时拖动状态。拖动中通过 `requestAnimationFrame` 合并绘制，不每次指针移动都重建工作区或写项目文件。
 
-- 卡片模式
-- 紧凑列表模式
-- TaskCard 视觉
-- 顺序编号
-- 生成状态
-- Prompt 来源
-- 结果版本数
-- 承接状态
-- 当前 selected output 缩略图
+```text
+按下片段 → 捕获指针 → 临时位移 / 裁剪 → 实时派生重叠
+         → 松开后提交一次变化 → 一步撤销
+```
 
-Segment Card 与 Timeline 中的 Segment 是同一个数据对象。
+Escape / 取消指针时恢复拖动前的位置。一次拖动只产生一次撤销记录；不存在“调整重叠”命令。修改重叠的撤销本质是撤销片段移动或裁剪。
 
----
+初期采用内容层与交互层两个 Canvas。播放头变化不重画全部片段。只绘制可见范围，缓存缩略图，按设备像素比处理清晰度。Canvas 不是流畅性的保证；是否继续分层、使用 Worker 或 WebGL，以后由真实项目性能决定，不预先增加框架。
 
-## 7. Monitor
+## 9. 坐标、吸附和缩放
 
-Monitor 是当前视觉焦点，至少支持三种上下文。
+统一使用帧 ↔ 屏幕像素换算。吸附阈值使用屏幕像素（Demo 为 7px），避免缩放后手感改变。吸附到其他片段的起止点、播放头与时间原点；按住 Alt 临时关闭。
 
-### Asset Preview
+缩放以鼠标位置或播放头为锚，能从全片看到逐帧。缩放和平移不修改片段数据。播放头使用动画帧更新，不能用固定低频定时器拖着走。
 
-选择素材时：
+Demo 的一秒最小时长是交互约束，不是 H3 模型限制或已完成的模型合法帧验证。
 
-~~~text
-Monitor = 素材预览
-~~~
+## 10. 当前 Demo 的技术边界
 
-### Segment Result
+这版为可以直接打开 / 上传的**零依赖静态原型**：原生 DOM 视图 + 独立双层 Canvas，没有 npm 运行依赖、外部 CDN、桌面壳或后端。根目录 `index.html` 直接引用相对路径脚本与样式。
 
-选择生成完成的 Segment 时：
+这是预览交付方式的收敛，不是推翻正式产品的 React 工作区方向。当前 `app.js` 是可替换视图适配；`core.js`、`timeline.js` 与颜色变量可供后续 React 包装复用。
 
-~~~text
-Monitor = selectedOutput
-~~~
+Studio 的项目文件夹、卡片、标签与控件在 Demo 中采用显式视觉快照 / 静态视图适配，不冒充已安装并运行 React UI 包。具体来源与差异见 [Demo 说明](DEMO.md)。没有修改共享 UI 库及 Rulesmd Editor。
 
-### Timeline Playback
+## 11. 本次可操作范围
 
-时间线播放时：
+项目首页 / 工作区切换；片段卡片 / 列表；本地素材预览与参考绑定；片段选择；本体移动；边缘裁剪；自动重叠与时长反馈；吸附；缩放；滚动 / 中键平移；播放头拖动和步进；撤销 / 重做；复制 / 删除 / 新建片段；参数和提示词编辑；演示版本切换；明确标记的模拟生成；配置 JSON 导出；面板尺寸调整与预览最大化。
 
-~~~text
-Monitor = 当前 Timeline / Master 预览
-~~~
+明确未实现：真实 ComfyUI 连接、真实视频生成、AI 增强服务、真实音频分析、完整音画拼接、代理转码、后端项目保存、主题设置、分割 / 波纹 / 滚动修剪、框选批量移动、自由面板停靠。
 
-基础能力：
+预置静帧、示意波形和模拟进度必须明确标注。页面刷新还原示例，不显示虚假的“已保存到项目”。
 
-- 播放 / 暂停
-- Timecode
-- 音量
-- 最大化
-- 帧级步进
-- 快速 Scrub
-- 结果版本切换入口
-- 原始比例查看
+## 12. 后续顺序
 
----
+先根据实际 Demo 反馈调整视觉、工作区比例和直接操作体验；之后再确认 React 组件整合与真实媒体预览；最后纵向接通一个片段的生成闭环。
 
-## 8. Inspector
-
-右侧 Inspector 根据当前对象变化。
-
-### 选择 Segment
-
-显示：
-
-- Segment 名称
-- 生成时长
-- 起止时间
-- Prompt 来源
-- 片段承接
-- 参考素材
-- 视频用途
-- 音频模式
-- 分辨率
-- 质量
-- Workflow / Profile
-- Seed
-- 高级生成参数
-
-### 选择 Asset
-
-显示：
-
-- 名称
-- 类型
-- 分辨率
-- 时长
-- FPS
-- 音频信息
-- 项目引用位置
-
-### 选择 Timeline Clip
-
-显示：
-
-- Timeline 位置
-- 源素材裁剪范围
-- Reference Role
-- Audio Role
-- 与当前 Segment 的关系
-
-Inspector 使用 Studio Dark 的 ParameterRow、SlidingTabs、SegmentedControl、Select、Number Field、Switch。
-
-默认显示最常用参数，高级项折叠，避免参数墙。
-
----
-
-## 9. Prompt Panel
-
-Prompt 继续沿用已经确定的逻辑：
-
-~~~text
-用户提示词 | AI 增强提示词
-~~~
-
-当前标签决定真正用于生成哪一份 Prompt。
-
-每份 Prompt 又有：
-
-~~~text
-可视化 | 文本
-~~~
-
-可视化模式继续参考 H3 Prompt Editor：
-
-- Section
-- Shot
-- 时间
-- 运镜
-- 对白
-- Picture / Video / Audio 引用
-- PromptTag
-
-文本模式显示完整真实 Prompt 字符串。
-
-底部明确显示当前生成实际使用：
-
-~~~text
-当前生成使用：用户提示词
-~~~
-
-或：
-
-~~~text
-当前生成使用：AI 增强提示词
-~~~
-
----
-
-# 10. Timeline 的产品地位
-
-Timeline 不是附属功能，而是 TerryDirector 的核心编辑面之一。
-
-它统一呈现：
-
-- Segment 时间关系
-- 参考视频
-- 参考音频
-- 已生成视频
-- Segment overlap
-- Guide
-- 承接关系
-- Timeline Playback
-- 最终成片结构
-
-Storyboard / Segment Card 是 Timeline 的另一种观察方式，不是另一套数据。
-
----
-
-## 11. Timeline 数据源
-
-Timeline 不保存独立业务数据。
-
-核心仍然来自：
-
-~~~text
-Project
-  ├─ Assets
-  └─ Segments
-~~~
-
-Timeline 只是对 Project / Segment 数据的时间空间化编辑。
-
-例如：
-
-- Segment.startFrame
-- Segment.endFrame
-- Continuity.overlapFrames
-- Reference.trimStart
-- Reference.trimEnd
-
-都来自同一份数据。
-
-不能出现 Storyboard 一套顺序、Timeline 一套顺序、Task 再一套顺序，然后互相同步。
-
----
-
-## 12. Timeline 基础结构
-
-推荐从上到下：
-
-~~~text
-Time Ruler
-Segment / GEN Lane
-Video / Reference Tracks
-Audio Tracks
-~~~
-
-例如：
-
-~~~text
-00:00        00:05        00:10        00:15
-
-GEN    [ Segment 01      ]
-                 [ Segment 02      ]
-                           [ Segment 03        ]
-
-V1     [ reference.mov ]
-V2                    [ generated-v2.mp4    ]
-
-A1     [ source audio ----------------------- ]
-~~~
-
-### Segment / GEN Lane
-
-Segment Window 单独拥有一条视觉层，表达：
-
-- 起点
-- 终点
-- 编号
-- 当前选中状态
-- overlap
-- 生成状态
-- 承接来源
-
-例如：
-
-~~~text
-Segment 01
-0 ───────────── 239
-
-Segment 02
-             201 ───────────── 440
-             └── 39 frames overlap
-~~~
-
-Overlap 必须在视觉上明确，而不是只藏在参数栏。
-
----
-
-## 13. Timeline Clip 类型
-
-### Reference Video Clip
-
-用于：
-
-- Fixed Guide
-- Editable Reference
-- Boundary Guide
-
-不同 Role 应有轻量视觉标识，但避免高饱和大色块造成噪音。
-
-### Generated Result Clip
-
-表示 Segment.selectedOutput，可切换其他版本。
-
-### Audio Clip
-
-包括：
-
-- Reference Audio
-- Locked Audio
-- Video Source Audio
-
-Locked Audio 应有明确但克制的锁定标识。
-
----
-
-## 14. Timeline 第一阶段必须支持的编辑能力
-
-基础能力：
-
-- 拖动播放头
-- 点击定位播放头
-- 水平滚动
-- 鼠标滚轮 / 触控板缩放
-- 以播放头或鼠标位置为锚点缩放
-- 拖动 Clip
-- Clip 左右裁剪
-- 拖动 Segment Window
-- Segment Window 左右裁剪
-- Split
-- Delete
-- 多选
-- 框选
-- Snap
-- 精确数值定位
-- Timecode
-- Undo / Redo
-
-第二阶段再考虑：
-
-- Slip
-- Ripple
-- Roll
-- Track targeting
-- 更复杂的剪辑工具模式
-
-不要为了“像 Premiere”一次实现全部 Premiere 工具。
-
----
-
-## 15. Snap / 吸附
-
-吸附是手感核心之一。
-
-吸附目标：
-
-- 播放头
-- Segment 起点 / 终点
-- Clip 起点 / 终点
-- overlap 边界
-- 相邻素材边界
-- Marker（未来）
-
-吸附原则：
-
-- 使用屏幕像素阈值，而不是固定时间阈值
-- 缩放后手感保持一致
-- 显示 Snap Guide
-- 拖动时实时反馈
-- 支持临时关闭 Snap
-
-建议阈值以 6–10 screen pixels 为起点调试，而不是固定 0.2 秒之类的时间值。
-
----
-
-## 16. Timeline Zoom
-
-缩放必须像专业剪辑软件一样自然：
-
-- 鼠标指针或播放头位置保持视觉锚点
-- 缩放后内容不能突然跳走
-- 最小尺度可查看长项目
-- 最大尺度可逐帧编辑
-- Zoom 不修改业务数据
-- 只修改 pixelsPerFrame
-
-核心坐标统一：
-
-~~~text
-frame ↔ x
-~~~
-
-所有时间到屏幕坐标的换算必须由同一个 TimeScale / Coordinate System 负责，不能散落在各组件中。
-
----
-
-# 17. Timeline 性能架构
-
-这是 TerryDirector 的重要红线。
-
-> **不能把 Timeline 做成一大堆 React DOM 节点，然后等卡顿出现再优化。**
-
-时间线从第一天就按高频交互组件设计。
-
----
-
-## 17.1 React 负责什么
-
-React 负责：
-
-- 页面 Shell
-- 面板
-- Inspector
-- Prompt Editor
-- Asset Browser
-- Dialog
-- Context Menu
-- Toolbar
-- Timeline 外部布局
-
-React 不负责每一个 pointermove 都重新渲染整条 Timeline。
-
----
-
-## 17.2 Timeline Engine
-
-Timeline 拥有独立的高频状态，例如：
-
-~~~ts
-TimelineViewState {
-  scrollX
-  scrollY
-  pixelsPerFrame
-  viewportWidth
-  viewportHeight
-}
-
-TimelineInteractionState {
-  pointer
-  dragMode
-  dragTarget
-  dragOrigin
-  snapTarget
-  marquee
-}
-
-TimelinePlaybackState {
-  currentFrame
-  playing
-}
-~~~
-
-这些高频状态不直接进入 Project Store。
-
----
-
-## 17.3 分层渲染
-
-首选架构：
-
-> **React DOM + Layered Canvas**
-
-建议：
-
-~~~text
-Canvas 1  静态层
-          背景 / Grid / Track / Time Ruler
-
-Canvas 2  内容层
-          Clip / Segment / Waveform / Thumbnail
-
-Canvas 3  Interaction Overlay
-          Playhead / Snap Guide / Selection / Marquee / Drag Preview
-
-DOM       Tooltip / Context Menu / Inline Input / Accessibility
-~~~
-
-第一版不强制 WebGL。
-
-Canvas 2D 配合缓存、虚拟化、局部重绘、OffscreenCanvas、Proxy、预计算 Waveform，应先足够支撑典型 TerryDirector 项目。
-
-如果真实项目证明 Canvas 2D 是瓶颈，再替换 Content Renderer 为 WebGL，而不重写 Timeline 数据和交互层。
-
----
-
-## 18. 高频交互原则
-
-Timeline 拖拽流程：
-
-~~~text
-pointerdown
-  ↓
-capturePointer
-  ↓
-TimelineInteractionState
-  ↓
-requestAnimationFrame
-  ↓
-直接更新 Timeline Render
-  ↓
-pointerup
-  ↓
-Commit Project Change
-~~~
-
-也就是说：
-
-> 拖动过程中不持续写 project.json，不持续触发全局 React 更新。
-
-只在 pointerup / drag commit 时提交正式业务状态。
-
----
-
-## 19. requestAnimationFrame
-
-拖拽、Zoom、Playhead 等视觉更新统一进入 requestAnimationFrame。
-
-原则：
-
-- 每帧最多一次 Render
-- Pointer Event 可以高频到达，但不重复 Paint
-- 当前帧只使用最新输入状态
-- 不用固定 60fps timer
-
-目标是在 60Hz 显示器上稳定接近 60fps，在高刷新率显示器上自然跟随更高刷新率。
-
----
-
-## 20. 局部重绘
-
-Timeline Engine 应知道哪些 Layer 变脏。
-
-例如：
-
-### 只移动播放头
-
-只重绘 Interaction Overlay。
-
-### 拖 Clip
-
-只重绘 Content Layer + Interaction Layer。
-
-### 修改 Track 高度或全局缩放
-
-才重新计算更大区域。
-
----
-
-## 21. 可视区域虚拟化
-
-Timeline 只绘制当前 viewport 中可见的内容和少量安全边界。
-
-需要维护：
-
-~~~text
-visibleFrameStart
-visibleFrameEnd
-visibleTrackStart
-visibleTrackEnd
-~~~
-
-项目规模大以后可增加 interval index / spatial index，但不提前引入复杂架构。
-
----
-
-## 22. Thumbnail Cache
-
-视频 Timeline 不实时从原视频抽帧。
-
-导入视频后生成 thumbnail cache。
-
-Timeline 根据 Zoom：
-
-- 粗尺度显示较少缩略图
-- 细尺度显示更多缩略图
-
-缩放过程中：
-
-- 先复用已有缓存
-- 不同步阻塞抽帧
-- 缺图时异步补充
-
----
-
-## 23. Waveform Cache
-
-音频导入后预计算 waveform peaks。
-
-建议支持多级采样数据，根据 Zoom 选择对应级别。
-
-Render Loop 中禁止：
-
-- 解码完整音频
-- 扫描完整 waveform
-- 实时重新计算 peaks
-
----
-
-## 24. Proxy Playback
-
-Monitor 和 Timeline Scrub 优先使用 Proxy。
-
-~~~text
-Original
-  ↓
-Proxy
-  ↓
-UI Playback
-~~~
-
-正式生成仍读取 Original。
-
-快速拖动播放头：
-
-1. Timeline 立即更新 Playhead。
-2. Monitor 使用 Proxy Seek。
-3. 极高速 Scrub 时可以临时显示最近 Thumbnail。
-4. 停止拖动后再做精确 Seek。
-
-鼠标不能等视频解码完成才移动。
-
----
-
-## 25. Playback Sync
-
-播放时应由真实媒体帧驱动 Timeline，而不是简单使用 setInterval。
-
-浏览器支持时优先使用 requestVideoFrameCallback，同步：
-
-- Monitor
-- Playhead
-- Timecode
-
----
-
-## 26. Undo / Redo
-
-Undo / Redo 从 Timeline 第一阶段就设计。
-
-建议 Command Stack：
-
-~~~text
-MoveClipCommand
-TrimClipCommand
-MoveSegmentCommand
-ResizeSegmentCommand
-DeleteClipCommand
-SplitClipCommand
-AssignReferenceCommand
-~~~
-
-一次完整 drag = 一个 Undo Step。
-
-不能拖 120 帧就产生 120 个 Undo。
-
----
-
-## 27. Selection 模型
-
-Director Workspace 维护一个明确的主选择上下文，例如：
-
-~~~ts
-Selection {
-  type:
-    "asset"
-    "segment"
-    "timelineClip"
-    "result"
-
-  id
-}
-~~~
-
-Timeline、Segment Card、Inspector、Prompt、Monitor 都围绕它联动。
-
-点击 Timeline 中的 Segment 03：
-
-~~~text
-Timeline Select Segment 03
-          ↓
-Segment Browser 高亮
-          ↓
-Inspector 显示 Segment 03
-          ↓
-Prompt 显示 Segment 03
-          ↓
-Monitor 显示 selectedOutput
-~~~
-
-不要让每个面板自己维护一份“当前任务”。
-
----
-
-## 28. Segment Card 与 Timeline 的关系
-
-TaskCard 在 TerryDirector 里承担 Segment Card 视觉，但 UI Library 组件名暂时保持通用。
-
-Segment Card 适合：
-
-- 快速浏览
-- 比较缩略图
-- 查看状态
-- 批量选择
-- 查看版本
-- 进入 Prompt
-
-Timeline 适合：
-
-- 时间关系
-- 承接
-- overlap
-- 参考素材位置
-- 音频
-- 精确时间
-
-两者互补。
-
----
-
-## 29. Segment 创建入口
-
-自然入口包括：
-
-### Timeline 空白处
-
-右键或双击创建 Segment。
-
-### Segment Browser
-
-“+ 新建片段”。
-
-### 当前 Segment 后
-
-“Add Next Segment”。
-
-若选择“承接上一片段”，自动建立 continuity source。
-
----
-
-## 30. 参考素材拖拽
-
-素材浏览器中的素材支持直接拖到：
-
-### Segment
-
-表示为当前 Segment 添加 Reference。
-
-### Timeline Track
-
-表示在指定时间位置放置参考素材。
-
-Drop 后在 Inspector 中选择 Role：
-
-- 固定 Guide
-- 可编辑参考
-- 仅固定边界
-
-尽量减少“打开对话框 → 找任务 → 再添加”的流程。
-
----
-
-## 31. Overlap 编辑体验
-
-Overlap 不应主要靠数字输入。
-
-最自然方式是 Timeline 直接编辑：
-
-~~~text
-Segment 01  [──────────────]
-Segment 02           [──────────────]
-                     ↑ overlap
-~~~
-
-拖 Segment 02 起点即可修改 overlap。
-
-Inspector 同步显示：
-
-~~~text
-Overlap
-39 frames
-1.625s
-~~~
-
-数字输入用于精确调整。
-
----
-
-## 32. 连续性视觉反馈
-
-Segment 承接上一段时，Timeline 应有轻量关系提示，例如 overlap 区的 Continuity 标识或非常克制的方向提示。
-
-不建议引入复杂 Node Graph 连线。
-
-Timeline 本身已经表达顺序和重叠，关系 UI 只负责辅助理解。
-
----
-
-## 33. 结果版本体验
-
-Segment 多版本：
-
-~~~text
-V1
-V2
-V3 ★
-V4
-~~~
-
-至少支持：
-
-- 当前主版本
-- 版本缩略图
-- 切换
-- 设为 Selected Output
-- 删除无用版本
-- 后续对比入口
-
-切换 Selected Output 后：
-
-- Monitor 更新
-- Timeline Generated Clip 更新
-- 后续承接链标记可能需要重新生成
-
----
-
-## 34. Queue / 运行状态
-
-运行状态要可见，但不能侵占导演工作区。
-
-全局轻量显示：
-
-~~~text
-ComfyUI ●
-Queue 3
-Running 1
-~~~
-
-点击展开 Runtime Panel，显示：
-
-- 正在生成
-- 排队
-- 失败
-- Progress
-- Cancel
-- Retry
-
-默认不显示 Prompt ID、Workflow Node ID、内部 Snapshot 等工程字段。
-
----
-
-## 35. Project Config
-
-集中管理：
-
-- 项目名称
-- 简介
-- 封面
-- 默认分辨率
-- 默认 Workflow
-- 项目素材
-- AI Prompt 是否使用项目背景
-- 默认 FPS
-- 默认 Segment 时长
-
-不要重复塞进每个 Segment。
-
----
-
-## 36. 快捷键基线
-
-第一阶段：
-
-~~~text
-Space         播放 / 暂停
-Left / Right  前后 1 帧
-Shift + ←/→   较大步进
-Delete        删除选中
-Ctrl/Cmd + Z  Undo
-Ctrl/Cmd + Shift + Z / Ctrl+Y  Redo
-+ / -         Timeline Zoom
-S             Split（无文本输入焦点时）
-Home          Timeline 起点
-End           Timeline 末尾
-~~~
-
-J / K / L 后续加入。
-
-快捷键必须尊重文本输入 Focus Context。
-
----
-
-## 37. UI 状态与持久化
-
-### Project State
-
-保存：
-
-- Assets
-- Segments
-- References
-- Prompt
-- Results
-- Timeline 编辑结果
-
-### Workspace State
-
-可保存：
-
-- 面板尺寸
-- Timeline Zoom
-- Track 高度
-- 上次工作区布局
-
-### Ephemeral Interaction State
-
-不保存：
-
-- 当前鼠标位置
-- Drag Preview
-- Snap Candidate
-- Marquee Rect
-- Hover Clip
-
-Project JSON 不应被高频 UI 状态污染。
-
----
-
-## 38. Autosave
-
-采用 Commit 后 Autosave。
-
-~~~text
-Move Segment
-pointerup
-  ↓
-Project Store Commit
-  ↓
-debounced autosave
-~~~
-
-禁止 pointermove 每次写磁盘。
-
-Prompt 文本可以单独 debounce 保存。
-
-UI 只需轻量显示：
-
-~~~text
-已保存
-保存中
-~~~
-
----
-
-## 39. 时间线性能验收基线
-
-正式开发时必须建立独立 Timeline 性能场景。
-
-初期目标：
-
-- 常见项目拖动 / 裁剪无肉眼可见掉帧
-- 60Hz 下 Zoom / Pan 稳定接近 60fps
-- Pointer Move 不经过全局 React Render
-- 播放头移动无明显滞后
-- 100+ Segment / Clip 项目仍能自然缩放和滚动
-- Waveform / Thumbnail 加载不阻塞主线程交互
-- Project 保存不阻塞 Drag
-- Proxy 生成不阻塞 UI
-
-实际性能记录决定是否需要 Web Worker、OffscreenCanvas、WebGL 或更复杂的 Spatial Index，而不是预先全部加入。
-
----
-
-## 40. 前端 Demo 的使用方式
-
-后续可以使用：
-
-- 用户提供的视觉参考
-- 其他 AI 制作的前端 Demo
-- 外部模板
-
-这些可以直接提供：
-
-- 视觉层级
-- 面板比例
-- Typography
-- 图标
-- 卡片排布
-- Toolbar
-- Inspector 结构
-
-但以下内容必须单独验证甚至重做：
-
-- Timeline
-- Drag
-- Zoom
-- Snap
-- Playback
-- Selection
-- Undo / Redo
-- Virtualization
-
-> **不能因为一个 Demo 看起来像 Premiere，就默认它的 Timeline 技术实现足够用于 TerryDirector。**
-
-Timeline Engine 是独立核心模块。
-
----
-
-## 41. 建议开发阶段
-
-### Phase UI-0：视觉方向
-
-只做：
-
-- 收集参考
-- Studio Dark 调整
-- 工作区布局 Demo
-- Project / Segment / Monitor / Inspector / Timeline 视觉关系
-
-不接真实生成。
-
-### Phase UI-1：Timeline Interaction Prototype
-
-单独做 Timeline 原型：
-
-- 100+ Fake Clips
-- Zoom
-- Pan
-- Playhead
-- Drag
-- Trim
-- Snap
-- Segment overlap
-- Undo / Redo
-
-这一阶段首先验证 **手感**，不是业务 API。
-
-### Phase UI-2：Project State
-
-Timeline 接真实 Project / Asset / Segment JSON。
-
-### Phase UI-3：Media
-
-接：
-
-- Proxy
-- Thumbnail
-- Waveform
-- Monitor Playback
-
-### Phase UI-4：Generation
-
-最后接：
-
-~~~text
-Segment → Generation IR → ComfyUI
-~~~
-
-这样避免再次出现“后端和架构很完整，但核心操作体验还没验证”的情况。
-
----
-
-## 42. 最重要的 UI 原则
-
-1. Timeline 是核心，不是补充。
-2. Timeline 手感优先于“React 架构是否优雅”。
-3. 高密度，但不能靠缩小字体硬塞。
-4. 常用操作尽量直接拖拽完成。
-5. 参数输入是精确补充，不是主要交互。
-6. 不把 ComfyUI 工程概念暴露给普通导演流程。
-7. 同一 Segment 在卡片、Timeline、Prompt、Inspector 中只有一份数据。
-8. 高频交互状态与持久化业务状态分离。
-9. 视觉可以持续迭代，Timeline Engine 不跟随视觉 Demo 反复重写。
-10. 目标是打开项目后自然进入“导演状态”，而不是进入“配置软件状态”。
-
----
-
-## 43. 当前未定事项
-
-以下内容保留给后续视觉参考和 Demo 决定：
-
-- 最终 Toolbar 视觉
-- Monitor 是否采用双监视器布局
-- Asset Panel 最终尺寸
-- Segment Browser 卡片密度
-- Inspector / Prompt 是否拆成两个 Panel
-
----
-
-# 47. 主题颜色架构
-
-TerryDirector 当前只使用固定暗色视觉，不在 UI 中提供主题切换或颜色自定义。
-
-但从第一版实现开始，所有视觉颜色必须通过独立 Theme Contract 管理，并为未来自定义主题色保留接口。
-
-完整规则见：
-
-~~~text
-docs/03_VISUAL_THEME_CONTRACT.md
-~~~
-
-核心原则：
-
-- 当前默认配色来自已确认的灰蓝紫参考色板。
-- 组件和 Timeline Renderer 不直接硬编码主题 Hex。
-- Theme Seed 与语义 Token 分层。
-- Timeline Canvas 与 React UI 使用同一 Theme Snapshot。
-- 未来优先只开放 Accent Color；如有需要再扩展为 Base / Accent / Effect / Text / Text Bright 高级配置。
-- 当前不增加任何主题设置 UI，不因此扩大第一版 Demo 范围。
-
-## 术语约定
-
-用户可见文案、产品讨论和设计文档统一使用：
-
-- **片段**：泛指一个可生成、可编辑、可承接的视频片段。
-- **时间线片段**：特指位于时间线中的片段对象。
-
-后续沟通中不再使用 “Segment” 作为用户可见术语。内部代码标识可在实现阶段另行确定，但不得影响 UI 与产品文案。
-
----
-
-# 48. 重叠区的最终交互定义
-
-重叠区是 **被动派生状态**，不是一个直接操作对象。
-
-用户不会：
-
-- 直接拖动重叠区
-- 直接拖动重叠区左右边缘
-- 单独修改“重叠区长度”
-
-用户只操作 **时间线片段本身**。
-
-数据关系：
-
-~~~text
-片段 A 时间范围
-+
-片段 B 时间范围
-        ↓
-计算交集
-        ↓
-Overlap Range
-~~~
-
-例如：
-
-~~~text
-片段 1  [──────────────]
-片段 2           [──────────────]
-                 █████
-                 自动重叠区
-~~~
-
-当用户继续拖动片段 2：
-
-~~~text
-片段 1  [──────────────]
-片段 2        [──────────────]
-              ████████
-              自动变长
-~~~
-
-或者：
-
-~~~text
-片段 1  [──────────────]
-片段 2               [──────────────]
-                     ██
-                     自动变短
-~~~
-
-当两个时间线片段不再相交：
-
-~~~text
-片段 1  [──────────────]
-片段 2                  [──────────────]
-
-Overlap = 0
-~~~
-
-重叠视觉自动消失。
-
----
-
-## 48.1 Source of Truth
-
-重叠长度不作为一个独立可拖参数维护。
-
-推荐：
-
-~~~ts
-overlapFrames =
-  max(
-    0,
-    min(clipA.endFrame, clipB.endFrame)
-    - max(clipA.startFrame, clipB.startFrame)
-  )
-~~~
-
-因此 Source of Truth 是：
-
-~~~text
-片段起止时间
-~~~
-
-而不是：
-
-~~~text
-独立 overlap 对象
-~~~
-
-如果后端 / 生成编译阶段需要 overlapFrames，再由片段位置关系计算并写入 Generation IR。
-
----
-
-## 48.2 重叠区只负责反馈
-
-重叠区的职责：
-
-- 告诉用户已经发生重叠
-- 显示重叠范围
-- 实时反馈重叠时长
-- 表达连续性生成区域
-- 在视觉上连接前后两个片段
-
-它不承担直接编辑。
-
-因此鼠标指针悬停重叠区时，默认不出现 Trim Cursor，也不提供独立 Drag Handle。
-
----
-
-## 48.3 重叠时长气泡
-
-当用户正在拖动其中一个时间线片段，并且产生重叠时，可以显示实时信息：
-
-~~~text
-2.0s
-~~~
-
-或：
-
-~~~text
-48 帧 · 2.0 秒
-~~~
-
-气泡跟随重叠边界或重叠区域中心。
-
-Dragging 结束后：
-
-- 默认可隐藏
-- Hover 片段时可以重新显示
-- Inspector 中始终可以查看精确数值
-
-这样它是“反馈”，不是“控制器”。
-
----
-
-## 48.4 Inspector 联动
-
-当选中参与重叠的时间线片段时，Inspector 可以显示：
-
-~~~text
-片段承接
-────────────
-与上一片段重叠
-48 帧 · 2.0 秒
-
-承接方式
-Latent Continuation
-
-视频连续性
-开启
-
-音频连续性
-开启
-~~~
-
-如果用户移动片段导致重叠变化：
-
-~~~text
-Timeline Interaction
-       ↓
-计算 overlap
-       ↓
-Inspector 实时更新显示值
-       ↓
-pointerup 后提交项目状态
-~~~
-
----
-
-## 48.5 视觉状态
-
-建议保留四种视觉状态：
-
-### 无重叠
-
-只有两个普通时间线片段。
-
-### 有重叠
-
-交集区域自动出现非常轻的混合视觉。
-
-### 拖动中
-
-重叠区域加强一点，并显示实时时长气泡。
-
-### 当前片段选中
-
-重叠区域保持可见，但高亮重点仍然属于被选中的时间线片段，而不是重叠区本身。
-
----
-
-## 48.6 颜色关系
-
-当前默认色板下建议：
-
-~~~text
-片段普通 Surface
-#343747 / #3E4152
-
-片段选中
-#6655DF
-
-重叠区域
-#6655DF → #E48BEA
-低透明度混合
-
-实时重叠时长气泡
-#E48BEA 边缘 / 高亮
-~~~
-
-但重叠区域整体亮度必须低于 Playhead，不能抢走播放头的最高视觉优先级。
-
----
-
-## 48.7 核心原则
-
-> **用户移动片段，系统产生重叠。**
-
-而不是：
-
-> 用户编辑重叠区来反向改变片段。
-
-这条原则同时适用于：
-
-- UI
-- Timeline Interaction Engine
-- Undo / Redo
-- Project State
-- Generation IR
-
-一次“改变重叠长度”的 Undo，本质上应该是：
-
-~~~text
-MoveTimelineClipCommand
-~~~
-
-而不是：
-
-~~~text
-ResizeOverlapCommand
-~~~
+不在当前阶段建立通用调度系统、数据库、Bridge 或主题设置页面。页面截图看起来合理，不代表已达到 Premiere 级播放性能或完整制作能力。
