@@ -36,3 +36,22 @@ test('moving clear of the other clip removes the corresponding label',()=>{
  const t=timeline();t.clips=C.editClip(t.clips,'b','move',241);
  assert.equal(t.overlapCallouts(ctx).some(o=>o.a==='a'&&o.b==='b'),false);
 });
+
+// Capture only the 4px bright trim bars from the real renderer.
+function paintedHandles(t) {
+ const bars=[];
+ t.clips.forEach(c=>c.name=c.id);
+ t.options={};t.theme={text:'handle-ink'};t.image=()=>null;
+ t.ctx=new Proxy({measureText:text=>({width:text.length*7}),createLinearGradient:()=>({addColorStop(){}})},
+   {get:(object,key)=>key in object?object[key]:()=>{}});
+ t.rect=(context,x,y,w,h,r,fill)=>{if(w===4&&fill==='handle-ink')bars.push(x);};
+ t.drawContent();return bars;
+}
+test('hovering an unselected clip never paints its white trim bars',()=>{
+ const t=timeline();t.hover='c';
+ assert.deepEqual(paintedHandles(t),[t.x(192)+2,t.x(432)-6]);
+});
+test('hover alone paints no handles; selection exposes its own pair',()=>{
+ const t=timeline();t.selected=null;t.hover='c';assert.deepEqual(paintedHandles(t),[]);
+ t.selected='c';assert.deepEqual(paintedHandles(t),[t.x(384)+2,t.x(624)-6]);
+});

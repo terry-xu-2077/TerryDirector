@@ -171,8 +171,9 @@
         if(this.showWave&&ch>=70){ctx.strokeStyle=t.wave;ctx.globalAlpha=.18;ctx.beginPath();for(let xx=x+13;xx<x+width-12;xx+=3){const a=2+3*Math.abs(Math.sin(xx*.053+i)*Math.cos(xx*.081));ctx.moveTo(xx,y+ch-36-a);ctx.lineTo(xx,y+ch-36+a);}ctx.stroke();ctx.globalAlpha=1;}
         ctx.restore();
       });
-      // Draw actual clip handles last; overlaps have no handles of their own.
-      for(const c of this.clips.filter(c=>c.id===this.selected||c.id===this.hover)){
+      // Only selected clips expose trim handles; hovering another clip adds no white bars.
+      // Keep drawing these last so an earlier selected clip can expose its concealed tail.
+      for(const c of this.clips.filter(c=>c.id===this.selected)){
         const x=this.x(c.start),end=this.x(c.end),y=this.y(),ch=this.trackHeight;
         for(const hx of [x+2,end-6])this.rect(ctx,hx,y+12,4,ch-24,2,t.text);
       }
