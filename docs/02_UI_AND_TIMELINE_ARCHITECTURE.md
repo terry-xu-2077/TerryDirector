@@ -1221,3 +1221,12 @@ docs/03_VISUAL_THEME_CONTRACT.md
 - Timeline Canvas 与 React UI 使用同一 Theme Snapshot。
 - 未来优先只开放 Accent Color；如有需要再扩展为 Base / Accent / Effect / Text / Text Bright 高级配置。
 - 当前不增加任何主题设置 UI，不因此扩大第一版 Demo 范围。
+
+## 术语约定
+
+用户可见文案、产品讨论和设计文档统一使用：
+
+- **片段**：泛指一个可生成、可编辑、可承接的视频片段。
+- **时间线片段**：特指位于时间线中的片段对象。
+
+后续沟通中不再使用 “Segment” 作为用户可见术语。内部代码标识可在实现阶段另行确定，但不得影响 UI 与产品文案。
