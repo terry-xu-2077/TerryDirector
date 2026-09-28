@@ -1,54 +1,35 @@
 # TerryDirector
 
-运行在 ComfyUI 环境中的 AI 视频导演工作台。当前是 **HTML / CSS / JavaScript 视觉交互 Demo**，尚未接入 ComfyUI 或真实生成。
+AI 视频镜头生成任务工作台。当前为 **HTML / CSS / JavaScript 静态交互 Demo**，不连接 ComfyUI，不做 React 拆分。
 
-默认仓库：`https://github.com/terry-xu-2077/TerryDirector.git`。
+## Demo v0.6
 
-## 直接查看
+- 生成预览在右上方固定布局，默认显示、可隐藏，不是浮窗；预览是模拟反馈，不是模型输出。
+- 提示词可视化可以直接编辑，保留纯文本切换。两种方式使用同一份原文。
+- 从 Terry 的 H3 编辑器移植 `@` 引用与 `/` 语法菜单：全部 46 条命令、五类入口、镜头运动子菜单及 20 种运镜。支持搜索、键盘选择、标签更换、对白编辑、原文复制与撤销。
+- 参考资产仍跟随当前片段；点击素材打开独立大图 / 媒体灯箱，插入引用使用单独按钮。
+- 已认可的单行时间线、自动重叠、引线标记、进度及耗时不变。没有 AI 增强或版本管理。
 
-根目录 `index.html` 为静态入口，保留 `src/`、`assets/` 的相对位置即可托管，无安装步骤、构建步骤或外部 CDN 依赖。下载包的 `打开Demo.html` 是同内容内联单文件。
+## 查看与发布
 
-GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root) → Save。`.nojekyll` 已包含。预期地址为 `https://terry-xu-2077.github.io/TerryDirector/`；提交代码不代表已开启或完成部署。
+根目录 `index.html` 是静态入口，保留 `src/`、`assets/` 相对位置即可。无安装、编译或外部 CDN。下载包同时提供内联的 `打开Demo.html`。
 
-也可在本地运行普通静态服务器：
+GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)。`.nojekyll` 保留。预计地址：`https://terry-xu-2077.github.io/TerryDirector/`；提交代码不等于已完成 Pages 部署。
 
-```sh
-python -m http.server 8000
-```
-
-## Demo v0.5
-
-主工作区仍然只有 **提示词编辑、参考资产填充、单行时间线**。
-
-- “生成预览”改为生成过程的中间画面反馈：可开关、悬浮显示、关闭不占空间；Demo 仅模拟，正式版接 ComfyUI 原生采样预览。
-- 参考素材点击打开独立大图 / 媒体灯箱，不再嵌入参考资产区；插入引用使用单独按钮。
-- 提示词只保留 **可视化 / 纯文本**，共享一份内容；移除 AI 增强、双来源及示例增强逻辑。可视化目前只读。
-- 时间线工具按钮加可见名称，**新建片段移至左侧**，缩放 / 适应全部留在右侧。
-- 保留单行叠放、移动、裁剪、吸附、撤销，以及被动重叠和下方引线时长。片段底部显示模拟进度及耗时。
-
-参考素材灯箱只用于查看素材；生成预览只用于生成过程反馈，两者完全分离。模拟生成约 6 秒，不调用模型，不创建版本。刷新还原，导出 JSON 不包含媒体文件或预览开关。
-
-## 技术和复用边界
-
-保持原生 DOM + 独立双层 Canvas，不拆 React，不新增运行依赖。Studio Dark 为注明来源的静态视觉适配，不是运行共享库 React 组件。未修改共享 UI 库、Rulesmd Editor 或 TerryShotMill。
-
-完整色板集中在 `src/theme.css`，不限定五个源色，Canvas 与页面同源。目前只有默认暗色，不开放主题设置。
+数据只在当前页面暂存，刷新还原；导出配置不包含素材文件。模拟生成约 6 秒，不调用模型。
 
 ## 文档
 
-- [产品与技术决策](docs/01_PRODUCT_AND_TECH_DECISIONS.md)
 - [当前 UI 与时间线架构](docs/02_UI_AND_TIMELINE_ARCHITECTURE.md)
-- [完整视觉主题契约](docs/03_VISUAL_THEME_CONTRACT.md)
-- [Demo 操作、来源与检查边界](docs/DEMO.md)
+- [H3 编辑器来源与移植对应](docs/H3_EDITOR_PORT.md)
+- [Demo 范围与检查记录](docs/DEMO.md)
 
-当前布局以 02 为准。历史探索中的监视器中心、双行时间线、AI 增强和片段版本管理不属于本轮实现。
+完整产品和主题文档保留在仓库 `docs/01_PRODUCT_AND_TECH_DECISIONS.md`、`docs/03_VISUAL_THEME_CONTRACT.md`。当前 UI 范围以 02 为准。
 
-## 开发原则
+## 代码
 
-只实现用户确认的实际需求。参考 TimelineDirector 的实用功能，不把导演工作台扩张为通用剪辑软件或治理平台。TerryShotMill 暂时冻结，仅作参考。
+`src/h3-syntax.js` 为 H3 语法与原文标签；`src/h3-editor.js` 为可编辑视图和菜单的静态适配；`src/h3-editor.css` 消费现有主题变量。现有 Canvas 时间线保持独立，不增加运行依赖。
 
-帧运算检查无需依赖安装：
+共享 UI 库、Rulesmd Editor、TerryShotMill 和来源节点仓库均未修改。
 
-```sh
-node --test tests/*.test.cjs
-```
+可选开发检查：`node --test tests/*.test.cjs`。

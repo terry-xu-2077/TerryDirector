@@ -1,0 +1,44 @@
+/* Palette-aware static H3 controls. Component/menu colors consume TerryDirector
+   tokens; no additional theme or dependency is introduced. */
+.h3-editor { white-space:pre-wrap;outline:none;caret-color:var(--td-effect); }
+.h3-editor:empty::before { content:attr(data-placeholder);color:var(--td-text-muted);pointer-events:none; }
+.h3-editor .h3-chip { --chip-ink:var(--td-effect);display:inline-flex;align-items:center;gap:5px;vertical-align:baseline;max-width:100%;margin:1px 2px;padding:2px 7px;border:1px solid color-mix(in srgb,var(--chip-ink) 25%,transparent);border-radius:5px;color:var(--chip-ink);background:color-mix(in srgb,var(--chip-ink) 9%,transparent);font:500 12px/1.65 "Segoe UI","Microsoft YaHei",sans-serif;white-space:nowrap;user-select:all; }
+.h3-editor .h3-section { --chip-ink:var(--td-violet-pink);font-weight:600; }
+.h3-editor .h3-camera { --chip-ink:var(--td-violet-highlight); }
+.h3-editor .h3-audio,.h3-editor .h3-dialogue { --chip-ink:var(--td-warm-pink); }
+.h3-editor .h3-time,.h3-editor .h3-speaker { --chip-ink:var(--td-neutral-silver); }
+.h3-editor .h3-retention,.h3-editor .h3-task { --chip-ink:var(--td-warm-coral); }
+.h3-editor .h3-interactive { cursor:pointer; }
+.h3-editor .h3-interactive:hover { border-color:var(--chip-ink);background:color-mix(in srgb,var(--chip-ink) 17%,transparent); }
+.h3-chip img { width:24px;height:24px;object-fit:cover;border-radius:3px;user-select:none; }
+.h3-media-icon { width:20px;text-align:center; }
+.h3-chip.is-unbound { border-style:dashed; }
+.h3-editor .h3-dialogue { white-space:normal;max-width:100%;gap:7px;user-select:auto; }
+.h3-language { border:0;border-right:1px solid var(--td-border);border-radius:0;background:transparent;color:var(--chip-ink);font-size:11px;max-width:80px;padding:0 6px 0 0;flex:none; }
+.h3-language option { background:var(--td-bg-panel);color:var(--td-text-main); }
+.h3-dialogue-body { display:inline-block;min-width:6em;white-space:pre-wrap;color:var(--td-text-main);outline:none;user-select:text; }
+.h3-dialogue-body:empty::before { content:attr(data-placeholder);color:var(--td-text-muted);pointer-events:none; }
+.h3-menu { position:fixed;z-index:1000;display:flex;flex-direction:column;padding:6px;border:1px solid var(--td-border);border-radius:10px;background:var(--td-bg-elevated);box-shadow:0 16px 40px var(--td-shadow);color:var(--td-text-main);isolation:isolate;overflow:hidden; }
+.h3-menu-header { display:flex;align-items:center;gap:10px;flex:none;padding:7px 7px 10px;border-bottom:1px solid var(--td-border-soft);font-size:12px; }
+.h3-menu-header strong { font-weight:550; }
+.h3-back { background:transparent;border:0;padding:0;color:var(--td-text-secondary);font-size:11px; }
+.h3-menu-list { min-height:0;overflow:auto;padding:4px 0; }
+.h3-menu-item { width:100%;display:flex;align-items:center;gap:10px;text-align:left;border:0;border-radius:6px;background:transparent;color:var(--td-text-main);padding:8px;font-size:12px; }
+.h3-menu-item.is-active { background:var(--td-accent-soft);box-shadow:inset 2px 0 var(--td-effect); }
+.h3-menu-copy { min-width:0;flex:1; }
+.h3-menu-copy b,.h3-menu-copy small { display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis; }
+.h3-menu-copy b { font-weight:500;font-size:12px; }
+.h3-menu-copy small { font-size:10px;color:var(--td-text-secondary);margin-top:3px; }
+.h3-category-icon { width:25px;flex:none;text-align:center;color:var(--td-effect);font-size:17px; }
+.h3-count { flex:none;color:var(--td-text-muted);font:11px Consolas,monospace; }
+.h3-menu-thumb { display:grid;place-items:center;width:42px;height:42px;flex:none;overflow:hidden;border-radius:5px;background:var(--td-bg-inset);color:var(--td-effect); }
+.h3-menu-thumb img { width:100%;height:100%;object-fit:cover; }
+.h3-menu-footer { padding:8px 7px 3px;border-top:1px solid var(--td-border-soft);color:var(--td-text-muted);font-size:10px;flex:none; }
+.h3-menu-empty { padding:12px;color:var(--td-text-secondary);font-size:12px; }
+.h3-number-menu .h3-menu-list { display:grid;grid-template-columns:repeat(6,1fr);gap:4px; }
+.h3-number-menu .h3-menu-item { justify-content:center;text-align:center; }
+.h3-time-row { display:flex;align-items:flex-end;gap:10px;padding:12px 8px; }
+.h3-time-row label { font-size:11px;color:var(--td-text-secondary);min-width:0;flex:1; }
+.h3-time-row input { display:block;width:100%;background:var(--td-bg-inset);color:var(--td-text-main);border:1px solid var(--td-border);border-radius:5px;height:32px;padding:0 6px;margin-top:5px; }
+.h3-apply { border:1px solid var(--td-border);border-radius:5px;background:var(--td-accent-soft);height:32px;padding:0 10px; }
+@media (max-width:760px) { .h3-editor .h3-chip { font-size:11px; }.h3-menu-footer { font-size:9px; } }
