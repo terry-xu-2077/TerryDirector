@@ -159,29 +159,38 @@
         ctx.save();ctx.beginPath();ctx.roundRect(x+1,y+1,Math.max(1,width-2),ch-2,7);ctx.clip();
         const img=this.image(this.options.getImage?.(c));
         if(img&&width>66){ctx.globalAlpha=selected?.08:.045;const iw=(ch-8)*img.naturalWidth/img.naturalHeight;for(let xx=Math.max(x,x+Math.floor((this.inset-x)/iw)*iw);xx<x+width;xx+=iw)ctx.drawImage(img,xx,y+4,iw,ch-8);ctx.globalAlpha=1;}
-        // A permanent seam at the real start, not a hover-only trim handle.
-        // Keep it inside the clip: overlapping clips and zoom retain true timing.
+        // A permanent neon start light: a bright vertical core with a soft
+        // horizontal glow. The active clip path clips every glow pixel inside
+        // the clip, so the light never creates a fake gap or spills outside.
         const startInk=selected?t.selection:t.start;
-        this.rect(ctx,x+1,y+1,Math.min(9,width-2),ch-2,0,t.startInset);
-        this.rect(ctx,x+1,y+5,2,ch-10,1,startInk);
-        this.rect(ctx,x+1,y+5,Math.min(7,width-2),2,1,startInk);
+        const glowWidth=Math.min(selected?18:14,Math.max(0,width-2));
+        if(glowWidth>0){
+          const startGlow=ctx.createLinearGradient(x+1,y,x+1+glowWidth,y);
+          startGlow.addColorStop(0,startInk);startGlow.addColorStop(.22,startInk);startGlow.addColorStop(1,'transparent');
+          ctx.save();ctx.globalAlpha=selected?.26:.17;ctx.fillStyle=startGlow;ctx.fillRect(x+1,y+1,glowWidth,ch-2);ctx.globalAlpha=1;
+          ctx.shadowColor=startInk;ctx.shadowBlur=selected?9:7;ctx.strokeStyle=startInk;ctx.lineWidth=selected?2:1.6;
+          ctx.beginPath();ctx.moveTo(x+3,y+8);ctx.lineTo(x+3,y+ch-8);ctx.stroke();ctx.restore();
+        }
+        // Use the available vertical room: metadata sits near the top while
+        // generation state sits near the bottom instead of crowding one band.
+        const titleY=y+18,statusY=y+ch-15,badgeTop=titleY-11;
         const badge=`片段 ${i+1}`;
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';const badgeWidth=ctx.measureText(badge).width+14;
-        this.rect(ctx,x+13,y+10,badgeWidth,23,5,t.inset);
-        ctx.fillStyle=t.text;ctx.fillText(badge,x+20,y+21.5);
+        this.rect(ctx,x+13,badgeTop,badgeWidth,22,5,t.inset);
+        ctx.fillStyle=t.text;ctx.fillText(badge,x+20,titleY);
         const duration=`${Number(((c.end-c.start)/C.FPS).toFixed(2))}s`,dx=x+badgeWidth+24;
-        ctx.font='600 12px Consolas,monospace';ctx.fillStyle=t.duration;ctx.fillText(duration,dx,y+21.5);
+        ctx.font='600 12px Consolas,monospace';ctx.fillStyle=t.duration;ctx.fillText(duration,dx,titleY);
         const descriptionX=dx+ctx.measureText(duration).width+13;
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.muted;
-        this.label(ctx,c.name,descriptionX,y+21.5,width-(descriptionX-x)-12);
+        this.label(ctx,c.name,descriptionX,titleY,width-(descriptionX-x)-12);
         const activity=this.options.getActivity?.(c)||{status:'idle',progress:0};
         const running=activity.status==='running',done=activity.status==='completed';
         ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=done?t.success:running?t.progress:t.ruler;
-        ctx.beginPath();ctx.arc(x+16,y+ch-19,2.5,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(x+16,statusY,2.5,0,Math.PI*2);ctx.fill();
         ctx.fillStyle=t.muted;
         const seconds=Number((activity.elapsedSeconds||0).toFixed(1));
         const text=running?`模拟生成 ${Math.round((activity.progress||0)*100)}% · 已用 ${seconds}s`:done?`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`:'待生成';
-        this.label(ctx,text,x+24,y+ch-19,width-35);
+        this.label(ctx,text,x+24,statusY,width-35);
         if(running){const span=Math.max(0,width-18);this.rect(ctx,x+9,y+ch-7,span,4,2,t.progressTrack);this.rect(ctx,x+9,y+ch-7,span*C.clamp(activity.progress||0,0,1),4,2,t.progress);}
         if(this.showWave&&ch>=70){ctx.strokeStyle=t.wave;ctx.globalAlpha=.18;ctx.beginPath();for(let xx=x+13;xx<x+width-12;xx+=3){const a=2+3*Math.abs(Math.sin(xx*.053+i)*Math.cos(xx*.081));ctx.moveTo(xx,y+ch-36-a);ctx.lineTo(xx,y+ch-36+a);}ctx.stroke();ctx.globalAlpha=1;}
         ctx.restore();

@@ -60,7 +60,7 @@ test('hover alone paints no handles; selection exposes its own pair',()=>{
 test('compact timeline retains readable status and unclipped overlap labels',()=>{
  const t=timeline();t.height=144;
  assert.equal(t.trackHeight,54);
- assert.ok((t.trackHeight-19)-21.5>=12);
+ assert.ok((t.trackHeight-15)-18>=18);
  for(const label of t.overlapCallouts(ctx)){
   assert.equal(label.y-label.bottom,8);
   assert.ok(label.y+label.height<=t.height-4);
@@ -81,22 +81,38 @@ test('short leaders stay outside overlap and do not grow with zoom or height',()
 });
 
 function paintDetails(t){
- const starts=[],texts=[];
+ const starts=[],texts=[],rows=[];
  t.options={};t.clips=t.clips.map(c=>({...c,name:c.id}));t.image=()=>null;
- t.theme={text:'ordinary',muted:'muted',start:'start-ink',startInset:'start-inset',selection:'selected',duration:'duration-orange'};
- const context={measureText:text=>({width:text.length*7}),createLinearGradient:()=>({addColorStop(){}}),fillText(text){texts.push({text,color:this.fillStyle});}};
+ t.theme={text:'ordinary',muted:'muted',start:'start-ink',selection:'selected',duration:'duration-orange'};
+ let path=[];
+ const context={
+  measureText:text=>({width:text.length*7}),
+  createLinearGradient:()=>({addColorStop(){}}),
+  fillText(text,x,y){texts.push({text,color:this.fillStyle,y});rows.push({text,y});},
+  beginPath(){path=[];},moveTo(x,y){path.push({x,y});},lineTo(x,y){path.push({x,y});},
+  stroke(){if(this.shadowBlur>0&&['start-ink','selected'].includes(this.strokeStyle)&&path.length)starts.push({x:path[0].x,fill:this.strokeStyle,blur:this.shadowBlur});},
+  save(){},restore(){this.shadowBlur=0;},fillRect(){}
+ };
  t.ctx=new Proxy(context,{get:(obj,key)=>key in obj?obj[key]:()=>{}});
- t.rect=(ctx,x,y,w,h,r,fill)=>{if(w===2&&h===t.trackHeight-10)starts.push({x,fill});};
- t.drawContent();return {starts,texts};
+ t.rect=()=>{};
+ t.drawContent();return {starts,texts,rows};
 }
-test('all visible starts are marked even with no selection or hover',()=>{
+test('all visible starts use an in-clip neon core even with no selection or hover',()=>{
  const t=timeline();t.selected=null;
- assert.deepEqual(paintDetails(t).starts,t.clips.map(c=>({x:t.x(c.start)+1,fill:'start-ink'})));
+ assert.deepEqual(paintDetails(t).starts,t.clips.map(c=>({x:t.x(c.start)+3,fill:'start-ink',blur:7})));
  t.hover='c';assert.equal(paintDetails(t).starts.length,3);
 });
-test('start markers track actual boundaries under zoom and selected state',()=>{
+test('start neon tracks actual boundaries under zoom and selected state',()=>{
  const t=timeline();t.ppf=.8;t.scroll=20;
- assert.deepEqual(paintDetails(t).starts,t.clips.map(c=>({x:t.x(c.start)+1,fill:c.id===t.selected?'selected':'start-ink'})));
+ assert.deepEqual(paintDetails(t).starts,t.clips.map(c=>({x:t.x(c.start)+3,fill:c.id===t.selected?'selected':'start-ink',blur:c.id===t.selected?9:7})));
+});
+test('title and status rows use the existing height with a readable vertical gap',()=>{
+ const t=timeline();t.height=144;
+ const {rows}=paintDetails(t);
+ const title=rows.find(x=>x.text==='片段 1'),status=rows.find(x=>x.text==='待生成');
+ assert.equal(title.y,t.y()+18);
+ assert.equal(status.y,t.y()+t.trackHeight-15);
+ assert.ok(status.y-title.y>=18);
 });
 test('clip durations are orange on every clip; status text remains secondary',()=>{
  const t=timeline();
