@@ -77,7 +77,7 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">STUDIO</span></div>
       <div class="crumbs">${ib('home','home','项目首页')}${icon('chevron')}<button id="projectName" data-action="rename-project">远航之前</button></div>
-      <div class="top-actions"><span class="prototype">交互 DEMO · 06.12</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
+      <div class="top-actions"><span class="prototype">交互 DEMO · 06.13</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
@@ -86,19 +86,37 @@
         <div class="prompt-editor"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div>
         <footer class="composer-footer"><span id="promptUsed" class="subtle"></span><span id="promptCount" class="subtle"></span></footer>
       </section>
-      <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
-      <div class="reference-column">
+      <div id="workspaceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整提示词与右侧工作区宽度" aria-orientation="vertical"></div>
+      <div class="generation-workspace">
+        <div class="generation-overview">
         <section id="generationPreview" class="generation-preview" aria-label="生成过程预览">
-          <header><strong>生成预览</strong><span class="subtle">演示 · 非模型输出</span></header>
-          <div class="generation-preview-frame"><img id="generationPreviewImage" alt="生成预览演示占位" hidden><div class="generation-preview-noise"></div><span id="generationPreviewEmpty">等待生成预览</span></div>
+          <header><strong>生成预览</strong><button id="generationPreviewToggle" class="preview-switch preview-header-switch" type="button" role="switch" aria-checked="true" aria-label="生成预览" aria-controls="generationPreviewImage" data-action="toggle-generation-preview" title="仅控制生成预览画面，不影响生成任务和布局"><span class="preview-switch-value" aria-hidden="true">开启</span><span class="preview-switch-track" aria-hidden="true"><i></i></span></button></header>
+          <div class="generation-preview-content">
+          <div class="generation-preview-frame"><img id="generationPreviewImage" alt="生成预览演示占位" hidden><div class="generation-preview-noise"></div><span id="generationPreviewEmpty">等待生成预览</span><small class="generation-preview-demo" id="generationPreviewDemo" hidden>演示 · 非模型输出</small></div>
           <footer><span id="generationPreviewClip">尚未运行任务</span><span id="generationPreviewStatus">当前未连接 ComfyUI</span><div class="generation-preview-progress"><i id="generationPreviewBar"></i></div></footer>
+          </div>
+        </section>
+          <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整预览与资产池宽度" aria-orientation="vertical"></div>
+        <section class="reference-panel" aria-label="项目资产池">
+        <header class="reference-heading"><strong>资产池 <span id="refCount">0</span></strong><span class="subtle">项目共用 · 所有片段可引用</span></header>
+        <div class="reference-actions" role="group" aria-label="添加资产来源"><button class="button ghost" data-action="upload-assets" title="选择本地图片、视频或音频；Demo 仅在本页读取，不实际上传">${icon('upload')}上传资产</button><button class="button ghost" data-action="pick-input" title="从 ComfyUI input 选择已有文件；当前使用明确标记的示例目录">${icon('folder')}从 ComfyUI input 选取</button></div>
+        <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">上传新文件或从 input 选取已有文件<br>加入项目资产池，所有片段共用</p></div>
+        <footer class="reference-footer">点击查看大图 · 插入引用到当前片段</footer>
+        </section>
+        </div>
+        <div id="generationResize" class="resize-h" role="separator" tabindex="0" aria-label="调整预览资产区与生成参数区高度" aria-orientation="horizontal"></div>
+        <section id="generationSettings" class="generation-settings" aria-label="生成参数">
+          <header class="generation-settings-heading"><strong>生成参数</strong></header>
           <div class="generation-controls">
+            <section class="resolution-settings" aria-label="输出尺寸设置">
+              <header class="generation-parameter-heading"><strong>输出尺寸</strong><span class="subtle">当前片段</span></header>
           <div class="resolution-controls" id="resolutionControls" role="group" aria-label="生成分辨率">
             <label class="resolution-field">比例<select id="aspectRatioSelect" aria-label="画面比例">${R.ASPECTS.map(a=>`<option value="${a.value}">${a.label}</option>`).join('')}</select></label>
             <label class="resolution-field">像素量<span class="resolution-number"><input id="megapixelsInput" type="number" value="1.2" min="0.1" max="16" step="0.01" required aria-label="总像素量 MP" title="按 ComfyUI 算法：1 MP = 1024 × 1024 像素；支持手输 0.98 等小数"><span>MP</span></span></label>
             <label class="resolution-field">倍数<input id="multipleInput" type="number" value="32" min="8" max="128" step="4" required aria-label="尺寸对齐倍数" title="宽高分别对齐到该数的最近整数倍；范围 8–128，步长 4"></label>
             <output id="resolutionResult" class="resolution-result" for="aspectRatioSelect megapixelsInput multipleInput" aria-live="polite" aria-atomic="true">1504 × 832</output>
           </div>
+            </section>
             <section class="latent-upscale" id="latentUpscaleControls" aria-label="二次潜空间放大设置">
               <button id="latentUpscaleToggle" class="preview-switch" type="button" role="switch" aria-checked="false" aria-label="二次潜空间放大，项目共用" aria-controls="latentUpscaleSettings" data-action="toggle-latent-upscale">
                 <span class="latent-upscale-title">${icon('expand')}二次潜空间放大</span><span class="preview-switch-value" aria-hidden="true">关闭</span><span class="preview-switch-track" aria-hidden="true"><i></i></span>
@@ -110,22 +128,13 @@
                 <label class="latent-upscale-field latent-upscale-steps">高清阶段步数<span class="latent-upscale-number"><input id="latentUpscaleHighSteps" type="number" value="4" min="1" step="1" required aria-label="高清阶段步数" aria-describedby="latentUpscaleStepsHint latentUpscaleStepsSummary"><span>步</span></span></label>
                 <p class="latent-upscale-hint" id="latentUpscaleStepsHint">计入总采样步数，低分辨率阶段至少保留 1 步。</p>
                 <output class="latent-upscale-step-summary" id="latentUpscaleStepsSummary" for="latentUpscaleHighSteps" aria-live="polite"></output>
-                <p class="latent-upscale-description">先以约半宽半高采样，按模型网格对齐，再放大到上方设定的输出尺寸。</p>
+                <p class="latent-upscale-description">先以约半宽半高采样，按模型网格对齐，再放大到设定的输出尺寸。</p>
               </div>
             </section>
-            <div class="generation-actions">
-              <button id="generationPreviewToggle" class="preview-switch" type="button" role="switch" aria-checked="true" aria-label="生成预览" aria-controls="generationPreviewImage" data-action="toggle-generation-preview" title="仅控制生成预览画面，不影响生成任务和布局">
-                <span>生成预览</span><span class="preview-switch-value" aria-hidden="true">开启</span><span class="preview-switch-track" aria-hidden="true"><i></i></span>
-              </button>
-              <button class="button primary" id="generateButton" data-action="generate">${icon('spark')}模拟生成当前片段</button>
-            </div>
           </div>
-        </section>
-        <section class="reference-panel" aria-label="项目资产池">
-        <header class="reference-heading"><strong>资产池 <span id="refCount">0</span></strong><span class="subtle">项目共用 · 所有片段可引用</span></header>
-        <div class="reference-actions" role="group" aria-label="添加资产来源"><button class="button ghost" data-action="upload-assets" title="选择本地图片、视频或音频；Demo 仅在本页读取，不实际上传">${icon('upload')}上传资产</button><button class="button ghost" data-action="pick-input" title="从 ComfyUI input 选择已有文件；当前使用明确标记的示例目录">${icon('folder')}从 ComfyUI input 选取</button></div>
-        <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">上传新文件或从 input 选取已有文件<br>加入项目资产池，所有片段共用</p></div>
-        <footer class="reference-footer">点击查看大图 · 插入引用到当前片段</footer>
+          <footer class="generation-actions">
+            <button class="button primary" id="generateButton" data-action="generate">${icon('spark')}模拟生成当前片段</button>
+          </footer>
         </section>
       </div>
     </main>
@@ -239,7 +248,8 @@
     const toggle=$('#generationPreviewToggle');
     toggle.setAttribute('aria-checked',String(generationPreviewEnabled));
     toggle.querySelector('.preview-switch-value').textContent=generationPreviewEnabled?'开启':'关闭';
-    const img=$('#generationPreviewImage'),empty=$('#generationPreviewEmpty');
+    const img=$('#generationPreviewImage'),empty=$('#generationPreviewEmpty'),demo=$('#generationPreviewDemo');
+    demo.hidden=true;
     // Progress belongs to the task, not the preview switch or editing selection.
     const run=lastPreviewRun,record=run?activity.get(run.id):null;
     const progress=record?.progress||0;
@@ -255,7 +265,7 @@
     }
     // Never show the newly selected clip's reference as if it were the run's output.
     const src=run?.source||'';
-    if(src){if(img.getAttribute('src')!==src)img.src=src;img.hidden=false;empty.hidden=true;}
+    if(src){if(img.getAttribute('src')!==src)img.src=src;img.hidden=false;empty.hidden=true;demo.hidden=false;}
     else{img.removeAttribute('src');img.hidden=true;empty.hidden=false;empty.textContent=run?'本次模拟没有画面占位':'等待生成预览';}
     img.style.filter=record?.status==='running'?`blur(${(1-progress)*8}px) saturate(${.55+progress*.55})`:'none';
     $('.generation-preview-noise').style.opacity=record?.status==='running'?String((1-progress)*.32):'0';
@@ -501,7 +511,7 @@
     button.title=timeline.chainEnabled?'后续联动已开启：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动':'后续联动已关闭：移动和裁剪仅影响当前片段';
     button.setAttribute('aria-label',button.title);
   }
-  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>二次潜空间放大为项目共用设置，所有片段使用同一开关、模型与高清阶段步数。开启后先以约半宽半高采样，再放大到设定的输出尺寸。高清阶段从总采样步数中分配，例如总计 8 步时默认低分辨率 4 步 + 高清 4 步。模型列表当前为示例，未读取本地模型；修改可撤销并随配置导出。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。「上传资产」选本地文件；「从 ComfyUI input 选取」复用已有文件（当前为示例目录，未连接真实 input）。两者只加入资产池，不自动引用；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>时间线「后续联动」默认开启：拖动一个片段，它后面的所有片段同距移动，保持彼此的间距与重叠；前方片段不动。调整片段尾部时，后续片段也按尾部实际变化量移动，保留原有间距与重叠。关闭后移动和裁剪都只影响当前片段；头部裁剪始终独立。一次拖动仍只需一步撤销。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
+  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>二次潜空间放大为项目共用设置，所有片段使用同一开关、模型与高清阶段步数。开启后先以约半宽半高采样，再放大到设定的输出尺寸。高清阶段从总采样步数中分配，例如总计 8 步时默认低分辨率 4 步 + 高清 4 步。模型列表当前为示例，未读取本地模型；修改可撤销并随配置导出。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。「上传资产」选本地文件；「从 ComfyUI input 选取」复用已有文件（当前为示例目录，未连接真实 input）。两者只加入资产池，不自动引用；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>左侧编辑提示词；右侧上排为生成预览与项目资产池，下排集中生成参数。预览开关位于预览标题右侧；参数内部滚动，生成按钮固定在参数区底栏。预览窗始终保留，开关只控制画面更新，不改变布局或中止生成。拖动分隔线可调整区域大小，双击恢复默认。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>时间线「后续联动」默认开启：拖动一个片段，它后面的所有片段同距移动，保持彼此的间距与重叠；前方片段不动。调整片段尾部时，后续片段也按尾部实际变化量移动，保留原有间距与重叠。关闭后移动和裁剪都只影响当前片段；头部裁剪始终独立。一次拖动仍只需一步撤销。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
   const actions={
     home:showHome,'open-project':openProject,new:newClip,'upload-assets':()=>$('#fileInput').click(),'pick-input':pickInputAssets,export:exportConfig,help,generate,
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
@@ -555,7 +565,7 @@
     });
   }
   window.addEventListener('keydown',e=>{
-    if(e.target.closest('input,textarea,select,[contenteditable=true],dialog,#generationPreview,.h3-menu')||$('#dialog').open||!$('#projectHome').hidden)return;
+    if(e.target.closest('input,textarea,select,[contenteditable=true],dialog,#generationPreview,#generationSettings,[role=separator],.h3-menu')||$('#dialog').open||!$('#projectHome').hidden)return;
     const key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
     if(key==='escape'){timeline.cancel();return;}
     if(mod&&key==='z'){e.preventDefault();actions[e.shiftKey?'redo':'undo']();return;}if(mod&&key==='y'){e.preventDefault();actions.redo();return;}if(mod)return;
@@ -563,16 +573,22 @@
     else if(['Delete','Backspace'].includes(e.key)){e.preventDefault();actions.delete();}
     else if(key==='v')actions.pointer();else if(key==='h')actions.hand();else if(key==='s')actions.snap();else if(key==='f')actions.fit();else if(key==='+'||key==='=')actions['zoom-in']();else if(key==='-')actions['zoom-out']();else if(key==='home'){e.preventDefault();timeline.setFrame(0);}else if(key==='end'){e.preventDefault();timeline.setFrame(timeline.total);}
   });
-  function resizeHandle(id,variable,min,max,axis,sign){
+  function resizeHandle(id,variable,min,max,axis,sign,measure){
     const el=$('#'+id);let drag=null;
-    const set=value=>app.style.setProperty(variable,C.clamp(value,min,max)+'px');
-    el.addEventListener('pointerdown',e=>{e.preventDefault();drag={origin:axis==='x'?e.clientX:e.clientY,value:parseFloat(getComputedStyle(app).getPropertyValue(variable))};el.setPointerCapture(e.pointerId);});
+    const bound=value=>typeof value==='function'?value():value;
+    // Defaults may be percentages; use rendered pixels so the first drag never jumps.
+    const read=()=>measure();
+    const set=value=>app.style.setProperty(variable,C.clamp(value,bound(min),Math.max(bound(min),bound(max)))+'px');
+    el.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();drag={origin:axis==='x'?e.clientX:e.clientY,value:read()};el.setPointerCapture(e.pointerId);});
     el.addEventListener('pointermove',e=>{if(drag)set(drag.value+((axis==='x'?e.clientX:e.clientY)-drag.origin)*sign);});
     for(const event of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(event,()=>drag=null);
     el.addEventListener('dblclick',()=>app.style.removeProperty(variable));
-    el.addEventListener('keydown',e=>{const keys=axis==='x'?['ArrowLeft','ArrowRight']:['ArrowUp','ArrowDown'];if(keys.includes(e.key)){e.preventDefault();e.stopPropagation();set(parseFloat(getComputedStyle(app).getPropertyValue(variable))+(e.key===keys[1]?12:-12)*sign);}});
+    el.addEventListener('keydown',e=>{const keys=axis==='x'?['ArrowLeft','ArrowRight']:['ArrowUp','ArrowDown'];if(keys.includes(e.key)){e.preventDefault();e.stopPropagation();set(read()+(e.key===keys[1]?12:-12)*sign);}});
   }
-  resizeHandle('referenceResize','--reference-width',280,680,'x',-1);resizeHandle('timelineResize','--timeline-height',200,400,'y',-1);
+  resizeHandle('workspaceResize','--prompt-width',280,()=>$('#workspace').clientWidth-505,'x',1,()=>$('.prompt-panel').getBoundingClientRect().width);
+  resizeHandle('referenceResize','--preview-width',200,()=>$('.generation-overview').clientWidth-285,'x',1,()=>$('#generationPreview').getBoundingClientRect().width);
+  resizeHandle('generationResize','--overview-height',220,()=>$('.generation-workspace').clientHeight-150,'y',1,()=>$('.generation-overview').getBoundingClientRect().height);
+  resizeHandle('timelineResize','--timeline-height',200,()=>Math.min(400,app.clientHeight-parseFloat(getComputedStyle(app).getPropertyValue('--workspace-min-height'))-86),'y',-1,()=>$('#timelinePanel').getBoundingClientRect().height-(window.matchMedia('(max-width:760px)').matches?40:0));
   let scrollDrag=null;$('#scrollBar').addEventListener('pointerdown',e=>{const r=e.currentTarget.getBoundingClientRect(),v=timeline.viewInfo();scrollDrag={x:e.clientX,initial:timeline.scroll,scale:v.contentWidth/r.width};e.currentTarget.setPointerCapture(e.pointerId);if(e.target!==$('#scrollThumb')){timeline.setScroll((e.clientX-r.left)/r.width*v.contentWidth-v.visible/2);scrollDrag.initial=timeline.scroll;}});
   $('#scrollBar').addEventListener('pointermove',e=>{if(scrollDrag)timeline.setScroll(scrollDrag.initial+(e.clientX-scrollDrag.x)*scrollDrag.scale);});for(const event of ['pointerup','pointercancel','lostpointercapture'])$('#scrollBar').addEventListener(event,()=>scrollDrag=null);
   window.TerryDirectorDemo={getState:()=>C.copy(state),getAssets:()=>C.copy(poolEntries()),getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
