@@ -89,7 +89,7 @@
       if(p.y<this.ruler||(!c&&Math.abs(this.x(this.frame)-p.x)<7)||!c){this.drag={mode:'seek',pointer:e.pointerId};this.setFrame(this.frameAt(p.x));return;}
       const mode=this.edgeAt(c,p);
       this.selected=c.id;this.options.onSelect?.(c.id);
-      this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p,follow:mode==='move'&&this.chainEnabled};
+      this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p,follow:(mode==='move'||mode==='right')&&this.chainEnabled};
       this.overlay.style.cursor=mode==='move'?'grabbing':'ew-resize';this.invalidate();
     }
     move(e) {
@@ -112,7 +112,9 @@
         const offsets=d.mode==='move'?[0,d.end-d.start]:[0];
         const result=C.snap(value,offsets,targets,7/this.ppf);value=result.value;this.snapFrame=result.target;
       }
-      this.clips=d.follow?C.moveFollowing(d.original,d.id,value):C.editClip(d.original,d.id,d.mode,value);
+      this.clips=d.follow&&d.mode==='right'?C.trimEndFollowing(d.original,d.id,value)
+        :d.follow&&d.mode==='move'?C.moveFollowing(d.original,d.id,value)
+        :C.editClip(d.original,d.id,d.mode,value);
       const edited=this.clips.find(c=>c.id===d.id);if(!edited)return;const actual=d.mode==='right'?edited.end:edited.start;
       if(Math.abs(actual-value)>.5)this.snapFrame=null;
       this.options.onPreview?.(this.clips);this.invalidate();

@@ -67,6 +67,24 @@
       ...clip, start: clip.start + delta, end: clip.end + delta
     });
   }
+  function trimEndFollowing(clips, id, frame) {
+    const index = clips.findIndex(c => c.id === id), head = clips[index];
+    if (!head || !Number.isFinite(frame)) return clips;
+    const prev = clips[index - 1], next = clips[index + 1];
+    // The head's start stays fixed; only its end and the entire suffix move.
+    // Keep the head/next seam unchanged, including an existing overlap or gap.
+    // When shortening, do not swallow the head or overlap the fixed predecessor
+    // with the first follower. Clamp once, then apply the ACTUAL delta to all.
+    const min = Math.max(head.start + FPS,
+      prev ? prev.end + 1 : 0,
+      next ? head.end + head.start - next.start + 1 : 0,
+      prev && next ? head.end + prev.end - next.start : 0);
+    const end = Math.max(min, Math.round(frame)), delta = end - head.end;
+    if (!delta) return clips;
+    return clips.map((clip, i) => i < index ? clip : i === index
+      ? { ...clip, end }
+      : { ...clip, start: clip.start + delta, end: clip.end + delta });
+  }
   function snap(value, offsets, targets, threshold) {
     let best = { value, target: null, distance: threshold + 1 };
     for (const offset of offsets) for (const target of targets) {
@@ -89,7 +107,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, overlaps, bounds, editClip, moveFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, overlaps, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

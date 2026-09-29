@@ -84,3 +84,76 @@ test('cancel restores the whole moving chain without committing',()=>{
   const t=drag('b','move',300,true);let committed=false;t.options.onCommit=()=>committed=true;t.overlay={style:{}};
   t.cancel();assert.deepEqual(positions(t.clips),positions(clips));assert.equal(t.drag,null);assert.equal(committed,false);
 });
+
+function assertTailSeam(before, after, index) {
+  const delta=after[index].end-before[index].end;
+  assert.equal(after[index].start,before[index].start);
+  before.forEach((clip,i)=>{
+    if(i<index)assert.equal(after[i],clip);
+    if(i>index){
+      assert.equal(after[i].start,clip.start+delta);
+      assert.equal(after[i].end,clip.end+delta);
+      assert.equal(after[i].end-after[i].start,clip.end-clip.start);
+      assert.equal(after[i].start-after[i-1].end,clip.start-before[i-1].end);
+    }
+    assert.equal(after[i].prompt,clip.prompt);
+    assert.ok(after[i].start>=0);assert.ok(after[i].end-after[i].start>=C.FPS);
+    if(i){assert.ok(after[i].start>after[i-1].start);assert.ok(after[i].end>after[i-1].end);}
+    if(i>1)assert.equal(C.intersection(after[i-2],after[i]).frames,0);
+  });
+}
+test('linked tail extension and shortening preserve the next overlap and all suffix timings',()=>{
+  for(const frame of [480,384]){
+    const changed=C.trimEndFollowing(clips,'b',frame);
+    assert.equal(changed[1].end,frame);assertTailSeam(clips,changed,1);
+    assert.equal(C.intersection(changed[1],changed[2]).frames,48);
+  }
+  assert.equal(clips[1].end,432);
+});
+test('linked tail edits keep positive gaps, and last tail matches an ordinary trim',()=>{
+  const gapped=clips.map((c,i)=>i>=2?{...c,start:c.start+100,end:c.end+100}:c);
+  for(const frame of [370,1500])assertTailSeam(gapped,C.trimEndFollowing(gapped,'b',frame),1);
+  for(const frame of [-500,700,3000])assert.deepEqual(C.trimEndFollowing(clips,'d',frame),C.editClip(clips,'d','right',frame));
+});
+test('tail clamp uses actual change, never hides the head or creates triple overlap',()=>{
+  for(const id of clips.map(c=>c.id))for(const frame of [-10000,1,300,650,30000]){
+    assertTailSeam(clips,C.trimEndFollowing(clips,id,frame),clips.findIndex(c=>c.id===id));
+  }
+  const changed=C.trimEndFollowing(clips,'b',-10000);
+  assert.equal(changed[1].end,288);assert.equal(changed[2].start,240);
+  const first=C.trimEndFollowing(clips,'a',0);
+  assert.equal(first[0].end,49);assert.equal(first[1].start,1);
+  const single=[{id:'a',start:0,end:240}];assert.equal(C.trimEndFollowing(single,'a',0)[0].end,24);
+});
+test('tail edits reject invalid input, round frames and preserve no-op identity',()=>{
+  for(const frame of [NaN,Infinity,-Infinity])assert.equal(C.trimEndFollowing(clips,'a',frame),clips);
+  assert.equal(C.trimEndFollowing(clips,'missing',500),clips);
+  assert.equal(C.trimEndFollowing(clips,'b',432),clips);
+  assert.equal(C.trimEndFollowing(clips,'b',460.6)[1].end,461);
+});
+test('linked tail drag ignores follower snap targets but snaps to playhead and supports Alt',()=>{
+  const t=drag('b','right',620,true);
+  assert.equal(t.clips[1].end,620);assert.equal(t.snapFrame,null);
+  t.frame=622;t.updateDrag();assert.equal(t.clips[1].end,622);assert.equal(t.snapFrame,622);
+  t.updateDrag(true);assert.equal(t.clips[1].end,620);assert.equal(t.snapFrame,null);
+  const clamped=drag('b','right',240,true);assert.equal(clamped.clips[1].end,288);assert.equal(clamped.snapFrame,null);
+});
+test('pointer-down enables tail follow only with chain on; head trim always stays independent',()=>{
+  for(const chain of [false,true])for(const mode of ['left','move','right']){
+    const t=Object.create(window.TDTimeline.prototype),c=clips[1];
+    Object.assign(t,{clips:C.copy(clips),chainEnabled:chain,inset:70,ruler:32,options:{},
+      overlay:{focus(){},setPointerCapture(){},style:{}},stop(){},point(){return{x:200,y:70};},
+      hitTest(){return c;},edgeAt(){return mode;},invalidate(){}});
+    t.down({button:0,pointerId:1,preventDefault(){}});
+    assert.equal(t.drag.follow,chain&&mode!=='left');
+  }
+});
+test('linked tail drag commits once, undo/redo restores the whole edit and Esc restores originals',()=>{
+  const t=drag('b','right',600,true),history=new C.History();let count=0;
+  const before=C.copy(clips),after=C.copy(t.clips);
+  t.overlay={style:{},hasPointerCapture(){return false;}};t.clampScroll=()=>{};
+  t.options.onCommit=(a,b)=>{count++;history.push(b,a);};t.up({pointerId:1});
+  assert.equal(count,1);assert.deepEqual(history.undo(after),before);assert.deepEqual(history.redo(before),after);
+  const cancelled=drag('b','right',600,true);cancelled.overlay={style:{}};cancelled.cancel();
+  assert.deepEqual(cancelled.clips,before);assert.equal(cancelled.drag,null);
+});

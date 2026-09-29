@@ -34,13 +34,13 @@
   --td-status-success: var(--td-level-1-ink);
   --td-status-warning: #ECAB83;
   --td-status-danger: #E3786B;
-  /* Darken only the browser surround; keep the working surfaces readable. */
-  --td-page-bg-top: color-mix(in srgb, var(--td-neutral-night) 82%, var(--td-neutral-base));
-  --td-page-bg-bottom: var(--td-neutral-night);
+  /* Restore the earlier blue-grey surround. Dark shadows lift the shell without blackening the page. */
+  --td-page-bg-top: color-mix(in srgb, var(--td-neutral-panel) 30%, var(--td-neutral-base));
+  --td-page-bg-bottom: var(--td-neutral-base);
   --td-shell-edge: color-mix(in srgb, var(--td-neutral-silver) 48%, transparent);
   --td-shell-highlight: color-mix(in srgb, var(--td-ink-bright) 19%, transparent);
-  --td-shell-shadow: color-mix(in srgb, var(--td-neutral-night) 84%, transparent);
-  --td-shell-contact-shadow: color-mix(in srgb, var(--td-neutral-night) 95%, transparent);
+  --td-shell-shadow: color-mix(in srgb, var(--td-neutral-night) 92%, transparent);
+  --td-shell-contact-shadow: color-mix(in srgb, var(--td-neutral-night) 98%, transparent);
   --td-bg-app: var(--td-neutral-panel);
   --td-bg-workspace: color-mix(in srgb, var(--td-neutral-panel) 55%, var(--td-neutral-base));
   --td-bg-panel: var(--td-neutral-panel);
@@ -64,7 +64,7 @@
   --td-shadow: color-mix(in srgb, var(--td-neutral-night) 65%, transparent);
   --td-scrim: color-mix(in srgb, var(--td-neutral-base) 83%, transparent);
   --td-on-accent: var(--td-neutral-base);
-  /* Level 3: primary action, key progress and explicit prompt references.
+  /* Level 3: active timeline clip, primary action, key progress and explicit prompt references.
      Ordinary controls stay neutral; dialogue has its own coral content accent. */
   --td-generation-accent: var(--td-level-3-ink);
   --td-generation-fill: linear-gradient(110deg, var(--td-generation-accent), var(--td-warm-orange));
@@ -85,13 +85,13 @@
   --td-timeline-grid: color-mix(in srgb, var(--td-neutral-silver) 10%, transparent);
   --td-timeline-ruler: var(--td-text-muted);
   --td-timeline-playhead: var(--td-level-2-ink);
-  --td-timeline-selection: var(--td-level-2-ink);
+  --td-timeline-selection: var(--td-level-3-ink);
   --td-timeline-snap: var(--td-level-2-ink);
   --td-timeline-overlap: var(--td-level-2-ink);
   --td-timeline-clip: var(--td-neutral-surface);
-  --td-timeline-clip-selected: color-mix(in srgb, var(--td-violet-deep) 38%, var(--td-neutral-surface));
+  --td-timeline-clip-selected: color-mix(in srgb, var(--td-warm-amber) 32%, var(--td-neutral-surface));
   --td-timeline-clip-edge: var(--td-violet-mid);
-  --td-timeline-clip-highlight: color-mix(in srgb, var(--td-violet-mid) 55%, var(--td-neutral-surface));
+  --td-timeline-clip-highlight: color-mix(in srgb, var(--td-warm-orange) 36%, var(--td-neutral-surface));
   --td-timeline-progress: var(--td-generation-accent);
   --td-timeline-progress-track: var(--td-generation-track);
   --td-timeline-waveform: var(--td-violet-highlight);
@@ -167,3 +167,11 @@
 .td-theme .input-demo-note { background: var(--td-bg-inset); }
 .td-theme .input-demo-note strong,.td-theme .h3-category-icon { color: var(--td-level-1-ink); }
 .td-theme .h3-menu-item.is-active .h3-category-icon { color: var(--td-level-2-ink); }
+
+/* Lift the shell with layered shadows; this changes no layout dimensions. */
+.td-theme #app {
+  box-shadow: 0 28px 44px -10px var(--td-shell-shadow),
+    0 10px 18px -4px var(--td-shell-contact-shadow),
+    0 2px 6px -1px var(--td-shell-contact-shadow),
+    inset 0 1px 0 var(--td-shell-highlight);
+}
