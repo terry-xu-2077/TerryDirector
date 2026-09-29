@@ -49,29 +49,21 @@
   let state={clips:C.copy(initial),selected:'clip-2'},history=new C.History();
   let resolutionEditBefore=null;
   let title='远航之前',promptView='visual',editBefore=null,nextId=5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null;
-  let generationPreviewOpen=true,lastPreviewRun=null;
+  let generationPreviewEnabled=true,lastPreviewRun=null;
   let promptEditor=null;
   const app=$('#app');
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">STUDIO</span></div>
       <div class="crumbs">${ib('home','home','项目首页')}${icon('chevron')}<button id="projectName" data-action="rename-project">远航之前</button></div>
-      <div class="top-actions"><span class="prototype">交互 DEMO · 06.3</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
+      <div class="top-actions"><span class="prototype">交互 DEMO · 06.4</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
         <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div><span id="clipTiming" class="clip-timing"></span></header>
         <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><div class="prompt-views" aria-label="提示词显示方式"><button data-prompt-view="visual">可视化</button><button data-prompt-view="text">纯文本</button></div></div>
         <div class="prompt-editor"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div>
-        <footer class="composer-footer">
-          <div class="resolution-controls" id="resolutionControls" role="group" aria-label="生成分辨率">
-            <label class="resolution-field">比例<select id="aspectRatioSelect" aria-label="画面比例">${R.ASPECTS.map(a=>`<option value="${a.value}">${a.label}</option>`).join('')}</select></label>
-            <label class="resolution-field">像素量<span class="resolution-number"><input id="megapixelsInput" type="number" value="1.2" min="0.1" max="16" step="0.01" required aria-label="总像素量 MP" title="按 ComfyUI 算法：1 MP = 1024 × 1024 像素；支持手输 0.98 等小数"><span>MP</span></span></label>
-            <label class="resolution-field">倍数<input id="multipleInput" type="number" value="32" min="8" max="128" step="4" required aria-label="尺寸对齐倍数" title="宽高分别对齐到该数的最近整数倍；范围 8–128，步长 4"></label>
-            <output id="resolutionResult" class="resolution-result" for="aspectRatioSelect megapixelsInput multipleInput" aria-live="polite" aria-atomic="true">1504 × 832</output>
-          </div>
-          <div class="composer-actions"><span id="promptUsed" class="subtle"></span><span class="subtle" id="promptCount"></span><div class="submit-controls"><button class="button ghost" id="generationPreviewToggle" data-action="toggle-generation-preview" aria-expanded="true" aria-controls="generationPreview">${icon('eye')}<span>隐藏生成预览</span></button><button class="button primary" id="generateButton" data-action="generate">${icon('spark')}模拟生成当前片段</button></div></div>
-        </footer>
+        <footer class="composer-footer"><span id="promptUsed" class="subtle"></span><span id="promptCount" class="subtle"></span></footer>
       </section>
       <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
       <div class="reference-column">
@@ -79,6 +71,20 @@
           <header><strong>生成预览</strong><span class="subtle">演示 · 非模型输出</span></header>
           <div class="generation-preview-frame"><img id="generationPreviewImage" alt="生成预览演示占位" hidden><div class="generation-preview-noise"></div><span id="generationPreviewEmpty">等待生成预览</span></div>
           <footer><span id="generationPreviewClip">尚未运行任务</span><span id="generationPreviewStatus">当前未连接 ComfyUI</span><div class="generation-preview-progress"><i id="generationPreviewBar"></i></div></footer>
+          <div class="generation-controls">
+          <div class="resolution-controls" id="resolutionControls" role="group" aria-label="生成分辨率">
+            <label class="resolution-field">比例<select id="aspectRatioSelect" aria-label="画面比例">${R.ASPECTS.map(a=>`<option value="${a.value}">${a.label}</option>`).join('')}</select></label>
+            <label class="resolution-field">像素量<span class="resolution-number"><input id="megapixelsInput" type="number" value="1.2" min="0.1" max="16" step="0.01" required aria-label="总像素量 MP" title="按 ComfyUI 算法：1 MP = 1024 × 1024 像素；支持手输 0.98 等小数"><span>MP</span></span></label>
+            <label class="resolution-field">倍数<input id="multipleInput" type="number" value="32" min="8" max="128" step="4" required aria-label="尺寸对齐倍数" title="宽高分别对齐到该数的最近整数倍；范围 8–128，步长 4"></label>
+            <output id="resolutionResult" class="resolution-result" for="aspectRatioSelect megapixelsInput multipleInput" aria-live="polite" aria-atomic="true">1504 × 832</output>
+          </div>
+            <div class="generation-actions">
+              <button id="generationPreviewToggle" class="preview-switch" type="button" role="switch" aria-checked="true" aria-label="生成预览" aria-controls="generationPreviewImage" data-action="toggle-generation-preview" title="仅控制生成预览画面，不影响生成任务和布局">
+                <span>生成预览</span><span class="preview-switch-value" aria-hidden="true">开启</span><span class="preview-switch-track" aria-hidden="true"><i></i></span>
+              </button>
+              <button class="button primary" id="generateButton" data-action="generate">${icon('spark')}模拟生成当前片段</button>
+            </div>
+          </div>
         </section>
         <section class="reference-panel" aria-label="参考资产填充">
         <header class="reference-heading"><strong>参考资产 <span id="refCount">0</span></strong><span class="subtle">点击查看大图</span></header>
@@ -154,26 +160,31 @@
     if(!d.open)d.showModal();
   }
   function renderGenerationPreview(){
-    const panel=$('#generationPreview'),toggle=$('#generationPreviewToggle');
-    toggle.setAttribute('aria-expanded',String(generationPreviewOpen));toggle.classList.toggle('is-active',generationPreviewOpen);
-    toggle.querySelector('span').textContent=generationPreviewOpen?'隐藏生成预览':'显示生成预览';
-    panel.hidden=!generationPreviewOpen;
+    const toggle=$('#generationPreviewToggle');
+    toggle.setAttribute('aria-checked',String(generationPreviewEnabled));
+    toggle.querySelector('.preview-switch-value').textContent=generationPreviewEnabled?'开启':'关闭';
     const img=$('#generationPreviewImage'),empty=$('#generationPreviewEmpty');
-    if(!generationPreviewOpen||!$('#projectHome').hidden){img.removeAttribute('src');return;}
-    // Never use the newly selected clip's reference as if it were a model result.
-    // This snapshot belongs to the last simulated run and stays independent of editing.
+    // Progress belongs to the task, not the preview switch or editing selection.
     const run=lastPreviewRun,record=run?activity.get(run.id):null;
+    const progress=record?.progress||0;
+    $('#generationPreviewClip').textContent=run?run.label:'尚未运行任务';
+    $('#generationPreviewBar').style.width=`${Math.round(progress*100)}%`;
+    $('#generationPreviewStatus').textContent=record?.status==='running'?`模拟 ${Math.round(progress*100)}% · ${record.elapsedSeconds.toFixed(1)}s`:run?'模拟完成 · 参考静帧占位，非模型输出':'当前未连接 ComfyUI';
+    // The panel and its controls stay in layout. OFF only stops displaying preview frames.
+    if(!generationPreviewEnabled||!$('#projectHome').hidden){
+      img.removeAttribute('src');img.hidden=true;img.style.filter='none';
+      $('.generation-preview-noise').style.opacity='0';
+      empty.hidden=false;empty.textContent=generationPreviewEnabled?'等待生成预览':'生成预览已关闭';
+      return;
+    }
+    // Never show the newly selected clip's reference as if it were the run's output.
     const src=run?.source||'';
     if(src){if(img.getAttribute('src')!==src)img.src=src;img.hidden=false;empty.hidden=true;}
     else{img.removeAttribute('src');img.hidden=true;empty.hidden=false;empty.textContent=run?'本次模拟没有画面占位':'等待生成预览';}
-    $('#generationPreviewClip').textContent=run?run.label:'尚未运行任务';
-    const progress=record?.progress||0;
     img.style.filter=record?.status==='running'?`blur(${(1-progress)*8}px) saturate(${.55+progress*.55})`:'none';
     $('.generation-preview-noise').style.opacity=record?.status==='running'?String((1-progress)*.32):'0';
-    $('#generationPreviewBar').style.width=`${Math.round(progress*100)}%`;
-    $('#generationPreviewStatus').textContent=record?.status==='running'?`模拟 ${Math.round(progress*100)}% · ${record.elapsedSeconds.toFixed(1)}s`:run?'模拟完成 · 参考静帧占位，非模型输出':'当前未连接 ComfyUI';
   }
-  function setGenerationPreview(open){generationPreviewOpen=!!open;renderGenerationPreview();}
+  function setGenerationPreview(enabled){generationPreviewEnabled=!!enabled;renderGenerationPreview();}
   function resolutionFromControls(){
     const ratio=$('#aspectRatioSelect'),mp=$('#megapixelsInput'),multiple=$('#multipleInput');
     if(!current()||!mp.validity.valid||!multiple.validity.valid)return null;
@@ -287,11 +298,11 @@
   function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:7,fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:assets.map(({id,name,kind,local})=>({id,name,kind,requiresReimport:!!local})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
-  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 填充参考资产 → 模拟生成。</p><p>可视化可以直接编辑。输入 @ 搜索当前片段的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>生成预览固定在右上区域，可显示或隐藏，不遮挡编辑区。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
+  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 填充参考资产 → 模拟生成。</p><p>可视化可以直接编辑。输入 @ 搜索当前片段的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
   const actions={
     home:showHome,'open-project':openProject,new:newClip,import:()=>$('#fileInput').click(),'pick-assets':pickAssets,export:exportConfig,help,generate,
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
-    'toggle-generation-preview':()=>setGenerationPreview(!generationPreviewOpen),
+    'toggle-generation-preview':()=>setGenerationPreview(!generationPreviewEnabled),
     'rename-project':()=>modal('项目名称',`<label>名称<input type="text" id="projectTitleInput" value="${esc(title)}" maxlength="60"></label>`,'确定',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;title=name;$('#projectName').textContent=title;markEdited();}),
     'project-new':()=>modal('新建演示项目','<label>项目名称<input type="text" id="projectTitleInput" value="新的故事" maxlength="60"></label><p>本 Demo 只暂存一个项目，将替换当前编排。请先导出需要保留的配置。</p>','创建',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;clearInterval(jobTimer);jobId=null;lastPreviewRun=null;activity.clear();timeline.cancel();history=new C.History();state={clips:[],selected:null};title=name;$('#projectName').textContent=title;openProject();renderAll();timeline.fit();}),
     undo:()=>{finishResolutionEdit();finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
