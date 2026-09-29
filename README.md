@@ -32,11 +32,15 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)�
 
 数据只在当前页面暂存，刷新还原；导出配置不包含素材文件。模拟生成约 6 秒，不调用模型。
 
+## UI IMPLEMENTATION BLUEPRINT
+
+**当前 UI 已冻结为实现蓝图 1.0。** 后续真实功能开发以 [UI 实现蓝图](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md) 为前端 Source of Truth；旧 Demo 记录用于追溯，不再作为新增布局依据。
+
 ## 文档
 
+- [UI 实现蓝图（实现 Source of Truth）](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md)
 - [本轮时间线起点与时长说明](docs/05_TIMELINE_READABILITY.md)
-
-- [当前 UI 与时间线架构](docs/02_UI_AND_TIMELINE_ARCHITECTURE.md)
+- [当前 UI 与时间线架构（设计演进记录）](docs/02_UI_AND_TIMELINE_ARCHITECTURE.md)
 - [H3 编辑器来源与移植对应](docs/H3_EDITOR_PORT.md)
 - [Demo 范围与检查记录](docs/DEMO.md)
 

@@ -1,6 +1,6 @@
 # TerryDirector
 
-静态 HTML / CSS / JavaScript Demo，不拆 React，不加运行依赖或后端。先读 README、docs/02_UI_AND_TIMELINE_ARCHITECTURE.md、docs/DEMO.md、docs/H3_EDITOR_PORT.md。
+当前 UI 已冻结为实现蓝图。开始真实功能开发前先读 `docs/06_UI_IMPLEMENTATION_BLUEPRINT.md`，再读 README、docs/01_PRODUCT_AND_TECH_DECISIONS.md、docs/03_VISUAL_THEME_CONTRACT.md 与 docs/H3_EDITOR_PORT.md。Demo 仍为 HTML / CSS / JavaScript；除非真实需求要求，不为实现而主动引入重型前端架构。
 
 - 任务编排为主：提示词编辑、项目资产池、单行时间线。只做用户确认的功能，不恢复检查器、片段列表或通用剪辑面板。
 - 桌面从左到右为提示词、参考资产、生成预览，下方为时间线。资产不再放在预览下面。生成预览固定布局，不隐藏或回收列宽，窗口常驻、画面可开关；不是浮窗。素材点击使用独立灯箱。
@@ -32,3 +32,9 @@
 - 总编排时长固定显示在时间线工具栏左侧，新建片段之后；大号橙色，和次级“当前位置”分开。统计从零点到最后片段结束，包含空隙、重叠不重复，空项目为零；拖动预览、裁剪、撤销和取消实时同步。所有片段自身的秒数也为橙色，生成耗时仍为次级信息。
 - 本轮时间线起点 / 时长细节以 docs/05_TIMELINE_READABILITY.md 为准。
 - 时间线片段两行信息必须拉开：标题/时长/描述靠上，状态/生成耗时靠下，使用现有片段高度，不通过增高时间线解决拥挤。
+
+## 实现阶段 UI Source of Truth
+
+- `docs/06_UI_IMPLEMENTATION_BLUEPRINT.md` 是前端验收基线。功能接入应从当前 UI 向后连接，不先重排布局。
+- 相邻片段首尾恰好吸附（当前 startFrame == 上一片段 endFrame）时，编译层自动取上一片段输出尾帧（endFrame - 1）作为当前片段连续性参考；该关系由时间线位置派生，不进入资产池、不自动写 Prompt 标签。
+- 有空隙时取消尾帧承接；有重叠时使用重叠连续性机制。上一片段尚无输出时建立生成依赖，不伪造尾帧。

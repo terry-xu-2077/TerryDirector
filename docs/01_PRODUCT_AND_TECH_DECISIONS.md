@@ -19,14 +19,14 @@ TerryDirector 不是一个独立桌面应用，也不是一个单纯的 ComfyUI 
 - 素材
 - 片段 / Segment
 - Prompt
-- AI Prompt 增强
+- Prompt 编辑（当前 UI 不做 AI 增强）
 - 片段承接
 - 时间线
 - 参考素材
 - Guide
 - 音频
 - 生成任务
-- 结果版本
+- 生成结果（当前 UI 不做片段版本管理界面）
 - 最终连续视频
 
 ComfyUI 则负责：
@@ -498,6 +498,34 @@ Continuity {
 
 ---
 
+### 11.1 首尾吸附：尾帧承接
+
+当相邻片段满足：
+
+```text
+current.startFrame === previous.endFrame
+```
+
+即零空隙、零重叠地首尾吸附时，当前片段生成自动参考上一片段当前输出的最后一帧。由于时间范围使用半开区间 `[startFrame, endFrame)`，实际尾帧为：
+
+```text
+previous.endFrame - 1
+```
+
+该尾帧是时间线关系派生出的连续性输入，不加入项目资产池、不占用项目 Picture 编号、不自动写入 Prompt 标签。
+
+状态切换规则：
+
+```text
+gap > 0      → 不使用自动尾帧承接
+gap = 0      → 使用上一片段尾帧承接
+overlap > 0  → 转入 overlap / latent continuity 机制
+```
+
+若上一片段尚未有可用输出，当前片段生成任务依赖上一片段先完成；不能用参考素材或占位图伪造尾帧。
+
+---
+
 ## 12. 时间与分段
 
 内部时间基准应以整数帧为主，不以浮点秒作为 Source of Truth。
@@ -963,16 +991,9 @@ TerryDirector 默认使用其中 Studio Dark 类别。
 
 ## 26. 当前阶段
 
-当前阶段只做：
+当前 UI 与交互已经冻结为实现蓝图 1.0，详见 `docs/06_UI_IMPLEMENTATION_BLUEPRINT.md`。
 
-- 产品架构
-- 功能梳理
-- UI 架构
-- 时间线交互设计
-- 视觉参考收集
-- 前端 Demo / Template 探索
-
-在这些方向稳定之前，不急于进入正式后端和生成流程开发。
+下一阶段开始真实功能实现：项目、资产、ComfyUI input、Prompt 保存、时间线持久化、生成任务、真实进度和生成预览。原则仍然是功能复杂、架构简单，并保持已确认 UI 不被后端实现反向重构。
 
 ## 术语约定
 
