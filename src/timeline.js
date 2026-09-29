@@ -39,7 +39,8 @@
       this.clampScroll(); this.invalidate();
     }
     get total() { return Math.max(C.FPS, ...this.clips.map(c=>c.end)); }
-    get trackHeight() { return Math.max(48,Math.min(82,this.height-this.ruler-10-54)); }
+    // Keep title/status legible at the compact minimum; reserve 48px for the leader and bubble.
+    get trackHeight() { return Math.max(54,Math.min(82,this.height-this.ruler-10-48)); }
     y() { return this.ruler+10; }
     x(frame) { return this.inset+frame*this.ppf-this.scroll; }
     frameAt(x) { return Math.max(0,Math.round((x-this.inset+this.scroll)/this.ppf)); }

@@ -24,8 +24,8 @@
   --td-status-warning: #ECAB83;
   --td-status-danger: #E3786B;
   /* Browser backdrop and floating application shell use the same reference palette. */
-  --td-page-bg-top: var(--td-neutral-elevated);
-  --td-page-bg-bottom: color-mix(in srgb, var(--td-neutral-panel) 70%, var(--td-neutral-base));
+  --td-page-bg-top: color-mix(in srgb, var(--td-neutral-panel) 30%, var(--td-neutral-base));
+  --td-page-bg-bottom: var(--td-neutral-base);
   --td-shell-edge: color-mix(in srgb, var(--td-neutral-silver) 48%, transparent);
   --td-shell-highlight: color-mix(in srgb, var(--td-ink-bright) 28%, transparent);
   --td-shell-shadow: color-mix(in srgb, var(--td-neutral-base) 74%, transparent);

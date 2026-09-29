@@ -2,7 +2,7 @@
 * { box-sizing:border-box; }
 html,body { margin:0;height:100%; }
 body {
-  --td-shell-gutter:clamp(12px,3vmin,40px);
+  --td-shell-gutter:clamp(24px,6vmin,80px);
   min-height:100dvh;height:auto;padding:var(--td-shell-gutter);
   background:linear-gradient(155deg,var(--td-page-bg-top),var(--td-page-bg-bottom));
   background-attachment:fixed;color:var(--td-text-main);
@@ -20,7 +20,7 @@ input,textarea { min-width:0; }
 * { scrollbar-width:thin;scrollbar-color:var(--td-neutral-elevated) transparent; }
 /* A floating tool, not a full-bleed page. Children and Canvas stay inside the shell. */
 #app {
-  --reference-width:348px;--timeline-height:248px;
+  --reference-width:348px;--timeline-height:200px;
   position:relative;isolation:isolate;display:flex;flex-direction:column;
   width:100%;min-width:0;height:calc(100dvh - var(--td-shell-gutter) * 2);
   min-height:calc(var(--timeline-height) + 320px);
@@ -58,13 +58,13 @@ input,textarea { min-width:0; }
 /* Hiding preview gives its column to assets; prompt width and focus do not jump. */
 .workspace:has(#generationPreview[hidden]) .reference-panel { grid-column:3 / 6; }
 .prompt-panel { min-width:0;min-height:0;display:flex;flex-direction:column;padding:0 26px;background:var(--td-bg-panel); }
-.composer-heading { min-height:80px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-shrink:0; }
+.composer-heading { min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0; }
 .clip-identity { display:flex;align-items:center;gap:16px;min-width:0;flex:1; }
 .eyebrow { color:var(--td-effect);font-size:11px;letter-spacing:1px;white-space:nowrap; }
 .clip-name { font-size:20px;font-weight:550;padding:6px 0;background:transparent;border:0;outline:0;min-width:0;width:min(100%,420px);text-overflow:ellipsis; }
 .clip-name:focus { box-shadow:0 1px var(--td-border-focus); }
 .clip-timing { color:var(--td-text-muted);font:11px "Consolas",monospace;white-space:nowrap; }
-.prompt-head { display:flex;align-items:center;gap:14px;min-height:40px;flex-shrink:0;margin-bottom:12px; }
+.prompt-head { display:flex;align-items:center;gap:14px;min-height:28px;flex-shrink:0;margin-bottom:6px; }
 .prompt-head>strong { font-size:12px;font-weight:550; }
 .prompt-views { margin-left:auto;display:flex;align-items:center;gap:9px; }
 .prompt-views>button:not(.icon-button) { background:transparent;border:0;padding:5px 0;font-size:11px;color:var(--td-text-muted); }
@@ -111,8 +111,8 @@ input,textarea { min-width:0; }
 .resize-v,.resize-h { flex-shrink:0;background:var(--td-bg-workspace);touch-action:none; }
 .resize-v { width:5px;cursor:col-resize; }.resize-h { height:5px;cursor:row-resize; }
 .resize-v:hover,.resize-h:hover { background:var(--td-accent-soft); }
-.timeline-panel { height:var(--timeline-height);flex-shrink:0;background:var(--td-bg-workspace);display:flex;flex-direction:column;min-width:0; }
-.timeline-toolbar { overflow-x:auto;height:44px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 18px; }
+.timeline-panel { height:var(--timeline-height);min-height:200px;flex-shrink:0;background:var(--td-bg-workspace);display:flex;flex-direction:column;min-width:0; }
+.timeline-toolbar { overflow-x:auto;height:38px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 18px; }
 .timeline-toolbar strong { flex:none;white-space:nowrap;font-size:12px;font-weight:550; }
 .timeline-toolbar .subtle { font-size:10px; }
 .timeline-tools { flex:none;display:flex;align-items:center;gap:3px; }
@@ -122,11 +122,11 @@ input,textarea { min-width:0; }
 .timeline-zoom { flex:none;display:flex;align-items:center;gap:3px; }
 .timeline-zoom input { width:75px;accent-color:var(--td-violet-highlight);height:12px; }
 .timeline-zoom svg { width:14px;height:14px; }
-.timeline-body { position:relative;flex:1;min-height:145px;overflow:hidden; }
+.timeline-body { position:relative;flex:1;min-height:144px;overflow:hidden; }
 .timeline-canvas { position:absolute;inset:0;width:100%;height:100%;display:block; }
 .timeline-canvas.overlay { touch-action:none;cursor:default; }
 .timeline-canvas.overlay:focus-visible { outline-offset:-2px; }
-.timeline-bottom { flex-shrink:0;height:23px;display:flex;align-items:center;padding:0 19px 4px 70px;gap:15px; }
+.timeline-bottom { flex-shrink:0;height:18px;display:flex;align-items:center;padding:0 19px 4px 70px;gap:15px; }
 .timeline-scroll { flex:1;position:relative;height:10px;touch-action:none;border-radius:3px;background:var(--td-bg-inset); }
 .scroll-thumb { position:absolute;top:2px;bottom:2px;background:var(--td-neutral-elevated);border-radius:3px;min-width:16px; }
 .timeline-bottom small { white-space:nowrap;flex:none;font:10px "Consolas",monospace;color:var(--td-text-muted); }
@@ -149,14 +149,14 @@ dialog::backdrop { background:var(--td-scrim);backdrop-filter:blur(4px); }
 .asset-picker { display:grid;gap:8px;max-height:50dvh;overflow:auto; }
 .picker-item { display:flex;align-items:center;gap:12px;text-align:left;padding:8px;border:1px solid var(--td-border);border-radius:8px;background:var(--td-bg-inset); }.picker-item>span:nth-child(2) { min-width:0;flex:1; }.picker-item strong { display:block;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }.picker-item small { display:block;font-size:10px;color:var(--td-text-muted); }.picker-image { width:66px;height:44px;flex:none;display:grid;place-items:center;overflow:hidden;border-radius:4px; }.picker-image img { width:100%;height:100%;object-fit:cover; }.picker-item.is-added { opacity:.7; }.picker-item.is-added>svg { color:var(--td-effect); }
 @media (max-width:1150px) { #app { --reference-width:300px; }.topbar { gap:16px;padding:0 16px; }.brand-sub { display:none; }.prompt-panel { padding:0 18px; }.reference-panel { padding:0 14px; }.composer-footer { flex-wrap:wrap;gap:8px;padding:12px 0; }.submit-controls { gap:10px; }.clip-identity { gap:10px; }.clip-name { font-size:18px; }.timeline-toolbar { gap:6px;padding:0 12px; }.timeline-toolbar>.subtle { display:none; }.statusbar .desktop-hint { display:none; } }
-@media (max-width:760px) { body { overflow:auto; }#app { height:auto;min-height:calc(100dvh - var(--td-shell-gutter) * 2);border-radius:14px; }.workspace { display:flex;flex-direction:column;flex:none; }.prompt-panel { min-height:420px;height:58dvh; }.reference-panel { min-height:245px;padding:0 18px 12px; }.reference-heading { height:45px; }.reference-actions { margin-bottom:12px; }.reference-body { overflow:visible; }.reference-grid { grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); }.reference-hint { margin:15px 0 4px; }.reference-footer { padding:8px 0; }.resize-v { display:none; }.topbar { flex-wrap:wrap;gap:6px 14px;height:auto;min-height:50px;padding:9px 14px; }.prototype,.brand-sub { display:none; }.brand { font-size:14px; }.crumbs { gap:5px; }.crumbs>button:not(.icon-button) { max-width:100px; }.top-actions { gap:4px; }.top-actions>.icon-button { display:inline-flex; }.top-actions .button { font-size:10px;padding:0 7px; }.composer-heading { min-height:65px; }.clip-timing { font-size:10px; }.prompt-head { gap:8px; }.prompt-head>strong { display:none; }.prompt-views { gap:7px; }.composer-footer { min-height:60px; }#promptCount { display:none; }.resolution { display:none; }#promptText,.prompt-visual { padding:16px;font-size:13px; }.timeline-toolbar { overflow-x:auto; }.timeline-toolbar>.separator,.timeline-toolbar>.subtle,.timeline-zoom input { display:none; }.timecode { display:none; }.timeline-tools { gap:2px; }.timeline-panel { min-height:248px; }.statusbar { font-size:9px;padding:0 10px;gap:8px; }.home-heading { display:block; }.home-heading .button { margin-top:15px; } }
+@media (max-width:760px) { body { overflow:auto; }#app { height:auto;min-height:calc(100dvh - var(--td-shell-gutter) * 2);border-radius:14px; }.workspace { display:flex;flex-direction:column;flex:none; }.prompt-panel { min-height:420px;height:58dvh; }.reference-panel { min-height:245px;padding:0 18px 12px; }.reference-heading { height:45px; }.reference-actions { margin-bottom:12px; }.reference-body { overflow:visible; }.reference-grid { grid-template-columns:repeat(auto-fill,minmax(135px,1fr)); }.reference-hint { margin:15px 0 4px; }.reference-footer { padding:8px 0; }.resize-v { display:none; }.topbar { flex-wrap:wrap;gap:6px 14px;height:auto;min-height:50px;padding:9px 14px; }.prototype,.brand-sub { display:none; }.brand { font-size:14px; }.crumbs { gap:5px; }.crumbs>button:not(.icon-button) { max-width:100px; }.top-actions { gap:4px; }.top-actions>.icon-button { display:inline-flex; }.top-actions .button { font-size:10px;padding:0 7px; }.composer-heading { min-height:44px; }.clip-timing { font-size:10px; }.prompt-head { gap:8px; }.prompt-head>strong { display:none; }.prompt-views { gap:7px; }.composer-footer { min-height:60px; }#promptCount { display:none; }.resolution { display:none; }#promptText,.prompt-visual { padding:16px;font-size:13px; }.timeline-toolbar { overflow-x:auto; }.timeline-toolbar>.separator,.timeline-toolbar>.subtle,.timeline-zoom input { display:none; }.timecode { display:none; }.timeline-tools { gap:2px; }.timeline-panel { min-height:200px; }.statusbar { font-size:9px;padding:0 10px;gap:8px; }.home-heading { display:block; }.home-heading .button { margin-top:15px; } }
 @media (prefers-reduced-motion:reduce) { *,*:before,*:after { transition:none!important;animation:none!important; } }
 
 /* Docked generation feedback: normal grid flow, never covers prompt text. */
 .reference-column { display:contents; }
 .generation-preview { min-width:0;min-height:0;margin:0;padding:22px 18px;overflow:auto;background:var(--td-bg-panel); }
 .generation-preview>header { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px; }
-.generation-preview>header strong { font-size:12px;font-weight:550; }
+.generation-preview>header strong { font-size:12px;font-weight:600; }
 .generation-preview>header .subtle { font-size:10px; }
 .generation-preview-frame { position:relative;display:grid;place-items:center;aspect-ratio:16/9;height:auto;border:1px solid var(--td-border-soft);border-radius:7px;overflow:hidden;background:var(--td-bg-inset); }
 .generation-preview-frame img { height:100%;width:100%;object-fit:contain; }

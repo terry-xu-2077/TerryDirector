@@ -25,7 +25,7 @@ test('selected earlier clip exposes its real tail trim handle',()=>{
  assert.equal(t.hitTest(p).id,'a');assert.equal(t.edgeAt(t.clips[0],p),'right');
 });
 test('every shown callout has a separate leader gap, including narrow viewports',()=>{
- for(const width of [320,768,1280])for(const height of [153,179,246]){
+ for(const width of [320,768,1280])for(const height of [144,153,179,246]){
   const t=timeline();t.width=width;t.height=height;t.ppf=.3;
   const labels=t.overlapCallouts(ctx);
   assert.ok(labels.length>0);
@@ -54,4 +54,15 @@ test('hovering an unselected clip never paints its white trim bars',()=>{
 test('hover alone paints no handles; selection exposes its own pair',()=>{
  const t=timeline();t.selected=null;t.hover='c';assert.deepEqual(paintedHandles(t),[]);
  t.selected='c';assert.deepEqual(paintedHandles(t),[t.x(384)+2,t.x(624)-6]);
+});
+
+// A 200px panel leaves 144px for Canvas after its toolbar and scrollbar.
+test('compact timeline retains readable status and unclipped overlap labels',()=>{
+ const t=timeline();t.height=144;
+ assert.equal(t.trackHeight,54);
+ assert.ok((t.trackHeight-19)-21.5>=12);
+ for(const label of t.overlapCallouts(ctx)){
+  assert.equal(label.y-label.bottom,18);
+  assert.ok(label.y+label.height<=t.height-4);
+ }
 });
