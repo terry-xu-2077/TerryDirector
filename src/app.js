@@ -35,6 +35,15 @@
   // Tiny authored starfield placeholder, not a model output.
   const stars=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><defs><radialGradient id="g"><stop stop-color="#46415a"/><stop offset="1" stop-color="#202432"/></radialGradient></defs><rect width="800" height="450" fill="url(#g)"/>${Array.from({length:88},(_,i)=>`<circle cx="${(i*137.2)%800}" cy="${(i*71.13)%450}" r="${i%13?'.7':'1.5'}" fill="#ded9e8" opacity="${.25+(i%7)/10}"/>`).join('')}<ellipse cx="350" cy="225" rx="150" ry="5" fill="#dca5a6" opacity=".12" transform="rotate(-24 350 225)"/></svg>`;
   const sampleAssets=[{id:'launch-wide',name:'发射场 · 全景',kind:'image',src:launch,detail:'640 × 427 · 示例静帧'},{id:'launch-detail',name:'塔架 · 局部',kind:'image',src:launch,detail:'画面参考 · 同一原图'},{id:'stars',name:'星空 · 视觉占位',kind:'image',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(stars),detail:'程序绘制 · 视觉占位'}];
+  // Static input examples, never a listing of the user's disk. Source identity
+  // is separate from the project's stable Picture/Video/Audio number.
+  const demoInputFiles=[
+    {path:'demo_launch.jpg',name:'发射场 · 全景',kind:'image',src:launch,sampleId:'launch-wide'},
+    {path:'references/demo_tower.jpg',name:'塔架 · 局部',kind:'image',src:launch,sampleId:'launch-detail'},
+    {path:'references/demo_stars.svg',name:'星空 · 视觉占位',kind:'image',src:sampleAssets[2].src,sampleId:'stars'},
+    {path:'references/demo_launch_alt.jpg',name:'发射场 · 备选示例',kind:'image',src:launch}
+  ];
+  sampleAssets.forEach(asset=>{asset.source={type:'demo-input',path:demoInputFiles.find(file=>file.sampleId===asset.id).path};});
   // Media objects live once per page. The project stores active asset IDs, so
   // import/delete undo does not copy blobs or invalidate a restored Object URL.
   sampleAssets.forEach((asset,index)=>asset.number=index+1);
@@ -64,7 +73,7 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">STUDIO</span></div>
       <div class="crumbs">${ib('home','home','项目首页')}${icon('chevron')}<button id="projectName" data-action="rename-project">远航之前</button></div>
-      <div class="top-actions"><span class="prototype">交互 DEMO · 06.6</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
+      <div class="top-actions"><span class="prototype">交互 DEMO · 06.7</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
@@ -96,8 +105,8 @@
         </section>
         <section class="reference-panel" aria-label="项目资产池">
         <header class="reference-heading"><strong>资产池 <span id="refCount">0</span></strong><span class="subtle">项目共用 · 所有片段可引用</span></header>
-        <div class="reference-actions"><button class="button ghost" data-action="import">${icon('upload')}导入素材</button></div>
-        <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">拖入图片、视频或音频<br>加入项目资产池，所有片段共用</p></div>
+        <div class="reference-actions" role="group" aria-label="添加资产来源"><button class="button ghost" data-action="upload-assets" title="选择本地图片、视频或音频；Demo 仅在本页读取，不实际上传">${icon('upload')}上传资产</button><button class="button ghost" data-action="pick-input" title="从 ComfyUI input 选择已有文件；当前使用明确标记的示例目录">${icon('folder')}从 ComfyUI input 选取</button></div>
+        <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">上传新文件或从 input 选取已有文件<br>加入项目资产池，所有片段共用</p></div>
         <footer class="reference-footer">点击查看大图 · 插入引用到当前片段</footer>
         </section>
       </div>
@@ -177,7 +186,7 @@
     const key=entries.map(a=>a.id).join('|');
     if(assetGridKey!==key||!$('#references').children.length){
       const scroll=$('#referenceDrop').scrollTop;assetGridKey=key;
-      $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(a.name)}" aria-label="查看 ${esc(a.name)}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span><span class="asset-current-use" hidden>当前引用</span></div><strong>${esc(a.name)}</strong><small>${a.kind==='image'?'图片':a.kind==='video'?'视频':'音频'}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt; 到当前片段">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-delete-asset="${a.id}" title="从项目资产池删除 ${esc(a.name)}" aria-label="从项目资产池删除 ${esc(a.name)}">${icon('trash')}<span>删除</span></button></div></div>`).join('')+`<button class="reference-add" data-action="import">${icon('plus')}<span>添加素材</span><small>图片 / 视频 / 音频</small></button>`;
+      $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(a.name)}" aria-label="查看 ${esc(a.name)}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span><span class="asset-current-use" hidden>当前引用</span></div><strong>${esc(a.name)}</strong><small title="${esc(a.source?.path?'示例 input/'+a.source.path:a.local?'仅本页读取，未上传':'示例素材')}">${a.kind==='image'?'图片':a.kind==='video'?'视频':'音频'}${a.source?.type==='demo-input'?' · input 示例':a.local?' · 本地':''}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt; 到当前片段">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-delete-asset="${a.id}" title="从项目资产池删除 ${esc(a.name)}" aria-label="从项目资产池删除 ${esc(a.name)}">${icon('trash')}<span>删除</span></button></div></div>`).join('');
       $('#referenceDrop').scrollTop=scroll;
     }
     refreshAssetUsage();
@@ -197,7 +206,7 @@
     else{media.controls=true;media.preload='metadata';media.playsInline=true;media.setAttribute('aria-label',asset.name);}
     media.addEventListener('error',()=>{if(!media.isConnected||!d.open)return;wrap.replaceChildren();wrap.textContent='浏览器无法预览此格式，素材仍可作为参考保留。';});
     wrap.append(media);body.append(wrap);media.src=asset.src;
-    const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.local?'本地':'示例'}参考素材 · 非生成结果`;body.append(note);
+    const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
     if(!d.open)d.showModal();
   }
   function renderGenerationPreview(){
@@ -343,7 +352,7 @@
   }
   function importFiles(files,targetId=null){
     const added=[];for(const file of files){const kind=file.type.split('/')[0];if(!['image','video','audio'].includes(kind))continue;
-      const asset={id:'local-'+Date.now().toString(36)+'-'+nextAsset++,name:file.name,kind,number:nextPoolNumber[kind]++,src:URL.createObjectURL(file),local:true};assets.push(asset);added.push(asset.id);
+      const asset={id:'local-'+Date.now().toString(36)+'-'+nextAsset++,name:file.name,kind,number:nextPoolNumber[kind]++,src:URL.createObjectURL(file),local:true,source:{type:'upload-demo',name:file.name}};assets.push(asset);added.push(asset.id);
     }
     if(!added.length){toast('请选择图片、视频或音频。');return;}
     mutate(()=>{
@@ -351,6 +360,61 @@
       const clip=state.clips.find(c=>c.id===targetId);if(clip)appendReferences(clip,added);
     });
     toast(`已加入资产池 ${added.length} 项${targetId?'，并引用到目标片段':'，所有片段均可引用'}。文件未上传。`);
+  }
+  function pickInputAssets(){
+    finishResolutionEdit();finishPromptEdit();
+    const selected=new Set();
+    const inPool=path=>poolEntries().some(a=>a.source?.type==='demo-input'&&a.source.path===path);
+    modal('从 ComfyUI input 选取',`
+      <p class="input-demo-note"><strong>示例目录 · 尚未连接 ComfyUI</strong><br>这里只演示选取流程，没有读取你本地的 input，也不会上传或复制文件。</p>
+      <div class="input-picker-location">${icon('folder')}<span>ComfyUI / input</span><span class="subtle">演示</span></div>
+      <input id="inputAssetSearch" type="search" placeholder="搜索文件名或子目录" aria-label="搜索 input 示例文件">
+      <div id="inputAssetList" class="input-picker-list"></div>
+      <p id="inputSelectionCount" class="subtle" aria-live="polite">已选 0 项</p>`, '加入资产池',()=>{
+        const files=demoInputFiles.filter(file=>selected.has(file.path)&&!inPool(file.path));
+        if(!files.length)return false;
+        mutate(()=>{
+          for(const file of files){
+            // Reuse the cached entry after pool deletion / undo; never upload or
+            // allocate a second project entry for the same input-relative path.
+            let asset=assets.find(a=>a.source?.type==='demo-input'&&a.source.path===file.path);
+            if(!asset){
+              asset={id:'input-demo-'+nextAsset++,name:file.name,kind:file.kind,src:file.src,
+                number:nextPoolNumber[file.kind]++,source:{type:'demo-input',path:file.path}};
+              assets.push(asset);
+            }
+            if(!state.assetIds.includes(asset.id))state.assetIds.push(asset.id);
+          }
+        });
+        toast(`已从示例 input 加入 ${files.length} 项；没有读取真实目录，所有片段可引用。`);
+      });
+    $('#dialog').dataset.mode='input-picker';
+    const list=$('#inputAssetList'),search=$('#inputAssetSearch'),confirm=$('#dialogConfirm');
+    function updateSelection(){
+      $('#inputSelectionCount').textContent=`已选 ${selected.size} 项`;
+      confirm.disabled=!selected.size;
+      confirm.textContent=selected.size?`加入资产池（${selected.size}）`:'加入资产池';
+    }
+    function renderList(){
+      const query=search.value.trim().toLowerCase();
+      const files=demoInputFiles.filter(file=>`${file.path} ${file.name}`.toLowerCase().includes(query));
+      list.innerHTML=files.map(file=>{
+        const added=inPool(file.path);
+        return `<label class="input-file-row ${added?'is-added':''}">
+          <input type="checkbox" data-input-path="${esc(file.path)}" aria-label="选择 ${esc(file.path)}" ${added?'disabled':''} ${selected.has(file.path)?'checked':''}>
+          <span class="input-file-thumb"><img src="${esc(file.src)}" alt=""></span>
+          <span class="input-file-info"><strong>${esc(file.name)}</strong><small>${esc(file.path)}</small></span>
+          <span class="input-file-status">${added?'已在资产池':'示例图片'}</span>
+        </label>`;
+      }).join('')||'<p class="input-picker-empty">没有匹配的文件</p>';
+    }
+    list.addEventListener('change',event=>{
+      const box=event.target.closest('[data-input-path]');if(!box||box.disabled)return;
+      if(box.checked)selected.add(box.dataset.inputPath);else selected.delete(box.dataset.inputPath);
+      updateSelection();
+    });
+    search.addEventListener('input',renderList);
+    renderList();updateSelection();search.focus();
   }
   function resetAssetCache(withSamples){
     // Called only after clearing project history: detached local files can now
@@ -364,12 +428,12 @@
     $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();renderGenerationPreview(); }
-  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:8,referenceNumbering:'project-stable',fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local})=>({id,name,kind,number,token,requiresReimport:!!local})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
+  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:8,referenceNumbering:'project-stable',fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local,source})=>({id,name,kind,number,token,requiresReimport:!!local,source:source?{...source}:undefined})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
-  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。导入只加入资产池；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
+  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。「上传资产」选本地文件；「从 ComfyUI input 选取」复用已有文件（当前为示例目录，未连接真实 input）。两者只加入资产池，不自动引用；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
   const actions={
-    home:showHome,'open-project':openProject,new:newClip,import:()=>$('#fileInput').click(),export:exportConfig,help,generate,
+    home:showHome,'open-project':openProject,new:newClip,'upload-assets':()=>$('#fileInput').click(),'pick-input':pickInputAssets,export:exportConfig,help,generate,
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     'toggle-generation-preview':()=>setGenerationPreview(!generationPreviewEnabled),
     'rename-project':()=>modal('项目名称',`<label>名称<input type="text" id="projectTitleInput" value="${esc(title)}" maxlength="60"></label>`,'确定',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;title=name;$('#projectName').textContent=title;markEdited();}),
