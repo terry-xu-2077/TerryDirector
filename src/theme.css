@@ -64,8 +64,8 @@
   --td-shadow: color-mix(in srgb, var(--td-neutral-night) 65%, transparent);
   --td-scrim: color-mix(in srgb, var(--td-neutral-base) 83%, transparent);
   --td-on-accent: var(--td-neutral-base);
-  /* Level 3: the main generation action and key task progress only.
-     Being inside the generation column does not make a control high priority. */
+  /* Level 3: primary action, key progress and explicit prompt references.
+     Ordinary controls stay neutral; dialogue has its own coral content accent. */
   --td-generation-accent: var(--td-level-3-ink);
   --td-generation-fill: linear-gradient(110deg, var(--td-generation-accent), var(--td-warm-orange));
   --td-generation-fill-hover: linear-gradient(110deg, color-mix(in srgb, var(--td-generation-accent) 84%, var(--td-ink-bright)), var(--td-warm-gold));
@@ -78,7 +78,8 @@
   --td-resolution-bg: var(--td-bg-inset);
   --td-resolution-border: var(--td-border);
   --td-tag-section: var(--td-level-2-ink);
-  --td-tag-dialogue: var(--td-level-1-ink);
+  --td-tag-reference: var(--td-level-3-ink);
+  --td-tag-dialogue: var(--td-warm-coral);
   --td-tag-retention: var(--td-level-1-ink);
   --td-timeline-bg: var(--td-bg-workspace);
   --td-timeline-grid: color-mix(in srgb, var(--td-neutral-silver) 10%, transparent);
@@ -100,7 +101,7 @@
   --td-tag-camera: var(--td-level-2-ink);
   --td-tag-shot: var(--td-level-2-ink);
   --td-tag-time: var(--td-text-secondary);
-  --td-tag-audio: var(--td-level-2-ink);
+  --td-tag-audio: var(--td-tag-reference);
   --td-ease: cubic-bezier(.22,1,.36,1);
   --td-radius: 10px;
   /* Local static demo adaptation of the Studio Dark public palette. */
@@ -150,7 +151,11 @@
 .td-theme .preview-switch:focus-visible { outline-color: var(--td-level-2-ink); }
 .td-theme .h3-editor .h3-section { --chip-ink: var(--td-tag-section); }
 .td-theme .h3-editor .h3-camera { --chip-ink: var(--td-tag-camera); }
-.td-theme .h3-editor .h3-audio { --chip-ink: var(--td-tag-audio); }
+/* Prompt content accents: references in orange, dialogue in coral red.
+   Existing chip styles derive the subtle fill, border and hover from this ink. */
+.td-theme .h3-editor .h3-picture,
+.td-theme .h3-editor .h3-video,
+.td-theme .h3-editor .h3-audio { --chip-ink: var(--td-tag-reference); }
 .td-theme .h3-editor .h3-dialogue { --chip-ink: var(--td-tag-dialogue); }
 .td-theme .h3-editor .h3-retention,.td-theme .h3-editor .h3-task { --chip-ink: var(--td-tag-retention); }
 
