@@ -25,7 +25,13 @@
   --td-ink-bright: #F7FAFC;
   --td-ink-secondary: #B3B7C5;
   --td-ink-muted: #8F939F;
-  --td-status-success: #A9C4B6;
+  /* Information priority, not a color per feature/module.
+     Level 1 = ordinary; level 2 = focus/relationship; level 3 = primary action. */
+  --td-level-1-ink: var(--td-ink-secondary);
+  --td-level-2-ink: var(--td-violet-highlight);
+  --td-level-2-soft: color-mix(in srgb, var(--td-violet-highlight) 12%, transparent);
+  --td-level-3-ink: color-mix(in srgb, var(--td-warm-gold) 82%, var(--td-ink-bright));
+  --td-status-success: var(--td-level-1-ink);
   --td-status-warning: #ECAB83;
   --td-status-danger: #E3786B;
   /* Darken only the browser surround; keep the working surfaces readable. */
@@ -47,20 +53,20 @@
   --td-text-bright: var(--td-ink-bright);
   --td-text-secondary: var(--td-ink-secondary);
   --td-text-muted: var(--td-ink-muted);
-  --td-text-accent: var(--td-violet-highlight);
+  --td-text-accent: var(--td-level-2-ink);
   --td-border-soft: color-mix(in srgb, var(--td-neutral-silver) 16%, transparent);
   --td-border: color-mix(in srgb, var(--td-neutral-silver) 30%, transparent);
-  --td-border-focus: var(--td-violet-highlight);
+  --td-border-focus: var(--td-level-2-ink);
   --td-accent-primary: var(--td-violet-primary);
-  --td-accent-soft: color-mix(in srgb, var(--td-violet-highlight) 12%, transparent);
-  --td-effect: var(--td-violet-highlight);
+  --td-accent-soft: var(--td-level-2-soft);
+  --td-effect: var(--td-level-2-ink);
   --td-glow: color-mix(in srgb, var(--td-violet-highlight) 12%, transparent);
   --td-shadow: color-mix(in srgb, var(--td-neutral-night) 65%, transparent);
   --td-scrim: color-mix(in srgb, var(--td-neutral-base) 83%, transparent);
   --td-on-accent: var(--td-neutral-base);
-  /* Warm = generation/readout; violet = editing/selection; pink = time/overlap.
-     State colors remain distinct: success is green-grey, errors remain coral. */
-  --td-generation-accent: color-mix(in srgb, var(--td-warm-gold) 82%, var(--td-ink-bright));
+  /* Level 3: the main generation action and key task progress only.
+     Being inside the generation column does not make a control high priority. */
+  --td-generation-accent: var(--td-level-3-ink);
   --td-generation-fill: linear-gradient(110deg, var(--td-generation-accent), var(--td-warm-orange));
   --td-generation-fill-hover: linear-gradient(110deg, color-mix(in srgb, var(--td-generation-accent) 84%, var(--td-ink-bright)), var(--td-warm-gold));
   --td-generation-soft: color-mix(in srgb, var(--td-warm-gold) 10%, transparent);
@@ -68,19 +74,19 @@
   --td-generation-glow: color-mix(in srgb, var(--td-warm-orange) 15%, transparent);
   --td-generation-track: color-mix(in srgb, var(--td-warm-gold) 15%, transparent);
   --td-on-generation: var(--td-neutral-base);
-  --td-resolution-ink: var(--td-generation-accent);
-  --td-resolution-bg: var(--td-generation-soft);
-  --td-resolution-border: var(--td-generation-border);
-  --td-tag-section: var(--td-violet-pink);
-  --td-tag-dialogue: var(--td-warm-pink);
-  --td-tag-retention: var(--td-warm-coral);
+  --td-resolution-ink: var(--td-level-1-ink);
+  --td-resolution-bg: var(--td-bg-inset);
+  --td-resolution-border: var(--td-border);
+  --td-tag-section: var(--td-level-2-ink);
+  --td-tag-dialogue: var(--td-level-1-ink);
+  --td-tag-retention: var(--td-level-1-ink);
   --td-timeline-bg: var(--td-bg-workspace);
   --td-timeline-grid: color-mix(in srgb, var(--td-neutral-silver) 10%, transparent);
   --td-timeline-ruler: var(--td-text-muted);
-  --td-timeline-playhead: var(--td-violet-pink);
-  --td-timeline-selection: var(--td-violet-highlight);
-  --td-timeline-snap: var(--td-generation-accent);
-  --td-timeline-overlap: var(--td-violet-pink);
+  --td-timeline-playhead: var(--td-level-2-ink);
+  --td-timeline-selection: var(--td-level-2-ink);
+  --td-timeline-snap: var(--td-level-2-ink);
+  --td-timeline-overlap: var(--td-level-2-ink);
   --td-timeline-clip: var(--td-neutral-surface);
   --td-timeline-clip-selected: color-mix(in srgb, var(--td-violet-deep) 38%, var(--td-neutral-surface));
   --td-timeline-clip-edge: var(--td-violet-mid);
@@ -91,10 +97,10 @@
   --td-folder-back: color-mix(in srgb, var(--td-neutral-surface) 78%, var(--td-violet-mid));
   --td-folder-front: color-mix(in srgb, var(--td-neutral-elevated) 84%, var(--td-violet-mid));
   --td-folder-paper: var(--td-neutral-silver);
-  --td-tag-camera: var(--td-violet-highlight);
-  --td-tag-shot: var(--td-violet-pink);
+  --td-tag-camera: var(--td-level-2-ink);
+  --td-tag-shot: var(--td-level-2-ink);
   --td-tag-time: var(--td-text-secondary);
-  --td-tag-audio: var(--td-generation-accent);
+  --td-tag-audio: var(--td-level-2-ink);
   --td-ease: cubic-bezier(.22,1,.36,1);
   --td-radius: 10px;
   /* Local static demo adaptation of the Studio Dark public palette. */
@@ -126,7 +132,7 @@
 }
 .td-theme #generateButton:hover:not(:disabled) { background: var(--td-generation-fill-hover); }
 .td-theme #generateButton:focus-visible { outline-color: var(--td-generation-accent); }
-.td-theme .generation-preview-progress { background: var(--td-generation-track); }
+.td-theme .generation-preview-progress { background: var(--td-border-soft); }
 .td-theme .generation-preview-progress i { background: var(--td-generation-fill); }
 .td-theme .resolution-result {
   color: var(--td-resolution-ink);
@@ -135,15 +141,24 @@
 }
 .td-theme .resolution-result.is-invalid { color: var(--td-status-warning); }
 .td-theme .preview-switch[aria-checked="true"] .preview-switch-track {
-  border-color: var(--td-generation-accent);
-  background: var(--td-generation-soft);
+  border-color: var(--td-level-2-ink);
+  background: var(--td-level-2-soft);
 }
 .td-theme .preview-switch[aria-checked="true"] .preview-switch-track i {
-  background: var(--td-generation-accent);
+  background: var(--td-level-2-ink);
 }
-.td-theme .preview-switch:focus-visible { outline-color: var(--td-generation-accent); }
+.td-theme .preview-switch:focus-visible { outline-color: var(--td-level-2-ink); }
 .td-theme .h3-editor .h3-section { --chip-ink: var(--td-tag-section); }
 .td-theme .h3-editor .h3-camera { --chip-ink: var(--td-tag-camera); }
 .td-theme .h3-editor .h3-audio { --chip-ink: var(--td-tag-audio); }
 .td-theme .h3-editor .h3-dialogue { --chip-ink: var(--td-tag-dialogue); }
 .td-theme .h3-editor .h3-retention,.td-theme .h3-editor .h3-task { --chip-ink: var(--td-tag-retention); }
+
+/* The active view is level 2; ordinary parameter readouts remain level 1. */
+.td-theme .prompt-views>button.is-active { color: var(--td-level-2-ink); }
+.td-theme .h3-editor .h3-shot { --chip-ink: var(--td-tag-shot); }
+.td-theme .h3-editor .h3-time,.td-theme .h3-editor .h3-speaker { --chip-ink: var(--td-level-1-ink); }
+/* Informational notes and idle glyphs are not selection states. */
+.td-theme .input-demo-note { background: var(--td-bg-inset); }
+.td-theme .input-demo-note strong,.td-theme .h3-category-icon { color: var(--td-level-1-ink); }
+.td-theme .h3-menu-item.is-active .h3-category-icon { color: var(--td-level-2-ink); }

@@ -13,7 +13,7 @@ function timeline() {
 const ctx={font:'',measureText:text=>({width:text.length*7})};
 test('all clips share one row and reserve annotation space',()=>{
  const t=timeline();assert.equal(t.y(0),t.y(1));
- assert.ok(t.y()+t.trackHeight+3+18+23<t.height);
+ assert.ok(t.y()+t.trackHeight+3+t.overlapLeaderGap+23<t.height);
 });
 test('overlap body hits the later clip, not a standalone overlap object',()=>{
  const t=timeline();assert.equal(t.hitTest({x:t.x(210),y:t.y()+25}).id,'b');
@@ -29,7 +29,7 @@ test('every shown callout has a separate leader gap, including narrow viewports'
   const t=timeline();t.width=width;t.height=height;t.ppf=.3;
   const labels=t.overlapCallouts(ctx);
   assert.ok(labels.length>0);
-  labels.forEach((l,i)=>{assert.equal(l.y-l.bottom,18);assert.ok(l.y+l.height<height);assert.ok(l.x>=t.inset);assert.ok(l.x+l.width<=width);labels.slice(i+1).forEach(r=>assert.ok(l.x+l.width+8<=r.x||r.x+r.width+8<=l.x));});
+  labels.forEach((l,i)=>{assert.equal(l.y-l.bottom,8);assert.ok(l.y+l.height<height);assert.ok(l.x>=t.inset);assert.ok(l.x+l.width<=width);labels.slice(i+1).forEach(r=>assert.ok(l.x+l.width+8<=r.x||r.x+r.width+8<=l.x));});
  }
 });
 test('moving clear of the other clip removes the corresponding label',()=>{
@@ -62,7 +62,20 @@ test('compact timeline retains readable status and unclipped overlap labels',()=
  assert.equal(t.trackHeight,54);
  assert.ok((t.trackHeight-19)-21.5>=12);
  for(const label of t.overlapCallouts(ctx)){
-  assert.equal(label.y-label.bottom,18);
+  assert.equal(label.y-label.bottom,8);
   assert.ok(label.y+label.height<=t.height-4);
+ }
+});
+
+// The short leader changes only annotation placement, not the clip or hit area.
+test('short leaders stay outside overlap and do not grow with zoom or height',()=>{
+ for(const ppf of [.3,1.8,8])for(const height of [144,179,300]){
+  const t=timeline();t.ppf=ppf;t.height=height;
+  for(const label of t.overlapCallouts(ctx)){
+   assert.equal(label.bottom,t.y()+t.trackHeight+3);
+   assert.equal(label.y-label.bottom,8);
+   assert.equal(label.height,23);
+   assert.equal(t.hitTest({x:label.anchor,y:label.y+1}),undefined);
+  }
  }
 });

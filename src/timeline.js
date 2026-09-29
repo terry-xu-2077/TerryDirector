@@ -186,6 +186,8 @@
       }
       ctx.restore();
     }
+    // Small visual gap only; overlap remains passive and hit testing is unchanged.
+    get overlapLeaderGap() { return 8; }
     overlapCallouts(ctx) {
       const left=this.inset+4,right=this.width-5,bottom=this.y()+this.trackHeight+3;
       const items=C.overlaps(this.clips).map(o=>{
@@ -204,7 +206,7 @@
         const candidates=[preferred,left,right-width,...placed.flatMap(p=>[p.x-width-8,p.x+p.width+8])];
         const fit=candidates.filter(x=>x>=left&&x+width<=right&&placed.every(p=>x+width+8<=p.x||x>=p.x+p.width+8)).sort((a,b)=>Math.abs(a-preferred)-Math.abs(b-preferred))[0];
         if(fit===undefined)continue;
-        placed.push({...o,anchor,x:fit,width,y:bottom+18,height:23,bottom});
+        placed.push({...o,anchor,x:fit,width,y:bottom+this.overlapLeaderGap,height:23,bottom});
       }
       return placed;
     }
@@ -224,7 +226,7 @@
       for(const label of this.overlapCallouts(ctx)){
         const center=label.x+label.width/2;
         ctx.strokeStyle=t.overlap;ctx.globalAlpha=label.focused?.9:.55;ctx.lineWidth=1.2;
-        ctx.beginPath();ctx.moveTo(label.anchor,label.bottom);ctx.lineTo(label.anchor,label.bottom+8);ctx.lineTo(center,label.y);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(label.anchor,label.bottom);ctx.lineTo(label.anchor,label.bottom+(label.y-label.bottom)/2);ctx.lineTo(center,label.y);ctx.stroke();
         this.rect(ctx,label.x,label.y,label.width,label.height,11,t.inset,t.overlap);
         ctx.globalAlpha=1;ctx.fillStyle=label.focused?t.overlap:t.muted;ctx.textBaseline='middle';
         ctx.fillText(label.text,label.x+9,label.y+label.height/2);
