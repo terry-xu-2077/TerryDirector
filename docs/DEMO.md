@@ -1,4 +1,15 @@
-# Demo v0.6.9 · 橙色选中片段、尾部联动与投影
+# Demo v0.6.12 · 二次潜空间放大
+
+## v0.6.12 调整与检查
+
+- 在右侧分辨率与生成动作之间加入「二次潜空间放大 · 项目共用」。默认关闭，开启后展开放大模型与高清阶段步数；普通参数中性、开关紫色，保留 v0.6.11 视觉与交互基线。
+- 项目配置为 `state.latentUpscale = {enabled:false, model:'', highSteps:4}`。模型空串表示真实接入时自动选用兼容 H3 的模型；`minimax_h3_latent_upscaler_3d_bf16.safetensors` 明确只作示例，当前没有模型扫描。
+- 高清阶段步数默认 4，校验正整数。它在真实接入时须小于实际工作流总步数；当前未读取总步数，不设置伪硬上限。「总计 8 步时，4 步低清 + 4 步高清」仅是说明示例，不保存或导出其中的示例总步数。
+- 原有分辨率仍是最终目标；低清阶段约半宽半高，并按模型网格对齐，不增加倍率控件。
+- 配置按项目共用，切换片段保留；空项目可先设置。开关和参数修改支持撤销 / 重做，新建项目及重置恢复默认；导出格式版本 9 保存 `project.latentUpscale`。
+- 本轮只补 UI 设置，没有连接真实生成、执行潜空间放大或扫描模型。其字段语义参考固定提交 `a81f13b8af4a162467cec4dc377f40b7354d7ffc` 的 [`_selflift_settings`](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/minimax_h3_finite_segments.py#L43-L91)。
+
+本轮检查：`node --check src/app.js` 通过；现有 62 项 Node 检查全部通过；`git diff --check` 通过。另已静态审查配置作用域、导出、新建 / 重置、撤销和输入校验，并保留原生下拉框的 Enter 行为。本环境没有可运行的本地 Chromium，云浏览器策略阻止本地预览地址与文件入口，因此本轮没有完成浏览器交互 / 视觉检查，也未验证线上 Pages 或真实 ComfyUI / SelfLift 生成。
 
 ## v0.6.9 调整与检查
 

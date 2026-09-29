@@ -2,7 +2,18 @@
 
 AI 视频镜头生成任务工作台。当前为 **HTML / CSS / JavaScript 静态交互 Demo**，不连接 ComfyUI，不做 React 拆分。
 
-## Demo v0.6.11
+## Demo v0.6.12 · 二次潜空间放大
+
+右侧生成预览下方，在分辨率与生成动作之间新增 **二次潜空间放大**。这是项目共用设置，默认关闭；开启后展开「放大模型」与「高清阶段步数」。切换片段保留同一份配置，空项目也可先设置；开关和参数支持撤销 / 重做，新建项目或重置 Demo 恢复默认。
+
+- 模型默认为自动选择，内部保存空字符串；真实接入时由参考节点选择兼容 H3 的模型。`minimax_h3_latent_upscaler_3d_bf16.safetensors` 仅是明确标注的示例名称，当前没有扫描本地模型。
+- 高清阶段步数默认 4，必须为正整数，真实接入时还须少于工作流的实际总步数。界面以「总计 8 步时，4 步低清 + 4 步高清」解释分配；8 仅为示例，当前不作为步数上限或导出参数。
+- 现有分辨率仍是最终目标。低清阶段约半宽半高，并按模型网格对齐；界面不增加倍率控件，也不将最终宽高再乘以 2。
+- 普通参数保持中性，开启状态沿用紫色；导出格式升级为版本 9，设置保存在 `project.latentUpscale`。本轮仍只配置和演示 UI，不运行潜空间放大或真实生成。
+
+这项补充沿用参考节点固定提交 `a81f13b8af4a162467cec4dc377f40b7354d7ffc` 的 [`_selflift_settings`](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/minimax_h3_finite_segments.py#L43-L91) 设置语义；详细约定见 [UI 实现蓝图 §9.2](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md#92-二次潜空间放大v0612-补充)。
+
+### 保留 v0.6.11 视觉与交互基线
 
 **时间线片段可读性继续优化**：片段起点由硬质边界符号改成只在片段内部扩散的“竖条霓虹灯”——未选中为紫色、选中为橙色；片段第一行信息上移、第二行状态下移，保持原高度但增加两行呼吸空间。总编排时长、橙色片段秒数、8px 重叠引线和后续联动均保持不变。
 
@@ -34,17 +45,20 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)�
 
 ## UI IMPLEMENTATION BLUEPRINT
 
-**当前 UI 已冻结为实现蓝图 1.0。** 后续真实功能开发以 [UI 实现蓝图](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md) 为前端 Source of Truth；旧 Demo 记录用于追溯，不再作为新增布局依据。
+**当前 UI 以实现蓝图 1.0 为基线，并包含用户确认的 v0.6.12 二次潜空间放大补充。** 原视觉与交互基线仍为 v0.6.11。后续真实功能开发以 [UI 实现蓝图](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md) 为前端 Source of Truth；旧 Demo 记录用于追溯，不再作为新增布局依据。
 
 ## 文档
 
 - [UI 实现蓝图（实现 Source of Truth）](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md)
+- [成熟实现参考清单（新增需求先查这里）](docs/07_REFERENCE_IMPLEMENTATIONS.md)
 - [本轮时间线起点与时长说明](docs/05_TIMELINE_READABILITY.md)
 - [当前 UI 与时间线架构（设计演进记录）](docs/02_UI_AND_TIMELINE_ARCHITECTURE.md)
 - [H3 编辑器来源与移植对应](docs/H3_EDITOR_PORT.md)
 - [Demo 范围与检查记录](docs/DEMO.md)
 
-完整产品和主题文档保留在仓库 `docs/01_PRODUCT_AND_TECH_DECISIONS.md`、`docs/03_VISUAL_THEME_CONTRACT.md`。当前 UI 范围以 02 为准。
+完整产品和主题文档保留在仓库 `docs/01_PRODUCT_AND_TECH_DECISIONS.md`、`docs/03_VISUAL_THEME_CONTRACT.md`。当前 UI 范围以 06 实现蓝图及其已确认补充为准。
+
+后续运行功能优先从用户指定的 **Songssx TimelineDirector、AIMixer Director、yolain Easy Media、nkxx188 H3 Easy** 中查找成熟实现。当前生成基础保持 Songssx 的有限分段链路，其余参考按需求补充；仓库入口、核对版本与具体查找位置集中在上述参考清单。
 
 ## 代码
 

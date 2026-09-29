@@ -3,6 +3,8 @@
 > 状态：产品基线  
 > 目的：记录 TerryDirector 当前已经确定的产品定位、技术边界和开发原则。后续视觉设计、前端 Demo、ComfyUI 插件开发和功能实现都以本文为基线。
 
+> **2026-09-29 运行实现约定：**后续需求优先从用户指定的四个成熟参考中寻找现成方案，入口见 [成熟实现参考清单](07_REFERENCE_IMPLEMENTATIONS.md)。当前生成基础采用 Songssx TimelineDirector 的规划、编码与有限分段采样链路，由一次 ComfyUI 工作流在内部展开各段；只为明确差异补适配。本文早期的 Compiler / Queue / Segment 依赖描述应按此理解，不据此另建外部分段调度系统。界面继续以蓝图 06 为准。
+
 ---
 
 ## 1. 产品定位
@@ -938,6 +940,17 @@ Segment A
 ---
 
 ## 25. 参考项目
+
+### 用户指定的运行实现参考
+
+新增功能和优化先查以下四个仓库的已有节点、源码和示例工作流。详细导航、核对 commit 与采用边界统一维护在 [07_REFERENCE_IMPLEMENTATIONS.md](07_REFERENCE_IMPLEMENTATIONS.md)。
+
+| 参考 | 优先查找方向 |
+| --- | --- |
+| [Songssx / ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) | 当前运行基础：规划、编码、有限分段、latent 连续性、SelfLift |
+| [AIMixer / ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director) | 多模式生成、段间引导、SelfLift、独立二采 / 放大、导演包 |
+| [yolain / ComfyUI-Easy-Media](https://github.com/yolain/ComfyUI-Easy-Media) | H3 项目分段、结果保存 / 续跑、二采、媒体按需加载 |
+| [nkxx188 / ComfyUI-MiniMaxH3-Easy](https://github.com/nkxx188/ComfyUI-MiniMaxH3-Easy) | 片段独立素材引用、逐片段控制、分段精修与解码 |
 
 ### ComfyUI MiniMax H3 Timeline Director
 
