@@ -9,7 +9,7 @@
       this.host = host; this.options = options; this.clips = options.clips;
       this.selected = options.selected; this.frame = 0; this.ppf = 1.8; this.scroll = 0;
       this.inset = 70; this.ruler = 32; this.width = 1; this.height = 1;
-      this.snapEnabled = true; this.hand = false; this.showWave = false;
+      this.snapEnabled = true; this.chainEnabled = true; this.hand = false; this.showWave = false;
       this.images = new Map(); this.hover = null; this.drag = null; this.playing = false;
       this.dirty = true; this.raf = 0; this.snapFrame = null;
       this.content = host.querySelector('.content'); this.overlay = host.querySelector('.overlay');
@@ -89,7 +89,7 @@
       if(p.y<this.ruler||(!c&&Math.abs(this.x(this.frame)-p.x)<7)||!c){this.drag={mode:'seek',pointer:e.pointerId};this.setFrame(this.frameAt(p.x));return;}
       const mode=this.edgeAt(c,p);
       this.selected=c.id;this.options.onSelect?.(c.id);
-      this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p};
+      this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p,follow:mode==='move'&&this.chainEnabled};
       this.overlay.style.cursor=mode==='move'?'grabbing':'ew-resize';this.invalidate();
     }
     move(e) {
@@ -105,8 +105,14 @@
       const delta=Math.round((d.last.x-d.origin.x)/this.ppf);
       const initial=d.mode==='right'?d.end:d.start;
       let value=initial+delta;this.snapFrame=null;
-      if(this.snapEnabled&&!alt){const targets=[0,this.frame,...d.original.filter(c=>c.id!==d.id).flatMap(c=>[c.start,c.end])];const offsets=d.mode==='move'?[0,d.end-d.start]:[0];const result=C.snap(value,offsets,targets,7/this.ppf);value=result.value;this.snapFrame=result.target;}
-      this.clips=C.editClip(d.original,d.id,d.mode,value);
+      if(this.snapEnabled&&!alt){
+        // Followers move with the head: their old edges are not stationary snap targets.
+        const fixed=d.follow?d.original.slice(0,d.original.findIndex(c=>c.id===d.id)):d.original.filter(c=>c.id!==d.id);
+        const targets=[0,this.frame,...fixed.flatMap(c=>[c.start,c.end])];
+        const offsets=d.mode==='move'?[0,d.end-d.start]:[0];
+        const result=C.snap(value,offsets,targets,7/this.ppf);value=result.value;this.snapFrame=result.target;
+      }
+      this.clips=d.follow?C.moveFollowing(d.original,d.id,value):C.editClip(d.original,d.id,d.mode,value);
       const edited=this.clips.find(c=>c.id===d.id);if(!edited)return;const actual=d.mode==='right'?edited.end:edited.start;
       if(Math.abs(actual-value)>.5)this.snapFrame=null;
       this.options.onPreview?.(this.clips);this.invalidate();

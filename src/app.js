@@ -29,8 +29,8 @@
     keyboard:'M2 5h20v14H2zM5 9h1m3 0h1m3 0h1m3 0h1M5 12h1m3 0h1m3 0h1m3 0h1M7 16h10'
   };
   function icon(name){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.film}"/></svg>`;}
-  const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',snap:'吸附',duplicate:'复制',delete:'删除','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
-  function ib(action,name,title,active=''){return `<button class="icon-button ${active}" data-action="${action}" title="${title}" aria-label="${title}">${icon(name)}<span>${esc(actionNames[action]||title)}</span></button>`;}
+  const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',snap:'吸附',chain:'后续联动',duplicate:'复制',delete:'删除','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
+  function ib(action,name,title,active='',pressed=null){return `<button class="icon-button ${active}" data-action="${action}" title="${title}" aria-label="${title}"${pressed===null?'':` aria-pressed="${pressed}"`}>${icon(name)}<span>${esc(actionNames[action]||title)}</span></button>`;}
   const launch=window.TDStills.launch;
   // Tiny authored starfield placeholder, not a model output.
   const stars=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><defs><radialGradient id="g"><stop stop-color="#46415a"/><stop offset="1" stop-color="#202432"/></radialGradient></defs><rect width="800" height="450" fill="url(#g)"/>${Array.from({length:88},(_,i)=>`<circle cx="${(i*137.2)%800}" cy="${(i*71.13)%450}" r="${i%13?'.7':'1.5'}" fill="#ded9e8" opacity="${.25+(i%7)/10}"/>`).join('')}<ellipse cx="350" cy="225" rx="150" ry="5" fill="#dca5a6" opacity=".12" transform="rotate(-24 350 225)"/></svg>`;
@@ -73,7 +73,7 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">STUDIO</span></div>
       <div class="crumbs">${ib('home','home','项目首页')}${icon('chevron')}<button id="projectName" data-action="rename-project">远航之前</button></div>
-      <div class="top-actions"><span class="prototype">交互 DEMO · 06.7</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
+      <div class="top-actions"><span class="prototype">交互 DEMO · 06.8</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
@@ -113,7 +113,7 @@
     </main>
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
-      <div class="timeline-toolbar"><strong>时间线</strong><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><span class="separator"></span><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><span class="timecode" id="timelineTime">00:00:00:00</span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div>
+      <div class="timeline-toolbar"><strong>时间线</strong><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><span class="separator"></span><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：拖动片段时，后方所有片段一起移动；裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><span class="timecode" id="timelineTime">00:00:00:00</span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div>
       <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。拖动片段移动，拖动片段边缘裁剪；重叠区及下方引线标记为只读。左右键步进，Ctrl Z 撤销。"></canvas></div>
       <div class="timeline-bottom"><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div><small id="clipSummary"></small><small id="zoomLabel">24 FPS</small></div>
     </section>
@@ -431,7 +431,15 @@
   function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:8,referenceNumbering:'project-stable',fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local,source})=>({id,name,kind,number,token,requiresReimport:!!local,source:source?{...source}:undefined})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
-  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。「上传资产」选本地文件；「从 ComfyUI input 选取」复用已有文件（当前为示例目录，未连接真实 input）。两者只加入资产池，不自动引用；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
+  function setChainEnabled(enabled){
+    timeline.cancel();timeline.chainEnabled=!!enabled;
+    const button=$('[data-action=chain]');
+    button.classList.toggle('is-active',timeline.chainEnabled);
+    button.setAttribute('aria-pressed',String(timeline.chainEnabled));
+    button.title=timeline.chainEnabled?'后续联动已开启：拖动片段时，后方所有片段一起移动；裁剪不联动':'后续联动已关闭：只移动当前片段';
+    button.setAttribute('aria-label',button.title);
+  }
+  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。「上传资产」选本地文件；「从 ComfyUI input 选取」复用已有文件（当前为示例目录，未连接真实 input）。两者只加入资产池，不自动引用；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>时间线「后续联动」默认开启：拖动一个片段，它后面的所有片段同距移动，保持彼此的间距与重叠；前方片段不动。关闭后仅移动当前片段。边缘裁剪不联动，一次拖动仍只需一步撤销。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
   const actions={
     home:showHome,'open-project':openProject,new:newClip,'upload-assets':()=>$('#fileInput').click(),'pick-input':pickInputAssets,export:exportConfig,help,generate,
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
@@ -442,11 +450,12 @@
     redo:()=>{finishResolutionEdit();finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
     pointer:()=>{timeline.hand=false;$('[data-action=pointer]').classList.add('is-active');$('[data-action=hand]').classList.remove('is-active');},
     hand:()=>{timeline.hand=true;$('[data-action=hand]').classList.add('is-active');$('[data-action=pointer]').classList.remove('is-active');},
+    chain:()=>setChainEnabled(!timeline.chainEnabled),
     snap:()=>{timeline.snapEnabled=!timeline.snapEnabled;$('[data-action=snap]').classList.toggle('is-active',timeline.snapEnabled);},
     'zoom-out':()=>timeline.zoom(.8),'zoom-in':()=>timeline.zoom(1.25),fit:()=>timeline.fit(),
     delete:()=>{if(!current())return;if(jobId===current().id){toast('请等待当前模拟生成完成。');return;}timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
-    reset:()=>{finishResolutionEdit();lastPreviewRun=null;setGenerationPreview(true);clearInterval(jobTimer);jobId=null;finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};title='远航之前';$('#projectName').textContent=title;openProject();renderAll();timeline.fit();timeline.setFrame(192);}
+    reset:()=>{setChainEnabled(true);finishResolutionEdit();lastPreviewRun=null;setGenerationPreview(true);clearInterval(jobTimer);jobId=null;finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};title='远航之前';$('#projectName').textContent=title;openProject();renderAll();timeline.fit();timeline.setFrame(192);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');if(button){if(!button.disabled)actions[button.dataset.action]?.();return;}

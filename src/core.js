@@ -49,6 +49,24 @@
       return { ...x, start: next, end: next + x.end - x.start };
     });
   }
+  function moveFollowing(clips, id, frame) {
+    const index = clips.findIndex(c => c.id === id), head = clips[index];
+    if (!head || !Number.isFinite(frame)) return clips;
+    const prev = clips[index - 1], prev2 = clips[index - 2], next = clips[index + 1];
+    const duration = head.end - head.start;
+    // The moving suffix keeps all internal gaps and overlaps. Only its boundary
+    // with the fixed prefix can change; do not clamp against its own followers.
+    const min = Math.max(0,
+      prev ? prev.start + 1 : 0,
+      prev ? prev.end - duration + 1 : 0,
+      prev2 ? prev2.end : 0,
+      prev && next ? prev.end - (next.start - head.start) : 0);
+    const delta = Math.max(min, Math.round(frame)) - head.start;
+    if (!delta) return clips;
+    return clips.map((clip, i) => i < index ? clip : {
+      ...clip, start: clip.start + delta, end: clip.end + delta
+    });
+  }
   function snap(value, offsets, targets, threshold) {
     let best = { value, target: null, distance: threshold + 1 };
     for (const offset of offsets) for (const target of targets) {
@@ -71,7 +89,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, overlaps, bounds, editClip, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, overlaps, bounds, editClip, moveFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
