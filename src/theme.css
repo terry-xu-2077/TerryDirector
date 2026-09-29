@@ -2,6 +2,7 @@
    Fixed-dark presentation today; no picker, localStorage or project theme data. */
 .td-theme {
   color-scheme: dark;
+  --td-neutral-night: #08090D;
   --td-neutral-base: #1D1F29;
   --td-neutral-panel: #343747;
   --td-neutral-surface: #3E4152;
@@ -12,6 +13,10 @@
   --td-violet-mid: #5756A7;
   --td-violet-highlight: #BA87F8;
   --td-violet-pink: #E48BEA;
+  /* Small amber/orange controls from the original music-plugin reference.
+     Keep the original darker warm swatches; they are not substitutes for highlights. */
+  --td-warm-gold: #E59B3D;
+  --td-warm-orange: #E07D2B;
   --td-warm-coral: #E3786B;
   --td-warm-pink: #EC82A2;
   --td-warm-amber: #9D5E21;
@@ -23,20 +28,20 @@
   --td-status-success: #A9C4B6;
   --td-status-warning: #ECAB83;
   --td-status-danger: #E3786B;
-  /* Browser backdrop and floating application shell use the same reference palette. */
-  --td-page-bg-top: color-mix(in srgb, var(--td-neutral-panel) 30%, var(--td-neutral-base));
-  --td-page-bg-bottom: var(--td-neutral-base);
+  /* Darken only the browser surround; keep the working surfaces readable. */
+  --td-page-bg-top: color-mix(in srgb, var(--td-neutral-night) 82%, var(--td-neutral-base));
+  --td-page-bg-bottom: var(--td-neutral-night);
   --td-shell-edge: color-mix(in srgb, var(--td-neutral-silver) 48%, transparent);
-  --td-shell-highlight: color-mix(in srgb, var(--td-ink-bright) 28%, transparent);
-  --td-shell-shadow: color-mix(in srgb, var(--td-neutral-base) 74%, transparent);
-  --td-shell-contact-shadow: color-mix(in srgb, var(--td-neutral-base) 90%, transparent);
+  --td-shell-highlight: color-mix(in srgb, var(--td-ink-bright) 19%, transparent);
+  --td-shell-shadow: color-mix(in srgb, var(--td-neutral-night) 84%, transparent);
+  --td-shell-contact-shadow: color-mix(in srgb, var(--td-neutral-night) 95%, transparent);
   --td-bg-app: var(--td-neutral-panel);
-  --td-bg-workspace: color-mix(in srgb, var(--td-neutral-panel) 63%, var(--td-neutral-base));
+  --td-bg-workspace: color-mix(in srgb, var(--td-neutral-panel) 55%, var(--td-neutral-base));
   --td-bg-panel: var(--td-neutral-panel);
   --td-bg-surface: var(--td-neutral-surface);
   --td-bg-elevated: var(--td-neutral-elevated);
-  --td-bg-inset: color-mix(in srgb, var(--td-neutral-base) 40%, var(--td-neutral-panel));
-  --td-bg-hover: color-mix(in srgb, var(--td-neutral-elevated) 78%, var(--td-violet-highlight) 22%);
+  --td-bg-inset: color-mix(in srgb, var(--td-neutral-base) 55%, var(--td-neutral-panel));
+  --td-bg-hover: color-mix(in srgb, var(--td-neutral-elevated) 92%, var(--td-neutral-silver));
   --td-bg-selected: color-mix(in srgb, var(--td-violet-mid) 38%, var(--td-neutral-panel));
   --td-text-main: var(--td-ink-primary);
   --td-text-bright: var(--td-ink-bright);
@@ -50,22 +55,38 @@
   --td-accent-soft: color-mix(in srgb, var(--td-violet-highlight) 12%, transparent);
   --td-effect: var(--td-violet-highlight);
   --td-glow: color-mix(in srgb, var(--td-violet-highlight) 12%, transparent);
-  --td-shadow: color-mix(in srgb, var(--td-neutral-base) 50%, transparent);
+  --td-shadow: color-mix(in srgb, var(--td-neutral-night) 65%, transparent);
   --td-scrim: color-mix(in srgb, var(--td-neutral-base) 83%, transparent);
   --td-on-accent: var(--td-neutral-base);
+  /* Warm = generation/readout; violet = editing/selection; pink = time/overlap.
+     State colors remain distinct: success is green-grey, errors remain coral. */
+  --td-generation-accent: color-mix(in srgb, var(--td-warm-gold) 82%, var(--td-ink-bright));
+  --td-generation-fill: linear-gradient(110deg, var(--td-generation-accent), var(--td-warm-orange));
+  --td-generation-fill-hover: linear-gradient(110deg, color-mix(in srgb, var(--td-generation-accent) 84%, var(--td-ink-bright)), var(--td-warm-gold));
+  --td-generation-soft: color-mix(in srgb, var(--td-warm-gold) 10%, transparent);
+  --td-generation-border: color-mix(in srgb, var(--td-warm-gold) 38%, transparent);
+  --td-generation-glow: color-mix(in srgb, var(--td-warm-orange) 15%, transparent);
+  --td-generation-track: color-mix(in srgb, var(--td-warm-gold) 15%, transparent);
+  --td-on-generation: var(--td-neutral-base);
+  --td-resolution-ink: var(--td-generation-accent);
+  --td-resolution-bg: var(--td-generation-soft);
+  --td-resolution-border: var(--td-generation-border);
+  --td-tag-section: var(--td-violet-pink);
+  --td-tag-dialogue: var(--td-warm-pink);
+  --td-tag-retention: var(--td-warm-coral);
   --td-timeline-bg: var(--td-bg-workspace);
   --td-timeline-grid: color-mix(in srgb, var(--td-neutral-silver) 10%, transparent);
   --td-timeline-ruler: var(--td-text-muted);
   --td-timeline-playhead: var(--td-violet-pink);
   --td-timeline-selection: var(--td-violet-highlight);
-  --td-timeline-snap: var(--td-warm-coral);
+  --td-timeline-snap: var(--td-generation-accent);
   --td-timeline-overlap: var(--td-violet-pink);
   --td-timeline-clip: var(--td-neutral-surface);
-  --td-timeline-clip-selected: color-mix(in srgb, var(--td-violet-mid) 58%, var(--td-neutral-surface));
+  --td-timeline-clip-selected: color-mix(in srgb, var(--td-violet-deep) 38%, var(--td-neutral-surface));
   --td-timeline-clip-edge: var(--td-violet-mid);
-  --td-timeline-clip-highlight: color-mix(in srgb, var(--td-violet-highlight) 45%, var(--td-violet-mid));
-  --td-timeline-progress: var(--td-status-success);
-  --td-timeline-progress-track: color-mix(in srgb, var(--td-status-success) 18%, transparent);
+  --td-timeline-clip-highlight: color-mix(in srgb, var(--td-violet-mid) 55%, var(--td-neutral-surface));
+  --td-timeline-progress: var(--td-generation-accent);
+  --td-timeline-progress-track: var(--td-generation-track);
   --td-timeline-waveform: var(--td-violet-highlight);
   --td-folder-back: color-mix(in srgb, var(--td-neutral-surface) 78%, var(--td-violet-mid));
   --td-folder-front: color-mix(in srgb, var(--td-neutral-elevated) 84%, var(--td-violet-mid));
@@ -73,7 +94,7 @@
   --td-tag-camera: var(--td-violet-highlight);
   --td-tag-shot: var(--td-violet-pink);
   --td-tag-time: var(--td-text-secondary);
-  --td-tag-audio: var(--td-warm-coral);
+  --td-tag-audio: var(--td-generation-accent);
   --td-ease: cubic-bezier(.22,1,.36,1);
   --td-radius: 10px;
   /* Local static demo adaptation of the Studio Dark public palette. */
@@ -93,3 +114,36 @@
   --tsd-radius-sm: 12px;
   --tsd-ease: var(--td-ease);
 }
+
+/* Product color bindings only: no dimensions, placement or event changes.
+   Scoped selectors intentionally override the older generic violet controls.
+   Shared Studio Dark internals and other applications are not modified. */
+.td-theme #generateButton {
+  background: var(--td-generation-fill);
+  color: var(--td-on-generation);
+  border-color: var(--td-generation-border);
+  box-shadow: 0 3px 14px var(--td-generation-glow);
+}
+.td-theme #generateButton:hover:not(:disabled) { background: var(--td-generation-fill-hover); }
+.td-theme #generateButton:focus-visible { outline-color: var(--td-generation-accent); }
+.td-theme .generation-preview-progress { background: var(--td-generation-track); }
+.td-theme .generation-preview-progress i { background: var(--td-generation-fill); }
+.td-theme .resolution-result {
+  color: var(--td-resolution-ink);
+  background: var(--td-resolution-bg);
+  border-color: var(--td-resolution-border);
+}
+.td-theme .resolution-result.is-invalid { color: var(--td-status-warning); }
+.td-theme .preview-switch[aria-checked="true"] .preview-switch-track {
+  border-color: var(--td-generation-accent);
+  background: var(--td-generation-soft);
+}
+.td-theme .preview-switch[aria-checked="true"] .preview-switch-track i {
+  background: var(--td-generation-accent);
+}
+.td-theme .preview-switch:focus-visible { outline-color: var(--td-generation-accent); }
+.td-theme .h3-editor .h3-section { --chip-ink: var(--td-tag-section); }
+.td-theme .h3-editor .h3-camera { --chip-ink: var(--td-tag-camera); }
+.td-theme .h3-editor .h3-audio { --chip-ink: var(--td-tag-audio); }
+.td-theme .h3-editor .h3-dialogue { --chip-ink: var(--td-tag-dialogue); }
+.td-theme .h3-editor .h3-retention,.td-theme .h3-editor .h3-task { --chip-ink: var(--td-tag-retention); }
