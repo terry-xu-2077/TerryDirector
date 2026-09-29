@@ -79,3 +79,34 @@ test('short leaders stay outside overlap and do not grow with zoom or height',()
   }
  }
 });
+
+function paintDetails(t){
+ const starts=[],texts=[];
+ t.options={};t.clips=t.clips.map(c=>({...c,name:c.id}));t.image=()=>null;
+ t.theme={text:'ordinary',muted:'muted',start:'start-ink',startInset:'start-inset',selection:'selected',duration:'duration-orange'};
+ const context={measureText:text=>({width:text.length*7}),createLinearGradient:()=>({addColorStop(){}}),fillText(text){texts.push({text,color:this.fillStyle});}};
+ t.ctx=new Proxy(context,{get:(obj,key)=>key in obj?obj[key]:()=>{}});
+ t.rect=(ctx,x,y,w,h,r,fill)=>{if(w===2&&h===t.trackHeight-10)starts.push({x,fill});};
+ t.drawContent();return {starts,texts};
+}
+test('all visible starts are marked even with no selection or hover',()=>{
+ const t=timeline();t.selected=null;
+ assert.deepEqual(paintDetails(t).starts,t.clips.map(c=>({x:t.x(c.start)+1,fill:'start-ink'})));
+ t.hover='c';assert.equal(paintDetails(t).starts.length,3);
+});
+test('start markers track actual boundaries under zoom and selected state',()=>{
+ const t=timeline();t.ppf=.8;t.scroll=20;
+ assert.deepEqual(paintDetails(t).starts,t.clips.map(c=>({x:t.x(c.start)+1,fill:c.id===t.selected?'selected':'start-ink'})));
+});
+test('clip durations are orange on every clip; status text remains secondary',()=>{
+ const t=timeline();
+ for(const selected of [null,'a','b']){
+  t.selected=selected;const {texts}=paintDetails(t);
+  assert.equal(texts.filter(x=>x.text==='10s'&&x.color==='duration-orange').length,3);
+  assert.equal(texts.filter(x=>x.text==='待生成'&&x.color==='muted').length,3);
+ }
+});
+test('viewport minimum does not fabricate duration for an empty project',()=>{
+ const t=timeline();t.clips=[];
+ assert.equal(t.total,C.FPS);assert.equal(C.arrangementFrames(t.clips),0);
+});

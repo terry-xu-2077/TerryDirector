@@ -81,6 +81,9 @@
   --td-tag-reference: var(--td-level-3-ink);
   --td-tag-dialogue: var(--td-warm-coral);
   --td-tag-retention: var(--td-level-1-ink);
+  --td-timeline-duration: var(--td-level-3-ink);
+  --td-timeline-clip-start: color-mix(in srgb, var(--td-violet-highlight) 65%, var(--td-neutral-silver));
+  --td-timeline-clip-start-inset: color-mix(in srgb, var(--td-neutral-base) 80%, var(--td-neutral-panel));
   --td-timeline-bg: var(--td-bg-workspace);
   --td-timeline-grid: color-mix(in srgb, var(--td-neutral-silver) 10%, transparent);
   --td-timeline-ruler: var(--td-text-muted);

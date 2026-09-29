@@ -72,3 +72,17 @@ test('large drags/trims retain chronological order and forbid triple overlaps',(
 test('non-finite edits leave the sequence unchanged',()=>{
  assert.equal(C.editClip(clips,'a','move',NaN),clips);
 });
+
+test('arranged duration counts from zero without double-counting overlaps',()=>{
+ assert.equal(C.arrangementFrames([]),0);
+ assert.equal(C.arrangementFrames([{start:0,end:240},{start:192,end:432}]),432);
+ assert.equal(C.arrangementFrames([{start:120,end:360}]),360); // Leading gap belongs to the timeline.
+ assert.equal(C.arrangementFrames([{start:0,end:240},{start:360,end:480}]),480);
+ assert.equal(C.arrangementFrames([{start:360,end:480},{start:0,end:240}]),480);
+});
+test('arranged duration follows the actual suffix end after move and tail edits',()=>{
+ assert.equal(C.arrangementFrames(C.moveFollowing(clips,'b',clips[1].start+24)),clips.at(-1).end+24);
+ assert.equal(C.arrangementFrames(C.trimEndFollowing(clips,'b',clips[1].end+48)),clips.at(-1).end+48);
+ const short=C.trimEndFollowing(clips,'b',clips[1].end-24);
+ assert.equal(C.arrangementFrames(short),short.at(-1).end);
+});

@@ -26,7 +26,7 @@
       this.resize(); this.fit();
     }
     readTheme() {
-      const names = {bg:'timeline-bg',grid:'timeline-grid',ruler:'timeline-ruler',playhead:'timeline-playhead',selection:'timeline-selection',snap:'timeline-snap',overlap:'timeline-overlap',clip:'timeline-clip',selected:'timeline-clip-selected',edge:'timeline-clip-edge',highlight:'timeline-clip-highlight',wave:'timeline-waveform',text:'text-main',muted:'text-secondary',inset:'bg-inset',border:'border',effect:'effect',progress:'timeline-progress',progressTrack:'timeline-progress-track',success:'status-success',warning:'status-warning'};
+      const names = {bg:'timeline-bg',grid:'timeline-grid',ruler:'timeline-ruler',playhead:'timeline-playhead',selection:'timeline-selection',snap:'timeline-snap',overlap:'timeline-overlap',clip:'timeline-clip',selected:'timeline-clip-selected',edge:'timeline-clip-edge',highlight:'timeline-clip-highlight',wave:'timeline-waveform',text:'text-main',muted:'text-secondary',inset:'bg-inset',border:'border',effect:'effect',progress:'timeline-progress',progressTrack:'timeline-progress-track',success:'status-success',warning:'status-warning',start:'timeline-clip-start',startInset:'timeline-clip-start-inset',duration:'timeline-duration'};
       this.theme = {};
       const probe = document.createElement('span'); probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none'; document.body.append(probe);
       for (const [key,value] of Object.entries(names)) { probe.style.color = `var(--td-${value})`; this.theme[key] = getComputedStyle(probe).color; }
@@ -38,7 +38,7 @@
       for (const c of [this.content,this.overlay]) { c.width = Math.max(1,Math.round(this.width*ratio)); c.height = Math.max(1,Math.round(this.height*ratio)); c.getContext('2d').setTransform(ratio,0,0,ratio,0,0); }
       this.clampScroll(); this.invalidate();
     }
-    get total() { return Math.max(C.FPS, ...this.clips.map(c=>c.end)); }
+    get total() { return Math.max(C.FPS, C.arrangementFrames(this.clips)); }
     // Keep title/status legible at the compact minimum; reserve 48px for the leader and bubble.
     get trackHeight() { return Math.max(54,Math.min(82,this.height-this.ruler-10-48)); }
     y() { return this.ruler+10; }
@@ -159,12 +159,18 @@
         ctx.save();ctx.beginPath();ctx.roundRect(x+1,y+1,Math.max(1,width-2),ch-2,7);ctx.clip();
         const img=this.image(this.options.getImage?.(c));
         if(img&&width>66){ctx.globalAlpha=selected?.08:.045;const iw=(ch-8)*img.naturalWidth/img.naturalHeight;for(let xx=Math.max(x,x+Math.floor((this.inset-x)/iw)*iw);xx<x+width;xx+=iw)ctx.drawImage(img,xx,y+4,iw,ch-8);ctx.globalAlpha=1;}
+        // A permanent seam at the real start, not a hover-only trim handle.
+        // Keep it inside the clip: overlapping clips and zoom retain true timing.
+        const startInk=selected?t.selection:t.start;
+        this.rect(ctx,x+1,y+1,Math.min(9,width-2),ch-2,0,t.startInset);
+        this.rect(ctx,x+1,y+5,2,ch-10,1,startInk);
+        this.rect(ctx,x+1,y+5,Math.min(7,width-2),2,1,startInk);
         const badge=`片段 ${i+1}`;
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';const badgeWidth=ctx.measureText(badge).width+14;
         this.rect(ctx,x+13,y+10,badgeWidth,23,5,t.inset);
         ctx.fillStyle=t.text;ctx.fillText(badge,x+20,y+21.5);
         const duration=`${Number(((c.end-c.start)/C.FPS).toFixed(2))}s`,dx=x+badgeWidth+24;
-        ctx.font='12px Consolas,monospace';ctx.fillText(duration,dx,y+21.5);
+        ctx.font='600 12px Consolas,monospace';ctx.fillStyle=t.duration;ctx.fillText(duration,dx,y+21.5);
         const descriptionX=dx+ctx.measureText(duration).width+13;
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.muted;
         this.label(ctx,c.name,descriptionX,y+21.5,width-(descriptionX-x)-12);

@@ -110,7 +110,14 @@ input,textarea { min-width:0; }
 .resize-v { width:5px;cursor:col-resize; }.resize-h { height:5px;cursor:row-resize; }
 .resize-v:hover,.resize-h:hover { background:var(--td-accent-soft); }
 .timeline-panel { height:var(--timeline-height);min-height:200px;flex-shrink:0;background:var(--td-bg-workspace);display:flex;flex-direction:column;min-width:0; }
-.timeline-toolbar { overflow-x:auto;height:38px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 18px; }
+/* The duration stays visible even when the tool group needs to scroll. */
+.timeline-toolbar { height:38px;flex-shrink:0;display:flex;align-items:center;gap:14px;padding:0 18px;min-width:0; }
+.timeline-leading { display:flex;align-items:center;gap:10px;flex:none; }
+.timeline-duration { display:grid;align-content:center;flex:none;gap:0; }
+.timeline-duration>span { font-size:10px;line-height:12px;color:var(--td-text-secondary); }
+.timeline-duration>output { font:600 20px/23px "Consolas",monospace;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--td-timeline-duration); }
+.timeline-controls { display:flex;align-items:center;gap:8px;flex:1;min-width:0;height:100%;overflow-x:auto;scrollbar-width:thin; }
+.timeline-position { flex:none;display:flex;align-items:center;gap:6px;color:var(--td-text-muted);font-size:10px;white-space:nowrap; }
 .timeline-toolbar strong { flex:none;white-space:nowrap;font-size:12px;font-weight:550; }
 .timeline-toolbar .subtle { font-size:10px; }
 .timeline-tools { flex:none;display:flex;align-items:center;gap:3px; }
@@ -218,3 +225,13 @@ dialog[data-mode="media"] .modal-actions { margin-top:10px; }
 /* Project pool: the same compact cards stay mounted across clip selection. */
 .reference-tile.is-referenced .reference-insert { border-color:var(--td-border-focus); }
 .asset-current-use { position:absolute;right:4px;bottom:3px;border-radius:3px;padding:1px 4px;font-size:9px;line-height:15px;color:var(--td-effect);background:var(--td-scrim);pointer-events:none; }
+
+/* Narrow screens keep the duration readable instead of shrinking it into the tools. */
+@media (max-width:760px) {
+  .timeline-toolbar { height:78px;flex-wrap:wrap;align-content:center;gap:4px 10px;overflow:visible; }
+  .timeline-leading { flex:1; }
+  .timeline-duration>output { font-size:19px; }
+  .timeline-controls { flex-basis:100%;height:34px; }
+  .timeline-position { display:none; }
+  .timeline-panel { height:calc(var(--timeline-height) + 40px); }
+}

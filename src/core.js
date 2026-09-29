@@ -17,6 +17,8 @@
       return range.frames > 0 ? [{ ...range, a: a.id, b: b.id }] : [];
     });
   }
+  // Actual arranged duration starts at timeline zero; viewport padding is not content.
+  const arrangementFrames = clips => clips.reduce((end, clip) => Math.max(end, clip.end), 0);
   function bounds(clips, id, mode) {
     const i = clips.findIndex(c => c.id === id), c = clips[i];
     if (!c) return { min: 0, max: 0 };
@@ -107,7 +109,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, overlaps, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, overlaps, arrangementFrames, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
