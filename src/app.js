@@ -2,7 +2,7 @@
  * Docked generation feedback + separate asset lightbox. No backend or framework. */
 (function () {
   'use strict';
-  const C=window.TDCore, $=s=>document.querySelector(s);
+  const C=window.TDCore, R=window.TDResolution, $=s=>document.querySelector(s);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const paths={
     home:'M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z',
@@ -41,12 +41,13 @@
     'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
     'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
   ];
-  const initial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:['launch-wide'],prompt:prompts[i],resolution:'720P',seed:241907+i,audio:true,guide:'画面参考'}));
+  const initial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:['launch-wide'],prompt:prompts[i],resolution:{...R.DEFAULT},seed:241907+i,audio:true,guide:'画面参考'}));
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
   function resetActivity(){activity.clear();for(const [id,seconds] of [['clip-1',300],['clip-2',186]])activity.set(id,{status:'completed',progress:1,elapsedSeconds:seconds,completedAt:'2026-09-28T07:00:00Z',example:true});}
   resetActivity();
   let state={clips:C.copy(initial),selected:'clip-2'},history=new C.History();
+  let resolutionEditBefore=null;
   let title='远航之前',promptView='visual',editBefore=null,nextId=5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null;
   let generationPreviewOpen=true,lastPreviewRun=null;
   let promptEditor=null;
@@ -55,14 +56,22 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">STUDIO</span></div>
       <div class="crumbs">${ib('home','home','项目首页')}${icon('chevron')}<button id="projectName" data-action="rename-project">远航之前</button></div>
-      <div class="top-actions"><span class="prototype">交互 DEMO · 06</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
+      <div class="top-actions"><span class="prototype">交互 DEMO · 06.3</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
         <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div><span id="clipTiming" class="clip-timing"></span></header>
         <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><div class="prompt-views" aria-label="提示词显示方式"><button data-prompt-view="visual">可视化</button><button data-prompt-view="text">纯文本</button></div></div>
         <div class="prompt-editor"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div>
-        <footer class="composer-footer"><span id="promptUsed" class="subtle"></span><span class="subtle" id="promptCount"></span><div class="submit-controls"><button class="button ghost" id="generationPreviewToggle" data-action="toggle-generation-preview" aria-expanded="true" aria-controls="generationPreview">${icon('eye')}<span>隐藏生成预览</span></button><label class="resolution">分辨率<select id="resolutionSelect" aria-label="生成分辨率"><option>720P</option><option>1080P</option></select></label><button class="button primary" id="generateButton" data-action="generate">${icon('spark')}模拟生成当前片段</button></div></footer>
+        <footer class="composer-footer">
+          <div class="resolution-controls" id="resolutionControls" role="group" aria-label="生成分辨率">
+            <label class="resolution-field">比例<select id="aspectRatioSelect" aria-label="画面比例">${R.ASPECTS.map(a=>`<option value="${a.value}">${a.label}</option>`).join('')}</select></label>
+            <label class="resolution-field">像素量<span class="resolution-number"><input id="megapixelsInput" type="number" value="1.2" min="0.1" max="16" step="0.01" required aria-label="总像素量 MP" title="按 ComfyUI 算法：1 MP = 1024 × 1024 像素；支持手输 0.98 等小数"><span>MP</span></span></label>
+            <label class="resolution-field">倍数<input id="multipleInput" type="number" value="32" min="8" max="128" step="4" required aria-label="尺寸对齐倍数" title="宽高分别对齐到该数的最近整数倍；范围 8–128，步长 4"></label>
+            <output id="resolutionResult" class="resolution-result" for="aspectRatioSelect megapixelsInput multipleInput" aria-live="polite" aria-atomic="true">1504 × 832</output>
+          </div>
+          <div class="composer-actions"><span id="promptUsed" class="subtle"></span><span class="subtle" id="promptCount"></span><div class="submit-controls"><button class="button ghost" id="generationPreviewToggle" data-action="toggle-generation-preview" aria-expanded="true" aria-controls="generationPreview">${icon('eye')}<span>隐藏生成预览</span></button><button class="button primary" id="generateButton" data-action="generate">${icon('spark')}模拟生成当前片段</button></div></div>
+        </footer>
       </section>
       <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
       <div class="reference-column">
@@ -102,7 +111,7 @@
   function markEdited(){ $('#editStatus').textContent='已暂存于本页 · 刷新后还原'; }
   function finishPromptEdit(){if(editBefore){if(history.push(editBefore,state))markEdited();editBefore=null;updateHistory();}}
   function commit(before){history.push(before,state);renderAll();markEdited();}
-  function mutate(fn){finishPromptEdit();const before=C.copy(state);fn();commit(before);}
+  function mutate(fn){finishResolutionEdit();finishPromptEdit();const before=C.copy(state);fn();commit(before);}
   function updateHistory(){ $('[data-action=undo]').disabled=!history.undoItems.length;$('[data-action=redo]').disabled=!history.redoItems.length; }
   function renderPrompt(){
     const c=current(),text=c?.prompt||'';
@@ -165,8 +174,42 @@
     $('#generationPreviewStatus').textContent=record?.status==='running'?`模拟 ${Math.round(progress*100)}% · ${record.elapsedSeconds.toFixed(1)}s`:run?'模拟完成 · 参考静帧占位，非模型输出':'当前未连接 ComfyUI';
   }
   function setGenerationPreview(open){generationPreviewOpen=!!open;renderGenerationPreview();}
+  function resolutionFromControls(){
+    const ratio=$('#aspectRatioSelect'),mp=$('#megapixelsInput'),multiple=$('#multipleInput');
+    if(!current()||!mp.validity.valid||!multiple.validity.valid)return null;
+    const settings={aspect_ratio:ratio.value,megapixels:mp.valueAsNumber,multiple:multiple.valueAsNumber};
+    try{return {settings,...R.calculate(settings)};}catch{return null;}
+  }
+  function renderResolutionResult(){
+    const result=resolutionFromControls(),output=$('#resolutionResult');
+    output.textContent=result?`${result.width} × ${result.height}`:'— × —';
+    output.title=result?'实际宽 × 高（像素）；宽高分别取到最近的指定倍数。':'像素量 0.1–16 MP；倍数 8–128，步长 4。';
+    output.classList.toggle('is-invalid',!!current()&&!result);
+    for(const field of [$('#megapixelsInput'),$('#multipleInput')])field.setAttribute('aria-invalid',String(!!current()&&!field.validity.valid));
+  }
+  function renderResolution(){
+    const c=current(),settings=c?.resolution||R.DEFAULT;
+    $('#aspectRatioSelect').value=settings.aspect_ratio;
+    $('#megapixelsInput').value=settings.megapixels;
+    $('#multipleInput').value=settings.multiple;
+    $('#resolutionControls').querySelectorAll('input,select').forEach(field=>field.disabled=!c);
+    renderResolutionResult();
+  }
+  function finishResolutionEdit(){
+    if(!resolutionEditBefore)return;
+    if(history.push(resolutionEditBefore,state))markEdited();
+    resolutionEditBefore=null;updateHistory();
+  }
+  function updateResolution(){
+    const c=current();if(!c)return;
+    if(!resolutionEditBefore)resolutionEditBefore=C.copy(state);
+    const result=resolutionFromControls();
+    // Partial/invalid input never enters project data; keep the last valid settings.
+    if(result)c.resolution=result.settings;
+    renderResolutionResult();renderActivity();
+  }
   function renderActivity(){
-    const c=current(),a=activityFor(c),button=$('#generateButton');button.disabled=!c||!!jobId||!(c.prompt||'').trim();
+    const c=current(),a=activityFor(c),button=$('#generateButton');button.disabled=!c||!!jobId||!(c.prompt||'').trim()||!resolutionFromControls();
     button.innerHTML=icon('spark')+(jobId?(jobId===c?.id?`模拟生成 ${Math.round(a.progress*100)}%`:'其他片段生成中…'):'模拟生成当前片段');
     button.title='只演示生成进度，不调用 ComfyUI';renderGenerationPreview();
   }
@@ -174,12 +217,12 @@
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
     const c=current();$('#clipNumber').textContent=c?`片段 ${String(state.clips.indexOf(c)+1).padStart(2,'0')}`:'暂无片段';
     $('#clipName').value=c?.name||'';$('#clipName').disabled=!c;$('#clipName').hidden=!c;
-    $('#resolutionSelect').disabled=!c;$('#resolutionSelect').value=c?.resolution||'720P';
+    renderResolution();
     renderPrompt();renderTiming();renderReferences();renderGenerationPreview();renderActivity();updateHistory();
     if(timeline){timeline.setClips(state.clips);timeline.select(state.selected);}
     $('#clipSummary').textContent=`${state.clips.length} 个片段 · ${C.overlaps(state.clips).length} 处重叠`;
   }
-  function select(id,seek=false){finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
+  function select(id,seek=false){finishResolutionEdit();finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
     getAssets:()=>referenceEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
@@ -197,7 +240,8 @@
   });
   renderAll();timeline.setFrame(8*C.FPS);
   function generate(){
-    const c=current();if(jobId||!c||!(c.prompt||'').trim())return;
+    const c=current();if(jobId||!c||!(c.prompt||'').trim()||!resolutionFromControls())return;
+    finishResolutionEdit();
     finishPromptEdit();const id=c.id,start=performance.now();jobId=id;lastPreviewRun={id,label:`片段 ${state.clips.indexOf(c)+1} · ${c.name}`,source:getImage(c)};
     const record={status:'running',progress:0,elapsedSeconds:0,completedAt:null,example:false};activity.set(id,record);renderActivity();timeline.invalidate();
     jobTimer=setInterval(()=>{
@@ -209,7 +253,7 @@
   function newClip(){modal('新建片段','<label>片段名称<input id="newClipName" type="text" value="新的片段" maxlength="60"></label><p>默认追加到末尾，与前一片段重叠 2 秒。之后可直接拖动调整。</p>','创建片段',()=>{const name=$('#newClipName').value.trim();if(!name)return false;appendClip(name);});}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',resolution:'720P',seed:0,audio:true,guide:'画面参考',refs:[]};
+    const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考',refs:[]};
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
@@ -240,25 +284,25 @@
     $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${assets.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();renderGenerationPreview(); }
-  function exportConfig(){finishPromptEdit();const payload={format:'terrydirector-demo',version:6,fps:C.FPS,project:{title},clips:C.copy(state.clips),assets:assets.map(({id,name,kind,local})=>({id,name,kind,requiresReimport:!!local})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
+  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:7,fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:assets.map(({id,name,kind,local})=>({id,name,kind,requiresReimport:!!local})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
-  function help(){modal('任务编排 Demo','<p>时间线选片段 → 编辑提示词 → 填充参考资产 → 模拟生成。</p><p>可视化可以直接编辑。输入 @ 搜索当前片段的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>生成预览固定在右上区域，可显示或隐藏，不遮挡编辑区。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
+  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 填充参考资产 → 模拟生成。</p><p>可视化可以直接编辑。输入 @ 搜索当前片段的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>生成预览固定在右上区域，可显示或隐藏，不遮挡编辑区。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
   const actions={
     home:showHome,'open-project':openProject,new:newClip,import:()=>$('#fileInput').click(),'pick-assets':pickAssets,export:exportConfig,help,generate,
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     'toggle-generation-preview':()=>setGenerationPreview(!generationPreviewOpen),
     'rename-project':()=>modal('项目名称',`<label>名称<input type="text" id="projectTitleInput" value="${esc(title)}" maxlength="60"></label>`,'确定',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;title=name;$('#projectName').textContent=title;markEdited();}),
     'project-new':()=>modal('新建演示项目','<label>项目名称<input type="text" id="projectTitleInput" value="新的故事" maxlength="60"></label><p>本 Demo 只暂存一个项目，将替换当前编排。请先导出需要保留的配置。</p>','创建',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;clearInterval(jobTimer);jobId=null;lastPreviewRun=null;activity.clear();timeline.cancel();history=new C.History();state={clips:[],selected:null};title=name;$('#projectName').textContent=title;openProject();renderAll();timeline.fit();}),
-    undo:()=>{finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
-    redo:()=>{finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
+    undo:()=>{finishResolutionEdit();finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
+    redo:()=>{finishResolutionEdit();finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
     pointer:()=>{timeline.hand=false;$('[data-action=pointer]').classList.add('is-active');$('[data-action=hand]').classList.remove('is-active');},
     hand:()=>{timeline.hand=true;$('[data-action=hand]').classList.add('is-active');$('[data-action=pointer]').classList.remove('is-active');},
     snap:()=>{timeline.snapEnabled=!timeline.snapEnabled;$('[data-action=snap]').classList.toggle('is-active',timeline.snapEnabled);},
     'zoom-out':()=>timeline.zoom(.8),'zoom-in':()=>timeline.zoom(1.25),fit:()=>timeline.fit(),
     delete:()=>{if(!current())return;if(jobId===current().id){toast('请等待当前模拟生成完成。');return;}timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
-    reset:()=>{lastPreviewRun=null;setGenerationPreview(true);clearInterval(jobTimer);jobId=null;finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();state={clips:C.copy(initial),selected:'clip-2'};title='远航之前';$('#projectName').textContent=title;openProject();renderAll();timeline.fit();timeline.setFrame(192);}
+    reset:()=>{finishResolutionEdit();lastPreviewRun=null;setGenerationPreview(true);clearInterval(jobTimer);jobId=null;finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();state={clips:C.copy(initial),selected:'clip-2'};title='远航之前';$('#projectName').textContent=title;openProject();renderAll();timeline.fit();timeline.setFrame(192);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');if(button){if(!button.disabled)actions[button.dataset.action]?.();return;}
@@ -269,7 +313,16 @@
     const view=target.closest('[data-prompt-view]');if(view){finishPromptEdit();promptView=view.dataset.promptView;renderPrompt();}
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
-  $('#resolutionSelect').addEventListener('change',e=>{if(current())mutate(()=>current().resolution=e.target.value);});
+  const resolutionControls=$('#resolutionControls');
+  resolutionControls.addEventListener('focusin',()=>{finishPromptEdit();if(!resolutionEditBefore)resolutionEditBefore=C.copy(state);});
+  resolutionControls.addEventListener('input',updateResolution);
+  resolutionControls.addEventListener('change',updateResolution);
+  resolutionControls.addEventListener('focusout',e=>{if(!resolutionControls.contains(e.relatedTarget))finishResolutionEdit();});
+  resolutionControls.addEventListener('keydown',e=>{
+    if((e.ctrlKey||e.metaKey)&&['z','y'].includes(e.key.toLowerCase())){
+      e.preventDefault();e.stopPropagation();actions[e.key.toLowerCase()==='y'||e.shiftKey?'redo':'undo']();
+    }else if(e.key==='Enter'){e.preventDefault();finishResolutionEdit();}
+  });
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
   $('#zoomRange').addEventListener('input',e=>{timeline.zoom((.22*Math.pow(24/.22,Number(e.target.value)/100))/timeline.ppf);});
   app.addEventListener('dragstart',e=>{const ref=e.target.closest('[data-reference]');if(ref){e.dataTransfer.setData('application/x-terrydirector-asset',ref.dataset.reference);e.dataTransfer.effectAllowed='copy';}});
@@ -300,7 +353,7 @@
     el.addEventListener('dblclick',()=>app.style.removeProperty(variable));
     el.addEventListener('keydown',e=>{const keys=axis==='x'?['ArrowLeft','ArrowRight']:['ArrowUp','ArrowDown'];if(keys.includes(e.key)){e.preventDefault();e.stopPropagation();set(parseFloat(getComputedStyle(app).getPropertyValue(variable))+(e.key===keys[1]?12:-12)*sign);}});
   }
-  resizeHandle('referenceResize','--reference-width',280,520,'x',-1);resizeHandle('timelineResize','--timeline-height',200,400,'y',-1);
+  resizeHandle('referenceResize','--reference-width',280,680,'x',-1);resizeHandle('timelineResize','--timeline-height',200,400,'y',-1);
   let scrollDrag=null;$('#scrollBar').addEventListener('pointerdown',e=>{const r=e.currentTarget.getBoundingClientRect(),v=timeline.viewInfo();scrollDrag={x:e.clientX,initial:timeline.scroll,scale:v.contentWidth/r.width};e.currentTarget.setPointerCapture(e.pointerId);if(e.target!==$('#scrollThumb')){timeline.setScroll((e.clientX-r.left)/r.width*v.contentWidth-v.visible/2);scrollDrag.initial=timeline.scroll;}});
   $('#scrollBar').addEventListener('pointermove',e=>{if(scrollDrag)timeline.setScroll(scrollDrag.initial+(e.clientX-scrollDrag.x)*scrollDrag.scale);});for(const event of ['pointerup','pointercancel','lostpointercapture'])$('#scrollBar').addEventListener(event,()=>scrollDrag=null);
   window.TerryDirectorDemo={getState:()=>C.copy(state),getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
