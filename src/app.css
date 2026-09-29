@@ -214,3 +214,7 @@ dialog[data-mode="media"] .modal-actions { margin-top:10px; }
   .generation-preview-frame { height:auto;max-width:520px; }
   .prompt-help { font-size:10px; }
 }
+
+/* Project pool: the same compact cards stay mounted across clip selection. */
+.reference-tile.is-referenced .reference-insert { border-color:var(--td-border-focus); }
+.asset-current-use { position:absolute;right:4px;bottom:3px;border-radius:3px;padding:1px 4px;font-size:9px;line-height:15px;color:var(--td-effect);background:var(--td-scrim);pointer-events:none; }

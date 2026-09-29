@@ -34,19 +34,27 @@
   const launch=window.TDStills.launch;
   // Tiny authored starfield placeholder, not a model output.
   const stars=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><defs><radialGradient id="g"><stop stop-color="#46415a"/><stop offset="1" stop-color="#202432"/></radialGradient></defs><rect width="800" height="450" fill="url(#g)"/>${Array.from({length:88},(_,i)=>`<circle cx="${(i*137.2)%800}" cy="${(i*71.13)%450}" r="${i%13?'.7':'1.5'}" fill="#ded9e8" opacity="${.25+(i%7)/10}"/>`).join('')}<ellipse cx="350" cy="225" rx="150" ry="5" fill="#dca5a6" opacity=".12" transform="rotate(-24 350 225)"/></svg>`;
-  const assets=[{id:'launch-wide',name:'发射场 · 全景',kind:'image',src:launch,detail:'640 × 427 · 示例静帧'},{id:'launch-detail',name:'塔架 · 局部',kind:'image',src:launch,detail:'画面参考 · 同一原图'},{id:'stars',name:'星空 · 视觉占位',kind:'image',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(stars),detail:'程序绘制 · 视觉占位'}];
+  const sampleAssets=[{id:'launch-wide',name:'发射场 · 全景',kind:'image',src:launch,detail:'640 × 427 · 示例静帧'},{id:'launch-detail',name:'塔架 · 局部',kind:'image',src:launch,detail:'画面参考 · 同一原图'},{id:'stars',name:'星空 · 视觉占位',kind:'image',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(stars),detail:'程序绘制 · 视觉占位'}];
+  // Media objects live once per page. The project stores active asset IDs, so
+  // import/delete undo does not copy blobs or invalidate a restored Object URL.
+  sampleAssets.forEach((asset,index)=>asset.number=index+1);
+  let assets=sampleAssets.slice(),nextPoolNumber={image:4,video:1,audio:1};
+  let assetGridKey='';
+  const mediaNames={image:'Picture',video:'Video',audio:'Audio'};
+  const mediaPattern=()=>/<(Picture|Video|Audio)\s+(\d+)>/gi;
+  const mediaKey=(kind,number)=>`${kind.toLowerCase()}:${Number(number)}`;
   const prompts=[
     'integrated_multimodal_description:\n[Shot 1] [00:00] 黎明前的发射场，塔架静立，远处的工作灯映着薄雾。\nThe camera pushes in 缓缓靠近主体。\noverall_soundscape:\n远处的风声与设备低鸣。',
     'subject_definitions:\n<Picture 1> 发射场与塔架，作为场景和构图参考。\n\ndetailed_description:\n[Shot 1] [00:00] 承接上一片段，冷蓝色天幕逐渐被暖光照亮。\nThe camera tilts up 摄影机沿塔架缓慢上移，保持场景与主体一致。\n(S1) <d>[Chinese] 准备好了，我们出发。</d>\n\noverall_soundscape:\n延续环境风声。',
     'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
     'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
   ];
-  const initial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:['launch-wide'],prompt:prompts[i],resolution:{...R.DEFAULT},seed:241907+i,audio:true,guide:'画面参考'}));
+  const initial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],resolution:{...R.DEFAULT},seed:241907+i,audio:true,guide:'画面参考'}));
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
   function resetActivity(){activity.clear();for(const [id,seconds] of [['clip-1',300],['clip-2',186]])activity.set(id,{status:'completed',progress:1,elapsedSeconds:seconds,completedAt:'2026-09-28T07:00:00Z',example:true});}
   resetActivity();
-  let state={clips:C.copy(initial),selected:'clip-2'},history=new C.History();
+  let state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)},history=new C.History();
   let resolutionEditBefore=null;
   let title='远航之前',promptView='visual',editBefore=null,nextId=5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null;
   let generationPreviewEnabled=true,lastPreviewRun=null;
@@ -56,7 +64,7 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">STUDIO</span></div>
       <div class="crumbs">${ib('home','home','项目首页')}${icon('chevron')}<button id="projectName" data-action="rename-project">远航之前</button></div>
-      <div class="top-actions"><span class="prototype">交互 DEMO · 06.4</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
+      <div class="top-actions"><span class="prototype">交互 DEMO · 06.6</span>${ib('help','keyboard','操作说明')}<button class="button ghost" data-action="export">${icon('download')}导出配置</button></div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
@@ -86,11 +94,11 @@
             </div>
           </div>
         </section>
-        <section class="reference-panel" aria-label="参考资产填充">
-        <header class="reference-heading"><strong>参考资产 <span id="refCount">0</span></strong><span class="subtle">点击查看大图</span></header>
-        <div class="reference-actions"><button class="button ghost" data-action="pick-assets">${icon('folder')}从项目选取</button><button class="button ghost" data-action="import">${icon('upload')}导入</button></div>
-        <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">拖入图片、视频或音频<br>只填充到当前片段</p></div>
-        <footer class="reference-footer">点击素材查看大图 · 插入引用使用下方按钮</footer>
+        <section class="reference-panel" aria-label="项目资产池">
+        <header class="reference-heading"><strong>资产池 <span id="refCount">0</span></strong><span class="subtle">项目共用 · 所有片段可引用</span></header>
+        <div class="reference-actions"><button class="button ghost" data-action="import">${icon('upload')}导入素材</button></div>
+        <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">拖入图片、视频或音频<br>加入项目资产池，所有片段共用</p></div>
+        <footer class="reference-footer">点击查看大图 · 插入引用到当前片段</footer>
         </section>
       </div>
     </main>
@@ -116,7 +124,7 @@
   }
   function markEdited(){ $('#editStatus').textContent='已暂存于本页 · 刷新后还原'; }
   function finishPromptEdit(){if(editBefore){if(history.push(editBefore,state))markEdited();editBefore=null;updateHistory();}}
-  function commit(before){history.push(before,state);renderAll();markEdited();}
+  function commit(before){syncAllReferences();history.push(before,state);renderAll();markEdited();}
   function mutate(fn){finishResolutionEdit();finishPromptEdit();const before=C.copy(state);fn();commit(before);}
   function updateHistory(){ $('[data-action=undo]').disabled=!history.undoItems.length;$('[data-action=redo]').disabled=!history.redoItems.length; }
   function renderPrompt(){
@@ -132,14 +140,47 @@
     $('#clipTiming').textContent=c?`${Number(((c.end-c.start)/C.FPS).toFixed(2))}s${o.frames?` · 重叠 ${Number((o.frames/C.FPS).toFixed(2))}s`:''}`:'';
     $('#clipTiming').title=c?`${C.timecode(c.start)} — ${C.timecode(c.end)}${o.frames?` · 与上一片段重叠 ${o.frames} 帧`:''}`:'';
   }
-  function referenceEntries(c=current()){
-    const counts={image:0,video:0,audio:0},names={image:'Picture',video:'Video',audio:'Audio'};
-    return (c?.refs||[]).map(id=>assets.find(a=>a.id===id)).filter(Boolean).map(a=>({...a,token:`${names[a.kind]} ${++counts[a.kind]}`}));
+  function poolEntries(){
+    const active=new Set(state.assetIds);
+    return assets.filter(a=>active.has(a.id)).map(a=>({...a,token:`${mediaNames[a.kind]} ${a.number}`}));
+  }
+  function referencesIn(prompt,entries=poolEntries()){
+    const lookup=new Map(entries.map(a=>[mediaKey(mediaNames[a.kind],a.number),a.id]));
+    const ids=new Set();
+    for(const m of String(prompt||'').matchAll(mediaPattern())){
+      const id=lookup.get(mediaKey(m[1],m[2]));if(id)ids.add(id);
+    }
+    return [...ids];
+  }
+  function syncReferences(clip,entries=poolEntries()){
+    if(!clip)return false;
+    const refs=referencesIn(clip.prompt,entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
+    clip.refs=refs;return changed;
+  }
+  function syncAllReferences(){const entries=poolEntries();state.clips.forEach(c=>syncReferences(c,entries));}
+  function refreshAssetUsage(){
+    const c=current();
+    for(const tile of $('#references').querySelectorAll('[data-reference]')){
+      const id=tile.dataset.reference,used=!!c?.refs.includes(id);
+      const users=state.clips.filter(clip=>clip.refs.includes(id));
+      tile.classList.toggle('is-referenced',used);
+      const badge=tile.querySelector('.asset-current-use');badge.hidden=!used;
+      tile.querySelector('.asset-token').title=users.length
+        ? `引用片段：${users.map(clip=>clip.name).join('、')}`:'项目资产 · 尚未被片段引用';
+      tile.querySelector('[data-insert-ref]').disabled=!c;
+    }
   }
   function renderReferences(){
-    const c=current(),entries=referenceEntries();$('#refCount').textContent=entries.length;
-    $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(a.name)}" aria-label="查看 ${esc(a.name)}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span></div><strong>${esc(a.name)}</strong><small>${a.kind==='image'?'图片参考':a.kind==='video'?'视频参考':'音频参考'}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt;">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-remove-ref="${a.id}" title="移除参考" aria-label="移除 ${esc(a.name)}">${icon('close')}<span>移除</span></button></div></div>`).join('')+`<button class="reference-add" data-action="import" ${!c?'disabled':''}>${icon('plus')}<span>添加参考</span><small>图片 / 视频 / 音频</small></button>`;
-    for(const action of ['import','pick-assets'])document.querySelectorAll(`[data-action="${action}"]`).forEach(b=>b.disabled=!c);
+    const entries=poolEntries();$('#refCount').textContent=entries.length;
+    // Selection changes only update usage badges. Keep the shared grid and its
+    // scroll position stable while moving between clips or editing a prompt.
+    const key=entries.map(a=>a.id).join('|');
+    if(assetGridKey!==key||!$('#references').children.length){
+      const scroll=$('#referenceDrop').scrollTop;assetGridKey=key;
+      $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(a.name)}" aria-label="查看 ${esc(a.name)}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span><span class="asset-current-use" hidden>当前引用</span></div><strong>${esc(a.name)}</strong><small>${a.kind==='image'?'图片':a.kind==='video'?'视频':'音频'}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt; 到当前片段">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-delete-asset="${a.id}" title="从项目资产池删除 ${esc(a.name)}" aria-label="从项目资产池删除 ${esc(a.name)}">${icon('trash')}<span>删除</span></button></div></div>`).join('')+`<button class="reference-add" data-action="import">${icon('plus')}<span>添加素材</span><small>图片 / 视频 / 音频</small></button>`;
+      $('#referenceDrop').scrollTop=scroll;
+    }
+    refreshAssetUsage();
   }
   function stopDialogMedia(){
     $('#dialogBody')?.querySelectorAll('video,audio').forEach(media=>{media.pause();media.removeAttribute('src');media.load();});
@@ -226,6 +267,7 @@
   }
   function renderAll(){
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
+    syncAllReferences();
     const c=current();$('#clipNumber').textContent=c?`片段 ${String(state.clips.indexOf(c)+1).padStart(2,'0')}`:'暂无片段';
     $('#clipName').value=c?.name||'';$('#clipName').disabled=!c;$('#clipName').hidden=!c;
     renderResolution();
@@ -236,9 +278,9 @@
   function select(id,seek=false){finishResolutionEdit();finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
-    getAssets:()=>referenceEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
+    getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
     onBeforeChange:()=>{if(!editBefore)editBefore=C.copy(state);},
-    onChange:text=>{const c=current();if(c)c.prompt=text;$('#promptCount').textContent=`${text.length} 字`;renderActivity();},
+    onChange:text=>{const c=current();if(c){c.prompt=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;renderActivity();},
     onCommit:finishPromptEdit,
     onHistory:redo=>actions[redo?'redo':'undo']()
   });
@@ -268,43 +310,70 @@
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
-  function addReference(id){if(current()&&!current().refs.includes(id)&&assets.some(a=>a.id===id))mutate(()=>current().refs.push(id));}
-  function removeReference(id){
-    if(!current())return;const before=referenceEntries();mutate(()=>{
-      const c=current();c.refs=c.refs.filter(x=>x!==id);const after=new Map(referenceEntries(c).map(a=>[a.id,a.token]));
-      const replacements=new Map(before.map(a=>[a.token,after.has(a.id)?`<${after.get(a.id)}>`:'']));
-      c.prompt=(c.prompt||'').replace(/<(Picture|Video|Audio) \d+>/g,token=>replacements.get(token.slice(1,-1))??token);
+  // A reference is written into the clip's single prompt. The refs array is a
+  // derived list of stable asset IDs; removing a prompt tag never deletes media.
+  function appendReferences(clip,ids){
+    const entries=poolEntries(),used=new Set(referencesIn(clip.prompt,entries));
+    const add=entries.filter(a=>ids.includes(a.id)&&!used.has(a.id));
+    if(add.length)clip.prompt+=(clip.prompt&&!clip.prompt.endsWith('\n')?'\n':'')+add.map(a=>`<${a.token}>`).join(' ');
+  }
+  function addReference(id,clipId=state.selected){
+    const clip=state.clips.find(c=>c.id===clipId);
+    if(clip&&state.assetIds.includes(id)&&!clip.refs.includes(id))mutate(()=>appendReferences(clip,[id]));
+  }
+  function deleteAsset(id){
+    const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
+    finishPromptEdit();
+    const users=state.clips.filter(c=>c.refs.includes(id));
+    const detail=users.length
+      ? `它被 ${users.length} 个片段引用：${users.map(c=>esc(c.name)).join('、')}。确认后也会移除这些片段中的对应引用标签。`
+      : '该素材尚未被任何片段引用。';
+    modal('从资产池删除',`<p>删除「${esc(asset.name)}」？</p><p>${detail}</p><p>不会删除本地文件；可撤销此操作。仅取消某片段的引用，请在该片段提示词中删除对应标签。</p>`,'删除素材',()=>{
+      mutate(()=>{
+        state.assetIds=state.assetIds.filter(x=>x!==id);
+        const key=mediaKey(mediaNames[asset.kind],asset.number);
+        for(const clip of state.clips)clip.prompt=clip.prompt.replace(mediaPattern(),(raw,kind,number)=>mediaKey(kind,number)===key?'':raw);
+      });
+      // Retain the cached media URL for undo and any active simulation snapshot.
     });
   }
   function insertReference(id){
-    const a=referenceEntries().find(x=>x.id===id);if(!a)return;
+    const a=poolEntries().find(x=>x.id===id);if(!a||!current())return;
     promptEditor.insert(`<${a.token}>`);
   }
-  function importFiles(files){
-    if(!current()){toast('先在时间线上新建或选择一个片段。');return;}
+  function importFiles(files,targetId=null){
     const added=[];for(const file of files){const kind=file.type.split('/')[0];if(!['image','video','audio'].includes(kind))continue;
-      const asset={id:'local-'+Date.now().toString(36)+'-'+nextAsset++,name:file.name,kind,src:URL.createObjectURL(file),local:true};assets.push(asset);added.push(asset.id);
+      const asset={id:'local-'+Date.now().toString(36)+'-'+nextAsset++,name:file.name,kind,number:nextPoolNumber[kind]++,src:URL.createObjectURL(file),local:true};assets.push(asset);added.push(asset.id);
     }
-    if(added.length){mutate(()=>{current().refs.push(...added);});toast(`已填充 ${added.length} 项参考资产，文件未上传。`);}else toast('请选择图片、视频或音频。');
+    if(!added.length){toast('请选择图片、视频或音频。');return;}
+    mutate(()=>{
+      state.assetIds.push(...added);
+      const clip=state.clips.find(c=>c.id===targetId);if(clip)appendReferences(clip,added);
+    });
+    toast(`已加入资产池 ${added.length} 项${targetId?'，并引用到目标片段':'，所有片段均可引用'}。文件未上传。`);
   }
-  function pickAssets(){if(!current())return;modal('选择参考资产','',null);$('#dialog').dataset.mode='assets';renderPicker();}
-  function renderPicker(){
-    $('#dialogBody').innerHTML='<div class="asset-picker">'+assets.map(a=>`<button class="picker-item ${current()?.refs.includes(a.id)?'is-added':''}" data-pick-asset="${a.id}" ${current()?.refs.includes(a.id)?'disabled':''}><span class="picker-image">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}</span><span><strong>${esc(a.name)}</strong><small>${current()?.refs.includes(a.id)?'已添加':'点击添加到当前片段'}</small></span>${icon(current()?.refs.includes(a.id)?'check':'plus')}</button>`).join('')+'</div>';
+  function resetAssetCache(withSamples){
+    // Called only after clearing project history: detached local files can now
+    // be released. A new project has its own empty pool, not the previous one.
+    stopDialogMedia();
+    assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));
+    assets=withSamples?sampleAssets.slice():[];
+    nextPoolNumber={image:withSamples?4:1,video:1,audio:1};assetGridKey='';
   }
   function showHome(){finishPromptEdit();promptEditor.closeMenu();stopDialogMedia();$('#generationPreviewImage').removeAttribute('src');timeline.stop();$('#workspace').hidden=true;$('#timelineResize').hidden=true;$('#timelinePanel').hidden=true;$('#projectHome').hidden=false;
-    $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${assets.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
+    $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();renderGenerationPreview(); }
-  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:7,fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:assets.map(({id,name,kind,local})=>({id,name,kind,requiresReimport:!!local})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
+  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:8,referenceNumbering:'project-stable',fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local})=>({id,name,kind,number,token,requiresReimport:!!local})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
-  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 填充参考资产 → 模拟生成。</p><p>可视化可以直接编辑。输入 @ 搜索当前片段的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
+  function help(){modal('任务编排 Demo','<p>分辨率按画面比例、像素量 MP 与尺寸倍数计算，旁边显示实际宽 × 高。每片段独立保存，可以撤销。</p><p>时间线选片段 → 编辑提示词 → 引用资产池素材 → 模拟生成。</p><p>资产池为项目共用，切换片段不会改变素材列表。导入只加入资产池；插入引用、@ 菜单或拖到时间线片段才建立引用。取消某片段引用只需删除提示词标签；资产池删除需确认，会清理全部受影响片段的标签，可撤销。</p><p>可视化可以直接编辑。输入 @ 搜索整个项目资产池的素材；输入 / 打开 H3 语法分类。↑↓ 选择，Enter / Tab 确认，→ 进入分类，← 返回，Esc 关闭。</p><p>点引用标签可更换素材；点镜头 / 说话人 / 时间 / 运镜标签可修改；对白块直接编辑并可更换语言。可视化与纯文本共用同一份完整原文，复制保留 H3 标签。</p><p>分辨率、预览开关与生成按钮位于右侧预览窗下方。预览窗始终保留；开关只控制画面更新，不改变布局或中止生成。Demo 只模拟反馈，不生成视频。素材点击在独立灯箱查看。</p><p>Ctrl + 滚轮缩放；中键或 H 平移；V 选择；S 吸附；Alt 临时关闭吸附；Ctrl Z 撤销；Ctrl Shift Z / Ctrl Y 重做。编辑输入时不触发时间线快捷键。</p>');}
   const actions={
-    home:showHome,'open-project':openProject,new:newClip,import:()=>$('#fileInput').click(),'pick-assets':pickAssets,export:exportConfig,help,generate,
+    home:showHome,'open-project':openProject,new:newClip,import:()=>$('#fileInput').click(),export:exportConfig,help,generate,
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     'toggle-generation-preview':()=>setGenerationPreview(!generationPreviewEnabled),
     'rename-project':()=>modal('项目名称',`<label>名称<input type="text" id="projectTitleInput" value="${esc(title)}" maxlength="60"></label>`,'确定',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;title=name;$('#projectName').textContent=title;markEdited();}),
-    'project-new':()=>modal('新建演示项目','<label>项目名称<input type="text" id="projectTitleInput" value="新的故事" maxlength="60"></label><p>本 Demo 只暂存一个项目，将替换当前编排。请先导出需要保留的配置。</p>','创建',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;clearInterval(jobTimer);jobId=null;lastPreviewRun=null;activity.clear();timeline.cancel();history=new C.History();state={clips:[],selected:null};title=name;$('#projectName').textContent=title;openProject();renderAll();timeline.fit();}),
+    'project-new':()=>modal('新建演示项目','<label>项目名称<input type="text" id="projectTitleInput" value="新的故事" maxlength="60"></label><p>本 Demo 只暂存一个项目，将替换当前编排。请先导出需要保留的配置。</p>','创建',()=>{const name=$('#projectTitleInput').value.trim();if(!name)return false;clearInterval(jobTimer);jobId=null;lastPreviewRun=null;activity.clear();timeline.cancel();history=new C.History();resetAssetCache(false);state={clips:[],selected:null,assetIds:[]};title=name;$('#projectName').textContent=title;openProject();renderAll();timeline.fit();}),
     undo:()=>{finishResolutionEdit();finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
     redo:()=>{finishResolutionEdit();finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
     pointer:()=>{timeline.hand=false;$('[data-action=pointer]').classList.add('is-active');$('[data-action=hand]').classList.remove('is-active');},
@@ -313,14 +382,13 @@
     'zoom-out':()=>timeline.zoom(.8),'zoom-in':()=>timeline.zoom(1.25),fit:()=>timeline.fit(),
     delete:()=>{if(!current())return;if(jobId===current().id){toast('请等待当前模拟生成完成。');return;}timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
-    reset:()=>{finishResolutionEdit();lastPreviewRun=null;setGenerationPreview(true);clearInterval(jobTimer);jobId=null;finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();state={clips:C.copy(initial),selected:'clip-2'};title='远航之前';$('#projectName').textContent=title;openProject();renderAll();timeline.fit();timeline.setFrame(192);}
+    reset:()=>{finishResolutionEdit();lastPreviewRun=null;setGenerationPreview(true);clearInterval(jobTimer);jobId=null;finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};title='远航之前';$('#projectName').textContent=title;openProject();renderAll();timeline.fit();timeline.setFrame(192);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');if(button){if(!button.disabled)actions[button.dataset.action]?.();return;}
     const preview=target.closest('[data-preview-ref]');if(preview){previewAsset(preview.dataset.previewRef);return;}
-    const remove=target.closest('[data-remove-ref]');if(remove){removeReference(remove.dataset.removeRef);return;}
+    const remove=target.closest('[data-delete-asset]');if(remove){deleteAsset(remove.dataset.deleteAsset);return;}
     const insert=target.closest('[data-insert-ref]');if(insert){insertReference(insert.dataset.insertRef);return;}
-    const pick=target.closest('[data-pick-asset]');if(pick&&!pick.disabled){addReference(pick.dataset.pickAsset);renderPicker();return;}
     const view=target.closest('[data-prompt-view]');if(view){finishPromptEdit();promptView=view.dataset.promptView;renderPrompt();}
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
@@ -342,8 +410,10 @@
     host.addEventListener('dragleave',e=>{if(!host.contains(e.relatedTarget))host.classList.remove('is-dragover');});
     host.addEventListener('drop',e=>{
       e.preventDefault();host.classList.remove('is-dragover');
-      if(id==='timelineBody'){const clip=timeline.hitTest(timeline.point(e));if(!clip){toast('请放到一个片段上。');return;}select(clip.id);}
-      if(e.dataTransfer.files.length)importFiles(e.dataTransfer.files);else addReference(e.dataTransfer.getData('application/x-terrydirector-asset'));
+      let targetId=null;
+      if(id==='timelineBody'){const clip=timeline.hitTest(timeline.point(e));if(!clip){toast('请放到一个片段上。');return;}select(clip.id);targetId=clip.id;}
+      if(e.dataTransfer.files.length)importFiles(e.dataTransfer.files,targetId);
+      else if(targetId)addReference(e.dataTransfer.getData('application/x-terrydirector-asset'),targetId);
     });
   }
   window.addEventListener('keydown',e=>{
@@ -367,7 +437,7 @@
   resizeHandle('referenceResize','--reference-width',280,680,'x',-1);resizeHandle('timelineResize','--timeline-height',200,400,'y',-1);
   let scrollDrag=null;$('#scrollBar').addEventListener('pointerdown',e=>{const r=e.currentTarget.getBoundingClientRect(),v=timeline.viewInfo();scrollDrag={x:e.clientX,initial:timeline.scroll,scale:v.contentWidth/r.width};e.currentTarget.setPointerCapture(e.pointerId);if(e.target!==$('#scrollThumb')){timeline.setScroll((e.clientX-r.left)/r.width*v.contentWidth-v.visible/2);scrollDrag.initial=timeline.scroll;}});
   $('#scrollBar').addEventListener('pointermove',e=>{if(scrollDrag)timeline.setScroll(scrollDrag.initial+(e.clientX-scrollDrag.x)*scrollDrag.scale);});for(const event of ['pointerup','pointercancel','lostpointercapture'])$('#scrollBar').addEventListener(event,()=>scrollDrag=null);
-  window.TerryDirectorDemo={getState:()=>C.copy(state),getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
+  window.TerryDirectorDemo={getState:()=>C.copy(state),getAssets:()=>C.copy(poolEntries()),getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
   $('#dialog').addEventListener('close',()=>{stopDialogMedia();if($('#dialog').dataset.mode==='media')$('#dialogBody').replaceChildren();});
   $('#dialog').addEventListener('click',e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.currentTarget.close();});
   window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();$('#generationPreviewImage').removeAttribute('src');});

@@ -1,5 +1,5 @@
 /* Host-independent H3 visual editor. Ported menu/atomic-tag behavior from
- * ComfyUI-TerryXu-nodes; graph inputs replaced by the selected clip's assets.
+ * ComfyUI-TerryXu-nodes; graph inputs replaced by the project-wide asset pool.
  * No framework, model calls, or second prompt source. */
 (function () {
   'use strict';
@@ -255,7 +255,7 @@
         b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();m.active=index;this.choose(option);});
         b.addEventListener('pointermove',()=>{m.active=index;this.highlight();});list.append(b);
       });
-      if(!m.options.length)list.append(el('p','h3-menu-empty',m.type==='asset'?((this.getAssets?.()||[]).length?'没有匹配的参考资产。':'当前片段尚未填充图片、视频或音频。'):'没有匹配的 H3 命令。'));
+      if(!m.options.length)list.append(el('p','h3-menu-empty',m.type==='asset'?((this.getAssets?.()||[]).length?'没有匹配的参考资产。':'项目资产池暂无图片、视频或音频。'):'没有匹配的 H3 命令。'));
       menu.append(el('div','h3-menu-footer',m.type==='asset'?'继续输入筛选 · ↑↓ 选择 · Enter 插入 · Esc 关闭':'↑↓ 选择 · → / Enter 确认 · ← 返回 · Esc 关闭'));
       this.highlight();this.positionMenu();
     }
