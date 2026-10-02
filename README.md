@@ -1,5 +1,7 @@
 # TerryDirector
 
+> 当前浮窗 UI / 时间线恢复基线：`408395e7620fe368775515ca515d04fae7a8daed`（Demo 06.11）。
+
 AI 视频镜头生成任务工作台。当前为 **HTML / CSS / JavaScript 静态交互 Demo**，不连接 ComfyUI，不做 React 拆分。
 
 ## 下一阶段架构 · 单节点与页内浮窗
