@@ -61,7 +61,7 @@
   const initial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i]}));
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
-  function resetActivity(){activity.clear();}
+  function resetActivity(){activity.clear();for(const [id,seconds] of [['clip-1',300],['clip-2',186]])activity.set(id,{status:'completed',progress:1,elapsedSeconds:seconds,completedAt:'2026-09-28T07:00:00Z',example:true});}
   resetActivity();
   let state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)},history=new C.History();
   let promptView='visual',editBefore=null,nextId=5,nextAsset=1,toastTimer=0,timeline=null;

@@ -20,7 +20,7 @@ input,textarea { min-width:0; }
 * { scrollbar-width:thin;scrollbar-color:var(--td-neutral-elevated) transparent; }
 /* A floating tool, not a full-bleed page. Children and Canvas stay inside the shell. */
 #app {
-  --prompt-width:60%;--timeline-height:220px;--workspace-min-height:410px;
+  --prompt-width:60%;--timeline-height:200px;--workspace-min-height:370px;
   position:relative;isolation:isolate;display:flex;flex-direction:column;
   width:100%;min-width:0;height:calc(100dvh - var(--td-shell-gutter) * 2);
   min-height:calc(var(--workspace-min-height) + 288px);
@@ -268,8 +268,6 @@ body {
 }
 #app {
   --prompt-width:60%;
-  --timeline-height:220px;
-  --workspace-min-height:410px;
   max-width:1680px;
   margin:0 auto;
 }
@@ -288,10 +286,6 @@ body {
 .workspace>.reference-panel { min-width:320px; }
 .reference-heading { min-height:50px; }
 .reference-actions .button { flex-basis:150px; }
-.timeline-panel {
-  min-height:210px;
-  max-height:calc(100% - var(--workspace-min-height) - 86px);
-}
 .statusbar { background:color-mix(in srgb,var(--td-bg-panel) 96%,var(--td-effect) 4%); }
 
 @media (max-width:900px) {
