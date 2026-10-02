@@ -1,6 +1,16 @@
 # TerryDirector
 
-当前 UI 已冻结为实现蓝图。开始真实功能开发前先读 `docs/06_UI_IMPLEMENTATION_BLUEPRINT.md`，再读 README、docs/01_PRODUCT_AND_TECH_DECISIONS.md、docs/03_VISUAL_THEME_CONTRACT.md 与 docs/H3_EDITOR_PORT.md。Demo 仍为 HTML / CSS / JavaScript；除非真实需求要求，不为实现而主动引入重型前端架构。
+开始真实功能开发前先读 `docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md`，再读 `docs/06_UI_IMPLEMENTATION_BLUEPRINT.md`、README、docs/01_PRODUCT_AND_TECH_DECISIONS.md、docs/03_VISUAL_THEME_CONTRACT.md 与 docs/H3_EDITOR_PORT.md。09 覆盖旧文档的独立端口 / 另开网页 / 仅入口节点形态；未涉及的 UI 与交互继续以 06 为准。当前代码仍为 HTML / CSS / JavaScript Demo；除非真实需求要求，不为实现而主动引入重型前端架构。
+
+## 当前架构：单个采样器式主节点 + ComfyUI 页内浮窗
+
+- 用户于 2026-10-02 确认画布上只使用一个 TerryDirector 主节点，接入模型和采样参数、输出结果给下游解码；不要求另接规划与生成两个主节点。内部规划与执行职责仍分开维护。
+- 节点包含只读迷你时间轴，点击或使用带文字的编辑按钮，在当前 ComfyUI 页面打开大浮窗；编辑后保存退出，隐藏界面。迷你时间轴不允许拖动、裁剪或重排。
+- 不另开浏览器页面，不启动独立工作台端口。使用原生编辑器和作用域样式，不能把 Demo 的 body / #app 全局样式直接覆盖宿主页面。隐藏时停媒体与无用渲染，运行中任务继续。
+- 保存更新该节点的可序列化编排输入并标记工作流已修改，不自动生成。编辑草稿、已保存编排和已提交快照分离，不能误写其他节点或影响已排队任务。
+- 实现我们自己的规划 / 采样代码与内部 helper，不连接或运行时依赖 Songssx 导演台节点类。成熟源码按许可移植适配并记录来源，不另造外部调度系统。
+- 二采等已有能力不因改浮窗而自动删除；节点与浮窗不得各存一套互相冲突的参数。具体输入端口与多片段输出类型待验证，不承诺拼接普通 latent 就能得到正确长视频，不把末段 latent 当完整结果。
+- 详细已确认边界与技术建议见 09；本次只更新文档，现有 Demo 尚未实现该节点 / 浮窗形态。QuantFunc 暂缓决定保持不变。
 
 ## 成熟实现优先
 
