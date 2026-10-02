@@ -67,6 +67,7 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)�
 
 - [UI 实现蓝图（实现 Source of Truth）](docs/06_UI_IMPLEMENTATION_BLUEPRINT.md)
 - [成熟实现参考清单（新增需求先查这里）](docs/07_REFERENCE_IMPLEMENTATIONS.md)
+- [QuantFunc 调研与暂缓接入决策（候选，等待用户明确指令）](docs/08_QUANTFUNC_RESEARCH.md)
 - [本轮时间线起点与时长说明](docs/05_TIMELINE_READABILITY.md)
 - [当前 UI 与时间线架构（设计演进记录）](docs/02_UI_AND_TIMELINE_ARCHITECTURE.md)
 - [H3 编辑器来源与移植对应](docs/H3_EDITOR_PORT.md)
@@ -75,6 +76,8 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)�
 完整产品和主题文档保留在仓库 `docs/01_PRODUCT_AND_TECH_DECISIONS.md`、`docs/03_VISUAL_THEME_CONTRACT.md`。当前 UI 范围以 06 实现蓝图及其已确认补充为准。
 
 后续运行功能优先从用户指定的 **Songssx TimelineDirector、AIMixer Director、yolain Easy Media、nkxx188 H3 Easy** 中查找成熟实现。当前生成基础保持 Songssx 的有限分段链路，其余参考按需求补充；仓库入口、核对版本与具体查找位置集中在上述参考清单。
+
+**QuantFunc 当前仅作调研归档，暂缓接入。** 不新增依赖、UI 控件或生成路径，等待用户明确要求后再复查版本、兼容性和本机收益。它不是当前开发前置条件，也不替代既定 Songssx / SelfLift 方向。
 
 ## 代码
 
