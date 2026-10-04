@@ -245,3 +245,80 @@ dialog[data-mode="media"] .modal-actions { margin-top:10px; }
   .editor-context { order:3;flex-basis:100%;padding-left:38px; }
   .editor-context span { display:none; }
 }
+
+
+/* ComfyUI embedded editor: smaller floating shell over a transparent page. */
+body.td-embedded {
+  --td-shell-gutter: 0px;
+  min-height: 100dvh;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+
+body.td-embedded #app {
+  --reference-width: 410px;
+  width: min(1280px, calc(100vw - 96px));
+  height: min(700px, calc(100dvh - 80px));
+  min-height: 600px;
+  border-radius: 16px;
+}
+
+body.td-embedded .topbar {
+  height: 52px;
+  padding: 0 18px;
+  gap: 20px;
+}
+
+body.td-embedded .prompt-panel {
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+body.td-embedded .reference-panel {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+body.td-embedded .clip-name {
+  font-size: 18px;
+}
+
+body.td-embedded .top-actions {
+  gap: 7px;
+}
+
+.editor-close {
+  width: 32px;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--td-border);
+  border-radius: 7px;
+  color: var(--td-text-secondary);
+  background: transparent;
+}
+
+.editor-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.editor-close:hover {
+  color: var(--td-text-bright);
+  border-color: var(--td-border-focus);
+  background: var(--td-bg-hover);
+}
+
+@media (max-width: 1380px), (max-height: 760px) {
+  body.td-embedded #app {
+    width: calc(100vw - 48px);
+    height: calc(100dvh - 48px);
+    min-height: 0;
+  }
+}
