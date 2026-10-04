@@ -8,9 +8,9 @@ from .director_core import config_json, normalize_config, summary
 class TerryDirector(io.ComfyNode):
     """Single visible TerryDirector node.
 
-    This first implementation intentionally establishes the production node shell,
-    serialized editor document, node-owned generation controls and final port contract.
-    Sampling is enabled in the next implementation step after UI/persistence acceptance.
+    The visible shell owns generation controls and opens the in-page creative editor.
+    Width and height are deliberately supplied by connected ComfyUI inputs rather than
+    duplicated as local resolution widgets.
     """
 
     @classmethod
@@ -20,14 +20,30 @@ class TerryDirector(io.ComfyNode):
             display_name="TerryDirector",
             category="MiniMax H3/TerryDirector",
             description=(
-                "MiniMax H3 multi-segment director. The node owns generation settings and opens "
-                "an in-page editor for prompts, shared assets and the timeline."
+                "MiniMax H3 multi-segment director. Connect model, sampling inputs and target width/height; "
+                "edit prompts, shared assets and the timeline in the in-page director."
             ),
             inputs=[
                 io.Model.Input("model"),
                 io.Clip.Input("clip"),
                 io.Vae.Input("vae"),
                 io.Vae.Input("audio_vae"),
+                io.Int.Input(
+                    "width",
+                    display_name="width",
+                    min=32,
+                    max=16384,
+                    step=32,
+                    force_input=True,
+                ),
+                io.Int.Input(
+                    "height",
+                    display_name="height",
+                    min=32,
+                    max=16384,
+                    step=32,
+                    force_input=True,
+                ),
                 io.Sampler.Input("sampler"),
                 io.Sigmas.Input("sigmas"),
                 io.String.Input(
@@ -35,7 +51,8 @@ class TerryDirector(io.ComfyNode):
                     default=config_json(),
                     multiline=True,
                     dynamic_prompts=False,
-                    tooltip="TerryDirector serialized node settings and creative arrangement. Managed by the custom UI.",
+                    advanced=True,
+                    tooltip="Internal TerryDirector serialized state. Managed by the custom UI.",
                 ),
             ],
             outputs=[
@@ -46,12 +63,13 @@ class TerryDirector(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, model, clip, vae, audio_vae, sampler, sigmas, config_json):
+    def execute(cls, model, clip, vae, audio_vae, width, height, sampler, sigmas, config_json):
         config = normalize_config(config_json)
-        info = summary(config)
+        info = summary(config, width, height)
         raise RuntimeError(
             "TerryDirector 当前测试版已完成节点 UI、页内编辑器与工作流序列化，"
             "采样执行尚未接入。请先验证节点加载、编辑器保存/重载、复制节点隔离和 UI。"
             f" 当前编排：{info['clips']} 个片段，{info['seconds']:.2f}s，"
-            f"目标分辨率 {info['width']}x{info['height']}。"
+            f"外部目标尺寸 {info['width']}x{info['height']}，"
+            f"二采方案 {info['second_pass']}。"
         )
