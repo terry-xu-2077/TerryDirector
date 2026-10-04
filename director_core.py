@@ -1,43 +1,12 @@
 from __future__ import annotations
 
 import json
-import math
 from typing import Any
 
 FPS = 24
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 DOCUMENT_VERSION = 1
-
-ASPECTS: dict[str, tuple[int, int]] = {
-    "1:1": (1, 1),
-    "2:3": (2, 3),
-    "3:2": (3, 2),
-    "3:4": (3, 4),
-    "4:3": (4, 3),
-    "9:16": (9, 16),
-    "16:9": (16, 9),
-    "21:9": (21, 9),
-}
-
-
-def _round_even(value: float) -> int:
-    return int(round(value))
-
-
-def calculate_resolution(aspect_ratio: str, megapixels: float, multiple: int) -> tuple[int, int]:
-    if aspect_ratio not in ASPECTS:
-        raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
-    megapixels = float(megapixels)
-    multiple = int(multiple)
-    if not 0.1 <= megapixels <= 16:
-        raise ValueError("Megapixels must be between 0.1 and 16")
-    if multiple < 8 or multiple > 128 or multiple % 4:
-        raise ValueError("Resolution multiple must be 8-128 in steps of 4")
-    aw, ah = ASPECTS[aspect_ratio]
-    scale = math.sqrt(megapixels * 1024 * 1024 / (aw * ah))
-    width = _round_even(aw * scale / multiple) * multiple
-    height = _round_even(ah * scale / multiple) * multiple
-    return max(multiple, width), max(multiple, height)
+SECOND_PASS_METHODS = {"none", "selflift"}
 
 
 def default_document() -> dict[str, Any]:
@@ -63,17 +32,11 @@ def default_config() -> dict[str, Any]:
     return {
         "version": CONFIG_VERSION,
         "params": {
-            "resolution": {
-                "aspect_ratio": "16:9",
-                "megapixels": 1.2,
-                "multiple": 32,
-            },
             "seed": 0,
             "continue_audio_latent": True,
             "ref_image_size": "match",
-            "preview_enabled": True,
-            "selflift": {
-                "enabled": False,
+            "second_pass": {
+                "method": "none",
                 "model": "",
                 "high_steps": 4,
             },
@@ -85,13 +48,6 @@ def default_config() -> dict[str, Any]:
 def _as_int(value: Any, default: int) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_float(value: Any, default: float) -> float:
-    try:
-        return float(value)
     except (TypeError, ValueError):
         return default
 
@@ -163,6 +119,33 @@ def normalize_document(value: Any) -> dict[str, Any]:
     }
 
 
+def _second_pass_from_params(raw_params: dict[str, Any]) -> dict[str, Any]:
+    raw = raw_params.get("second_pass")
+    if isinstance(raw, dict):
+        method = str(raw.get("method") or "none").strip().lower()
+        model = str(raw.get("model") or "")
+        high_steps = max(1, _as_int(raw.get("high_steps"), 4))
+    else:
+        # Migrate the first UI test build where SelfLift was represented as a toggle.
+        legacy = raw_params.get("selflift")
+        if not isinstance(legacy, dict):
+            legacy = {}
+        method = "selflift" if bool(legacy.get("enabled", False)) else "none"
+        model = str(legacy.get("model") or "")
+        high_steps = max(1, _as_int(legacy.get("high_steps"), 4))
+
+    if method in {"selflift", "self_lift", "self-lift"}:
+        method = "selflift"
+    elif method not in SECOND_PASS_METHODS:
+        method = "none"
+
+    return {
+        "method": method,
+        "model": model,
+        "high_steps": high_steps,
+    }
+
+
 def normalize_config(value: Any) -> dict[str, Any]:
     base = default_config()
     if isinstance(value, str):
@@ -174,22 +157,6 @@ def normalize_config(value: Any) -> dict[str, Any]:
         return base
 
     raw_params = value.get("params") if isinstance(value.get("params"), dict) else {}
-    raw_res = raw_params.get("resolution") if isinstance(raw_params.get("resolution"), dict) else {}
-
-    ratio = str(raw_res.get("aspect_ratio") or base["params"]["resolution"]["aspect_ratio"])
-    if ratio not in ASPECTS:
-        ratio = base["params"]["resolution"]["aspect_ratio"]
-    mp = _as_float(raw_res.get("megapixels"), base["params"]["resolution"]["megapixels"])
-    multiple = _as_int(raw_res.get("multiple"), base["params"]["resolution"]["multiple"])
-    try:
-        calculate_resolution(ratio, mp, multiple)
-    except ValueError:
-        ratio = base["params"]["resolution"]["aspect_ratio"]
-        mp = base["params"]["resolution"]["megapixels"]
-        multiple = base["params"]["resolution"]["multiple"]
-
-    raw_selflift = raw_params.get("selflift") if isinstance(raw_params.get("selflift"), dict) else {}
-    high_steps = max(1, _as_int(raw_selflift.get("high_steps"), 4))
     seed = max(0, min(0xFFFFFFFFFFFFFFFF, _as_int(raw_params.get("seed"), 0)))
     ref_image_size = str(raw_params.get("ref_image_size") or "match")
     if ref_image_size not in {"match", "max"}:
@@ -198,20 +165,10 @@ def normalize_config(value: Any) -> dict[str, Any]:
     return {
         "version": CONFIG_VERSION,
         "params": {
-            "resolution": {
-                "aspect_ratio": ratio,
-                "megapixels": mp,
-                "multiple": multiple,
-            },
             "seed": seed,
             "continue_audio_latent": bool(raw_params.get("continue_audio_latent", True)),
             "ref_image_size": ref_image_size,
-            "preview_enabled": bool(raw_params.get("preview_enabled", True)),
-            "selflift": {
-                "enabled": bool(raw_selflift.get("enabled", False)),
-                "model": str(raw_selflift.get("model") or ""),
-                "high_steps": high_steps,
-            },
+            "second_pass": _second_pass_from_params(raw_params),
         },
         "document": normalize_document(value.get("document")),
     }
@@ -227,19 +184,16 @@ def arrangement_frames(document: dict[str, Any]) -> int:
     return max((int(clip.get("end") or 0) for clip in clips if isinstance(clip, dict)), default=0)
 
 
-def summary(config: dict[str, Any]) -> dict[str, Any]:
+def summary(config: dict[str, Any], width: int | None = None, height: int | None = None) -> dict[str, Any]:
     config = normalize_config(config)
     document = config["document"]
-    resolution = config["params"]["resolution"]
-    width, height = calculate_resolution(
-        resolution["aspect_ratio"], resolution["megapixels"], resolution["multiple"]
-    )
     frames = arrangement_frames(document)
     return {
         "clips": len(document["clips"]),
         "frames": frames,
         "seconds": frames / FPS,
-        "width": width,
-        "height": height,
+        "width": int(width) if width is not None else None,
+        "height": int(height) if height is not None else None,
         "assets": len(document["assets"]),
+        "second_pass": config["params"]["second_pass"]["method"],
     }
