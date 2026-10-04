@@ -363,8 +363,6 @@
 /* ComfyUI remains visible through the editor surround. */
 .td-editor-overlay {
   background: rgba(28,30,38,.08);
-  backdrop-filter: blur(2px) saturate(.88);
-  -webkit-backdrop-filter: blur(2px) saturate(.88);
 }
 
 .td-editor-frame {
