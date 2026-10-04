@@ -261,9 +261,9 @@ body.td-embedded {
 
 body.td-embedded #app {
   --reference-width: 410px;
-  width: min(1280px, calc(100vw - 96px));
-  height: min(700px, calc(100dvh - 80px));
-  min-height: 600px;
+  width: 84vw;
+  height: 90dvh;
+  min-height: 0;
   border-radius: 16px;
 }
 
@@ -315,10 +315,9 @@ body.td-embedded .top-actions {
   background: var(--td-bg-hover);
 }
 
-@media (max-width: 1380px), (max-height: 760px) {
+@media (max-width: 760px) {
   body.td-embedded #app {
-    width: calc(100vw - 48px);
-    height: calc(100dvh - 48px);
-    min-height: 0;
+    width: 94vw;
+    height: 94dvh;
   }
 }
