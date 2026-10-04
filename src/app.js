@@ -76,8 +76,7 @@
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">DIRECTOR</span></div>
-      <div class="editor-context"><strong>时间线编排</strong><span>提示词 · 资产 · 片段</span></div>
+      <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
       <div class="top-actions"><span class="prototype">${embedded?'COMFYUI · NODE EDITOR':'交互 DEMO · 06.11 EDITOR'}</span>${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <main id="workspace" class="workspace">
