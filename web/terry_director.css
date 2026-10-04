@@ -233,3 +233,147 @@
   font: 18px/1 system-ui, sans-serif;
 }
 .td-editor-discard:hover { color: #fff; border-color: rgba(255,255,255,.24); background: rgba(35,39,49,.92); }
+
+
+/* Compact landscape node layout · v2 */
+.td-node-shell {
+  min-width: 520px;
+  padding: 5px 2px 2px;
+}
+
+.td-node-compact-section {
+  padding: 7px 8px 8px;
+}
+
+.td-node-compact-row {
+  display: grid;
+  grid-template-columns: minmax(132px, 1.25fr) minmax(105px, .9fr) minmax(118px, 1fr) auto;
+  gap: 6px;
+  align-items: end;
+}
+
+.td-node-compact-row .td-node-field label {
+  margin-bottom: 3px;
+}
+
+.td-node-compact-row input,
+.td-node-compact-row select {
+  height: 27px;
+}
+
+.td-node-compact-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 27px;
+  padding: 0 9px;
+  border: 1px solid var(--tdn-border);
+  border-radius: 7px;
+  color: var(--tdn-muted);
+  background: rgba(255,255,255,.018);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.td-node-compact-toggle.is-on {
+  color: #eee9f7;
+  border-color: rgba(155,120,255,.3);
+  background: rgba(155,120,255,.09);
+}
+
+.td-node-compact-toggle .td-node-toggle {
+  width: 26px;
+  height: 15px;
+}
+
+.td-node-compact-toggle .td-node-toggle::after {
+  width: 11px;
+  height: 11px;
+}
+
+.td-node-compact-toggle.is-on .td-node-toggle {
+  background: rgba(155,120,255,.38);
+}
+
+.td-node-compact-toggle.is-on .td-node-toggle::after {
+  transform: translateX(11px);
+  background: #cabaff;
+}
+
+.td-node-selflift {
+  grid-template-columns: minmax(0,1fr) 92px;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.td-node-selflift input,
+.td-node-selflift select {
+  height: 27px;
+}
+
+.td-mini-wrap {
+  padding: 7px 8px 8px;
+  border-bottom: 0;
+}
+
+.td-mini-head {
+  min-height: 27px;
+  margin-bottom: 4px;
+  gap: 6px;
+}
+
+.td-mini-head .td-node-spacer {
+  flex: 1;
+}
+
+.td-mini-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 25px;
+  padding: 0 9px;
+  border: 1px solid rgba(155,120,255,.34);
+  border-radius: 7px;
+  color: #eee8ff;
+  background: rgba(155,120,255,.12);
+  cursor: pointer;
+  font: 600 10px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.td-mini-edit:hover {
+  border-color: rgba(155,120,255,.58);
+  background: rgba(155,120,255,.2);
+}
+
+.td-mini-timeline {
+  height: 40px;
+}
+
+.td-mini-clip {
+  top: 7px;
+  height: 24px;
+}
+
+.td-node-actions,
+.td-node-warning {
+  display: none !important;
+}
+
+/* ComfyUI remains visible through the editor surround. */
+.td-editor-overlay {
+  background: rgba(17,19,26,.26);
+  backdrop-filter: blur(18px) saturate(.78);
+  -webkit-backdrop-filter: blur(18px) saturate(.78);
+}
+
+.td-editor-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.td-editor-discard {
+  display: none !important;
+}
