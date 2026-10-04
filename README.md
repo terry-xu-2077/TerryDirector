@@ -2,13 +2,21 @@
 
 > 当前浮窗 UI / 时间线恢复基线：`408395e7620fe368775515ca515d04fae7a8daed`（Demo 06.11）。
 
-AI 视频镜头生成任务工作台。当前为 **HTML / CSS / JavaScript 静态交互 Demo**，不连接 ComfyUI，不做 React 拆分。
+AI 视频镜头生成任务工作台。仓库同时保留 **HTML / CSS / JavaScript 静态交互 Demo**，并已加入第一版 **ComfyUI TerryDirector 主节点**；前端仍不做 React 拆分。
 
 ## 下一阶段架构 · 单节点与页内浮窗
 
 2026-10-02 确认：画布上保留**一个采样器式 TerryDirector 主节点**，接入模型与采样参数、输出结果到下游解码。节点内是只读迷你时间轴，点击在当前 ComfyUI 页面打开大编辑浮窗；保存退出后隐藏，不再另开网页或独立端口。内部仍分开维护规划和执行，采用成熟实现但提供我们自己的节点，不要求安装或连接 Songssx 导演台节点。
 
-详见 [单节点与页内浮窗架构](docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md)。当前静态 Demo 已更新到浮窗的创作编排形态；真实 ComfyUI 节点和采样仍未实现。
+详见 [单节点与页内浮窗架构](docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md)。当前已实现主节点外壳、节点内自定义控件、只读迷你时间线、页内导演台浮窗、工作流序列化以及 ComfyUI `input` 资产读取 / 上传；采样执行链路仍未接入。
+
+## ComfyUI 节点测试版（当前）
+
+把仓库放在 `ComfyUI/custom_nodes/TerryDirector`（或直接在已有目录 `git pull`）后重启 ComfyUI。在节点菜单中搜索 **TerryDirector**，分类为 `MiniMax H3/TerryDirector`。
+
+本轮请优先验证：节点能否正常注册；原生输入 / 输出端口和节点容器是否正常；节点内分辨率、Seed、音频连续、预览、SelfLift 参数是否可交互；只读迷你时间线是否正确；点击“编辑时间线”能否在当前 ComfyUI 页面打开导演台；从 ComfyUI `input` 选择 / 上传资产后能否保存；保存工作流、重新载入以及复制节点后数据是否各自独立。
+
+**当前测试版故意没有接入采样执行。** 如果直接 Queue，节点会抛出明确的“采样执行尚未接入”提示，而不是返回伪造结果。等这轮节点 UI / 序列化验收稳定后，再接 MiniMax H3 分段采样、重叠合成与 SelfLift 运行链路。
 
 ## Demo v0.6.14 · 创作编排浮窗
 
@@ -23,7 +31,7 @@ AI 视频镜头生成任务工作台。当前为 **HTML / CSS / JavaScript 静�
 
 提示词继续支持可视化 / 原文同源编辑、@ 资产引用、/ H3 语法、对白和运镜标签；资产池继续支持上传 Demo、ComfyUI input 示例选择、稳定编号、灯箱和引用清理。时间线交互与已确认的视觉层级不变。
 
-节点本体的设计约定是：**保留 ComfyUI 原生节点容器、标题栏和端口，只在节点内容区嵌入与浮窗同源的 TerryDirector 控件与只读迷你时间线。** 这轮尚未实现节点 UI。
+节点本体遵守既定约定：**保留 ComfyUI 原生节点容器、标题栏和端口，只在节点内容区嵌入与浮窗同源的 TerryDirector 控件与只读迷你时间线。** 节点 UI 已进入本地验收阶段。
 
 ## 查看与发布
 
@@ -31,7 +39,7 @@ AI 视频镜头生成任务工作台。当前为 **HTML / CSS / JavaScript 静�
 
 GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)。`.nojekyll` 保留。预计地址：`https://terry-xu-2077.github.io/TerryDirector/`；提交代码不等于已完成 Pages 部署。
 
-数据只在当前页面暂存，刷新还原；Demo 不执行生成，也不显示生成参数。
+静态 Demo 数据仍只在当前页面暂存，刷新还原；ComfyUI 节点模式则把编排与节点参数写入工作流。静态 Demo 不执行生成，也不显示生成参数。
 
 ## UI IMPLEMENTATION BLUEPRINT
 
@@ -56,8 +64,8 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)�
 
 ## 代码
 
-`src/h3-syntax.js` 为 H3 语法与原文标签；`src/h3-editor.js` 为可编辑视图和菜单的静态适配；`src/h3-editor.css` 消费现有主题变量。现有 Canvas 时间线保持独立，不增加运行依赖。
+`director_node.py` / `director_core.py` 提供 V3 节点 schema 与序列化配置；`server_routes.py` 提供页内编辑器、ComfyUI `input` 资产和 SelfLift 模型列表接口；`web/terry_director.js` / `.css` 是节点内嵌 UI。`src/h3-syntax.js` 为 H3 语法与原文标签；`src/h3-editor.js` 为可编辑视图和菜单的静态适配。现有 Canvas 时间线保持独立。
 
 共享 UI 库、Rulesmd Editor、TerryShotMill 和来源节点仓库均未修改。
 
-可选开发检查：`node --test tests/*.test.cjs`。
+可选开发检查：`node --test tests/*.test.cjs`；配置模型检查：`python -m unittest discover -s tests -p "test_*.py" -v`。
