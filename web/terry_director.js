@@ -280,6 +280,7 @@ function mountNode(node) {
     getMaxHeight: () => 430,
     margin: 4,
   });
+  widget.serialize = false;
   widget.options.serialize = false;
   node.__tdRoot = root;
   node.__tdDomWidget = widget;
