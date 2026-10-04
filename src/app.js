@@ -73,11 +73,12 @@
   let generationPreviewEnabled=true,lastPreviewRun=null;
   let promptEditor=null;
   const app=$('#app');
+  if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector<span class="brand-sub">DIRECTOR</span></div>
       <div class="editor-context"><strong>时间线编排</strong><span>提示词 · 资产 · 片段</span></div>
-      <div class="top-actions"><span class="prototype">${embedded?'COMFYUI · NODE EDITOR':'交互 DEMO · 06.11 EDITOR'}</span>${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button></div>
+      <div class="top-actions"><span class="prototype">${embedded?'COMFYUI · NODE EDITOR':'交互 DEMO · 06.11 EDITOR'}</span>${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
@@ -571,6 +572,7 @@
     'pick-input':pickInputAssets,
     help,
     'save-close':saveToHost,
+    'close-editor':()=>{if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     undo:()=>{finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
     redo:()=>{finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
