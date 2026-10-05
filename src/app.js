@@ -28,7 +28,7 @@
     trash:'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7',
     duplicate:'M9 9h12v12H9zM15 9V3H3v12h6',
     help:'M9 8a3 3 0 1 1 6 1c-1 2-3 2-3 5m0 3h.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
-    dice:'M4 4h16v16H4zM8 8h.1M16 8h.1M12 12h.1M8 16h.1M16 16h.1',folder:'M3 7V4h7l2 3h9v13H3z',
+    dice:'M4 4h16v16H4zM8 8h.1M16 8h.1M12 12h.1M8 16h.1M16 16h.1',edit:'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z',folder:'M3 7V4h7l2 3h9v13H3z',
     keyboard:'M2 5h20v14H2zM5 9h1m3 0h1m3 0h1m3 0h1M5 12h1m3 0h1m3 0h1m3 0h1M7 16h10'
   };
   function icon(name){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.film}"/></svg>`;}
@@ -77,7 +77,7 @@
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><div class="top-timeline-duration"><span>总编排时长</span><output id="timelineDuration" aria-label="总编排时长">00:00:00:00</output></div></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output></div></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
@@ -88,7 +88,7 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
         <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div>
         <div class="prompt-editor"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div>
 
@@ -139,8 +139,8 @@
     const frames=C.arrangementFrames(clips),output=$('#timelineDuration');
     const text=C.timecode(frames);
     if(output.textContent!==text)output.textContent=text;
-    output.title=`时:分:秒:帧 · ${C.FPS} FPS · ${frames} 帧；从零点到最后片段结尾，包含空隙，重叠不重复计时。`;
-    output.setAttribute('aria-label',`总编排时长 ${C.seconds(frames)}，${frames} 帧`);
+    output.title=`总时长 · 时:分:秒:帧 · ${C.FPS} FPS · ${frames} 帧；从零点到最后片段结尾，包含空隙，重叠不重复计时。`;
+    output.setAttribute('aria-label',`总时长 ${C.seconds(frames)}，${frames} 帧`);
   }
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
@@ -569,6 +569,7 @@
     'pick-input':pickInputAssets,
     help,
     'toggle-prompt-view':()=>{finishPromptEdit();promptView=promptView==='visual'?'text':'visual';renderPrompt();},
+    'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
     'save-close':saveToHost,
     'close-editor':()=>{if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
