@@ -316,6 +316,8 @@ function ensureEditorOverlay() {
       editorDirty = !!message.dirty;
     } else if (message.type === "terrydirector:request-close") {
       requestDiscard();
+    } else if (message.type === "terrydirector:discard-close") {
+      closeEditor();
     }
   });
 }
@@ -346,8 +348,11 @@ function requestDiscard() {
     closeEditor();
     return;
   }
-  if (window.confirm("关闭导演台将放弃本次未保存的编辑，确定关闭吗？")) {
-    closeEditor();
+  if (frameReady) {
+    frame.contentWindow.postMessage(
+      { type: "terrydirector:confirm-close" },
+      location.origin
+    );
   }
 }
 
