@@ -89,7 +89,7 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" max="150" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="30" step="0.0416667" aria-label="片段秒数滑块"></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
@@ -151,8 +151,8 @@
     if(!c){number.value='';return;}
     const seconds=(c.end-c.start)/C.FPS;
     number.value=Number(seconds.toFixed(2));
-    range.max=String(Math.max(30,Math.ceil(seconds)));
-    range.value=String(seconds);
+    range.max='15';
+    range.value=String(Math.min(15,seconds));
   }
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
@@ -342,7 +342,7 @@
       renderActivity();timeline.invalidate();
     },100);
   }
-  function newClip(){modal('新建片段','<label>片段名称<input id="newClipName" type="text" value="新的片段" maxlength="60"></label><p>默认追加到末尾，与前一片段重叠 2 秒。之后可直接拖动调整。</p>','创建片段',()=>{const name=$('#newClipName').value.trim();if(!name)return false;appendClip(name);});}
+  function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
     const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考',refs:[]};
@@ -592,6 +592,17 @@
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
+  function confirmCloseEditor(){
+    promptEditor?.closeMenu();stopDialogMedia();
+    const d=$('#dialog');
+    d.dataset.mode='confirm-close';
+    $('#dialogTitle').textContent='保存修改？';
+    $('#dialogBody').innerHTML='<p>当前导演台有尚未保存的修改。</p><p class="subtle">保存后退出，或放弃本次修改返回 ComfyUI。</p>';
+    $('#dialogActions').innerHTML='<button class="button ghost" data-action="close-dialog">继续编辑</button><button class="button ghost" id="dialogDiscardChanges">放弃修改</button><button class="button primary" id="dialogSaveChanges">✓ 保存并退出</button>';
+    $('#dialogDiscardChanges').onclick=()=>{d.close();window.parent.postMessage({type:'terrydirector:discard-close'},hostOrigin);};
+    $('#dialogSaveChanges').onclick=()=>{d.close();saveToHost();};
+    if(!d.open)d.showModal();
+  }
   function saveToHost(){
     finishPromptEdit();
     if(!embedded){markEdited();toast('已保存编排。正式接入 ComfyUI 后会同时隐藏浮窗。');return;}
@@ -681,6 +692,7 @@
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
       else if(message.type==='terrydirector:request-save')saveToHost();
+      else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
     window.parent.postMessage({type:'terrydirector:ready'},hostOrigin);
   }
