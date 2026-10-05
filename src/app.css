@@ -454,3 +454,75 @@ body.td-embedded .timeline-controls {
     padding: 0 7px;
   }
 }
+
+
+/* Prompt view switch lives in the clip header. */
+.prompt-view-switch {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: auto 30px auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--td-border);
+  border-radius: 999px;
+  background: var(--td-bg-inset);
+  color: var(--td-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.prompt-view-switch > i {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--td-neutral-elevated) 86%, transparent);
+  box-shadow: inset 0 0 0 1px var(--td-border-soft);
+}
+
+.prompt-view-switch > i::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--td-effect);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--td-effect) 42%, transparent);
+  transition: transform 160ms var(--td-ease);
+}
+
+.prompt-view-switch > span:first-child {
+  color: var(--td-effect);
+}
+
+.prompt-view-switch.is-text > i::after {
+  transform: translateX(14px);
+}
+
+.prompt-view-switch.is-text > span:first-child {
+  color: var(--td-text-muted);
+}
+
+.prompt-view-switch.is-text > span:last-child {
+  color: var(--td-effect);
+}
+
+.prompt-view-switch:hover {
+  border-color: var(--td-border-focus);
+  background: var(--td-bg-hover);
+}
+
+.prompt-view-switch:focus-visible {
+  outline: 2px solid var(--td-border-focus);
+  outline-offset: 2px;
+}
+
+/* Old inline text tabs are no longer used. */
+.prompt-views {
+  display: none !important;
+}
