@@ -14,7 +14,9 @@ function ensureCss() {
 }
 
 function clone(value) {
-  return typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+  return typeof structuredClone === "function"
+    ? structuredClone(value)
+    : JSON.parse(JSON.stringify(value));
 }
 
 function defaultDocument() {
@@ -22,20 +24,23 @@ function defaultDocument() {
     version: 1,
     fps: FPS,
     selected: "clip-1",
-    clips: [{ id: "clip-1", name: "片段 01", start: 0, end: FPS * 10, prompt: "", refs: [] }],
+    clips: [
+      {
+        id: "clip-1",
+        name: "片段 01",
+        start: 0,
+        end: FPS * 10,
+        prompt: "",
+        refs: [],
+      },
+    ],
     assets: [],
   };
 }
 
 function defaultConfig() {
   return {
-    version: 2,
-    params: {
-      seed: 0,
-      continue_audio_latent: true,
-      ref_image_size: "match",
-      second_pass: { method: "none", model: "", high_steps: 4 },
-    },
+    version: 3,
     document: defaultDocument(),
   };
 }
@@ -43,62 +48,78 @@ function defaultConfig() {
 function normalizeConfig(value) {
   let source = value;
   if (typeof source === "string") {
-    try { source = JSON.parse(source); } catch { source = {}; }
+    try {
+      source = JSON.parse(source);
+    } catch {
+      source = {};
+    }
   }
 
   const base = defaultConfig();
-  const params = source?.params && typeof source.params === "object" ? source.params : {};
-  const rawSecond = params.second_pass && typeof params.second_pass === "object" ? params.second_pass : null;
-  const legacySelfLift = params.selflift && typeof params.selflift === "object" ? params.selflift : {};
-  let method = rawSecond ? String(rawSecond.method || "none").toLowerCase() : (legacySelfLift.enabled ? "selflift" : "none");
-  if (!["none", "selflift"].includes(method)) method = "none";
-  const secondModel = String((rawSecond ? rawSecond.model : legacySelfLift.model) || "");
-  const highSteps = Math.max(1, Math.floor(Number(rawSecond ? rawSecond.high_steps : legacySelfLift.high_steps) || 4));
+  const rawDoc = source?.document && typeof source.document === "object"
+    ? source.document
+    : source && typeof source === "object" && (Array.isArray(source.clips) || Array.isArray(source.assets))
+      ? source
+      : {};
 
-  const rawDoc = source?.document && typeof source.document === "object" ? source.document : {};
-  const clips = Array.isArray(rawDoc.clips) && rawDoc.clips.length ? rawDoc.clips.map((raw, index) => {
-    const start = Math.max(0, Number.parseInt(raw?.start, 10) || 0);
-    const end = Math.max(start + 1, Number.parseInt(raw?.end, 10) || start + FPS * 10);
-    return {
-      id: String(raw?.id || `clip-${index + 1}`),
-      name: String(raw?.name || `片段 ${String(index + 1).padStart(2, "0")}`),
-      start,
-      end,
-      prompt: String(raw?.prompt || ""),
-      refs: Array.isArray(raw?.refs) ? raw.refs.map(String) : [],
-    };
-  }) : base.document.clips;
+  const clips = Array.isArray(rawDoc.clips) && rawDoc.clips.length
+    ? rawDoc.clips.map((raw, index) => {
+        const start = Math.max(0, Number.parseInt(raw?.start, 10) || 0);
+        const end = Math.max(
+          start + 1,
+          Number.parseInt(raw?.end, 10) || start + FPS * 10
+        );
+        return {
+          id: String(raw?.id || `clip-${index + 1}`),
+          name: String(raw?.name || `片段 ${String(index + 1).padStart(2, "0")}`),
+          start,
+          end,
+          prompt: String(raw?.prompt || ""),
+          refs: Array.isArray(raw?.refs) ? raw.refs.map(String) : [],
+        };
+      })
+    : base.document.clips;
 
-  const assets = Array.isArray(rawDoc.assets) ? rawDoc.assets
-    .filter(asset => asset && ["image", "video", "audio"].includes(asset.kind) && asset.source?.path)
-    .map(asset => ({
-      id: String(asset.id),
-      name: String(asset.name || asset.source.path),
-      kind: asset.kind,
-      number: Math.max(1, Number.parseInt(asset.number, 10) || 1),
-      source: {
-        type: "comfy-input",
-        path: String(asset.source.path).replaceAll("\\", "/").replace(/^\/+/, ""),
-      },
-    })) : [];
+  const assets = Array.isArray(rawDoc.assets)
+    ? rawDoc.assets
+        .filter(
+          asset =>
+            asset &&
+            ["image", "video", "audio"].includes(asset.kind) &&
+            asset.source?.path
+        )
+        .map(asset => ({
+          id: String(asset.id),
+          name: String(asset.name || asset.source.path),
+          kind: asset.kind,
+          number: Math.max(1, Number.parseInt(asset.number, 10) || 1),
+          source: {
+            type: "comfy-input",
+            path: String(asset.source.path)
+              .replaceAll("\\", "/")
+              .replace(/^\/+/, ""),
+          },
+        }))
+    : [];
 
-  const selected = clips.some(clip => clip.id === rawDoc.selected) ? rawDoc.selected : clips[0].id;
+  const selected = clips.some(clip => clip.id === rawDoc.selected)
+    ? rawDoc.selected
+    : clips[0].id;
+
   const validAssets = new Set(assets.map(asset => asset.id));
-  for (const clip of clips) clip.refs = clip.refs.filter(id => validAssets.has(id));
+  for (const clip of clips) {
+    clip.refs = clip.refs.filter(id => validAssets.has(id));
+  }
 
   return {
-    version: 2,
-    params: {
-      seed: Math.max(0, Math.floor(Number(params.seed) || 0)),
-      continue_audio_latent: params.continue_audio_latent !== false,
-      ref_image_size: params.ref_image_size === "max" ? "max" : "match",
-      second_pass: {
-        method,
-        model: secondModel,
-        high_steps: highSteps,
-      },
+    version: 3,
+    document: {
+      version: 1,
+      fps: FPS,
+      selected,
+      clips,
+      assets,
     },
-    document: { version: 1, fps: FPS, selected, clips, assets },
   };
 }
 
@@ -109,8 +130,12 @@ function timeText(frames) {
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[char]));
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[char]);
 }
 
 function configWidget(node) {
@@ -118,9 +143,8 @@ function configWidget(node) {
 }
 
 function hideBackingWidget(widget) {
-  if (!widget || widget.__tdHidden) return;
+  if (!widget) return;
   widget.__tdHidden = true;
-  widget.__tdOriginalType = widget.type;
   widget.type = "hidden";
   widget.computeSize = () => [0, 0];
   widget.draw = () => {};
@@ -149,29 +173,24 @@ function writeConfig(node, config, render = true) {
   if (render) renderNode(node);
 }
 
-let upscalerModels = null;
-async function loadUpscalers() {
-  if (upscalerModels) return upscalerModels;
-  try {
-    const response = await fetch("/terrydirector/api/latent-upscalers", { cache: "no-store" });
-    const payload = await response.json();
-    upscalerModels = Array.isArray(payload.models) ? payload.models.map(String) : [];
-  } catch {
-    upscalerModels = [];
-  }
-  return upscalerModels;
-}
-
 function timelineHtml(documentData) {
   const clips = documentData.clips || [];
-  if (!clips.length) return '<div class="td-mini-empty">尚无片段 · 点击编辑</div>';
+  if (!clips.length) {
+    return '<div class="td-mini-empty">尚无片段 · 点击编辑</div>';
+  }
+
   const total = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
-  return clips.map((clip, index) => {
-    const left = Math.max(0, Math.min(100, clip.start / total * 100));
-    const width = Math.max(.8, Math.min(100 - left, (clip.end - clip.start) / total * 100));
-    const selected = clip.id === documentData.selected ? " is-selected" : "";
-    return `<div class="td-mini-clip${selected}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span></div>`;
-  }).join("");
+  return clips
+    .map((clip, index) => {
+      const left = Math.max(0, Math.min(100, (clip.start / total) * 100));
+      const width = Math.max(
+        0.8,
+        Math.min(100 - left, ((clip.end - clip.start) / total) * 100)
+      );
+      const selected = clip.id === documentData.selected ? " is-selected" : "";
+      return `<div class="td-mini-clip${selected}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span></div>`;
+    })
+    .join("");
 }
 
 function renderNode(node) {
@@ -179,61 +198,11 @@ function renderNode(node) {
   if (!root) return;
 
   const config = readConfig(node);
-  const params = config.params;
   const doc = config.document;
   const total = Math.max(0, ...doc.clips.map(clip => clip.end || 0));
-  const models = upscalerModels || [];
-  const modelOptions = [
-    '<option value="">自动选择兼容模型</option>',
-    ...models.map(name => `<option value="${escapeHtml(name)}"${name === params.second_pass.model ? " selected" : ""}>${escapeHtml(name)}</option>`),
-  ].join("");
 
-  root.innerHTML = `<div class="td-node-card">
-    <section class="td-node-section td-node-compact-section">
-      <div class="td-node-compact-row">
-        <div class="td-node-field td-node-seed-field">
-          <label>Seed</label>
-          <div class="td-node-inline">
-            <input class="td-node-seed" data-field="seed" type="number" min="0" step="1" value="${params.seed}">
-            <button class="td-node-icon-button" data-action="random-seed" title="随机 Seed">⚄</button>
-          </div>
-        </div>
-
-        <div class="td-node-field">
-          <label>参考图尺寸</label>
-          <select data-field="ref_image_size">
-            <option value="match"${params.ref_image_size === "match" ? " selected" : ""}>match</option>
-            <option value="max"${params.ref_image_size === "max" ? " selected" : ""}>max</option>
-          </select>
-        </div>
-
-        <div class="td-node-field">
-          <label>二采方案</label>
-          <select data-field="second_pass_method">
-            <option value="none"${params.second_pass.method === "none" ? " selected" : ""}>无</option>
-            <option value="selflift"${params.second_pass.method === "selflift" ? " selected" : ""}>SelfLift</option>
-          </select>
-        </div>
-
-        <button class="td-node-compact-toggle${params.continue_audio_latent ? " is-on" : ""}" data-toggle="continue_audio_latent" title="是否在相邻片段间延续音频 latent">
-          <span class="td-node-toggle"></span>
-          <span>音频连续</span>
-        </button>
-      </div>
-
-      <div class="td-node-selflift" ${params.second_pass.method === "selflift" ? "" : "hidden"}>
-        <div class="td-node-field">
-          <label>SelfLift 放大模型</label>
-          <select data-field="second_pass_model">${modelOptions}</select>
-        </div>
-        <div class="td-node-field td-node-high-steps">
-          <label>高清步数</label>
-          <input data-field="second_pass_high_steps" type="number" min="1" step="1" value="${params.second_pass.high_steps}">
-        </div>
-      </div>
-    </section>
-
-    <div class="td-mini-wrap">
+  root.innerHTML = `<div class="td-node-card td-node-card-director">
+    <div class="td-mini-wrap td-mini-wrap-director">
       <div class="td-mini-head">
         <strong>时间线</strong>
         <span class="td-node-pill">${timeText(total)}</span>
@@ -245,45 +214,9 @@ function renderNode(node) {
     </div>
   </div>`;
 
-  root.querySelectorAll("input[data-field], select[data-field]").forEach(input => {
-    input.addEventListener("change", () => {
-      const next = readConfig(node);
-      const field = input.dataset.field;
-      if (field === "seed") next.params.seed = Math.max(0, Math.floor(Number(input.value) || 0));
-      else if (field === "ref_image_size") next.params.ref_image_size = input.value === "max" ? "max" : "match";
-      else if (field === "second_pass_method") next.params.second_pass.method = input.value === "selflift" ? "selflift" : "none";
-      else if (field === "second_pass_model") next.params.second_pass.model = input.value;
-      else if (field === "second_pass_high_steps") next.params.second_pass.high_steps = Math.max(1, Math.floor(Number(input.value) || 4));
-      writeConfig(node, next);
-    });
-  });
-
-  root.querySelectorAll("[data-toggle]").forEach(button => {
-    button.addEventListener("click", () => {
-      const next = readConfig(node);
-      if (button.dataset.toggle === "continue_audio_latent") {
-        next.params.continue_audio_latent = !next.params.continue_audio_latent;
-      }
-      writeConfig(node, next);
-    });
-  });
-
-  root.querySelector('[data-action="random-seed"]')?.addEventListener("click", () => {
-    const next = readConfig(node);
-    const random = new Uint32Array(1);
-    crypto.getRandomValues(random);
-    next.params.seed = random[0];
-    writeConfig(node, next);
-  });
-
   root.querySelectorAll('[data-action="edit"]').forEach(button => {
     button.addEventListener("click", () => openEditor(node, button));
   });
-
-  const desiredHeight = params.second_pass.method === "selflift" ? 400 : 345;
-  if (Math.abs((node.size?.[0] || 0) - 560) > 1 || Math.abs((node.size?.[1] || 0) - desiredHeight) > 1) {
-    node.setSize?.([560, desiredHeight]);
-  }
 }
 
 function mountNode(node) {
@@ -299,16 +232,21 @@ function mountNode(node) {
   hideBackingWidget(backing);
 
   const root = document.createElement("div");
-  root.className = "td-node-shell";
+  root.className = "td-node-shell td-node-shell-director";
   root.addEventListener("pointerdown", event => event.stopPropagation());
   root.addEventListener("wheel", event => event.stopPropagation(), { passive: true });
 
-  const widget = node.addDOMWidget("terrydirector_panel", "terrydirector", root, {
-    hideOnZoom: false,
-    getMinHeight: () => 170,
-    getMaxHeight: () => 245,
-    margin: 3,
-  });
+  const widget = node.addDOMWidget(
+    "terrydirector_panel",
+    "terrydirector",
+    root,
+    {
+      hideOnZoom: false,
+      getMinHeight: () => 92,
+      getMaxHeight: () => 118,
+      margin: 3,
+    }
+  );
   widget.serialize = false;
   widget.options.serialize = false;
 
@@ -324,8 +262,14 @@ function mountNode(node) {
     });
   };
 
+  const width = Math.max(430, Math.min(520, node.size?.[0] || 470));
+  if ((node.size?.[1] || 0) > 290 || (node.size?.[1] || 0) < 175) {
+    node.setSize?.([width, 215]);
+  } else if ((node.size?.[0] || 0) < 430) {
+    node.setSize?.([430, node.size?.[1] || 215]);
+  }
+
   renderNode(node);
-  loadUpscalers().then(() => node.__tdRoot && renderNode(node));
 }
 
 let overlay = null;
@@ -342,7 +286,8 @@ function ensureEditorOverlay() {
 
   overlay = document.createElement("div");
   overlay.className = "td-editor-overlay";
-  overlay.innerHTML = '<iframe class="td-editor-frame" title="TerryDirector 导演台" allowtransparency="true"></iframe>';
+  overlay.innerHTML =
+    '<iframe class="td-editor-frame" title="TerryDirector 导演台" allowtransparency="true"></iframe>';
   document.body.append(overlay);
 
   frame = overlay.querySelector("iframe");
@@ -355,7 +300,10 @@ function ensureEditorOverlay() {
     if (message.type === "terrydirector:ready") {
       frameReady = true;
       if (pendingDocument) {
-        frame.contentWindow.postMessage({ type: "terrydirector:load", document: pendingDocument }, location.origin);
+        frame.contentWindow.postMessage(
+          { type: "terrydirector:load", document: pendingDocument },
+          location.origin
+        );
         pendingDocument = null;
       }
     } else if (message.type === "terrydirector:save" && activeNode) {
@@ -383,7 +331,10 @@ function openEditor(node, button) {
   document.documentElement.style.overflow = "hidden";
 
   if (frameReady) {
-    frame.contentWindow.postMessage({ type: "terrydirector:load", document: documentData }, location.origin);
+    frame.contentWindow.postMessage(
+      { type: "terrydirector:load", document: documentData },
+      location.origin
+    );
   } else {
     pendingDocument = documentData;
   }
@@ -395,7 +346,9 @@ function requestDiscard() {
     closeEditor();
     return;
   }
-  if (window.confirm("关闭导演台将放弃本次未保存的编辑，确定关闭吗？")) closeEditor();
+  if (window.confirm("关闭导演台将放弃本次未保存的编辑，确定关闭吗？")) {
+    closeEditor();
+  }
 }
 
 function closeEditor() {
@@ -417,9 +370,13 @@ app.registerExtension({
     ensureEditorOverlay();
   },
   nodeCreated(node) {
-    if (node.comfyClass === NODE_CLASS) queueMicrotask(() => mountNode(node));
+    if (node.comfyClass === NODE_CLASS) {
+      queueMicrotask(() => mountNode(node));
+    }
   },
   loadedGraphNode(node) {
-    if (node.comfyClass === NODE_CLASS) queueMicrotask(() => mountNode(node));
+    if (node.comfyClass === NODE_CLASS) {
+      queueMicrotask(() => mountNode(node));
+    }
   },
 });
