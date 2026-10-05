@@ -88,8 +88,8 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div></header>
-        <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><div class="prompt-views" aria-label="提示词显示方式"><button data-prompt-view="visual">可视化</button><button data-prompt-view="text">纯文本</button></div><span id="promptCount" class="subtle prompt-count"></span></div>
+        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div>
         <div class="prompt-editor"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div>
 
       </section>
@@ -126,7 +126,13 @@
     const c=current(),text=c?.prompt||'';
     $('#noClip').hidden=!!c;
     promptEditor.setContext(c?.id||null,text,promptView);
-    document.querySelectorAll('[data-prompt-view]').forEach(b=>{b.classList.toggle('is-active',b.dataset.promptView===promptView);b.setAttribute('aria-pressed',String(b.dataset.promptView===promptView));});
+    const viewSwitch=$('.prompt-view-switch');
+    if(viewSwitch){
+      const isText=promptView==='text';
+      viewSwitch.classList.toggle('is-text',isText);
+      viewSwitch.setAttribute('aria-pressed',String(isText));
+      viewSwitch.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';
+    }
     $('#promptCount').textContent=c?`${text.length} 字`:'';
   }
   function renderTimelineDuration(clips){
@@ -562,6 +568,7 @@
     'upload-assets':()=>$('#fileInput').click(),
     'pick-input':pickInputAssets,
     help,
+    'toggle-prompt-view':()=>{finishPromptEdit();promptView=promptView==='visual'?'text':'visual';renderPrompt();},
     'save-close':saveToHost,
     'close-editor':()=>{if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
@@ -581,7 +588,7 @@
     const preview=target.closest('[data-preview-ref]');if(preview){previewAsset(preview.dataset.previewRef);return;}
     const remove=target.closest('[data-delete-asset]');if(remove){deleteAsset(remove.dataset.deleteAsset);return;}
     const insert=target.closest('[data-insert-ref]');if(insert){insertReference(insert.dataset.insertRef);return;}
-    const view=target.closest('[data-prompt-view]');if(view){finishPromptEdit();promptView=view.dataset.promptView;renderPrompt();}
+
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
