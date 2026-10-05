@@ -526,3 +526,98 @@ body.td-embedded .timeline-controls {
 .prompt-views {
   display: none !important;
 }
+
+
+/* 2026-10-05 topbar / title / asset-well refinement */
+body.td-embedded .topbar .button,
+body.td-embedded .topbar .icon-button,
+body.td-embedded .editor-close {
+  height: 34px;
+  min-height: 34px;
+}
+
+body.td-embedded .top-timeline-leading .button,
+body.td-embedded .save-close {
+  height: 34px !important;
+  min-height: 34px !important;
+}
+
+.top-timeline-duration {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.top-timeline-duration > span {
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.top-timeline-duration > output {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.clip-identity {
+  gap: 10px;
+}
+
+.clip-name {
+  width: auto;
+  max-width: min(100%, 420px);
+  flex: 0 1 auto;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: 0;
+  padding: 5px 0;
+}
+
+.clip-name-edit {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--td-text-muted);
+}
+
+.clip-name-edit svg {
+  width: 14px;
+  height: 14px;
+}
+
+.clip-name-edit:hover {
+  color: var(--td-effect);
+  background: var(--td-bg-hover);
+}
+
+.clip-name-edit:focus-visible {
+  outline: 2px solid var(--td-border-focus);
+  outline-offset: 1px;
+}
+
+.reference-body {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--td-border-soft);
+  border-radius: 9px;
+  background: var(--td-bg-inset);
+}
+
+.reference-body.is-dragover {
+  outline-offset: -2px;
+}
+
+body.td-embedded .reference-body {
+  padding: 10px;
+}
+
+body.td-embedded .reference-grid {
+  align-content: start;
+}
