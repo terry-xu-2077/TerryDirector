@@ -377,3 +377,26 @@
 .td-editor-discard {
   display: none !important;
 }
+
+
+/* Dedicated-config architecture: keep the main director node compact. */
+.td-node-shell-director {
+  min-width: 420px;
+  padding-top: 3px;
+}
+
+.td-node-card-director {
+  border-radius: 11px;
+}
+
+.td-mini-wrap-director {
+  padding: 7px 8px 8px;
+}
+
+.td-node-shell-director .td-mini-head {
+  margin-bottom: 5px;
+}
+
+.td-node-shell-director .td-mini-timeline {
+  height: 42px;
+}
