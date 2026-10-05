@@ -69,7 +69,7 @@
   if(!embedded)resetActivity();else activity.clear();
   let state={clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',editBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null,embedDirty=false;
+  let title='远航之前',promptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null,embedDirty=false;
   let generationPreviewEnabled=true,lastPreviewRun=null;
   let promptEditor=null;
   const app=$('#app');
@@ -77,7 +77,8 @@
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output></div></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button></div>
+      <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
@@ -88,8 +89,8 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
-        <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div></div>
+        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" max="150" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="30" step="0.0416667" aria-label="片段秒数滑块"></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
       <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
@@ -141,8 +142,44 @@
     output.title=`总时长 · 时:分:秒:帧 · ${C.FPS} FPS · ${frames} 帧；从零点到最后片段结尾，包含空隙，重叠不重复计时。`;
     output.setAttribute('aria-label',`总时长 ${C.seconds(frames)}，${frames} 帧`);
   }
+  function renderClipDuration(clips=state.clips){
+    const c=clips.find(x=>x.id===state.selected);
+    const number=$('#clipDurationNumber'),range=$('#clipDurationRange');
+    if(!number||!range)return;
+    const enabled=!!c;
+    number.disabled=!enabled;range.disabled=!enabled;
+    if(!c){number.value='';return;}
+    const seconds=(c.end-c.start)/C.FPS;
+    number.value=Number(seconds.toFixed(2));
+    range.max=String(Math.max(30,Math.ceil(seconds)));
+    range.value=String(seconds);
+  }
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
+    renderClipDuration(clips);
+  }
+  function beginDurationEdit(){
+    if(!current()||durationEditBefore)return;
+    finishPromptEdit();
+    durationEditBefore=C.copy(state);
+  }
+  function previewDuration(seconds){
+    const c=current(),value=Number(seconds);
+    if(!c||!Number.isFinite(value))return;
+    const frames=Math.max(C.FPS,Math.round(value*C.FPS)),targetEnd=c.start+frames;
+    state.clips=timeline?.chainEnabled
+      ? C.trimEndFollowing(state.clips,c.id,targetEnd)
+      : C.editClip(state.clips,c.id,'right',targetEnd);
+    timeline?.setClips(state.clips);
+    timeline?.select(state.selected);
+    renderTiming(state.clips);
+  }
+  function finishDurationEdit(){
+    if(!durationEditBefore)return;
+    if(history.push(durationEditBefore,state))markEdited();
+    durationEditBefore=null;
+    updateHistory();
+    renderAll();
   }
   function poolEntries(){
     const active=new Set(state.assetIds);
@@ -272,12 +309,12 @@
   function renderAll(){
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
     syncAllReferences();
-    const c=current();$('#clipNumber').textContent=c?`片段 ${String(state.clips.indexOf(c)+1).padStart(2,'0')}`:'暂无片段';
+    const c=current();$('#clipNumber').textContent=c?`片段 ${state.clips.indexOf(c)+1}`:'暂无片段';
     $('#clipName').value=c?.name||'';$('#clipName').disabled=!c;$('#clipName').hidden=!c;
     renderPrompt();renderTiming();renderReferences();updateHistory();
     if(timeline){timeline.setClips(state.clips);timeline.select(state.selected);}
   }
-  function select(id,seek=false){finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
+  function select(id,seek=false){finishDurationEdit();finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
     getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
@@ -591,6 +628,15 @@
 
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
+  const durationRange=$('#clipDurationRange'),durationNumber=$('#clipDurationNumber');
+  durationRange.addEventListener('pointerdown',beginDurationEdit);
+  durationRange.addEventListener('input',e=>{beginDurationEdit();previewDuration(e.target.valueAsNumber);});
+  for(const event of ['pointerup','pointercancel','lostpointercapture','change'])durationRange.addEventListener(event,finishDurationEdit);
+  durationNumber.addEventListener('focus',beginDurationEdit);
+  durationNumber.addEventListener('input',e=>{beginDurationEdit();if(e.target.validity.valid)previewDuration(e.target.valueAsNumber);});
+  durationNumber.addEventListener('change',finishDurationEdit);
+  durationNumber.addEventListener('blur',finishDurationEdit);
+  durationNumber.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishDurationEdit();e.target.blur();}});
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
   $('#zoomRange').addEventListener('input',e=>{timeline.zoom((.22*Math.pow(24/.22,Number(e.target.value)/100))/timeline.ppf);});
   app.addEventListener('dragstart',e=>{const ref=e.target.closest('[data-reference]');if(ref){e.dataTransfer.setData('application/x-terrydirector-asset',ref.dataset.reference);e.dataTransfer.effectAllowed='copy';}});
