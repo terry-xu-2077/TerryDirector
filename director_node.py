@@ -35,6 +35,7 @@ class TerryDirector(io.ComfyNode):
                     max=16384,
                     step=32,
                     force_input=True,
+                    advanced=True,
                 ),
                 io.Int.Input(
                     "height",
@@ -43,9 +44,10 @@ class TerryDirector(io.ComfyNode):
                     max=16384,
                     step=32,
                     force_input=True,
+                    advanced=True,
                 ),
-                io.Sampler.Input("sampler"),
-                io.Sigmas.Input("sigmas"),
+                io.Sampler.Input("sampler", advanced=True),
+                io.Sigmas.Input("sigmas", advanced=True),
                 io.String.Input(
                     "config_json",
                     default=config_json(),
