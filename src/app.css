@@ -682,3 +682,96 @@ body.td-embedded .reference-grid {
   background: var(--td-bg-inset) !important;
   overflow: auto;
 }
+
+
+/* 2026-10-05 centered duration + timeline-style clip badge + live duration slider */
+body.td-embedded .topbar {
+  position: relative;
+}
+
+body.td-embedded .top-timeline-duration {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.clip-number-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--td-bg-inset);
+  color: var(--td-text-main);
+  font: 500 12px/1 "Segoe UI","Microsoft YaHei",sans-serif;
+  white-space: nowrap;
+  flex: none;
+}
+
+.clip-identity {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.clip-duration-control {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: 1 1 190px;
+  max-width: 250px;
+  min-width: 150px;
+  margin-left: auto;
+  margin-right: 10px;
+}
+
+.clip-duration-control > input[type="number"] {
+  width: 52px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--td-border);
+  border-radius: 6px;
+  background: var(--td-bg-inset);
+  color: var(--td-text-main);
+  font: 11px/1 "Consolas", monospace;
+  text-align: right;
+  outline: none;
+}
+
+.clip-duration-control > span {
+  color: var(--td-text-muted);
+  font-size: 10px;
+}
+
+.clip-duration-control > input[type="range"] {
+  flex: 1;
+  min-width: 76px;
+  height: 18px;
+  accent-color: var(--td-effect);
+  cursor: ew-resize;
+}
+
+.clip-duration-control > input:focus-visible {
+  outline: 1px solid var(--td-border-focus);
+  outline-offset: 1px;
+}
+
+.prompt-editor-footer {
+  justify-content: flex-start;
+}
+
+.prompt-editor-footer .prompt-count {
+  margin-left: auto;
+}
+
+@media (max-width: 980px) {
+  .clip-duration-control {
+    min-width: 120px;
+    max-width: 180px;
+  }
+}
