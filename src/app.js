@@ -77,28 +77,27 @@
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><strong>时间线</strong><button class="button ghost" data-action="new">${icon('plus')}新建片段</button></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><div class="top-timeline-duration"><span>总编排时长</span><output id="timelineDuration" aria-label="总编排时长">00:00:00:00</output></div></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
-      <div class="timeline-toolbar"><div class="timeline-duration"><span>总编排时长</span><output id="timelineDuration" aria-label="总编排时长">00:00:00:00</output></div><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
+      <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
       <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。拖动片段移动，拖动片段边缘裁剪；重叠区及下方引线标记为只读。左右键步进，Ctrl Z 撤销。"></canvas></div>
       <div class="timeline-bottom"><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div></div>
     </section>
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div><span id="clipTiming" class="clip-timing"></span></header>
-        <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><div class="prompt-views" aria-label="提示词显示方式"><button data-prompt-view="visual">可视化</button><button data-prompt-view="text">纯文本</button></div></div>
+        <header class="composer-heading"><div class="clip-identity"><span class="eyebrow" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"></div></header>
+        <div class="prompt-head"><strong>提示词</strong><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><div class="prompt-views" aria-label="提示词显示方式"><button data-prompt-view="visual">可视化</button><button data-prompt-view="text">纯文本</button></div><span id="promptCount" class="subtle prompt-count"></span></div>
         <div class="prompt-editor"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div>
-        <footer class="composer-footer"><span id="promptUsed" class="subtle"></span><span id="promptCount" class="subtle"></span></footer>
+
       </section>
       <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
         <section class="reference-panel" aria-label="资产池">
-        <header class="reference-heading"><strong>资产池 <span id="refCount">0</span></strong><span class="subtle">全部片段共用</span></header>
-        <div class="reference-actions" role="group" aria-label="添加资产来源"><button class="button ghost" data-action="upload-assets" title="选择本地图片、视频或音频；Demo 仅在本页读取，不实际上传">${icon('upload')}上传资产</button><button class="button ghost" data-action="pick-input" title="从 ComfyUI input 选择已有文件；当前使用明确标记的示例目录">${icon('folder')}从 ComfyUI input 选取</button></div>
+        <header class="reference-heading"><strong>资产池 <span id="refCount">0</span></strong><div class="reference-actions" role="group" aria-label="添加资产来源"><button class="button ghost" data-action="upload-assets" title="选择本地图片、视频或音频；Demo 仅在本页读取，不实际上传">${icon('upload')}上传资产</button><button class="button ghost" data-action="pick-input" title="从 ComfyUI input 选择已有文件；当前使用明确标记的示例目录">${icon('folder')}从 ComfyUI input 选取</button></div></header>
         <div class="reference-body" id="referenceDrop"><div class="reference-grid" id="references"></div><p class="reference-hint">上传新文件或从 input 选取已有文件<br>加入资产池，全部片段可引用</p></div>
-        <footer class="reference-footer">点击查看大图 · 插入引用到当前片段</footer>
+
         </section>
     </main>
     <input type="file" id="fileInput" accept="image/*,video/*,audio/*" multiple hidden>
@@ -128,7 +127,6 @@
     $('#noClip').hidden=!!c;
     promptEditor.setContext(c?.id||null,text,promptView);
     document.querySelectorAll('[data-prompt-view]').forEach(b=>{b.classList.toggle('is-active',b.dataset.promptView===promptView);b.setAttribute('aria-pressed',String(b.dataset.promptView===promptView));});
-    $('#promptUsed').textContent=c?(promptView==='visual'?'可直接编辑 · @ 引用素材 · / H3 语法':'纯文本 · 保留完整 H3 标签'):'';
     $('#promptCount').textContent=c?`${text.length} 字`:'';
   }
   function renderTimelineDuration(clips){
@@ -140,9 +138,6 @@
   }
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
-    const c=clips.find(x=>x.id===state.selected),i=clips.indexOf(c),prev=clips[i-1],o=c&&prev?C.intersection(prev,c):{frames:0};
-    $('#clipTiming').textContent=c?`${Number(((c.end-c.start)/C.FPS).toFixed(2))}s${o.frames?` · 重叠 ${Number((o.frames/C.FPS).toFixed(2))}s`:''}`:'';
-    $('#clipTiming').title=c?`${C.timecode(c.start)} — ${C.timecode(c.end)}${o.frames?` · 与上一片段重叠 ${o.frames} 帧`:''}`:'';
   }
   function poolEntries(){
     const active=new Set(state.assetIds);
