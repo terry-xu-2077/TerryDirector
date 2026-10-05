@@ -621,3 +621,64 @@ body.td-embedded .reference-body {
 body.td-embedded .reference-grid {
   align-content: start;
 }
+
+
+/* 2026-10-05 prompt footer / exact title sizing pass */
+.top-timeline-duration {
+  justify-content: center;
+  text-align: center;
+}
+
+.clip-name {
+  font-size: 13px !important;
+  font-weight: 550 !important;
+  width: auto !important;
+  min-width: 2ch;
+  max-width: 420px;
+  field-sizing: content;
+}
+
+.clip-name-edit {
+  margin-left: -3px;
+}
+
+.prompt-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-editor-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.prompt-editor-body #promptText,
+.prompt-editor-body .prompt-visual {
+  width: 100%;
+  height: 100%;
+}
+
+.prompt-editor-footer {
+  min-height: 36px;
+  margin: 0;
+  padding: 0 12px;
+  border-top: 1px solid var(--td-border-soft);
+  background: color-mix(in srgb, var(--td-bg-inset) 94%, var(--td-bg-panel));
+}
+
+.prompt-editor-footer .prompt-help {
+  margin-left: 0;
+}
+
+.prompt-editor-footer .prompt-count {
+  margin-left: auto;
+}
+
+.reference-body {
+  border: 1px solid var(--td-border-soft) !important;
+  border-radius: 9px !important;
+  background: var(--td-bg-inset) !important;
+  overflow: auto;
+}
