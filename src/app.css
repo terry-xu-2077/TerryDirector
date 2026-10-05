@@ -321,3 +321,38 @@ body.td-embedded .top-actions {
     height: 94dvh;
   }
 }
+
+
+/* Header information hierarchy: primary timeline action lives beside the brand. */
+.top-timeline-leading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding-left: 8px;
+}
+
+.top-timeline-leading strong {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.top-timeline-leading .button {
+  min-height: 30px;
+  padding: 0 11px;
+}
+
+body.td-embedded .timeline-toolbar {
+  padding-left: 18px;
+}
+
+@media (max-width: 900px) {
+  .top-timeline-leading {
+    gap: 6px;
+    padding-left: 0;
+  }
+  .top-timeline-leading strong {
+    display: none;
+  }
+}
