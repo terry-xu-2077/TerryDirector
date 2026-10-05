@@ -1,27 +1,40 @@
 from __future__ import annotations
 
+import folder_paths
 from comfy_api.latest import io
 
-from .director_core import config_json, normalize_config, summary
+from .director_core import (
+    config_json,
+    make_runtime_config,
+    normalize_config,
+    require_runtime_config,
+    summary,
+)
+
+DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
+AUTO_UPSCALER = "自动选择兼容模型"
 
 
-class TerryDirector(io.ComfyNode):
-    """Single visible TerryDirector node.
+def _latent_upscaler_options() -> list[str]:
+    try:
+        models = list(folder_paths.get_filename_list("latent_upscale_models"))
+    except Exception:
+        models = []
+    return [AUTO_UPSCALER, *models]
 
-    The visible shell owns generation controls and opens the in-page creative editor.
-    Width and height are deliberately supplied by connected ComfyUI inputs rather than
-    duplicated as local resolution widgets.
-    """
+
+class TerryDirectorConfig(io.ComfyNode):
+    """Collect all generation-chain dependencies into one TerryDirector packet."""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
-            node_id="TerryDirector",
-            display_name="TerryDirector",
+            node_id="TerryDirectorConfig",
+            display_name="TerryDirector 配置",
             category="MiniMax H3/TerryDirector",
             description=(
-                "MiniMax H3 multi-segment director. Connect model, sampling inputs and target width/height; "
-                "edit prompts, shared assets and the timeline in the in-page director."
+                "Bundle model, VAE, resolution, sampler/sigmas and TerryDirector generation "
+                "settings into one connection for the main TerryDirector node."
             ),
             inputs=[
                 io.Model.Input("model"),
@@ -35,7 +48,6 @@ class TerryDirector(io.ComfyNode):
                     max=16384,
                     step=32,
                     force_input=True,
-                    advanced=True,
                 ),
                 io.Int.Input(
                     "height",
@@ -44,17 +56,117 @@ class TerryDirector(io.ComfyNode):
                     max=16384,
                     step=32,
                     force_input=True,
+                ),
+                io.Sampler.Input("sampler"),
+                io.Sigmas.Input("sigmas"),
+                io.Int.Input(
+                    "seed",
+                    display_name="Seed",
+                    default=0,
+                    min=0,
+                    max=0xFFFFFFFFFFFFFFFF,
+                    control_after_generate=True,
+                ),
+                io.Combo.Input(
+                    "ref_image_size",
+                    display_name="参考图尺寸",
+                    options=["match", "max"],
+                    default="match",
+                ),
+                io.Boolean.Input(
+                    "continue_audio_latent",
+                    display_name="音频连续",
+                    default=True,
+                ),
+                io.Combo.Input(
+                    "second_pass_method",
+                    display_name="二采方案",
+                    options=["无", "SelfLift"],
+                    default="无",
+                ),
+                io.Combo.Input(
+                    "second_pass_model",
+                    display_name="SelfLift 放大模型",
+                    options=_latent_upscaler_options(),
+                    default=AUTO_UPSCALER,
                     advanced=True,
                 ),
-                io.Sampler.Input("sampler", advanced=True),
-                io.Sigmas.Input("sigmas", advanced=True),
+                io.Int.Input(
+                    "second_pass_high_steps",
+                    display_name="SelfLift 高清步数",
+                    default=4,
+                    min=1,
+                    max=1000,
+                    step=1,
+                    advanced=True,
+                ),
+            ],
+            outputs=[
+                DirectorConfigData.Output(display_name="导演配置"),
+            ],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        model,
+        clip,
+        vae,
+        audio_vae,
+        width,
+        height,
+        sampler,
+        sigmas,
+        seed,
+        ref_image_size,
+        continue_audio_latent,
+        second_pass_method,
+        second_pass_model=AUTO_UPSCALER,
+        second_pass_high_steps=4,
+    ):
+        method = "selflift" if second_pass_method == "SelfLift" else "none"
+        upscaler = "" if second_pass_model == AUTO_UPSCALER else str(second_pass_model or "")
+        packet = make_runtime_config(
+            model=model,
+            clip=clip,
+            vae=vae,
+            audio_vae=audio_vae,
+            width=width,
+            height=height,
+            sampler=sampler,
+            sigmas=sigmas,
+            seed=seed,
+            ref_image_size=ref_image_size,
+            continue_audio_latent=continue_audio_latent,
+            second_pass_method=method,
+            second_pass_model=upscaler,
+            second_pass_high_steps=second_pass_high_steps,
+        )
+        return io.NodeOutput(packet)
+
+
+class TerryDirector(io.ComfyNode):
+    """Creative timeline node with one visible runtime input."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirector",
+            display_name="TerryDirector",
+            category="MiniMax H3/TerryDirector",
+            description=(
+                "Edit prompts, shared assets and a segment timeline. All generation dependencies "
+                "arrive through the single Director Config input."
+            ),
+            inputs=[
+                DirectorConfigData.Input("director_config", display_name="导演配置"),
                 io.String.Input(
                     "config_json",
                     default=config_json(),
                     multiline=True,
                     dynamic_prompts=False,
-                    advanced=True,
-                    tooltip="Internal TerryDirector serialized state. Managed by the custom UI.",
+                    socketless=True,
+                    tooltip="Internal TerryDirector creative state. Managed by the custom UI.",
                 ),
             ],
             outputs=[
@@ -65,13 +177,14 @@ class TerryDirector(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, model, clip, vae, audio_vae, width, height, sampler, sigmas, config_json):
+    def execute(cls, director_config, config_json):
+        runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
-        info = summary(config, width, height)
+        info = summary(config, runtime)
         raise RuntimeError(
-            "TerryDirector 当前测试版已完成节点 UI、页内编辑器与工作流序列化，"
-            "采样执行尚未接入。请先验证节点加载、编辑器保存/重载、复制节点隔离和 UI。"
+            "TerryDirector 当前测试版已完成配置节点、导演台 UI 与工作流序列化，"
+            "采样执行尚未接入。"
             f" 当前编排：{info['clips']} 个片段，{info['seconds']:.2f}s，"
-            f"外部目标尺寸 {info['width']}x{info['height']}，"
+            f"目标尺寸 {info['width']}x{info['height']}，"
             f"二采方案 {info['second_pass']}。"
         )
