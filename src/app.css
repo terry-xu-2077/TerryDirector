@@ -775,3 +775,18 @@ body.td-embedded .top-timeline-duration {
     max-width: 180px;
   }
 }
+
+
+/* 2026-10-05 duration slider: compact visual range, numeric input can exceed 15s. */
+.clip-duration-control {
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 0;
+}
+
+.clip-duration-control > input[type="range"] {
+  flex: 0 0 30%;
+  width: 30%;
+  min-width: 72px;
+  max-width: 30%;
+}
