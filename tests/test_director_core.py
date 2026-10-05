@@ -1,15 +1,42 @@
 import json
 import unittest
 
-from director_core import FPS, default_config, normalize_config, summary
+from director_core import (
+    FPS,
+    RUNTIME_CONFIG_TYPE,
+    default_config,
+    make_runtime_config,
+    normalize_config,
+    require_runtime_config,
+    summary,
+)
 
 
 class DirectorCoreTests(unittest.TestCase):
-    def test_defaults_remove_local_resolution_and_preview(self):
+    def _runtime(self, **overrides):
+        values = {
+            "model": object(),
+            "clip": object(),
+            "vae": object(),
+            "audio_vae": object(),
+            "width": 1344,
+            "height": 768,
+            "sampler": object(),
+            "sigmas": object(),
+            "seed": 123,
+            "ref_image_size": "match",
+            "continue_audio_latent": True,
+            "second_pass_method": "none",
+            "second_pass_model": "",
+            "second_pass_high_steps": 4,
+        }
+        values.update(overrides)
+        return make_runtime_config(**values)
+
+    def test_creative_config_contains_no_runtime_params(self):
         config = default_config()
-        self.assertNotIn("resolution", config["params"])
-        self.assertNotIn("preview_enabled", config["params"])
-        self.assertEqual(config["params"]["second_pass"]["method"], "none")
+        self.assertNotIn("params", config)
+        self.assertIn("document", config)
 
     def test_normalizes_document_and_drops_invalid_asset_refs(self):
         payload = default_config()
@@ -23,31 +50,50 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertEqual(config["document"]["clips"][0]["end"], 6)
         self.assertEqual(config["document"]["clips"][0]["refs"], [])
 
-    def test_migrates_legacy_selflift_toggle_to_second_pass_method(self):
-        payload = default_config()
-        payload["params"].pop("second_pass")
-        payload["params"]["selflift"] = {"enabled": True, "model": "h3.safetensors", "high_steps": 3}
+    def test_legacy_runtime_params_are_discarded_but_document_survives(self):
+        payload = {
+            "version": 2,
+            "params": {
+                "seed": 999,
+                "selflift": {"enabled": True},
+            },
+            "document": {
+                "selected": "a",
+                "clips": [{"id": "a", "name": "A", "start": 0, "end": FPS, "prompt": "", "refs": []}],
+                "assets": [],
+            },
+        }
         normalized = normalize_config(payload)
-        self.assertEqual(normalized["params"]["second_pass"]["method"], "selflift")
-        self.assertEqual(normalized["params"]["second_pass"]["model"], "h3.safetensors")
-        self.assertEqual(normalized["params"]["second_pass"]["high_steps"], 3)
+        self.assertNotIn("params", normalized)
+        self.assertEqual(normalized["document"]["clips"][0]["name"], "A")
 
-    def test_summary_uses_external_dimensions(self):
+    def test_runtime_packet_contains_generation_dependencies(self):
+        runtime = self._runtime(second_pass_method="selflift", second_pass_model="h3.safetensors")
+        self.assertEqual(runtime["type"], RUNTIME_CONFIG_TYPE)
+        self.assertEqual(runtime["width"], 1344)
+        self.assertEqual(runtime["params"]["seed"], 123)
+        self.assertEqual(runtime["params"]["second_pass"]["method"], "selflift")
+        self.assertEqual(runtime["params"]["second_pass"]["model"], "h3.safetensors")
+
+    def test_require_runtime_config_rejects_wrong_type(self):
+        with self.assertRaises(ValueError):
+            require_runtime_config({"type": "OTHER"})
+
+    def test_summary_uses_runtime_packet(self):
         payload = default_config()
         payload["document"]["clips"] = [
             {"id": "a", "name": "a", "start": 0, "end": 5 * FPS, "prompt": "", "refs": []},
             {"id": "b", "name": "b", "start": 4 * FPS, "end": 11 * FPS, "prompt": "", "refs": []},
         ]
-        info = summary(payload, 1344, 768)
+        info = summary(payload, self._runtime())
         self.assertEqual(info["clips"], 2)
         self.assertEqual(info["seconds"], 11)
         self.assertEqual((info["width"], info["height"]), (1344, 768))
 
     def test_accepts_serialized_json(self):
         payload = default_config()
-        payload["params"]["seed"] = 123
         normalized = normalize_config(json.dumps(payload, ensure_ascii=False))
-        self.assertEqual(normalized["params"]["seed"], 123)
+        self.assertEqual(normalized["version"], 3)
 
 
 if __name__ == "__main__":
