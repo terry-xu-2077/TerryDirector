@@ -77,7 +77,8 @@
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-actions"><span class="prototype">${embedded?'COMFYUI · NODE EDITOR':'交互 DEMO · 06.11 EDITOR'}</span>${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
+      <div class="top-timeline-leading"><strong>时间线</strong><button class="button ghost" data-action="new">${icon('plus')}新建片段</button></div>
+      <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
@@ -96,7 +97,7 @@
     </main>
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
-      <div class="timeline-toolbar"><div class="timeline-leading"><strong>时间线</strong><button class="button ghost" data-action="new">${icon('plus')}新建片段</button></div><div class="timeline-duration"><span>总编排时长</span><output id="timelineDuration" aria-label="总编排时长">00:00:00:00</output></div><div class="timeline-controls"><span class="separator"></span><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><span class="timeline-position"><span>当前位置</span><span class="timecode" id="timelineTime">00:00:00:00</span></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
+      <div class="timeline-toolbar"><div class="timeline-duration"><span>总编排时长</span><output id="timelineDuration" aria-label="总编排时长">00:00:00:00</output></div><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
       <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。拖动片段移动，拖动片段边缘裁剪；重叠区及下方引线标记为只读。左右键步进，Ctrl Z 撤销。"></canvas></div>
       <div class="timeline-bottom"><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div><small id="clipSummary"></small><small id="zoomLabel">24 FPS</small></div>
     </section>
@@ -290,7 +291,7 @@
   });
   timeline=new window.TDTimeline($('#timelineBody'),{
     clips:state.clips,selected:state.selected,getImage,getActivity:activityFor,
-    onSelect:id=>select(id),onFrame:frame=>$('#timelineTime').textContent=C.timecode(frame),
+    onSelect:id=>select(id),onFrame:()=>{},
     onPreview:clips=>renderTiming(clips),onDragEnd:()=>timeline.invalidate(),
     onCommit:(clips,beforeClips)=>{finishPromptEdit();const before={...C.copy(state),clips:beforeClips};state.clips=clips;commit(before);},
     onView:v=>{const max=Math.max(v.visible,v.contentWidth),width=Math.min(100,v.visible/max*100);$('#scrollThumb').style.width=width+'%';$('#scrollThumb').style.left=Math.min(100-width,v.scroll/max*100)+'%';$('#zoomLabel').textContent=`${Math.round(v.ppf*C.FPS)} px/s`;$('#zoomRange').value=Math.log(v.ppf/.22)/Math.log(24/.22)*100;}
