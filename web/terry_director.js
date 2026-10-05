@@ -189,13 +189,6 @@ function renderNode(node) {
   ].join("");
 
   root.innerHTML = `<div class="td-node-card">
-    <div class="td-node-summary">
-      <strong>生成设置</strong>
-      <small>${doc.assets.length} 个资产</small>
-      <span class="td-node-spacer"></span>
-      <span class="td-node-pill">${doc.clips.length} 片段 · ${timeText(total)}</span>
-    </div>
-
     <section class="td-node-section td-node-compact-section">
       <div class="td-node-compact-row">
         <div class="td-node-field td-node-seed-field">
@@ -287,7 +280,7 @@ function renderNode(node) {
     button.addEventListener("click", () => openEditor(node, button));
   });
 
-  const desiredHeight = params.second_pass.method === "selflift" ? 440 : 385;
+  const desiredHeight = params.second_pass.method === "selflift" ? 400 : 345;
   if (Math.abs((node.size?.[0] || 0) - 560) > 1 || Math.abs((node.size?.[1] || 0) - desiredHeight) > 1) {
     node.setSize?.([560, desiredHeight]);
   }
