@@ -212,18 +212,22 @@
         const focused=[this.selected,this.hover,this.drag?.id].some(id=>id===o.a||id===o.b);
         const text=`${Number((o.frames/C.FPS).toFixed(2))}s`;
         return {...o,x,width,focused,text};
-      }).filter(o=>o.x+o.width>left&&o.x<right&&(o.focused||o.width>20));
+      }).filter(o=>o.x+o.width>left&&o.x<right);
       ctx.font='11px Consolas,monospace';
       const placed=[];
-      // Prioritise the active pair when zoomed so far out labels cannot all fit.
-      items.sort((a,b)=>Number(b.focused)-Number(a.focused)||a.start-b.start);
+      // Every visible overlap gets a persistent duration callout.
+      // Focus only changes emphasis; it no longer controls visibility.
+      items.sort((a,b)=>a.start-b.start);
       for(const o of items){
         const width=ctx.measureText(o.text).width+18;if(right-left<width)continue;
         const anchor=C.clamp(o.x+o.width/2,left,right),preferred=C.clamp(anchor-width/2,left,right-width);
         const candidates=[preferred,left,right-width,...placed.flatMap(p=>[p.x-width-8,p.x+p.width+8])];
         const fit=candidates.filter(x=>x>=left&&x+width<=right&&placed.every(p=>x+width+8<=p.x||x>=p.x+p.width+8)).sort((a,b)=>Math.abs(a-preferred)-Math.abs(b-preferred))[0];
-        if(fit===undefined)continue;
-        placed.push({...o,anchor,x:fit,width,y:bottom+this.overlapLeaderGap,height:23,bottom});
+        // If the lane is crowded, keep the callout visible at its preferred
+        // anchor instead of hiding it. Overlap between callout bubbles is
+        // preferable to losing the duration information entirely.
+        const x=fit===undefined?preferred:fit;
+        placed.push({...o,anchor,x,width,y:bottom+this.overlapLeaderGap,height:23,bottom});
       }
       return placed;
     }
