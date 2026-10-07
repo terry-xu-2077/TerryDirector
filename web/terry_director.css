@@ -400,3 +400,49 @@
 .td-node-shell-director .td-mini-timeline {
   height: 42px;
 }
+
+
+/* 2026-10-07 compact director summary */
+.td-node-shell-director .td-mini-head {
+  position: relative;
+  min-height: 30px;
+}
+
+.td-mini-stats {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--tdn-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.td-mini-stats > i {
+  display: inline-block;
+  width: 1px;
+  height: 10px;
+  margin: 0 7px -1px;
+  background: var(--tdn-border-strong);
+}
+
+.td-node-shell-director .td-mini-clip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.td-node-shell-director .td-mini-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 0;
+}
+
+.td-mini-duration {
+  flex: none;
+  padding-right: 6px;
+  color: #ffb66f;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
