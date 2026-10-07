@@ -464,3 +464,25 @@
   transform: translate(-50%, -50%);
   line-height: 1;
 }
+
+
+/* Keep the embedded director panel inside the LiteGraph node at every zoom level. */
+.td-node-shell-director {
+  width: 100%;
+  min-width: 0 !important;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.td-node-card-director,
+.td-mini-wrap-director,
+.td-node-shell-director .td-mini-head,
+.td-node-shell-director .td-mini-timeline {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.td-node-shell-director .td-mini-timeline {
+  overflow: hidden;
+}
