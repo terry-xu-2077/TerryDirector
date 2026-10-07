@@ -126,6 +126,7 @@ def _apply_continuity(
     previous_images: Any,
     previous_audio: Any,
     prefix: str,
+    seed: int,
 ) -> Any:
     continuity = segment["continuity"]
     kind = continuity["kind"]
@@ -222,7 +223,7 @@ def _sample_segment(
     noise = graph.node(
         "RandomNoise",
         f"{prefix}_noise",
-        noise_seed=runtime["params"]["seed"],
+        noise_seed=max(0, min(0xFFFFFFFFFFFFFFFF, int(seed))),
     )
     guider = graph.node(
         "BasicGuider",
@@ -281,6 +282,7 @@ def _decode_segment(
 def build_timeline_graph(
     runtime: dict[str, Any],
     plan: dict[str, Any],
+    seed: int,
 ) -> tuple[dict[str, Any], Any, Any, Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
@@ -303,7 +305,7 @@ def build_timeline_graph(
             previous_audio,
             prefix,
         )
-        sampled = _sample_segment(graph, runtime, positive, latent, prefix)
+        sampled = _sample_segment(graph, runtime, positive, latent, prefix, seed)
         images, audio = _decode_segment(graph, runtime, segment, sampled, prefix)
 
         assembly_inputs: dict[str, Any] = {
@@ -333,5 +335,20 @@ def build_timeline_graph(
         "TerryDirectorLatentList",
         "td_latent_list",
         **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
+    )
+    preview_video = graph.node(
+        "CreateVideo",
+        "td_preview_create",
+        images=merged_images,
+        audio=merged_audio,
+        fps=float(FPS),
+        codec="none",
+    )
+    graph.node(
+        "VideoTrim",
+        "td_preview_video",
+        video=preview_video.out(0),
+        trim={},
+        strict_duration=False,
     )
     return graph.finalize(), latent_list.out(0), merged_images, merged_audio
