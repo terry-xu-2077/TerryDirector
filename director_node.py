@@ -4,6 +4,7 @@ import math
 import folder_paths
 import comfy.samplers
 from comfy_api.latest import io
+from comfy_execution.graph_utils import GraphBuilder
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import compile_timeline
@@ -12,7 +13,6 @@ from .director_core import (
     make_runtime_config,
     normalize_config,
     require_runtime_config,
-    summary,
 )
 
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
@@ -274,6 +274,7 @@ class TerryDirector(io.ComfyNode):
                 io.Image.Output(display_name="合并画面"),
                 io.Audio.Output(display_name="合并音频"),
             ],
+            enable_expand=True,
         )
 
     @classmethod
@@ -281,11 +282,80 @@ class TerryDirector(io.ComfyNode):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
         plan = compile_timeline(config["document"])
-        info = summary(config, runtime)
-        raise RuntimeError(
-            "TerryDirector 时间线编译已接入，真实 H3 采样尚未接入。"
-            f" 当前编译为 {len(plan['segments'])} 个 H3 任务，"
-            f"最终时间线 {plan['total_frames']} 帧 / {info['seconds']:.2f}s，"
-            f"目标尺寸 {info['width']}x{info['height']}，"
-            f"二采方案 {info['second_pass']}。"
+
+        if len(plan["segments"]) != 1:
+            raise RuntimeError("TerryDirector 多片段 H3 执行将在下一阶段接入")
+        segment = plan["segments"][0]
+        if segment["assembly"]["gap_before_frames"]:
+            raise RuntimeError("TerryDirector 时间线空白合并将在多片段阶段接入")
+        if any(segment["assets"].values()):
+            raise RuntimeError("TerryDirector 参考素材执行将在下一阶段接入")
+        if runtime["params"]["second_pass"]["method"] != "none":
+            raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
+
+        graph = GraphBuilder()
+        conditioning = graph.node(
+            "MiniMaxH3ReferenceToVideo",
+            "td_h3_conditioning",
+            clip=runtime["clip"],
+            vae=runtime["vae"],
+            audio_vae=runtime["audio_vae"],
+            prompt=segment["prompt"],
+            width=runtime["width"],
+            height=runtime["height"],
+            length=segment["h3_frames"],
+            ref_image_size=runtime["params"]["ref_image_size"],
+        )
+        noise = graph.node(
+            "RandomNoise",
+            "td_noise",
+            noise_seed=runtime["params"]["seed"],
+        )
+        guider = graph.node(
+            "BasicGuider",
+            "td_guider",
+            model=runtime["model"],
+            conditioning=conditioning.out(0),
+        )
+        sampled = graph.node(
+            "SamplerCustomAdvanced",
+            "td_sample",
+            noise=noise.out(0),
+            guider=guider.out(0),
+            sampler=runtime["sampler"],
+            sigmas=runtime["sigmas"],
+            latent_image=conditioning.out(1),
+        )
+        decoded_images = graph.node(
+            "VAEDecode",
+            "td_decode_video",
+            samples=sampled.out(0),
+            vae=runtime["vae"],
+        )
+        images = graph.node(
+            "ImageFromBatch",
+            "td_trim_video",
+            image=decoded_images.out(0),
+            batch_index=0,
+            length=segment["output_frames"],
+        )
+        decoded_audio = graph.node(
+            "VAEDecodeAudio",
+            "td_decode_audio",
+            samples=sampled.out(0),
+            vae=runtime["audio_vae"],
+        )
+        audio = graph.node(
+            "TrimAudioDuration",
+            "td_trim_audio",
+            audio=decoded_audio.out(0),
+            start_index=0.0,
+            duration=segment["output_frames"] / FPS,
+        )
+
+        return io.NodeOutput(
+            [sampled.out(0)],
+            images.out(0),
+            audio.out(0),
+            expand=graph.finalize(),
         )
