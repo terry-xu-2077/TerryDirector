@@ -11,11 +11,45 @@
     const end = Math.min(a.end, b.end);
     return { start, end: Math.max(start, end), frames: Math.max(0, end - start) };
   }
-  function overlaps(clips) {
-    return clips.slice(1).flatMap((b, i) => {
-      const a = clips[i], range = intersection(a, b);
-      return range.frames > 0 ? [{ ...range, a: a.id, b: b.id }] : [];
+  function seams(clips) {
+    return clips.slice(1).map((b, i) => {
+      const a = clips[i];
+      const delta = b.start - a.end;
+      if (delta < 0) {
+        return {
+          kind: 'overlap',
+          start: b.start,
+          end: a.end,
+          frames: -delta,
+          a: a.id,
+          b: b.id,
+        };
+      }
+      if (delta === 0) {
+        return {
+          kind: 'touch',
+          frame: b.start,
+          frames: 0,
+          a: a.id,
+          b: b.id,
+        };
+      }
+      return {
+        kind: 'gap',
+        start: a.end,
+        end: b.start,
+        frames: delta,
+        a: a.id,
+        b: b.id,
+      };
     });
+  }
+  function overlaps(clips) {
+    return seams(clips).filter(seam => seam.kind === 'overlap');
+  }
+  function h3AlignedFrames(frames) {
+    const n = Math.max(5, Math.ceil(Number(frames) || 0));
+    return n + (5 - (n % 17) + 17) % 17;
   }
   // Actual arranged duration starts at timeline zero; viewport padding is not content.
   const arrangementFrames = clips => clips.reduce((end, clip) => Math.max(end, clip.end), 0);
@@ -109,7 +143,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, overlaps, arrangementFrames, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
