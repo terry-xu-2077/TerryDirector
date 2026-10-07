@@ -14,7 +14,20 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
+const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
+const TRANSITION_MODES = new Set(["tail_reference", "tail_continuation", "independent"]);
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
+
+function normalizeTransitionMode(value, fallback = "tail_reference") {
+  return TRANSITION_MODES.has(value) ? value : fallback;
+}
+
+function defaultTransitionMode() {
+  return normalizeTransitionMode(
+    app.extensionManager?.setting?.get?.(TRANSITION_SETTING_ID),
+    "tail_reference"
+  );
+}
 
 
 const RUN_IDLE = "idle";
@@ -75,6 +88,17 @@ function pushActivity(node) {
   if (!frameReady || activeNode !== node || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
     { type: "terrydirector:activity", activity: activityPayload(node) },
+    location.origin
+  );
+}
+
+function pushPreferences() {
+  if (!frameReady || !frame?.contentWindow) return;
+  frame.contentWindow.postMessage(
+    {
+      type: "terrydirector:preferences",
+      defaultTransitionMode: defaultTransitionMode(),
+    },
     location.origin
   );
 }
@@ -274,6 +298,7 @@ function defaultDocument() {
         prompt: "",
         refs: [],
         useGlobalPrompt: true,
+        transitionMode: "tail_reference",
         suspended: false,
       },
     ],
@@ -322,6 +347,7 @@ function normalizeConfig(value) {
           prompt: String(raw?.prompt || ""),
           refs: Array.isArray(raw?.refs) ? raw.refs.map(String) : [],
           useGlobalPrompt: raw?.useGlobalPrompt !== false,
+          transitionMode: normalizeTransitionMode(raw?.transitionMode, "tail_continuation"),
           suspended: raw?.suspended === true,
         };
       })
@@ -691,6 +717,7 @@ function ensureEditorOverlay() {
 
     if (message.type === "terrydirector:ready") {
       frameReady = true;
+      pushPreferences();
       if (pendingDocument) {
         frame.contentWindow.postMessage(
           { type: "terrydirector:load", document: pendingDocument },
@@ -746,6 +773,7 @@ function openEditor(node, button) {
   document.documentElement.style.overflow = "hidden";
 
   if (frameReady) {
+    pushPreferences();
     frame.contentWindow.postMessage(
       { type: "terrydirector:load", document: documentData },
       location.origin
@@ -784,6 +812,24 @@ function closeEditor() {
 
 app.registerExtension({
   name: "TerryDirector.NodeUI",
+  settings: [
+    {
+      id: TRANSITION_SETTING_ID,
+      name: "默认镜头衔接",
+      type: "combo",
+      category: ["TerryDirector", "时间线"],
+      defaultValue: "tail_reference",
+      options: [
+        { text: "尾帧参考", value: "tail_reference" },
+        { text: "尾帧续接", value: "tail_continuation" },
+        { text: "独立", value: "independent" },
+      ],
+      tooltip: "决定新建片段与上一片段首尾贴合时的默认关系。不会修改已有接缝。",
+      onChange() {
+        pushPreferences();
+      },
+    },
+  ],
   async setup() {
     ensureCss();
     ensureEditorOverlay();
