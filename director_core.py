@@ -117,27 +117,24 @@ def normalize_document(value: Any) -> dict[str, Any]:
 
 
 def normalize_config(value: Any) -> dict[str, Any]:
-    """Normalize creative state and discard obsolete runtime parameters.
-
-    Version 1/2 saved runtime fields remain readable but no longer participate in
-    execution after the dedicated configuration node was introduced.
-    """
-
     if isinstance(value, str):
         try:
             value = json.loads(value)
         except json.JSONDecodeError as exc:
             raise ValueError("TerryDirector config_json is not valid JSON") from exc
-    if not isinstance(value, dict):
-        return default_config()
 
-    document = value.get("document")
-    if document is None and ("clips" in value or "assets" in value):
-        document = value
+    if not isinstance(value, dict):
+        raise ValueError("TerryDirector config must be an object")
+    if value.get("version") != CONFIG_VERSION:
+        raise ValueError(
+            f"Unsupported TerryDirector config version: {value.get('version')!r}"
+        )
+    if not isinstance(value.get("document"), dict):
+        raise ValueError("TerryDirector config is missing document")
 
     return {
         "version": CONFIG_VERSION,
-        "document": normalize_document(document),
+        "document": normalize_document(value["document"]),
     }
 
 
@@ -146,16 +143,15 @@ def config_json(value: Any | None = None) -> str:
     return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
 
 
-def _normalize_second_pass(method: Any, model: Any, high_steps: Any) -> dict[str, Any]:
-    raw_method = str(method or "none").strip().lower()
-    if raw_method in {"selflift", "self_lift", "self-lift"}:
-        normalized_method = "selflift"
-    else:
-        normalized_method = "none"
+def _second_pass(method: str, model: str, high_steps: int) -> dict[str, Any]:
+    if method not in {"none", "selflift"}:
+        raise ValueError(f"Unsupported second-pass method: {method!r}")
+    if int(high_steps) < 1:
+        raise ValueError("SelfLift high_steps must be at least 1")
     return {
-        "method": normalized_method,
-        "model": str(model or ""),
-        "high_steps": max(1, _as_int(high_steps, 4)),
+        "method": method,
+        "model": str(model),
+        "high_steps": int(high_steps),
     }
 
 
@@ -198,7 +194,7 @@ def make_runtime_config(
         "params": {
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, _as_int(seed, 0))),
             "ref_image_size": image_size,
-            "second_pass": _normalize_second_pass(
+            "second_pass": _second_pass(
                 second_pass_method, second_pass_model, second_pass_high_steps
             ),
         },
@@ -206,37 +202,47 @@ def make_runtime_config(
 
 
 def require_runtime_config(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict) or value.get("type") != RUNTIME_CONFIG_TYPE:
+    if not isinstance(value, dict):
         raise ValueError("Director Config must come from the TerryDirector 配置 node")
+    if value.get("type") != RUNTIME_CONFIG_TYPE:
+        raise ValueError("Invalid TerryDirector runtime config type")
+    if value.get("version") != RUNTIME_CONFIG_VERSION:
+        raise ValueError(
+            f"Unsupported TerryDirector runtime config version: {value.get('version')!r}"
+        )
 
     required = ("model", "clip", "vae", "audio_vae", "sampler", "sigmas")
     missing = [key for key in required if value.get(key) is None]
     if missing:
         raise ValueError(
-            "TerryDirector 配置 is missing required runtime values: " + ", ".join(missing)
+            "TerryDirector 配置缺少运行输入：" + ", ".join(missing)
         )
 
-    width = _as_int(value.get("width"), 0)
-    height = _as_int(value.get("height"), 0)
-    if width < 32 or height < 32:
-        raise ValueError("TerryDirector 配置 contains an invalid target width/height")
+    width = value.get("width")
+    height = value.get("height")
+    if not isinstance(width, int) or width < 32:
+        raise ValueError("TerryDirector 配置 width 无效")
+    if not isinstance(height, int) or height < 32:
+        raise ValueError("TerryDirector 配置 height 无效")
 
-    params = value.get("params") if isinstance(value.get("params"), dict) else {}
-    second = params.get("second_pass") if isinstance(params.get("second_pass"), dict) else {}
-    return {
-        **value,
-        "width": width,
-        "height": height,
-        "params": {
-            "seed": max(0, min(0xFFFFFFFFFFFFFFFF, _as_int(params.get("seed"), 0))),
-            "ref_image_size": str(params.get("ref_image_size") or "match")
-            if str(params.get("ref_image_size") or "match") in {"match", "max"}
-            else "match",
-            "second_pass": _normalize_second_pass(
-                second.get("method"), second.get("model"), second.get("high_steps")
-            ),
-        },
-    }
+    params = value.get("params")
+    if not isinstance(params, dict):
+        raise ValueError("TerryDirector 配置缺少 params")
+    if params.get("ref_image_size") not in {"match", "max"}:
+        raise ValueError("TerryDirector 配置 reference image size 无效")
+    if not isinstance(params.get("seed"), int):
+        raise ValueError("TerryDirector 配置 seed 无效")
+
+    second = params.get("second_pass")
+    if not isinstance(second, dict):
+        raise ValueError("TerryDirector 配置缺少 second_pass")
+    _second_pass(
+        second.get("method"),
+        second.get("model", ""),
+        second.get("high_steps"),
+    )
+
+    return value
 
 
 def arrangement_frames(document: dict[str, Any]) -> int:
