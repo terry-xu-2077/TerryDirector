@@ -6,6 +6,7 @@ import comfy.samplers
 from comfy_api.latest import io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
+from .director_compile import compile_timeline
 from .director_core import (
     config_json,
     make_runtime_config,
@@ -279,11 +280,12 @@ class TerryDirector(io.ComfyNode):
     def execute(cls, director_config, config_json):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
+        plan = compile_timeline(config["document"])
         info = summary(config, runtime)
         raise RuntimeError(
-            "TerryDirector 当前测试版已完成配置节点、导演台 UI 与工作流序列化，"
-            "采样执行尚未接入。"
-            f" 当前编排：{info['clips']} 个片段，{info['seconds']:.2f}s，"
+            "TerryDirector 时间线编译已接入，真实 H3 采样尚未接入。"
+            f" 当前编译为 {len(plan['segments'])} 个 H3 任务，"
+            f"最终时间线 {plan['total_frames']} 帧 / {info['seconds']:.2f}s，"
             f"目标尺寸 {info['width']}x{info['height']}，"
             f"二采方案 {info['second_pass']}。"
         )
