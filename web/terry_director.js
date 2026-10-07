@@ -7,7 +7,6 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
   "sampler",
   "sigmas",
   "sigmas_denoise",
-  "continue_audio_latent",
   "second_pass_method",
   "second_pass_model",
   "second_pass_high_steps",
