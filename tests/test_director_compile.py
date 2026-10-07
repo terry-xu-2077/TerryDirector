@@ -17,7 +17,7 @@ def asset(asset_id, kind, number, path):
     }
 
 
-def clip(clip_id, start, end, prompt=""):
+def clip(clip_id, start, end, prompt="", suspended=False):
     return {
         "id": clip_id,
         "name": clip_id,
@@ -25,6 +25,7 @@ def clip(clip_id, start, end, prompt=""):
         "end": end,
         "prompt": prompt,
         "refs": [],
+        "suspended": suspended,
     }
 
 
@@ -141,6 +142,35 @@ class DirectorCompileTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "maximum length"):
             compile_timeline(document)
+
+    def test_suspended_segment_is_blank_and_continuity_skips_left(self):
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 144),
+                clip("b", 96, 240, suspended=True),
+                clip("c", 144, 288),
+            ],
+            "assets": [],
+        }
+        plan = compile_timeline(document)
+        self.assertEqual([segment["id"] for segment in plan["segments"]], ["a", "c"])
+        self.assertEqual(plan["suspended_segment_ids"], ["b"])
+        self.assertEqual(plan["segments"][1]["continuity"]["kind"], "tail_frame")
+        self.assertEqual(plan["segments"][1]["continuity"]["source_segment_id"], "a")
+
+    def test_suspended_tail_extends_as_blank_output(self):
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 120),
+                clip("b", 120, 240, suspended=True),
+            ],
+            "assets": [],
+        }
+        plan = compile_timeline(document)
+        self.assertEqual(plan["total_frames"], 240)
+        self.assertEqual(plan["segments"][0]["assembly"]["gap_after_frames"], 120)
 
     def test_unreferenced_pool_assets_do_not_enter_text_only_task(self):
         document = {
