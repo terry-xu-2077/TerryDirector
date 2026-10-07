@@ -240,11 +240,11 @@ function setNativeWidgetHidden(widget, hidden) {
 function syncSecondPassWidgets(node) {
   const method = node.widgets?.find(widget => widget.name === "second_pass_method");
   const model = node.widgets?.find(widget => widget.name === "second_pass_model");
-  const steps = node.widgets?.find(widget => widget.name === "second_pass_high_ratio");
+  const ratio = node.widgets?.find(widget => widget.name === "second_pass_high_ratio");
   const showSelfLift = method?.value === "SelfLift";
 
   setNativeWidgetHidden(model, !showSelfLift);
-  setNativeWidgetHidden(steps, !showSelfLift);
+  setNativeWidgetHidden(ratio, !showSelfLift);
 
   node.setDirtyCanvas?.(true, true);
   node.graph?.setDirtyCanvas?.(true, true);
