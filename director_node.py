@@ -9,6 +9,7 @@ from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import compile_timeline
 from .director_core import (
+    FPS,
     config_json,
     make_runtime_config,
     normalize_config,
