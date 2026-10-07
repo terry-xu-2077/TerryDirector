@@ -10,7 +10,7 @@
 
 1. 先找对应节点、示例工作流和实现函数，确认输入、输出、模型与采样条件。
 2. 优先沿用已有运行能力，将已定稿的原生 UI 接入；对真实需求差异作必要适配。
-3. 当前生成基础保持 **Songssx TimelineDirector 的规划、编码、有限分段采样链路**。一次 ComfyUI 工作流在内部展开分段链；不据此新增外部分段调度系统。
+3. 当前普通生成基础已经切换为 **ComfyUI 原生 MiniMax H3 节点 + TerryDirector Timeline Compiler / GraphBuilder**。Songssx TimelineDirector 继续作为长视频连续性、SelfLift 和边界处理的重要参考，但不是运行时依赖。
 4. 其他参考按具体问题补充能力，不把几套采样器、缓存或连续性规则未经核对地混在一起。
 5. 采用某段实现时，记录来源仓库、固定 commit、文件 / 函数和本项目适配差异；引入代码时保留相应来源及许可证信息。
 6. 参考项目有某个功能，不等于本项目自动增加该功能。现有单行时间线、项目资产池和原生 HTML / CSS / JavaScript 继续作为前端基线。
@@ -21,14 +21,14 @@
 
 | 仓库 | 在 TerryDirector 中优先查找的方向 | 本次核对版本 | 仓库许可证 |
 | --- | --- | --- | --- |
-| [Songssx / ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) | 当前生成基础：时间规划、有限分段、AV latent 连续性、Drift-Control、SelfLift | main · [`a81f13b`](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/commit/a81f13b8af4a162467cec4dc377f40b7354d7ffc) | [GPL-3.0](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/LICENSE) |
+| [Songssx / ComfyUI-MiniMaxH3-TimelineDirector](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector) | 参考：有限分段、AV latent 连续性、Drift-Control、SelfLift、原生 Loop | main · [`a81f13b`](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/commit/a81f13b8af4a162467cec4dc377f40b7354d7ffc) | [GPL-3.0](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/LICENSE) |
 | [AIMixer / ComfyUI_MiniMaxH3_Director](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director) · AI 搅拌手 | 选择运行、分段缓存、段间引导、SelfLift、独立二采 / 放大、导演包 | main · [`5c7bdc8`](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director/commit/5c7bdc85fcc7e35849a89d0ba805299801fc6282) | [Apache-2.0](https://github.com/AIMixer/ComfyUI_MiniMaxH3_Director/blob/5c7bdc85fcc7e35849a89d0ba805299801fc6282/LICENSE) |
 | [yolain / ComfyUI-Easy-Media](https://github.com/yolain/ComfyUI-Easy-Media) · 乱乱呀 | H3 项目分段、保存 / 续跑、双采样、素材按需加载、生成预览 | main · [`672f308`](https://github.com/yolain/ComfyUI-Easy-Media/commit/672f3083e6588ca1d70c2ae0976c85e0e1755a3d) | [GPL-3.0](https://github.com/yolain/ComfyUI-Easy-Media/blob/672f3083e6588ca1d70c2ae0976c85e0e1755a3d/LICENSE) |
 | [nkxx188 / ComfyUI-MiniMaxH3-Easy](https://github.com/nkxx188/ComfyUI-MiniMaxH3-Easy) · H3 Easy | 简洁生成入口、片段素材引用、逐片段控制、分段精修与解码 | main · [`4fea600`](https://github.com/nkxx188/ComfyUI-MiniMaxH3-Easy/commit/4fea6000302de9a551505095e5f2153a7ddf2079) | [MIT](https://github.com/nkxx188/ComfyUI-MiniMaxH3-Easy/blob/4fea6000302de9a551505095e5f2153a7ddf2079/LICENSE) |
 
 这里的 commit 用于复看本次讨论所依据的版本。真正接入某项能力时，再检查上游更新并锁定实际采用的版本，不把上述链接当作永远不变的“最新版”。
 
-## 3. Songssx TimelineDirector：当前运行基础
+## 3. Songssx TimelineDirector：长视频与 SelfLift 参考
 
 说明入口：[中文 README](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/README_CN.md)。示例入口：[example_workflows/](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/tree/a81f13b8af4a162467cec4dc377f40b7354d7ffc/example_workflows)，优先复看“MiniMaxH3全功能合一完全体导演台工作流”。
 
@@ -130,7 +130,7 @@ README 中的逐片段 Step 链支持各段种子与可选 prompt override，选
 
 | 需求 | 先查哪里 |
 | --- | --- |
-| 让当前 UI 驱动整组分段生成 | Songssx Planner + FiniteSegmentSampler 及合一示例 |
+| 让当前 UI 驱动整组分段生成 | TerryDirector Timeline Compiler + ComfyUI GraphBuilder；Songssx FiniteSegmentSampler 用于对照边界与连续性 |
 | 当前 UI 的二次潜空间放大 | Songssx `_selflift_settings` 与 `selflift_runtime` |
 | 独立二采、放大倍率、替换二采生成模型 | AIMixer Refine；Easy Media `dual` |
 | 只重跑某段 / 从中间继续 | AIMixer 选择运行 + 分段缓存；H3 Easy Segment Step；Easy Media Project + `utils/h3_project.py` |
@@ -141,7 +141,7 @@ README 中的逐片段 Step 链支持各段种子与可选 prompt override，选
 
 ## 8. 本轮采用与后续候选
 
-**本轮已确认的 UI 设置**采用 Songssx 的 SelfLift 接口语义：项目共用、默认关闭、自动选择或指定兼容 H3 潜空间放大模型、高清阶段默认 4 步。高清阶段计入实际总步数；现有宽高仍是最终目标。
+**当前已确认的 SelfLift UI**为项目共用、默认关闭、自动选择或指定兼容 H3 潜空间放大模型，并使用 `0.0–1.0` 高清占比，默认 `0.25`；执行时再由总步数换算实际高清阶段步数。
 
 参考中的独立二采、低显存分块、首遍确认、选段续跑等先作为候选实现记录。用户提出对应需求时优先查阅，不提前扩大当前 UI。
 
