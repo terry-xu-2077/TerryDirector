@@ -165,8 +165,10 @@ function applyProgressState(detail) {
 }
 
 function finishPromptActivity(promptId, success, message = "") {
+  let matched = false;
   for (const node of app.graph?._nodes || []) {
     if (node?.comfyClass !== NODE_CLASS || node.__tdPromptId !== promptId) continue;
+    matched = true;
     const activity = ensureActivity(node);
     const now = performance.now();
     for (const record of Object.values(activity)) {
@@ -188,6 +190,7 @@ function finishPromptActivity(promptId, success, message = "") {
     node.__tdPromptId = null;
     pushActivity(node);
   }
+  return matched;
 }
 
 function bindExecutionActivity() {
@@ -224,7 +227,14 @@ function bindExecutionActivity() {
     );
   });
   api.addEventListener("execution_interrupted", event => {
-    finishPromptActivity(event.detail?.prompt_id, false, "生成已中断");
+    const matched = finishPromptActivity(
+      event.detail?.prompt_id,
+      false,
+      "生成已取消"
+    );
+    if (matched) {
+      void api.freeMemory({ freeExecutionCache: true });
+    }
   });
 }
 
@@ -256,6 +266,7 @@ function defaultDocument() {
         end: FPS * 10,
         prompt: "",
         refs: [],
+        suspended: false,
       },
     ],
     assets: [],
@@ -302,6 +313,7 @@ function normalizeConfig(value) {
           end,
           prompt: String(raw?.prompt || ""),
           refs: Array.isArray(raw?.refs) ? raw.refs.map(String) : [],
+          suspended: raw?.suspended === true,
         };
       })
     : base.document.clips;
@@ -419,8 +431,9 @@ function timelineHtml(documentData) {
         Math.min(100 - left, ((clip.end - clip.start) / total) * 100)
       );
       const selected = clip.id === documentData.selected ? " is-selected" : "";
+      const suspended = clip.suspended ? " is-suspended" : "";
       const duration=timeText(Math.max(0,(Number(clip.end)||0)-(Number(clip.start)||0)));
-      return `<div class="td-mini-clip${selected}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span></div>`;
+      return `<div class="td-mini-clip${selected}${suspended}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span></div>`;
     })
     .join("");
 }
@@ -433,7 +446,9 @@ function renderNode(node) {
   const doc = config.document;
   const total = Math.max(0, ...doc.clips.map(clip => clip.end || 0));
   const usedAssetIds = new Set(
-    doc.clips.flatMap(clip => Array.isArray(clip.refs) ? clip.refs : [])
+    doc.clips.flatMap(clip =>
+      clip.suspended ? [] : (Array.isArray(clip.refs) ? clip.refs : [])
+    )
   );
   const usedAssets = doc.assets.filter(asset => usedAssetIds.has(asset.id)).length;
   const totalSeconds = Number((total / FPS).toFixed((total / FPS) % 1 ? 2 : 0));
@@ -607,6 +622,12 @@ function ensureEditorOverlay() {
         pendingDocument = null;
       }
       if (activeNode) pushActivity(activeNode);
+    } else if (message.type === "terrydirector:queue-workflow" && activeNode) {
+      const next = readConfig(activeNode);
+      next.document = message.document || defaultDocument();
+      writeConfig(activeNode, next);
+      editorDirty = false;
+      void app.queuePrompt(0);
     } else if (message.type === "terrydirector:save" && activeNode) {
       const next = readConfig(activeNode);
       next.document = message.document || defaultDocument();
