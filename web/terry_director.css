@@ -426,6 +426,19 @@
   background: var(--tdn-border-strong);
 }
 
+.td-mini-stats > b,
+.td-mini-stats em > b {
+  color: var(--tdn-orange);
+  font: inherit;
+  font-weight: 650;
+}
+
+.td-mini-stats > em {
+  margin-left: 3px;
+  color: var(--tdn-muted);
+  font-style: normal;
+}
+
 .td-node-shell-director .td-mini-clip {
   display: flex;
   align-items: center;
