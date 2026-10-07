@@ -47,6 +47,8 @@ MODEL / CLIP / 视频 VAE / 音频 VAE 使用纯原生接入点，不在配置�
 
 二采方案默认“无”。当前可选 `SelfLift`；其放大模型和高清步数属于 SelfLift 专属配置。
 
+“总步数”表示完整采样过程的总步数；SelfLift 高清步数是其中进入高清阶段后的步数，因此低清步数 = 总步数 - SelfLift 高清步数。
+
 音频连续不再是配置项：时间线上相邻片段有重叠时，执行层自动延续音频 latent；无重叠时音频独立；仅首尾贴合时只做视觉尾帧承接。
 
 输出为内部连线类型 `TERRYDIRECTOR_CONFIG`。该类型只用于 TerryDirector 节点之间传递运行上下文，不是用户下游结果协议，也不取代标准 LATENT / IMAGE / AUDIO 输出。
