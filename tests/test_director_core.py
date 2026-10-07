@@ -27,7 +27,7 @@ class DirectorCoreTests(unittest.TestCase):
             "ref_image_size": "match",
             "second_pass_method": "none",
             "second_pass_model": "",
-            "second_pass_high_steps": 4,
+            "second_pass_high_ratio": 0.25,
         }
         values.update(overrides)
         return make_runtime_config(**values)
@@ -72,6 +72,7 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertEqual(runtime["params"]["seed"], 123)
         self.assertEqual(runtime["params"]["second_pass"]["method"], "selflift")
         self.assertEqual(runtime["params"]["second_pass"]["model"], "h3.safetensors")
+        self.assertEqual(runtime["params"]["second_pass"]["high_ratio"], 0.25)
 
     def test_require_runtime_config_rejects_wrong_type(self):
         with self.assertRaises(ValueError):
