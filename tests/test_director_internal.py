@@ -4,9 +4,10 @@ import torch
 
 from TerryDirector.director_internal import (
     TerryDirectorAssembleMedia,
-    TerryDirectorLatentList,
+    TerryDirectorPackOutput,
     TerryDirectorResampleReferenceVideo,
 )
+from TerryDirector.director_node import TerryDirector, TerryDirectorOutput
 
 
 class DirectorInternalTests(unittest.TestCase):
@@ -60,14 +61,49 @@ class DirectorInternalTests(unittest.TestCase):
         self.assertEqual(merged_images.shape[0], 5)
         self.assertEqual(merged_audio["waveform"].shape[-1], 20)
 
-    def test_latent_list_preserves_segment_items(self):
+    def test_pack_output_preserves_segment_items_and_media(self):
         first = {"samples": "a"}
         second = {"samples": "b"}
-        result = TerryDirectorLatentList.execute({
-            "latent_0": first,
-            "latent_1": second,
-        }).result[0]
-        self.assertEqual(result, [first, second])
+        images = torch.zeros((2, 2, 2, 3), dtype=torch.float32)
+        audio = {"waveform": torch.zeros((1, 2, 4000)), "sample_rate": 48000}
+        packet = TerryDirectorPackOutput.execute(
+            {"latent_0": first, "latent_1": second},
+            images,
+            audio,
+            24,
+        ).result[0]
+
+        self.assertEqual(packet["fps"], 24)
+        self.assertEqual(packet["segment_latents"], [first, second])
+        self.assertIs(packet["images"], images)
+        self.assertIs(packet["audio"], audio)
+
+    def test_main_node_exposes_only_director_output(self):
+        schema = TerryDirector.define_schema()
+        self.assertEqual(len(schema.outputs), 1)
+        self.assertEqual(schema.outputs[0].display_name, "导演输出")
+        self.assertEqual(schema.outputs[0].get_io_type(), "TERRYDIRECTOR_OUTPUT")
+
+    def test_director_output_builds_native_video_and_exposes_all_results(self):
+        first = {"samples": "a"}
+        images = torch.zeros((4, 2, 2, 3), dtype=torch.float32)
+        audio = {"waveform": torch.zeros((1, 2, 8000)), "sample_rate": 48000}
+        packet = {
+            "fps": 24,
+            "segment_latents": [first],
+            "images": images,
+            "audio": audio,
+        }
+
+        video, latents, out_images, out_audio = TerryDirectorOutput.execute(packet).result
+        components = video.get_components()
+
+        self.assertEqual(float(components.frame_rate), 24.0)
+        self.assertIs(components.images, images)
+        self.assertIs(components.audio, audio)
+        self.assertEqual(latents, [first])
+        self.assertIs(out_images, images)
+        self.assertIs(out_audio, audio)
 
     def test_assemble_appends_trailing_blank(self):
         images = torch.ones((2, 2, 2, 3), dtype=torch.float32)
