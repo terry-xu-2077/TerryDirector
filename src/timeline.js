@@ -89,7 +89,7 @@
       const c=this.hitTest(p);
       if(p.y<this.ruler||(!c&&Math.abs(this.x(this.frame)-p.x)<7)||!c){this.drag={mode:'seek',pointer:e.pointerId};this.setFrame(this.frameAt(p.x));return;}
       this.selected=c.id;this.options.onSelect?.(c.id);
-      if(readonly){this.overlay.style.cursor='default';this.invalidate();return;}
+      if(readonly){if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);this.overlay.style.cursor='default';this.invalidate();return;}
       const mode=this.edgeAt(c,p);
       this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p,follow:(mode==='move'||mode==='right')&&this.chainEnabled};
       this.overlay.style.cursor=mode==='move'?'grabbing':'ew-resize';this.invalidate();
