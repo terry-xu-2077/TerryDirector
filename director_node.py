@@ -139,7 +139,6 @@ class TerryDirectorConfig(io.ComfyNode):
                     default=8,
                     min=1,
                     max=10000,
-                    advanced=True,
                 ),
                 io.Float.Input(
                     "sigmas_denoise",
@@ -157,14 +156,12 @@ class TerryDirectorConfig(io.ComfyNode):
                     min=0,
                     max=0xFFFFFFFFFFFFFFFF,
                     control_after_generate=True,
-                    advanced=True,
                 ),
                 io.Combo.Input(
                     "ref_image_size",
                     display_name="参考图尺寸",
                     options=["match", "max"],
                     default="match",
-                    advanced=True,
                 ),
                 io.Boolean.Input(
                     "continue_audio_latent",
