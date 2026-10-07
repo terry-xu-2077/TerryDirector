@@ -32,7 +32,7 @@
     keyboard:'M2 5h20v14H2zM5 9h1m3 0h1m3 0h1m3 0h1M5 12h1m3 0h1m3 0h1m3 0h1M7 16h10'
   };
   function icon(name){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.film}"/></svg>`;}
-  const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',snap:'吸附',chain:'后续联动',duplicate:'复制',delete:'删除','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
+  const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',snap:'吸附',chain:'后续联动',duplicate:'复制',delete:'删除',suspend:'挂起','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
   function ib(action,name,title,active='',pressed=null){return `<button class="icon-button ${active}" data-action="${action}" title="${title}" aria-label="${title}"${pressed===null?'':` aria-pressed="${pressed}"`}>${icon(name)}<span>${esc(actionNames[action]||title)}</span></button>`;}
   const launch=window.TDStills.launch;
   // Tiny authored starfield placeholder, not a model output.
@@ -61,7 +61,7 @@
     'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
     'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
   ];
-  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],resolution:{...R.DEFAULT},seed:241907+i,audio:true,guide:'画面参考'}));
+  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],resolution:{...R.DEFAULT},seed:241907+i,audio:true,guide:'画面参考',suspended:false}));
   const initial=embedded?[]:demoInitial;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
@@ -78,11 +78,11 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
       <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button></div>
-      <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output></div>
+      <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
-      <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
+      <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
       <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。拖动片段移动，拖动片段边缘裁剪；重叠区及下方引线标记为只读。左右键步进，Ctrl Z 撤销。"></canvas></div>
       <div class="timeline-bottom"><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div></div>
     </section>
@@ -318,6 +318,13 @@
     syncAllReferences();
     const c=current();$('#clipNumber').textContent=c?`片段 ${state.clips.indexOf(c)+1}`:'暂无片段';
     $('#clipName').value=c?.name||'';$('#clipName').disabled=!c;$('#clipName').hidden=!c;
+    const suspendButton=$('[data-action=suspend]');
+    if(suspendButton){
+      suspendButton.disabled=!c;
+      suspendButton.classList.toggle('is-active',!!c?.suspended);
+      suspendButton.setAttribute('aria-pressed',String(!!c?.suspended));
+      suspendButton.title=c?.suspended?'恢复当前片段生成':'挂起当前片段：编译时视为空白';
+    }
     renderPrompt();renderTiming();renderReferences();updateHistory();
     if(timeline){timeline.setClips(state.clips);timeline.select(state.selected);}
   }
@@ -352,7 +359,7 @@
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考',refs:[]};
+    const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考',refs:[],suspended:false};
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
@@ -588,6 +595,14 @@
         real:true
       });
     }
+    const queueButton=$('[data-action=queue-workflow]');
+    const running=[...activity.values()].some(record=>record.status==='running');
+    if(queueButton){
+      queueButton.disabled=running;
+      queueButton.classList.toggle('is-running',running);
+      const label=queueButton.querySelector('span');
+      if(label)label.textContent=running?'生成中':'生成';
+    }
     timeline?.invalidate();
   }
   function loadDocument(documentData){
@@ -601,7 +616,7 @@
       const start=Math.max(0,Number.parseInt(clip?.start,10)||0),end=Math.max(start+1,Number.parseInt(clip?.end,10)||start+C.FPS*10);
       return {id:String(clip?.id||`clip-${index+1}`),name:String(clip?.name||`片段 ${String(index+1).padStart(2,'0')}`),
         start,end,prompt:String(clip?.prompt||''),refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
-        resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
+        suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
     });
     state={clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
     history=new C.History();assetGridKey='';activity.clear();
@@ -613,7 +628,7 @@
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
     return {version:1,fps:C.FPS,selected:state.selected,
-      clips:state.clips.map(({id,name,start,end,prompt,refs})=>({id,name,start,end,prompt,refs:[...refs]})),
+      clips:state.clips.map(({id,name,start,end,prompt,refs,suspended})=>({id,name,start,end,prompt,refs:[...refs],suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
@@ -627,6 +642,16 @@
     $('#dialogDiscardChanges').onclick=()=>{d.close();window.parent.postMessage({type:'terrydirector:discard-close'},hostOrigin);};
     $('#dialogSaveChanges').onclick=()=>{d.close();saveToHost();};
     if(!d.open)d.showModal();
+  }
+  function queueWorkflow(){
+    finishPromptEdit();syncAllReferences();
+    if(!embedded){toast('正式嵌入 ComfyUI 后可从这里运行整个工作流。');return;}
+    embedDirty=false;
+    window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
+    window.parent.postMessage({
+      type:'terrydirector:queue-workflow',
+      document:documentPayload()
+    },hostOrigin);
   }
   function saveToHost(){
     finishPromptEdit();
@@ -643,6 +668,7 @@
     'toggle-prompt-view':()=>{finishPromptEdit();promptView=promptView==='visual'?'text':'visual';renderPrompt();},
     'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
     'save-close':saveToHost,
+    'queue-workflow':queueWorkflow,
     'close-editor':()=>{if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     undo:()=>{finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
@@ -654,6 +680,7 @@
     'zoom-out':()=>timeline.zoom(.8),'zoom-in':()=>timeline.zoom(1.25),fit:()=>timeline.fit(),
     delete:()=>{if(!current())return;timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
+    suspend:()=>{if(current())mutate(()=>{current().suspended=!current().suspended;});},
     reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};renderAll();timeline.fit();timeline.setFrame(192);}
   };
   app.addEventListener('click',e=>{
