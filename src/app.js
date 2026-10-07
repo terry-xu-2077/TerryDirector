@@ -83,7 +83,7 @@
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
       <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
       <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。拖动片段移动，拖动片段边缘裁剪；重叠区及下方引线标记为只读。左右键步进，Ctrl Z 撤销。"></canvas></div>
-      <div class="timeline-bottom"><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div></div>
+      <div class="timeline-bottom"><div class="timeline-run-progress" id="timelineRunProgress" hidden><i></i></div><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div></div>
     </section>
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
@@ -178,6 +178,27 @@
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
     renderClipDuration(clips);
+  }
+  function renderRunProgress(){
+    const bar=$('#timelineRunProgress');
+    if(!bar)return;
+    const activeClips=state.clips.filter(c=>!c.suspended);
+    const totalWork=activeClips.reduce((sum,c)=>sum+Math.max(1,c.end-c.start),0);
+    let doneWork=0,hasRunState=false,currentClip=null,currentProgress=0;
+    for(const clip of activeClips){
+      const record=activityFor(clip);
+      const running=record.status==='running',completed=record.status==='completed',failed=record.status==='error';
+      if(running||completed||failed)hasRunState=true;
+      const progress=completed?1:running?C.clamp(Number(record.progress)||0,0,1):0;
+      doneWork+=Math.max(1,clip.end-clip.start)*progress;
+      if(running){currentClip=clip;currentProgress=progress;}
+    }
+    const overall=totalWork?C.clamp(doneWork/totalWork,0,1):0;
+    bar.hidden=!hasRunState;
+    bar.querySelector('i').style.width=`${Math.round(overall*1000)/10}%`;
+    bar.title=currentClip
+      ? `正在生成：${currentClip.name} · ${Math.round(currentProgress*100)}%`
+      : `总生成进度 ${Math.round(overall*100)}%`;
   }
   function beginDurationEdit(){
     if(hostReadonly||!current()||durationEditBefore)return;
@@ -327,7 +348,7 @@
       suspendButton.setAttribute('aria-pressed',String(!!c?.suspended));
       suspendButton.title=c?.suspended?'恢复当前片段生成':'挂起当前片段：编译时视为空白';
     }
-    renderPrompt();renderTiming();renderReferences();updateHistory();
+    renderPrompt();renderTiming();renderRunProgress();renderReferences();updateHistory();
     if(timeline){timeline.setClips(state.clips);timeline.select(state.selected);}
   }
   function select(id,seek=false){finishDurationEdit();finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
@@ -599,6 +620,7 @@
       const label=queueButton.querySelector('span');
       if(label)label.textContent=running?'生成中':'生成';
     }
+    renderRunProgress();
     timeline?.invalidate();
   }
   function loadDocument(documentData){
