@@ -7,7 +7,7 @@ from comfy_api.latest import io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import compile_timeline
-from .director_h3 import build_single_segment_graph
+from .director_h3 import build_timeline_graph
 from .director_core import (
     config_json,
     make_runtime_config,
@@ -283,17 +283,12 @@ class TerryDirector(io.ComfyNode):
         config = normalize_config(config_json)
         plan = compile_timeline(config["document"])
 
-        if len(plan["segments"]) != 1:
-            raise RuntimeError("TerryDirector 多片段 H3 执行将在下一阶段接入")
-        segment = plan["segments"][0]
-        if segment["assembly"]["gap_before_frames"]:
-            raise RuntimeError("TerryDirector 时间线空白合并将在多片段阶段接入")
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
-        expanded, latent, images, audio = build_single_segment_graph(runtime, segment)
+        expanded, latents, images, audio = build_timeline_graph(runtime, plan)
         return io.NodeOutput(
-            [latent],
+            latents,
             images,
             audio,
             expand=expanded,
