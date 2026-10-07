@@ -66,8 +66,9 @@
     while(n&&n!==editor){let c=backward?n.previousSibling:n.nextSibling;while(c){const v=boundaryTag(c,backward);if(v!==undefined)return v;c=backward?c.previousSibling:c.nextSibling;}n=n.parentNode;if(n!==editor&&/^(DIV|P|LI)$/.test(n?.nodeName||''))return null;}return null;
   }
   class H3Editor{
-    constructor({visual,textarea,getAssets,onBeforeChange,onChange,onCommit,onHistory}){
+    constructor({visual,textarea,getAssets,onBeforeChange,onChange,onCommit,onHistory,menuRoot}){
       Object.assign(this,{visual,textarea,getAssets,onBeforeChange,onChange,onCommit,onHistory});
+      this.menuRoot=menuRoot||document.body;
       this.value='';this.context=null;this.mode='visual';this.composing=false;this.menu=null;this.bookmark=null;this.timer=0;
       this.abort=new AbortController();const signal=this.abort.signal;
       const on=(target,type,fn,opts={})=>target.addEventListener(type,fn,{signal,...opts});
@@ -223,7 +224,7 @@
       this.openMenu({type:hit.trigger==='@'?'asset':'command',category:null,active:0,...hit});
     }
     closeMenu(){if(this.menu){this.menu.element.remove();this.menu=null;this.visual.setAttribute('aria-expanded','false');this.visual.removeAttribute('aria-activedescendant');}}
-    openMenu(state){this.closeMenu();state.element=el('div','h3-menu');state.element.id='td-h3-menu';state.element.setAttribute('role','listbox');this.menu=state;document.body.append(state.element);this.visual.setAttribute('aria-controls',state.element.id);this.visual.setAttribute('aria-expanded','true');this.renderMenu();}
+    openMenu(state){this.closeMenu();state.element=el('div','h3-menu');state.element.id='td-h3-menu';state.element.setAttribute('role','listbox');this.menu=state;this.menuRoot.append(state.element);this.visual.setAttribute('aria-controls',state.element.id);this.visual.setAttribute('aria-expanded','true');this.renderMenu();}
     menuOptions(m){
       if(m.type==='asset')return (this.getAssets?.()||[]).filter(a=>!m.query||`${a.name} ${a.raw} ${a.kind} ${S.label(a.raw)}`.toLowerCase().includes(m.query)).map(a=>({asset:a}));
       if(m.type==='camera')return S.cameras.map(([zh,en,detail,raw])=>({command:{label:zh+' · '+en,detail,raw,category:'camera'}}));
@@ -306,7 +307,7 @@
       else if(kind==='time')this.openTime(chip);
     }
     openTime(chip){
-      this.closeMenu();const menu=el('div','h3-menu h3-time-menu');this.menu={element:menu,type:'time',chip};document.body.append(menu);
+      this.closeMenu();const menu=el('div','h3-menu h3-time-menu');this.menu={element:menu,type:'time',chip};this.menuRoot.append(menu);
       menu.append(el('div','h3-menu-header','编辑时间戳'));const row=el('div','h3-time-row'),m=chip.dataset.raw.match(/\[(\d{2}):(\d{2})\]/);
       const fields=['分钟','秒'].map((name,i)=>{const label=el('label','',name),input=el('input');input.type='number';input.min=0;input.max=i?59:99;input.step=1;input.value=+m[i+1];input.setAttribute('aria-label',name);label.append(input);row.append(label);return input;});
       const apply=()=>{this.onBeforeChange?.();const [a,b]=fields.map((f,i)=>String(Math.max(0,Math.min(i?59:99,Math.floor(+f.value)||0))).padStart(2,'0'));chip.dataset.raw=`[${a}:${b}]`;chip.querySelector('.h3-label').textContent=S.label(chip.dataset.raw);this.changed();this.commit();this.closeMenu();this.visual.focus();};
