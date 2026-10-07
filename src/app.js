@@ -55,13 +55,15 @@
   const mediaNames={image:'Picture',video:'Video',audio:'Audio'};
   const mediaPattern=()=>/<(Picture|Video|Audio)\s+(\d+)>/gi;
   const mediaKey=(kind,number)=>`${kind.toLowerCase()}:${Number(number)}`;
+  const transitionLabels={tail_reference:'尾帧参考',tail_continuation:'尾帧续接',independent:'独立'};
+  const normalizeTransitionMode=(value,fallback='tail_continuation')=>Object.hasOwn(transitionLabels,value)?value:fallback;
   const prompts=[
     'integrated_multimodal_description:\n[Shot 1] [00:00] 黎明前的发射场，塔架静立，远处的工作灯映着薄雾。\nThe camera pushes in 缓缓靠近主体。\noverall_soundscape:\n远处的风声与设备低鸣。',
     'subject_definitions:\n<Picture 1> 发射场与塔架，作为场景和构图参考。\n\ndetailed_description:\n[Shot 1] [00:00] 承接上一片段，冷蓝色天幕逐渐被暖光照亮。\nThe camera tilts up 摄影机沿塔架缓慢上移，保持场景与主体一致。\n(S1) <d>[Chinese] 准备好了，我们出发。</d>\n\noverall_soundscape:\n延续环境风声。',
     'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
     'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
   ];
-  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],useGlobalPrompt:true,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',suspended:false}));
+  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],useGlobalPrompt:true,transitionMode:'tail_reference',resolution:{...R.DEFAULT},audio:true,guide:'画面参考',suspended:false}));
   const initial=embedded?[]:demoInitial;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
@@ -69,8 +71,8 @@
   if(!embedded)resetActivity();else activity.clear();
   let state={globalPrompt:'',clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false;
-  let promptEditor=null,globalPromptEditor=null;
+  let title='远航之前',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
+  let promptEditor=null,globalPromptEditor=null,transitionMenu=null;
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
@@ -106,10 +108,15 @@
   const current=()=>state.clips.find(c=>c.id===state.selected);
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
+  function closeTransitionMenu(){
+    transitionMenu?.remove();
+    transitionMenu=null;
+  }
   function setHostReadonly(value){
     const next=!!value;
     if(hostReadonly===next)return;
     hostReadonly=next;
+    if(hostReadonly)closeTransitionMenu();
     document.body.classList.toggle('td-run-readonly',hostReadonly);
     app.setAttribute('aria-busy',String(hostReadonly));
     const text=$('#promptText'),visual=$('#promptVisual'),name=$('#clipName');
@@ -365,16 +372,37 @@
   });
   timeline=new window.TDTimeline($('#timelineBody'),{
     clips:state.clips,selected:state.selected,getImage,getActivity:activityFor,readonly:()=>hostReadonly,
+    getTransitionMode:id=>normalizeTransitionMode(state.clips.find(c=>c.id===id)?.transitionMode,'tail_continuation'),
+    onTransitionMenu:(seam,point)=>openTransitionMenu(seam,point),
     onSelect:id=>select(id),onFrame:()=>{},
     onPreview:clips=>renderTiming(clips),onDragEnd:()=>timeline.invalidate(),
     onCommit:(clips,beforeClips)=>{finishPromptEdit();const before={...C.copy(state),clips:beforeClips};state.clips=clips;commit(before);},
     onView:v=>{const max=Math.max(v.visible,v.contentWidth),width=Math.min(100,v.visible/max*100);$('#scrollThumb').style.width=width+'%';$('#scrollThumb').style.left=Math.min(100-width,v.scroll/max*100)+'%';$('#zoomRange').value=Math.log(v.ppf/.22)/Math.log(24/.22)*100;}
   });
   renderAll();timeline.setFrame(embedded?0:8*C.FPS);
+  function openTransitionMenu(seam,point){
+    if(hostReadonly||seam?.kind!=='touch')return;
+    closeTransitionMenu();
+    const clip=state.clips.find(c=>c.id===seam.b);if(!clip)return;
+    const current=normalizeTransitionMode(clip.transitionMode,'tail_continuation');
+    const menu=document.createElement('div');menu.className='transition-mode-menu';menu.setAttribute('role','menu');
+    menu.innerHTML=Object.entries(transitionLabels).map(([value,label])=>`<button type="button" role="menuitemradio" aria-checked="${value===current}" data-transition-mode="${value}" class="${value===current?'is-active':''}"><span>${label}</span>${value===current?'<b>✓</b>':''}</button>`).join('');
+    document.body.append(menu);transitionMenu=menu;
+    const margin=8,rect=menu.getBoundingClientRect();
+    menu.style.left=C.clamp(point.clientX,margin,window.innerWidth-rect.width-margin)+'px';
+    menu.style.top=C.clamp(point.clientY+6,margin,window.innerHeight-rect.height-margin)+'px';
+    menu.addEventListener('pointerdown',e=>e.stopPropagation());
+    menu.addEventListener('click',e=>{
+      const button=e.target.closest('[data-transition-mode]');if(!button)return;
+      const mode=normalizeTransitionMode(button.dataset.transitionMode,'tail_reference');
+      mutate(()=>{const target=state.clips.find(c=>c.id===seam.b);if(target)target.transitionMode=mode;});
+      closeTransitionMenu();timeline?.invalidate();
+    });
+  }
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',useGlobalPrompt:true,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
@@ -637,7 +665,7 @@
       const start=Math.max(0,Number.parseInt(clip?.start,10)||0),end=Math.max(start+1,Number.parseInt(clip?.end,10)||start+C.FPS*10);
       return {id:String(clip?.id||`clip-${index+1}`),name:String(clip?.name||`片段 ${String(index+1).padStart(2,'0')}`),
         start,end,prompt:String(clip?.prompt||''),refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
-        useGlobalPrompt:clip?.useGlobalPrompt!==false,suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
+        useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
     });
     state={globalPrompt:String(raw.globalPrompt||''),clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
     history=new C.History();assetGridKey='';activity.clear();
@@ -649,7 +677,7 @@
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
     return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
-      clips:state.clips.map(({id,name,start,end,prompt,refs,useGlobalPrompt,suspended})=>({id,name,start,end,prompt,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,suspended:!!suspended})),
+      clips:state.clips.map(({id,name,start,end,prompt,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
@@ -801,11 +829,13 @@
   window.TerryDirectorDemo={getState:()=>C.copy(state),getAssets:()=>C.copy(poolEntries()),getDocument:()=>C.copy(documentPayload()),loadDocument,getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
   $('#dialog').addEventListener('close',()=>{stopDialogMedia();if($('#dialog').dataset.mode==='media')$('#dialogBody').replaceChildren();});
   $('#dialog').addEventListener('click',e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.currentTarget.close();});
+  window.addEventListener('pointerdown',e=>{if(transitionMenu&&!transitionMenu.contains(e.target))closeTransitionMenu();},true);
   if(embedded){
     window.addEventListener('message',event=>{
       if(event.origin!==hostOrigin||event.source!==window.parent)return;
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
+      else if(message.type==='terrydirector:preferences')defaultTransitionMode=normalizeTransitionMode(message.defaultTransitionMode,'tail_reference');
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
