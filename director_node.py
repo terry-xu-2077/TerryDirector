@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import folder_paths
+import torch
+import comfy.samplers
+import nodes
 from comfy_api.latest import io
 
 from .director_core import (
@@ -13,21 +16,39 @@ from .director_core import (
 
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
 AUTO_UPSCALER = "自动选择兼容模型"
-LINK_COMPONENT_VALUE = "外部输入"
 
 
-def _native_link_component() -> dict:
-    """Ask ComfyUI to render a native widget row with its native socket.
+def _files(category: str) -> list[str]:
+    try:
+        values = list(folder_paths.get_filename_list(category))
+    except Exception:
+        values = []
+    return values or [""]
 
-    The backend IO type remains MODEL/CLIP/VAE/SAMPLER/SIGMAS; widgetType only
-    controls the frontend presentation. No TerryDirector-owned input widget is
-    created.
-    """
 
+def _vae_options() -> list[str]:
+    try:
+        values = list(nodes.VAELoader.vae_list(nodes.VAELoader))
+    except Exception:
+        values = _files("vae")
+    return values or [""]
+
+
+def _preferred(values: list[str], *needles: str) -> str:
+    for needle in needles:
+        needle = needle.lower()
+        for value in values:
+            if needle in value.lower():
+                return value
+    return values[0] if values else ""
+
+
+def _native_combo(options: list[str], default: str | None = None) -> dict:
+    values = list(options) or [""]
     return {
         "widgetType": "COMBO",
-        "options": [LINK_COMPONENT_VALUE],
-        "default": LINK_COMPONENT_VALUE,
+        "options": values,
+        "default": default if default in values else values[0],
     }
 
 
@@ -37,6 +58,46 @@ def _latent_upscaler_options() -> list[str]:
     except Exception:
         models = []
     return [AUTO_UPSCALER, *models]
+
+
+def _resolve_model(value, weight_dtype: str):
+    if not isinstance(value, str):
+        return value
+    return nodes.UNETLoader().load_unet(value, weight_dtype)[0]
+
+
+def _resolve_clip(value, clip_type: str):
+    if not isinstance(value, str):
+        return value
+    return nodes.CLIPLoader().load_clip(value, type=clip_type, device="default")[0]
+
+
+def _resolve_vae(value):
+    if not isinstance(value, str):
+        return value
+    return nodes.VAELoader().load_vae(value)[0]
+
+
+def _resolve_sampler(value):
+    if not isinstance(value, str):
+        return value
+    return comfy.samplers.sampler_object(value)
+
+
+def _resolve_sigmas(value, model, steps: int, denoise: float):
+    if not isinstance(value, str):
+        return value
+    steps = max(1, int(steps))
+    denoise = float(denoise)
+    if denoise <= 0.0:
+        return torch.FloatTensor([])
+    total_steps = steps if denoise >= 1.0 else int(steps / denoise)
+    sigmas = comfy.samplers.calculate_sigmas(
+        model.get_model_object("model_sampling"),
+        value,
+        total_steps,
+    ).cpu()
+    return sigmas[-(steps + 1):]
 
 
 class TerryDirectorConfig(io.ComfyNode):
@@ -53,10 +114,51 @@ class TerryDirectorConfig(io.ComfyNode):
                 "settings into one connection for the main TerryDirector node."
             ),
             inputs=[
-                io.Model.Input("model", extra_dict=_native_link_component()),
-                io.Clip.Input("clip", extra_dict=_native_link_component()),
-                io.Vae.Input("vae", extra_dict=_native_link_component()),
-                io.Vae.Input("audio_vae", extra_dict=_native_link_component()),
+                io.Model.Input(
+                    "model",
+                    display_name="UNet名称",
+                    extra_dict=_native_combo(
+                        _files("diffusion_models"),
+                        _preferred(_files("diffusion_models"), "minimax_h3"),
+                    ),
+                ),
+                io.Combo.Input(
+                    "model_weight_dtype",
+                    display_name="UNet精度",
+                    options=["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"],
+                    default="default",
+                    advanced=True,
+                ),
+                io.Clip.Input(
+                    "clip",
+                    display_name="CLIP名称",
+                    extra_dict=_native_combo(
+                        _files("text_encoders"),
+                        _preferred(_files("text_encoders"), "minimax_h3"),
+                    ),
+                ),
+                io.Combo.Input(
+                    "clip_type",
+                    display_name="CLIP类型",
+                    options=["minimax"],
+                    default="minimax",
+                ),
+                io.Vae.Input(
+                    "vae",
+                    display_name="视频VAE",
+                    extra_dict=_native_combo(
+                        _vae_options(),
+                        _preferred(_vae_options(), "minimax_h3_video_vae"),
+                    ),
+                ),
+                io.Vae.Input(
+                    "audio_vae",
+                    display_name="音频VAE",
+                    extra_dict=_native_combo(
+                        _vae_options(),
+                        _preferred(_vae_options(), "minimax_h3_audio_vae"),
+                    ),
+                ),
                 io.Int.Input(
                     "width",
                     display_name="width",
@@ -73,8 +175,38 @@ class TerryDirectorConfig(io.ComfyNode):
                     max=16384,
                     step=32,
                 ),
-                io.Sampler.Input("sampler", extra_dict=_native_link_component()),
-                io.Sigmas.Input("sigmas", extra_dict=_native_link_component()),
+                io.Sampler.Input(
+                    "sampler",
+                    display_name="采样器",
+                    extra_dict=_native_combo(
+                        list(comfy.samplers.SAMPLER_NAMES),
+                        "res_multistep",
+                    ),
+                ),
+                io.Sigmas.Input(
+                    "sigmas",
+                    display_name="调度器",
+                    extra_dict=_native_combo(
+                        list(comfy.samplers.SCHEDULER_NAMES),
+                        "simple",
+                    ),
+                ),
+                io.Int.Input(
+                    "sigmas_steps",
+                    display_name="步数",
+                    default=8,
+                    min=1,
+                    max=10000,
+                ),
+                io.Float.Input(
+                    "sigmas_denoise",
+                    display_name="Denoise",
+                    default=1.0,
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    advanced=True,
+                ),
                 io.Int.Input(
                     "seed",
                     display_name="Seed",
@@ -123,16 +255,26 @@ class TerryDirectorConfig(io.ComfyNode):
         )
 
     @classmethod
+    def validate_inputs(cls, **kwargs):
+        # MODEL/CLIP/VAE/SAMPLER/SIGMAS rows intentionally accept either the
+        # native widget value or a real upstream object through the same socket.
+        return True
+
+    @classmethod
     def execute(
         cls,
         model,
+        model_weight_dtype,
         clip,
+        clip_type,
         vae,
         audio_vae,
         width,
         height,
         sampler,
         sigmas,
+        sigmas_steps,
+        sigmas_denoise,
         seed,
         ref_image_size,
         continue_audio_latent,
@@ -140,24 +282,17 @@ class TerryDirectorConfig(io.ComfyNode):
         second_pass_model=AUTO_UPSCALER,
         second_pass_high_steps=4,
     ):
-        required_links = {
-            "model": model,
-            "clip": clip,
-            "vae": vae,
-            "audio_vae": audio_vae,
-            "sampler": sampler,
-            "sigmas": sigmas,
-        }
-        missing = [
-            name
-            for name, value in required_links.items()
-            if value is None
-            or (isinstance(value, str) and value == LINK_COMPONENT_VALUE)
-        ]
-        if missing:
-            raise ValueError(
-                "TerryDirector 配置缺少外部输入：" + ", ".join(missing)
-            )
+        model = _resolve_model(model, model_weight_dtype)
+        clip = _resolve_clip(clip, clip_type)
+        vae = _resolve_vae(vae)
+        audio_vae = _resolve_vae(audio_vae)
+        sampler = _resolve_sampler(sampler)
+        sigmas = _resolve_sigmas(
+            sigmas,
+            model,
+            sigmas_steps,
+            sigmas_denoise,
+        )
 
         method = "selflift" if second_pass_method == "SelfLift" else "none"
         upscaler = "" if second_pass_model == AUTO_UPSCALER else str(second_pass_model or "")
