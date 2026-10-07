@@ -231,22 +231,49 @@ function renderNode(node) {
   });
 }
 
+function setNativeWidgetHidden(widget, hidden) {
+  if (!widget?.options) return;
+  widget.options.hidden = !!hidden;
+  widget.syncLiveVisibilityOptions?.();
+}
+
+function syncSecondPassWidgets(node) {
+  const method = node.widgets?.find(widget => widget.name === "second_pass_method");
+  const model = node.widgets?.find(widget => widget.name === "second_pass_model");
+  const steps = node.widgets?.find(widget => widget.name === "second_pass_high_steps");
+  const showSelfLift = method?.value === "SelfLift";
+
+  setNativeWidgetHidden(model, !showSelfLift);
+  setNativeWidgetHidden(steps, !showSelfLift);
+
+  node.setDirtyCanvas?.(true, true);
+  node.graph?.setDirtyCanvas?.(true, true);
+}
+
 function applyConfigAdvancedVisibility(node) {
   if (!node || node.comfyClass !== CONFIG_NODE_CLASS) return;
 
   for (const widget of node.widgets || []) {
     if (!CONFIG_ADVANCED_WIDGETS.has(widget.name)) continue;
 
-    // Use ComfyUI's own widget visibility contract. Do not hide DOM/canvas
-    // controls ourselves; setting the native widget's advanced state makes
-    // the built-in "显示高级输入" footer own visibility on every surface.
+    // Keep the actual ComfyUI widgets and let the native advanced-input
+    // visibility system own their collapsed/expanded state.
     widget.advanced = true;
     if (widget.options) widget.options.advanced = true;
     widget.syncLiveVisibilityOptions?.();
   }
 
-  node.setDirtyCanvas?.(true, true);
-  node.graph?.setDirtyCanvas?.(true, true);
+  const method = node.widgets?.find(widget => widget.name === "second_pass_method");
+  if (method && !method.__tdSecondPassConditional) {
+    const originalCallback = method.callback;
+    method.callback = value => {
+      originalCallback?.(value);
+      queueMicrotask(() => syncSecondPassWidgets(node));
+    };
+    method.__tdSecondPassConditional = true;
+  }
+
+  syncSecondPassWidgets(node);
 }
 
 function mountNode(node) {
