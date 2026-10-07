@@ -191,7 +191,7 @@
         const seconds=Number((activity.elapsedSeconds||0).toFixed(1)),percent=Math.round((activity.progress||0)*100);
         const text=suspended?'已挂起 · 编译为空白'
           :failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
-          :running?(activity.real?(percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
+          :running?(activity.real?(percent>=100?`已完成 · 生成耗时 ${seconds}s`:percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
           :done?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
           :'待生成';
         this.label(ctx,text,x+24,statusY,width-35);
