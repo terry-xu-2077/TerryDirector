@@ -25,7 +25,6 @@ class DirectorCoreTests(unittest.TestCase):
             "sigmas": object(),
             "seed": 123,
             "ref_image_size": "match",
-            "continue_audio_latent": True,
             "second_pass_method": "none",
             "second_pass_model": "",
             "second_pass_high_steps": 4,
@@ -37,6 +36,10 @@ class DirectorCoreTests(unittest.TestCase):
         config = default_config()
         self.assertNotIn("params", config)
         self.assertIn("document", config)
+
+    def test_runtime_packet_has_no_manual_audio_continuity_flag(self):
+        runtime = self._runtime()
+        self.assertNotIn("continue_audio_latent", runtime["params"])
 
     def test_normalizes_document_and_drops_invalid_asset_refs(self):
         payload = default_config()
