@@ -31,7 +31,7 @@ Seed ──────┤                                      ├─ 合并画
 
 输入呈现完全使用 **ComfyUI 原生 Widget + 原生 socket**。不为配置节点自绘一套输入组件；原生组件本身支持连接，连接后的禁用 / 收起、主题和工作流序列化均由 ComfyUI 管理。
 
-这些 Widget 不是“外部输入”占位。未接线时必须能直接工作：MODEL 显示 UNet 文件选择，CLIP 显示文本编码器选择，视频 / 音频 VAE 显示 VAE 选择，SAMPLER 显示采样器选择，SIGMAS 显示调度器选择；同一行的原生 socket 仍允许外接，接入后由外部对象覆盖本地选择。
+MODEL / CLIP / 视频 VAE / 音频 VAE 使用纯原生接入点，不在配置节点重复加载器选项。分辨率使用 ComfyUI 原生 Resolution Selector 形态：宽高比、百万像素、实时“宽 × 高 / MP”预览，nearest multiple 放高级设置。SAMPLER / SIGMAS 保留原生可连接 Widget，以便简单工作流不必额外堆节点。
 
 当前输入：
 
