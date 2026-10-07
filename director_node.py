@@ -163,12 +163,6 @@ class TerryDirectorConfig(io.ComfyNode):
                     options=["match", "max"],
                     default="match",
                 ),
-                io.Boolean.Input(
-                    "continue_audio_latent",
-                    display_name="音频连续",
-                    default=True,
-                    advanced=True,
-                ),
                 io.Combo.Input(
                     "second_pass_method",
                     display_name="二采方案",
@@ -214,7 +208,6 @@ class TerryDirectorConfig(io.ComfyNode):
         sigmas_denoise,
         seed,
         ref_image_size,
-        continue_audio_latent,
         second_pass_method,
         second_pass_model=AUTO_UPSCALER,
         second_pass_high_steps=4,
@@ -242,7 +235,6 @@ class TerryDirectorConfig(io.ComfyNode):
             sigmas=sigmas,
             seed=seed,
             ref_image_size=ref_image_size,
-            continue_audio_latent=continue_audio_latent,
             second_pass_method=method,
             second_pass_model=upscaler,
             second_pass_high_steps=second_pass_high_steps,
