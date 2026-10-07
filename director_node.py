@@ -135,7 +135,7 @@ class TerryDirectorConfig(io.ComfyNode):
                 ),
                 io.Int.Input(
                     "sigmas_steps",
-                    display_name="步数",
+                    display_name="总步数",
                     default=8,
                     min=1,
                     max=10000,
