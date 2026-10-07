@@ -9,7 +9,6 @@ from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 from .director_compile import compile_timeline
 from .director_h3 import build_single_segment_graph
 from .director_core import (
-    FPS,
     config_json,
     make_runtime_config,
     normalize_config,
@@ -289,8 +288,6 @@ class TerryDirector(io.ComfyNode):
         segment = plan["segments"][0]
         if segment["assembly"]["gap_before_frames"]:
             raise RuntimeError("TerryDirector 时间线空白合并将在多片段阶段接入")
-        if any(segment["assets"].values()):
-            raise RuntimeError("TerryDirector 参考素材执行将在下一阶段接入")
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
