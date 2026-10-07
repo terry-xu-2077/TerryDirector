@@ -848,23 +848,21 @@ body.td-embedded .top-timeline-duration {
 }
 
 
-/* Running state is scoped to the active TerryDirector editor only. */
-body.td-run-readonly .timeline-panel,
-body.td-run-readonly #timelineResize,
-body.td-run-readonly .workspace,
-body.td-run-readonly .top-timeline-leading,
-body.td-run-readonly .save-close {
-  pointer-events: none;
-}
-
-body.td-run-readonly .timeline-panel,
-body.td-run-readonly .workspace,
-body.td-run-readonly .top-timeline-leading,
-body.td-run-readonly .save-close {
-  opacity: .56;
-}
-
+/* Running state is read-only, not view-locked.
+ * Keep timeline selection, pan/scroll, prompt scrolling and asset preview usable. */
+body.td-run-readonly .save-close,
 body.td-run-readonly .timeline-generate {
   pointer-events: none;
   opacity: .55;
+}
+
+body.td-run-readonly .top-timeline-leading [data-action="new"],
+body.td-run-readonly .top-timeline-leading [data-action="global-prompt"] {
+  opacity: .45;
+}
+
+body.td-run-readonly .prompt-editor,
+body.td-run-readonly .reference-body,
+body.td-run-readonly .timeline-panel {
+  opacity: 1;
 }
