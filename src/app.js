@@ -572,6 +572,24 @@
     return {id:String(raw.id||`asset-${index+1}`),name:String(raw.name||path.split('/').at(-1)||path),kind,
       number:Math.max(1,Number.parseInt(raw.number,10)||1),src:inputPreviewUrl(path),source:{type:'comfy-input',path}};
   }
+  function applyHostActivity(payload){
+    if(!embedded)return;
+    const records=payload?.clips&&typeof payload.clips==='object'?payload.clips:{};
+    activity.clear();
+    for(const clip of state.clips){
+      const raw=records[clip.id];
+      if(!raw)continue;
+      activity.set(clip.id,{
+        status:['idle','running','completed','error'].includes(raw.status)?raw.status:'idle',
+        progress:C.clamp(Number(raw.progress)||0,0,1),
+        elapsedSeconds:Math.max(0,Number(raw.elapsedSeconds)||0),
+        completedAt:raw.completedAt||null,
+        error:String(raw.error||''),
+        real:true
+      });
+    }
+    timeline?.invalidate();
+  }
   function loadDocument(documentData){
     finishPromptEdit();timeline?.cancel();stopDialogMedia();
     const raw=documentData&&typeof documentData==='object'?documentData:{};
@@ -698,6 +716,7 @@
       if(event.origin!==hostOrigin||event.source!==window.parent)return;
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
+      else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
