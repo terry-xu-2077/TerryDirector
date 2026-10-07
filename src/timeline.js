@@ -184,12 +184,15 @@
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.muted;
         this.label(ctx,c.name,descriptionX,titleY,width-(descriptionX-x)-12);
         const activity=this.options.getActivity?.(c)||{status:'idle',progress:0};
-        const running=activity.status==='running',done=activity.status==='completed';
-        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=done?t.success:running?t.progress:t.ruler;
+        const running=activity.status==='running',done=activity.status==='completed',failed=activity.status==='error';
+        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=failed?t.warning:done?t.success:running?t.progress:t.ruler;
         ctx.beginPath();ctx.arc(x+16,statusY,2.5,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle=t.muted;
-        const seconds=Number((activity.elapsedSeconds||0).toFixed(1));
-        const text=running?`模拟生成 ${Math.round((activity.progress||0)*100)}% · 已用 ${seconds}s`:done?`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`:'待生成';
+        ctx.fillStyle=failed?t.warning:t.muted;
+        const seconds=Number((activity.elapsedSeconds||0).toFixed(1)),percent=Math.round((activity.progress||0)*100);
+        const text=failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
+          :running?(activity.real?(percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
+          :done?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
+          :'待生成';
         this.label(ctx,text,x+24,statusY,width-35);
         if(running){const span=Math.max(0,width-18);this.rect(ctx,x+9,y+ch-7,span,4,2,t.progressTrack);this.rect(ctx,x+9,y+ch-7,span*C.clamp(activity.progress||0,0,1),4,2,t.progress);}
         if(this.showWave&&ch>=70){ctx.strokeStyle=t.wave;ctx.globalAlpha=.18;ctx.beginPath();for(let xx=x+13;xx<x+width-12;xx+=3){const a=2+3*Math.abs(Math.sin(xx*.053+i)*Math.cos(xx*.081));ctx.moveTo(xx,y+ch-36-a);ctx.lineTo(xx,y+ch-36+a);}ctx.stroke();ctx.globalAlpha=1;}
