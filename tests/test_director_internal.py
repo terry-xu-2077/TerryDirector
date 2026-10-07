@@ -21,6 +21,7 @@ class DirectorInternalTests(unittest.TestCase):
             images=images,
             audio=audio,
             gap_frames=2,
+            gap_after_frames=0,
             trim_head_frames=1,
             fps=2,
         ).result
@@ -49,6 +50,7 @@ class DirectorInternalTests(unittest.TestCase):
             images=images,
             audio=audio,
             gap_frames=0,
+            gap_after_frames=0,
             trim_head_frames=0,
             fps=2,
             accumulated_images=accumulated_images,
@@ -66,6 +68,25 @@ class DirectorInternalTests(unittest.TestCase):
             "latent_1": second,
         }).result[0]
         self.assertEqual(result, [first, second])
+
+    def test_assemble_appends_trailing_blank(self):
+        images = torch.ones((2, 2, 2, 3), dtype=torch.float32)
+        audio = {"waveform": torch.ones((1, 2, 8)), "sample_rate": 8}
+        merged_images, merged_audio = TerryDirectorAssembleMedia.execute(
+            images=images,
+            audio=audio,
+            gap_frames=0,
+            gap_after_frames=2,
+            trim_head_frames=0,
+            fps=2,
+        ).result
+        self.assertEqual(merged_images.shape[0], 4)
+        self.assertTrue(torch.equal(merged_images[-2:], torch.zeros_like(merged_images[-2:])))
+        self.assertEqual(merged_audio["waveform"].shape[-1], 16)
+        self.assertTrue(torch.equal(
+            merged_audio["waveform"][..., -8:],
+            torch.zeros_like(merged_audio["waveform"][..., -8:]),
+        ))
 
     def test_reference_video_resamples_to_24_fps(self):
         images = torch.arange(30, dtype=torch.float32).reshape(30, 1, 1, 1)
