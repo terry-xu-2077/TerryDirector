@@ -188,7 +188,8 @@ function timelineHtml(documentData) {
         Math.min(100 - left, ((clip.end - clip.start) / total) * 100)
       );
       const selected = clip.id === documentData.selected ? " is-selected" : "";
-      return `<div class="td-mini-clip${selected}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span></div>`;
+      const duration=timeText(Math.max(0,(Number(clip.end)||0)-(Number(clip.start)||0)));
+      return `<div class="td-mini-clip${selected}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span></div>`;
     })
     .join("");
 }
@@ -205,8 +206,7 @@ function renderNode(node) {
     <div class="td-mini-wrap td-mini-wrap-director">
       <div class="td-mini-head">
         <strong>时间线</strong>
-        <span class="td-node-pill">${timeText(total)}</span>
-        <small>只读</small>
+        <span class="td-mini-stats">总时长：${timeText(total)} <i></i> 导入资产：${doc.assets.length}</span>
         <span class="td-node-spacer"></span>
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
