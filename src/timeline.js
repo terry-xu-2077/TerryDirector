@@ -152,17 +152,17 @@
       this.clips.forEach((c,i)=>{
         const x=this.x(c.start),width=(c.end-c.start)*this.ppf,y=this.y(),ch=this.trackHeight;
         if(x+width<this.inset-10||x>w+10)return;
-        const selected=c.id===this.selected;
-        let fill=t.clip;
-        if(selected){const g=ctx.createLinearGradient(x,y,x+width,y+ch);g.addColorStop(0,t.selected);g.addColorStop(1,t.highlight);fill=g;}
-        this.rect(ctx,x,y,width,ch,8,fill,selected?t.selection:t.border);
+        const selected=c.id===this.selected,suspended=!!c.suspended;
+        let fill=suspended?t.inset:t.clip;
+        if(selected&&!suspended){const g=ctx.createLinearGradient(x,y,x+width,y+ch);g.addColorStop(0,t.selected);g.addColorStop(1,t.highlight);fill=g;}
+        this.rect(ctx,x,y,width,ch,8,fill,selected?t.selection:(suspended?t.muted:t.border));
         ctx.save();ctx.beginPath();ctx.roundRect(x+1,y+1,Math.max(1,width-2),ch-2,7);ctx.clip();
         const img=this.image(this.options.getImage?.(c));
         if(img&&width>66){ctx.globalAlpha=selected?.08:.045;const iw=(ch-8)*img.naturalWidth/img.naturalHeight;for(let xx=Math.max(x,x+Math.floor((this.inset-x)/iw)*iw);xx<x+width;xx+=iw)ctx.drawImage(img,xx,y+4,iw,ch-8);ctx.globalAlpha=1;}
         // A permanent neon start light: a bright vertical core with a soft
         // horizontal glow. The active clip path clips every glow pixel inside
         // the clip, so the light never creates a fake gap or spills outside.
-        const startInk=selected?t.selection:t.start;
+        const startInk=suspended?t.muted:(selected?t.selection:t.start);
         const glowWidth=Math.min(selected?18:14,Math.max(0,width-2));
         if(glowWidth>0){
           const startGlow=ctx.createLinearGradient(x+1,y,x+1+glowWidth,y);
@@ -184,12 +184,13 @@
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.muted;
         this.label(ctx,c.name,descriptionX,titleY,width-(descriptionX-x)-12);
         const activity=this.options.getActivity?.(c)||{status:'idle',progress:0};
-        const running=activity.status==='running',done=activity.status==='completed',failed=activity.status==='error';
+        const running=!suspended&&activity.status==='running',done=!suspended&&activity.status==='completed',failed=!suspended&&activity.status==='error';
         ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=failed?t.warning:done?t.success:running?t.progress:t.ruler;
         ctx.beginPath();ctx.arc(x+16,statusY,2.5,0,Math.PI*2);ctx.fill();
         ctx.fillStyle=failed?t.warning:t.muted;
         const seconds=Number((activity.elapsedSeconds||0).toFixed(1)),percent=Math.round((activity.progress||0)*100);
-        const text=failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
+        const text=suspended?'已挂起 · 编译为空白'
+          :failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
           :running?(activity.real?(percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
           :done?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
           :'待生成';
