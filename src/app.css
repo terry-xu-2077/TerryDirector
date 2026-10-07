@@ -790,3 +790,18 @@ body.td-embedded .top-timeline-duration {
   min-width: 72px;
   max-width: 30%;
 }
+
+
+/* 2026-10-07 asset thumbnails: near-square and show the complete reference. */
+.reference-cover {
+  height: auto !important;
+  aspect-ratio: 1 / 1;
+  background: var(--td-bg-workspace);
+}
+
+.reference-cover > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important;
+  object-position: center;
+}
