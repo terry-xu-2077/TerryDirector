@@ -696,7 +696,7 @@ body.td-embedded .top-timeline-duration {
   transform: translate(-50%, -50%);
   justify-content: center;
   text-align: center;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .clip-number-badge {
@@ -804,4 +804,37 @@ body.td-embedded .top-timeline-duration {
   height: 100%;
   object-fit: contain !important;
   object-position: center;
+}
+
+
+.timeline-generate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 30px;
+  margin-left: 4px;
+  padding: 0 10px;
+  border: 1px solid rgba(97,174,255,.58);
+  border-radius: 7px;
+  background: rgba(50,133,225,.20);
+  color: #dbeeff;
+  font: 600 11px/1 "Segoe UI","Microsoft YaHei",sans-serif;
+  cursor: pointer;
+}
+
+.timeline-generate:hover:not(:disabled) {
+  border-color: rgba(111,190,255,.85);
+  background: rgba(50,133,225,.32);
+}
+
+.timeline-generate svg {
+  width: 13px;
+  height: 13px;
+}
+
+.timeline-generate:disabled,
+.timeline-generate.is-running {
+  opacity: .55;
+  cursor: default;
 }
