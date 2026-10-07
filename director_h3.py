@@ -310,6 +310,7 @@ def build_timeline_graph(
             "images": images,
             "audio": audio,
             "gap_frames": segment["assembly"]["gap_before_frames"],
+            "gap_after_frames": segment["assembly"]["gap_after_frames"],
             "trim_head_frames": segment["assembly"]["trim_head_frames"],
             "fps": FPS,
         }
