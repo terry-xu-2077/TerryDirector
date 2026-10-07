@@ -122,3 +122,29 @@ class TerryDirectorResampleReferenceVideo(io.ComfyNode):
         indices = torch.round(positions * source_fps / target_fps).to(torch.long)
         indices.clamp_(0, count - 1)
         return io.NodeOutput(images.index_select(0, indices))
+
+
+
+class TerryDirectorLatentList(io.ComfyNode):
+    """Internal container used to expose segment latents through a native list output."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        template = io.Autogrow.TemplatePrefix(
+            io.Latent.Input("latent"),
+            prefix="latent_",
+            min=1,
+            max=64,
+        )
+        return io.Schema(
+            node_id="TerryDirectorLatentList",
+            display_name="TerryDirector Latent List (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[io.Autogrow.Input("latents", template=template)],
+            outputs=[io.Latent.Output()],
+        )
+
+    @classmethod
+    def execute(cls, latents) -> io.NodeOutput:
+        return io.NodeOutput(list(latents.values()))
