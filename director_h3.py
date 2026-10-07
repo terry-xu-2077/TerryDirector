@@ -67,15 +67,39 @@ def _condition_segment(
     runtime: dict[str, Any],
     segment: dict[str, Any],
     prefix: str,
+    previous_images: Any = None,
 ) -> tuple[Any, Any]:
     references = _load_reference_inputs(graph, segment, prefix)
+    prompt = segment["prompt"]
+    continuity = segment["continuity"]
+    if continuity["kind"] == "tail_reference":
+        if previous_images is None:
+            raise ValueError("TerryDirector 尾帧参考需要上一片段画面")
+        tail = _image_slice(
+            graph,
+            previous_images,
+            continuity["source_frame"],
+            1,
+            f"{prefix}_tail_reference",
+        )
+        image_index = len(segment["assets"]["images"])
+        references[f"ref_images.ref_image_{image_index}"] = tail
+        picture_number = image_index + 1
+        prompt = (
+            f"{prompt.rstrip()}\n\n"
+            "[镜头连续性参考]\n"
+            f"<Picture {picture_number}> 为上一镜头最终帧。"
+            "仅参考人物与场景状态、色彩、光线和整体基调；"
+            "当前镜头按照本段描述重新构图与运镜。"
+        ).lstrip()
+
     conditioning = graph.node(
         "MiniMaxH3ReferenceToVideo",
         f"{prefix}_conditioning",
         clip=runtime["clip"],
         vae=runtime["vae"],
         audio_vae=runtime["audio_vae"],
-        prompt=segment["prompt"],
+        prompt=prompt,
         width=runtime["width"],
         height=runtime["height"],
         length=segment["h3_frames"],
@@ -129,7 +153,7 @@ def _apply_continuity(
 ) -> Any:
     continuity = segment["continuity"]
     kind = continuity["kind"]
-    if kind in {"independent", "gap"}:
+    if kind in {"independent", "gap", "tail_reference"}:
         return positive
 
     if previous_images is None or previous_audio is None:
@@ -294,7 +318,13 @@ def build_timeline_graph(
 
     for segment in plan["segments"]:
         prefix = f"td_s{segment['index'] + 1}"
-        positive, latent = _condition_segment(graph, runtime, segment, prefix)
+        positive, latent = _condition_segment(
+            graph,
+            runtime,
+            segment,
+            prefix,
+            previous_images,
+        )
         positive = _apply_continuity(
             graph,
             runtime,
