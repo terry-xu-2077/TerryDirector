@@ -7,6 +7,9 @@ from .director_core import FPS
 
 H3_MIN_FRAMES = 5
 H3_FRAME_STEP = 17
+MAX_REFERENCE_IMAGES = 9
+MAX_REFERENCE_VIDEOS = 3
+MAX_REFERENCE_AUDIOS = 3
 
 _ASSET_LABEL = {
     "image": "Picture",
@@ -82,6 +85,18 @@ def _compile_assets(
                 "global_tag": f"<{label} {global_number}>",
                 "local_tag": f"<{label} {local_number}>",
             })
+
+    limits = {
+        "images": MAX_REFERENCE_IMAGES,
+        "videos": MAX_REFERENCE_VIDEOS,
+        "audios": MAX_REFERENCE_AUDIOS,
+    }
+    for group, limit in limits.items():
+        if len(groups[group]) > limit:
+            raise ValueError(
+                f"TerryDirector segment exceeds MiniMax H3 {group} limit: "
+                f"{len(groups[group])} > {limit}"
+            )
 
     def replace_tag(match: re.Match[str]) -> str:
         label = match.group(1)
