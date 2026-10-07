@@ -484,28 +484,30 @@ function timelineHtml(documentData, activity = {}) {
       const completed = !clip.suspended && record.status === RUN_COMPLETED;
       const failed = !clip.suspended && record.status === RUN_ERROR;
       const progress = completed ? 1 : running ? clamp01(record.progress) : 0;
+      const percent = Math.round(progress * 100);
+      const progressDone = running && percent >= 100;
+      const visualCompleted = completed || progressDone;
       const durationFrames = Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0));
       if (running || completed || failed) hasRunState = true;
-      if (!clip.suspended) completedWork += durationFrames * progress;
+      if (!clip.suspended) completedWork += durationFrames * (visualCompleted ? 1 : progress);
 
       const selected = clip.id === documentData.selected ? " is-selected" : "";
       const suspended = clip.suspended ? " is-suspended" : "";
-      const runClass = running ? " is-running" : completed ? " is-completed" : failed ? " is-error" : "";
+      const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
       const duration = timeText(Math.max(0, durationFrames));
-      const percent = Math.round(progress * 100);
-      const statusText = running
-        ? (percent > 0 ? `生成中 ${percent}%` : "准备中")
-        : completed
-          ? "已完成"
+      const statusText = visualCompleted
+        ? "已完成"
+        : running
+          ? (percent > 0 ? `生成中 ${percent}%` : "准备中")
           : failed
             ? "生成失败"
             : "";
       const title = statusText ? `${clip.name} · ${statusText}` : clip.name;
-      const progressHtml = (running || completed)
-        ? `<span class="td-mini-clip-progress"><i style="width:${percent}%"></i></span>`
+      const progressHtml = (running || visualCompleted)
+        ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
         : "";
 
-      return `<div class="td-mini-clip${selected}${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running ? 12 : clip.id === documentData.selected ? 4 : index + 1}" title="${escapeHtml(title)}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span>${progressHtml}</div>`;
+      return `<div class="td-mini-clip${selected}${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : clip.id === documentData.selected ? 4 : index + 1}" title="${escapeHtml(title)}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span>${progressHtml}</div>`;
     })
     .join("");
 
