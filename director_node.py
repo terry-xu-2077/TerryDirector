@@ -13,6 +13,22 @@ from .director_core import (
 
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
 AUTO_UPSCALER = "自动选择兼容模型"
+LINK_COMPONENT_VALUE = "外部输入"
+
+
+def _native_link_component() -> dict:
+    """Ask ComfyUI to render a native widget row with its native socket.
+
+    The backend IO type remains MODEL/CLIP/VAE/SAMPLER/SIGMAS; widgetType only
+    controls the frontend presentation. No TerryDirector-owned input widget is
+    created.
+    """
+
+    return {
+        "widgetType": "COMBO",
+        "options": [LINK_COMPONENT_VALUE],
+        "default": LINK_COMPONENT_VALUE,
+    }
 
 
 def _latent_upscaler_options() -> list[str]:
@@ -37,28 +53,28 @@ class TerryDirectorConfig(io.ComfyNode):
                 "settings into one connection for the main TerryDirector node."
             ),
             inputs=[
-                io.Model.Input("model"),
-                io.Clip.Input("clip"),
-                io.Vae.Input("vae"),
-                io.Vae.Input("audio_vae"),
+                io.Model.Input("model", extra_dict=_native_link_component()),
+                io.Clip.Input("clip", extra_dict=_native_link_component()),
+                io.Vae.Input("vae", extra_dict=_native_link_component()),
+                io.Vae.Input("audio_vae", extra_dict=_native_link_component()),
                 io.Int.Input(
                     "width",
                     display_name="width",
+                    default=1344,
                     min=32,
                     max=16384,
                     step=32,
-                    force_input=True,
                 ),
                 io.Int.Input(
                     "height",
                     display_name="height",
+                    default=768,
                     min=32,
                     max=16384,
                     step=32,
-                    force_input=True,
                 ),
-                io.Sampler.Input("sampler"),
-                io.Sigmas.Input("sigmas"),
+                io.Sampler.Input("sampler", extra_dict=_native_link_component()),
+                io.Sigmas.Input("sigmas", extra_dict=_native_link_component()),
                 io.Int.Input(
                     "seed",
                     display_name="Seed",
@@ -124,6 +140,24 @@ class TerryDirectorConfig(io.ComfyNode):
         second_pass_model=AUTO_UPSCALER,
         second_pass_high_steps=4,
     ):
+        required_links = {
+            "model": model,
+            "clip": clip,
+            "vae": vae,
+            "audio_vae": audio_vae,
+            "sampler": sampler,
+            "sigmas": sigmas,
+        }
+        missing = [
+            name
+            for name, value in required_links.items()
+            if value is None or value == LINK_COMPONENT_VALUE
+        ]
+        if missing:
+            raise ValueError(
+                "TerryDirector 配置缺少外部输入：" + ", ".join(missing)
+            )
+
         method = "selflift" if second_pass_method == "SelfLift" else "none"
         upscaler = "" if second_pass_model == AUTO_UPSCALER else str(second_pass_model or "")
         packet = make_runtime_config(
