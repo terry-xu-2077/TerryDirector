@@ -23,6 +23,7 @@ def default_document() -> dict[str, Any]:
                 "end": 10 * FPS,
                 "prompt": "",
                 "refs": [],
+                "suspended": False,
             }
         ],
         "assets": [],
@@ -73,6 +74,7 @@ def normalize_document(value: Any) -> dict[str, Any]:
             "end": end,
             "prompt": str(raw.get("prompt") or ""),
             "refs": refs,
+            "suspended": raw.get("suspended") is True,
         })
 
     if not clips:
