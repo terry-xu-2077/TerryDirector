@@ -137,6 +137,8 @@ Lift 后立即卸载 Upscaler；高清阶段首尾 / Guide 关键帧按目标分
 
 ## 7. 输出
 
+TerryDirector 不为导演台 UI 额外创建 VIDEO 或编码临时预览文件；IMAGE / AUDIO 输出交给工作流下游的 CreateVideo / Preview / SaveVideo 等节点。导演台内的局部运行只使用 Partial Execution 选择当前 TerryDirector 本身作为执行目标。
+
 TerryDirector 保持三个标准输出：
 
 - `分段潜变量`：LATENT 原生列表，每项保留完整原始分段 H3 AV latent
