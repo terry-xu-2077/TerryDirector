@@ -103,7 +103,6 @@ class TerryDirectorConfig(io.ComfyNode):
                 ),
                 io.ResolutionPreview.Input(
                     "resolution_preview",
-                    optional=False,
                     ratio_widget="aspect_ratio",
                     megapixels_widget="megapixels",
                     multiple_widget="multiple",
