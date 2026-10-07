@@ -17,8 +17,8 @@ def asset(asset_id, kind, number, path):
     }
 
 
-def clip(clip_id, start, end, prompt="", suspended=False, use_global=True):
-    return {
+def clip(clip_id, start, end, prompt="", suspended=False, use_global=True, transition=None):
+    result = {
         "id": clip_id,
         "name": clip_id,
         "start": start,
@@ -28,6 +28,9 @@ def clip(clip_id, start, end, prompt="", suspended=False, use_global=True):
         "useGlobalPrompt": use_global,
         "suspended": suspended,
     }
+    if transition is not None:
+        result["transitionMode"] = transition
+    return result
 
 
 class DirectorCompileTests(unittest.TestCase):
@@ -78,6 +81,58 @@ class DirectorCompileTests(unittest.TestCase):
 
         self.assertEqual(d["continuity"], {"kind": "gap", "frames": 48})
         self.assertEqual(d["assembly"]["gap_before_frames"], 48)
+
+    def test_touch_defaults_to_legacy_tail_continuation_when_field_is_missing(self):
+        document = {
+            "fps": 24,
+            "clips": [clip("a", 0, 120), clip("b", 120, 240)],
+            "assets": [],
+        }
+        second = compile_timeline(document)["segments"][1]
+        self.assertEqual(second["continuity"]["kind"], "tail_frame")
+        self.assertEqual(second["transition_mode"], "tail_continuation")
+
+    def test_touch_can_use_previous_tail_as_reference_without_guide(self):
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 120),
+                clip("b", 120, 240, transition="tail_reference"),
+            ],
+            "assets": [],
+        }
+        second = compile_timeline(document)["segments"][1]
+        self.assertEqual(second["continuity"]["kind"], "tail_reference")
+        self.assertEqual(second["continuity"]["source_frame"], 119)
+        self.assertEqual(second["transition_mode"], "tail_reference")
+        self.assertEqual(second["assembly"]["trim_head_frames"], 0)
+
+    def test_touch_can_be_independent(self):
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 120),
+                clip("b", 120, 240, transition="independent"),
+            ],
+            "assets": [],
+        }
+        second = compile_timeline(document)["segments"][1]
+        self.assertEqual(second["continuity"], {"kind": "independent"})
+        self.assertEqual(second["transition_mode"], "independent")
+
+    def test_tail_reference_reserves_one_image_reference_slot(self):
+        assets = [asset(f"image-{i}", "image", i, f"refs/{i}.png") for i in range(1, 10)]
+        prompt = " ".join(f"<Picture {i}>" for i in range(1, 10))
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 120),
+                clip("b", 120, 240, prompt, transition="tail_reference"),
+            ],
+            "assets": assets,
+        }
+        with self.assertRaisesRegex(ValueError, "尾帧参考需要占用 1 个图片参考位"):
+            compile_timeline(document)
 
     def test_initial_gap_is_preserved_in_final_timeline(self):
         document = {
