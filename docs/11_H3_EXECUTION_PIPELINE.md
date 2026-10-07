@@ -21,6 +21,8 @@ MODEL 在进入 TerryDirector 前可以已经挂接 LoRA、Sparse Attention、Co
 
 ## 2. Timeline Compiler
 
+TerryDirector 主节点的 `fingerprint_inputs()` 返回 `NaN`，因此每次 Queue 都重新执行 Timeline Compiler 并重新展开 ephemeral H3 子图。这样中断后的下一次运行不会命中上一轮动态子图的旧缓存。此规则只强制 TerryDirector 编排层重新展开；上游 MODEL / CLIP / VAE 仍按 ComfyUI 自身缓存策略复用。
+
 `director_compile.py` 是后续所有执行逻辑的唯一时间线语义来源。
 
 每个片段编译为：
