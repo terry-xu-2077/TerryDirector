@@ -143,15 +143,16 @@ def config_json(value: Any | None = None) -> str:
     return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
 
 
-def _second_pass(method: str, model: str, high_steps: int) -> dict[str, Any]:
+def _second_pass(method: str, model: str, high_ratio: float) -> dict[str, Any]:
     if method not in {"none", "selflift"}:
         raise ValueError(f"Unsupported second-pass method: {method!r}")
-    if int(high_steps) < 1:
-        raise ValueError("SelfLift high_steps must be at least 1")
+    ratio = float(high_ratio)
+    if ratio < 0.0 or ratio > 1.0:
+        raise ValueError("SelfLift high_ratio must be between 0.0 and 1.0")
     return {
         "method": method,
         "model": str(model),
-        "high_steps": int(high_steps),
+        "high_ratio": ratio,
     }
 
 
@@ -169,7 +170,7 @@ def make_runtime_config(
     ref_image_size: str = "match",
     second_pass_method: str = "none",
     second_pass_model: str = "",
-    second_pass_high_steps: int = 4,
+    second_pass_high_ratio: float = 0.25,
 ) -> dict[str, Any]:
     width = _as_int(width, 0)
     height = _as_int(height, 0)
@@ -195,7 +196,7 @@ def make_runtime_config(
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, _as_int(seed, 0))),
             "ref_image_size": image_size,
             "second_pass": _second_pass(
-                second_pass_method, second_pass_model, second_pass_high_steps
+                second_pass_method, second_pass_model, second_pass_high_ratio
             ),
         },
     }
@@ -239,7 +240,7 @@ def require_runtime_config(value: Any) -> dict[str, Any]:
     _second_pass(
         second.get("method"),
         second.get("model", ""),
-        second.get("high_steps"),
+        second.get("high_ratio"),
     )
 
     return value
