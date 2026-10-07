@@ -387,7 +387,7 @@ function escapeHtml(value) {
 }
 
 const ASSET_LABELS = { image: "picture", video: "video", audio: "audio" };
-const ASSET_TAG_PATTERN = /<(Picture|Video|Audio)\\s+(\\d+)>/gi;
+const ASSET_TAG_PATTERN = /<(Picture|Video|Audio)\s+(\d+)>/gi;
 
 function referencedAssetIds(prompt, assets) {
   const lookup = new Map(
