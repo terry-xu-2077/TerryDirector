@@ -565,7 +565,7 @@
     button.title=timeline.chainEnabled?'后续联动已开启：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动':'后续联动已关闭：移动和裁剪仅影响当前片段';
     button.setAttribute('aria-label',button.title);
   }
-  function help(){modal('时间线编排 Demo','<p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、步数、二采和其他生成参数都不在浮窗里设置。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。可视化与纯文本使用同一份原文。</p><p>资产池由当前 TerryDirector 节点的全部片段共用；上传和从 ComfyUI input 选取都只加入资产池，不自动写入片段。</p>');}
+  function help(){modal('时间线编排 Demo','<p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>时间线接缝会自动显示生成语义：重叠 = 连续生成；首尾贴合 = 尾帧承接；存在空隙 = 独立生成。它们都由片段位置派生，不需要手动选择模式。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
   function assetFromDocument(raw,index){
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;
