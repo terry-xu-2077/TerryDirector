@@ -109,7 +109,7 @@
 | 目标宽高 | 外部 `width` / `height` 输入端口；TerryDirector 内不再提供比例 / MP / 倍数或宽高输入框 |
 | Seed、参考图尺寸、音频连续等实际支持的采样参数 | 节点控件或相应外接输入 |
 | 二采方案 | 节点下拉菜单，默认“无”；当前可选 `SelfLift` |
-| SelfLift 放大模型、高清阶段步数 | 仅当二采方案选择 `SelfLift` 时显示 |
+| SelfLift 放大模型、高清占比 | 仅当二采方案选择 `SelfLift` 时显示 |
 | 生成预览 | 不属于 TerryDirector；由采样链上的独立预览节点负责 |
 | 片段顺序、起止时间、重叠、提示词、素材引用 | 导演台创作浮窗 |
 
@@ -117,7 +117,7 @@
 
 SelfLift 类渐进二采保留在主节点的内部采样部分：当“二采方案”为“无”时按普通路径采样；选择 `SelfLift` 时执行低清阶段、潜空间提升和高清阶段，然后进入相同的分段结果与音画合并输出。优先沿用已核对的成熟 H3 实现并保留连续性，不要求用户在成品 latent 后再接一个新节点来替代采样中途的加速。
 
-现有“二次潜空间放大”设置足以表达这项已确认能力，不另加一个“Self 技术”浮窗面板。原目标分辨率语义、高清步数小于总步数和 H3 放大模型兼容性约束继续保留；作用范围为该导演台节点的整组执行，不在浮窗恢复片段独立参数。具体采样器限制随采用版本验证。
+现有“二次潜空间放大”设置足以表达这项已确认能力，不另加一个“Self 技术”浮窗面板。原目标分辨率语义、SelfLift 高清占比和 H3 放大模型兼容性约束继续保留；作用范围为该导演台节点的整组执行，不在浮窗恢复片段独立参数。具体采样器限制随采用版本验证。
 
 技术来源：[Songssx `_selflift_settings`（固定 a81f13b）](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/minimax_h3_finite_segments.py#L43-L91)、[其二采运行实现](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/selflift_runtime/nodes.py)。参考代码不等于本项目已完成 GPU 验证。
 
