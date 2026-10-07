@@ -260,9 +260,10 @@ function clone(value) {
 
 function defaultDocument() {
   return {
-    version: 1,
+    version: 2,
     fps: FPS,
     selected: "clip-1",
+    globalPrompt: "",
     clips: [
       {
         id: "clip-1",
@@ -271,6 +272,7 @@ function defaultDocument() {
         end: FPS * 10,
         prompt: "",
         refs: [],
+        useGlobalPrompt: true,
         suspended: false,
       },
     ],
@@ -280,7 +282,7 @@ function defaultDocument() {
 
 function defaultConfig() {
   return {
-    version: 3,
+    version: 4,
     document: defaultDocument(),
   };
 }
@@ -296,7 +298,7 @@ function normalizeConfig(value) {
   }
 
   const base = defaultConfig();
-  if (!source || typeof source !== "object" || source.version !== 3) {
+  if (!source || typeof source !== "object" || source.version !== 4) {
     return base;
   }
   const rawDoc =
@@ -318,6 +320,7 @@ function normalizeConfig(value) {
           end,
           prompt: String(raw?.prompt || ""),
           refs: Array.isArray(raw?.refs) ? raw.refs.map(String) : [],
+          useGlobalPrompt: raw?.useGlobalPrompt !== false,
           suspended: raw?.suspended === true,
         };
       })
@@ -355,11 +358,12 @@ function normalizeConfig(value) {
   }
 
   return {
-    version: 3,
+    version: 4,
     document: {
-      version: 1,
+      version: 2,
       fps: FPS,
       selected,
+      globalPrompt: String(rawDoc.globalPrompt || ""),
       clips,
       assets,
     },
