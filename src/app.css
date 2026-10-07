@@ -146,6 +146,44 @@ input,textarea { min-width:0; }
 .project-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,288px));gap:26px;margin-top:16px; }
 .home-foot { margin-top:30px;padding-top:16px;border-top:1px solid var(--td-border-soft);font-size:11px;color:var(--td-text-muted); }
 .toast { position:absolute;bottom:39px;left:50%;transform:translate(-50%,10px);border:1px solid var(--td-border);background:var(--td-bg-elevated);padding:9px 16px;border-radius:8px;box-shadow:0 8px 25px var(--td-shadow);font-size:12px;opacity:0;pointer-events:none;transition:opacity .16s,transform .16s;z-index:80;max-width:calc(100% - 25px); }.toast.show { opacity:1;transform:translate(-50%,0); }
+.transition-mode-menu {
+  position: fixed;
+  z-index: 140;
+  min-width: 118px;
+  padding: 5px;
+  border: 1px solid var(--td-border);
+  border-radius: 9px;
+  background: var(--td-bg-elevated);
+  box-shadow: 0 14px 40px var(--td-shadow);
+}
+.transition-mode-menu button {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--td-text-secondary);
+  font: 11px/1 "Segoe UI","Microsoft YaHei",sans-serif;
+  text-align: left;
+}
+.transition-mode-menu button:hover {
+  background: var(--td-bg-hover);
+  color: var(--td-text-main);
+}
+.transition-mode-menu button.is-active {
+  background: var(--td-accent-soft);
+  color: var(--td-effect);
+}
+.transition-mode-menu button b {
+  color: var(--td-effect);
+  font-weight: 600;
+}
+
 dialog { width:min(520px,calc(100vw - 32px));max-height:85dvh;border:1px solid var(--td-border);border-radius:13px;background:var(--td-bg-panel);color:var(--td-text-main);padding:22px;box-shadow:0 30px 100px var(--td-shadow); }
 dialog::backdrop { background:var(--td-scrim);backdrop-filter:blur(4px); }
 .modal-header { display:flex;align-items:center;justify-content:space-between;margin-bottom:16px; }.modal-header strong { font-size:16px;font-weight:550; }
