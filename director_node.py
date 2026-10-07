@@ -184,7 +184,7 @@ class TerryDirectorConfig(io.ComfyNode):
                     min=0.0,
                     max=1.0,
                     step=0.01,
-                    display="slider",
+                    display_mode=io.NumberDisplay.slider,
                     tooltip="0.25 = 25%。实际高清步数由总步数 × 高清占比计算。",
                     advanced=True,
                 ),
