@@ -168,7 +168,6 @@ def make_runtime_config(
     height: int,
     sampler: Any,
     sigmas: Any,
-    seed: int = 0,
     ref_image_size: str = "match",
     second_pass_method: str = "none",
     second_pass_model: str = "",
@@ -195,7 +194,6 @@ def make_runtime_config(
         "sampler": sampler,
         "sigmas": sigmas,
         "params": {
-            "seed": max(0, min(0xFFFFFFFFFFFFFFFF, _as_int(seed, 0))),
             "ref_image_size": image_size,
             "second_pass": _second_pass(
                 second_pass_method, second_pass_model, second_pass_high_ratio
@@ -233,8 +231,6 @@ def require_runtime_config(value: Any) -> dict[str, Any]:
         raise ValueError("TerryDirector 配置缺少 params")
     if params.get("ref_image_size") not in {"match", "max"}:
         raise ValueError("TerryDirector 配置 reference image size 无效")
-    if not isinstance(params.get("seed"), int):
-        raise ValueError("TerryDirector 配置 seed 无效")
 
     second = params.get("second_pass")
     if not isinstance(second, dict):
