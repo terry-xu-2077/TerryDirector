@@ -14,9 +14,9 @@ AI 视频镜头生成任务工作台。仓库同时保留 **HTML / CSS / JavaScr
 
 把仓库放在 `ComfyUI/custom_nodes/TerryDirector`（或直接在已有目录 `git pull`）后重启 ComfyUI。在节点菜单中搜索 **TerryDirector**，分类为 `MiniMax H3/TerryDirector`。
 
-本轮请优先验证：**TerryDirector 配置** 和 **TerryDirector** 是否都能正常注册；主节点是否保留“导演配置”并新增原生可连接 Seed 控件；配置节点的 `width` / `height` 是否为外接输入；`config_json` 是否完全隐藏；主节点 Seed、配置节点参考图尺寸和“二采方案”是否正常；二采默认“无”，选择 `SelfLift` 后才展开模型和高清占比；只读迷你时间线与标题右侧编辑按钮是否正常；页内导演台的毛玻璃叠层、窗口尺寸和右上角关闭按钮是否符合预期；从 ComfyUI `input` 选择 / 上传资产后能否保存；保存工作流、重新载入以及复制节点后数据是否各自独立。
+本轮请优先验证：**TerryDirector 配置**、**TerryDirector** 和 **导演输出** 是否都能正常注册；主节点是否保留“导演配置”并新增原生可连接 Seed 控件；配置节点的 `width` / `height` 是否为外接输入；`config_json` 是否完全隐藏；主节点 Seed、配置节点参考图尺寸和“二采方案”是否正常；二采默认“无”，选择 `SelfLift` 后才展开模型和高清占比；只读迷你时间线与标题右侧编辑按钮是否正常；页内导演台的毛玻璃叠层、窗口尺寸和右上角关闭按钮是否符合预期；从 ComfyUI `input` 选择 / 上传资产后能否保存；保存工作流、重新载入以及复制节点后数据是否各自独立。
 
-**普通 MiniMax H3 真实执行链已经接入，当前进入本地实机验证。** TerryDirector 会把时间线编译成原生 ComfyUI H3 执行图，支持参考图片 / 视频 / 音频、尾帧承接、重叠 Guide、空隙补黑与三路标准输出。SelfLift 仍未接入；选择 SelfLift 时会明确报错，不会伪装成普通采样。
+**普通 MiniMax H3 真实执行链已经接入，当前进入本地实机验证。** TerryDirector 会把时间线编译成原生 ComfyUI H3 执行图，支持参考图片 / 视频 / 音频、尾帧承接、重叠 Guide 与空隙补黑。主节点现在只输出一个“导演输出”；配套“导演输出”节点提供标准 VIDEO / 分段 LATENT / 合并 IMAGE / 合并 AUDIO，其中 VIDEO 直接由合并音画与 24fps 构造，无需额外“创建视频”节点。SelfLift 仍未接入；选择 SelfLift 时会明确报错，不会伪装成普通采样。
 
 ## Demo v0.6.14 · 创作编排浮窗
 
@@ -64,7 +64,7 @@ GitHub Pages：Settings → Pages → Deploy from a branch → main → /(root)�
 
 ## 代码
 
-`director_node.py` / `director_core.py` 提供 V3 节点 schema 与序列化配置；`server_routes.py` 提供页内编辑器、ComfyUI `input` 资产和 SelfLift 模型列表接口；`web/terry_director.js` / `.css` 是节点内嵌 UI。`src/h3-syntax.js` 为 H3 语法与原文标签；`src/h3-editor.js` 为可编辑视图和菜单的静态适配。现有 Canvas 时间线保持独立。
+`director_node.py` / `director_core.py` 提供当前节点 schema、导演输出适配与序列化配置；`server_routes.py` 提供页内编辑器、ComfyUI `input` 资产和 SelfLift 模型列表接口；`web/terry_director.js` / `.css` 是节点内嵌 UI。`src/h3-syntax.js` 为 H3 语法与原文标签；`src/h3-editor.js` 为可编辑视图和菜单的静态适配。现有 Canvas 时间线保持独立。
 
 共享 UI 库、Rulesmd Editor、TerryShotMill 和来源节点仓库均未修改。
 
