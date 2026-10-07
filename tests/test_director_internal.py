@@ -4,6 +4,7 @@ import torch
 
 from TerryDirector.director_internal import (
     TerryDirectorAssembleMedia,
+    TerryDirectorLatentList,
     TerryDirectorResampleReferenceVideo,
 )
 
@@ -56,6 +57,15 @@ class DirectorInternalTests(unittest.TestCase):
 
         self.assertEqual(merged_images.shape[0], 5)
         self.assertEqual(merged_audio["waveform"].shape[-1], 20)
+
+    def test_latent_list_preserves_segment_items(self):
+        first = {"samples": "a"}
+        second = {"samples": "b"}
+        result = TerryDirectorLatentList.execute({
+            "latent_0": first,
+            "latent_1": second,
+        }).result[0]
+        self.assertEqual(result, [first, second])
 
     def test_reference_video_resamples_to_24_fps(self):
         images = torch.arange(30, dtype=torch.float32).reshape(30, 1, 1, 1)
