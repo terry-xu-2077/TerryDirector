@@ -126,7 +126,6 @@ def _apply_continuity(
     previous_images: Any,
     previous_audio: Any,
     prefix: str,
-    seed: int,
 ) -> Any:
     continuity = segment["continuity"]
     kind = continuity["kind"]
@@ -219,6 +218,7 @@ def _sample_segment(
     positive: Any,
     latent: Any,
     prefix: str,
+    seed: int,
 ) -> Any:
     noise = graph.node(
         "RandomNoise",
