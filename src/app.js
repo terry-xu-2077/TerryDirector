@@ -644,7 +644,7 @@
     if(!d.open)d.showModal();
   }
   function queueWorkflow(){
-    finishPromptEdit();syncAllReferences();
+    finishDurationEdit();finishPromptEdit();syncAllReferences();
     if(!embedded){toast('正式嵌入 ComfyUI 后可从这里运行整个工作流。');return;}
     embedDirty=false;
     window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
