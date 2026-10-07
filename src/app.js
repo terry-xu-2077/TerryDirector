@@ -101,12 +101,6 @@
         </section>
     </main>
     <input type="file" id="fileInput" accept="image/*,video/*,audio/*" multiple hidden>
-    <div class="run-preview-overlay" id="runPreviewOverlay" hidden>
-      <section class="run-preview-window" role="dialog" aria-modal="true" aria-label="生成结果预览">
-        <header><strong>生成结果</strong><button class="run-preview-close" id="runPreviewClose" type="button" aria-label="关闭视频预览">${icon('close')}</button></header>
-        <div class="run-preview-stage"><video id="runPreviewVideo" controls playsinline></video></div>
-      </section>
-    </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
@@ -124,20 +118,6 @@
     if(visual)visual.contentEditable=hostReadonly?'false':'true';
     if(name)name.readOnly=hostReadonly;
     renderAll();
-  }
-  function closeRunPreview(){
-    const overlay=$('#runPreviewOverlay'),video=$('#runPreviewVideo');
-    if(video){video.pause();video.removeAttribute('src');video.load();}
-    if(overlay)overlay.hidden=true;
-  }
-  function showRunPreview(url){
-    if(!url)return;
-    const overlay=$('#runPreviewOverlay'),video=$('#runPreviewVideo');
-    if(!overlay||!video)return;
-    video.src=url;
-    overlay.hidden=false;
-    video.load();
-    video.play().catch(()=>{});
   }
   function modal(name,body,confirmText,fn){
     promptEditor?.closeMenu();stopDialogMedia();const d=$('#dialog');d.dataset.mode='';$('#dialogTitle').textContent=name;$('#dialogBody').innerHTML=body;
@@ -758,7 +738,7 @@
     });
   }
   window.addEventListener('keydown',e=>{
-    if(hostReadonly){if(e.key==='Escape')closeRunPreview();return;}
+    if(hostReadonly)return;
     if(e.target.closest('input,textarea,select,[contenteditable=true],dialog,.h3-menu')||$('#dialog').open)return;
     const key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
     if(key==='escape'){timeline.cancel();return;}
@@ -788,14 +768,11 @@
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
-      else if(message.type==='terrydirector:preview-video')showRunPreview(message.url);
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
     window.parent.postMessage({type:'terrydirector:ready'},hostOrigin);
   }
-  $('#runPreviewClose').addEventListener('click',closeRunPreview);
-  $('#runPreviewOverlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeRunPreview();});
-  window.addEventListener('pagehide',()=>{closeRunPreview();stopDialogMedia();promptEditor.closeMenu();});
+  window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();});
   window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));});
 })();
