@@ -39,7 +39,14 @@ def _load_reference_inputs(
             f"{prefix}_ref_video_components_{index}",
             video=loaded.out(0),
         )
-        inputs[f"ref_videos.ref_video_{index}"] = components.out(0)
+        resampled = graph.node(
+            "TerryDirectorResampleReferenceVideo",
+            f"{prefix}_ref_video_resample_{index}",
+            images=components.out(0),
+            source_fps=components.out(2),
+            target_fps=float(FPS),
+        )
+        inputs[f"ref_videos.ref_video_{index}"] = resampled.out(0)
 
     for index, asset in enumerate(segment["assets"]["audios"]):
         source = asset["source"]
