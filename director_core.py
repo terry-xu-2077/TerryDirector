@@ -25,6 +25,7 @@ def default_document() -> dict[str, Any]:
                 "prompt": "",
                 "refs": [],
                 "useGlobalPrompt": True,
+                "transitionMode": "tail_reference",
                 "suspended": False,
             }
         ],
@@ -77,6 +78,7 @@ def normalize_document(value: Any) -> dict[str, Any]:
             "prompt": str(raw.get("prompt") or ""),
             "refs": refs,
             "useGlobalPrompt": raw.get("useGlobalPrompt") is not False,
+            "transitionMode": raw.get("transitionMode") if raw.get("transitionMode") in {"tail_reference", "tail_continuation", "independent"} else "tail_continuation",
             "suspended": raw.get("suspended") is True,
         })
 
