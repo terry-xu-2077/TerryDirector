@@ -166,11 +166,20 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(assets, list):
         raise ValueError("TerryDirector assets must be a list")
 
+    total_frames = max(int(clip["end"]) for clip in clips)
+    active_clips = [
+        (index, clip)
+        for index, clip in enumerate(clips)
+        if not clip.get("suspended", False)
+    ]
+    if not active_clips:
+        raise ValueError("TerryDirector timeline requires at least one active segment")
+
     segments: list[dict[str, Any]] = []
     previous: dict[str, Any] | None = None
     assembled_frames = 0
 
-    for index, clip in enumerate(clips):
+    for index, clip in active_clips:
         if not isinstance(clip, dict):
             raise ValueError(f"TerryDirector segment {index + 1} must be an object")
 
@@ -180,7 +189,7 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"TerryDirector segment {index + 1} has an invalid frame range")
         if previous is not None:
             if start <= int(previous["start"]) or end <= int(previous["end"]):
-                raise ValueError("TerryDirector segments must advance forward in timeline order")
+                raise ValueError("TerryDirector active segments must advance forward in timeline order")
 
         output_frames = end - start
         generated_frames = h3_align_frames(output_frames)
@@ -206,6 +215,7 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
             "continuity": continuity,
             "assembly": {
                 "gap_before_frames": gap_before,
+                "gap_after_frames": 0,
                 "trim_head_frames": trim_head,
                 "trim_tail_frames": trim_tail,
             },
@@ -214,7 +224,9 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
         assembled_frames += gap_before + output_frames - trim_head
         previous = clip
 
-    total_frames = max(int(clip["end"]) for clip in clips)
+    trailing_gap = max(0, total_frames - int(previous["end"]))
+    segments[-1]["assembly"]["gap_after_frames"] = trailing_gap
+    assembled_frames += trailing_gap
     if assembled_frames != total_frames:
         raise ValueError(
             f"TerryDirector compiled timeline length mismatch: {assembled_frames} != {total_frames}"
@@ -224,4 +236,7 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
         "fps": FPS,
         "total_frames": total_frames,
         "segments": segments,
+        "suspended_segment_ids": [
+            str(clip["id"]) for clip in clips if clip.get("suspended", False)
+        ],
     }
