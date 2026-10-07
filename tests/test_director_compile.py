@@ -122,6 +122,26 @@ class DirectorCompileTests(unittest.TestCase):
         )
         self.assertEqual(segment["assets"]["audios"][0]["local_tag"], "<Audio 1>")
 
+    def test_reference_count_uses_native_h3_limits(self):
+        assets = [asset(f"image-{i}", "image", i, f"refs/{i}.png") for i in range(1, 11)]
+        prompt = " ".join(f"<Picture {i}>" for i in range(1, 11))
+        document = {
+            "fps": 24,
+            "clips": [clip("a", 0, 120, prompt)],
+            "assets": assets,
+        }
+        with self.assertRaisesRegex(ValueError, "images limit"):
+            compile_timeline(document)
+
+    def test_rejects_segment_longer_than_native_h3_limit(self):
+        document = {
+            "fps": 24,
+            "clips": [clip("a", 0, 3593)],
+            "assets": [],
+        }
+        with self.assertRaisesRegex(ValueError, "maximum length"):
+            compile_timeline(document)
+
     def test_missing_prompt_asset_is_an_error(self):
         document = {
             "fps": 24,
