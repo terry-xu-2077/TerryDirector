@@ -139,6 +139,8 @@
     const c=current(),text=c?.prompt||'';
     $('#noClip').hidden=!!c;
     promptEditor.setContext(c?.id||null,text,promptView);
+    $('#promptText').readOnly=hostReadonly;
+    $('#promptVisual').contentEditable=hostReadonly?'false':String(!!c);
     const useGlobal=$('#useGlobalPrompt');
     if(useGlobal){useGlobal.checked=!!c&&c.useGlobalPrompt!==false;useGlobal.disabled=!c||hostReadonly;}
     const viewSwitch=$('.composer-heading .prompt-view-switch');
@@ -269,7 +271,8 @@
         : users.length
           ? ('引用片段：'+users.map(clip=>clip.name).join('、'))
           : '尚未被片段引用';
-      tile.querySelector('[data-insert-ref]').disabled=!c;
+      tile.querySelector('[data-insert-ref]').disabled=!c||hostReadonly;
+      const removeButton=tile.querySelector('[data-delete-asset]');if(removeButton)removeButton.disabled=hostReadonly;
     }
   }
   function renderReferences(){
@@ -361,7 +364,7 @@
     onHistory:redo=>actions[redo?'redo':'undo']()
   });
   timeline=new window.TDTimeline($('#timelineBody'),{
-    clips:state.clips,selected:state.selected,getImage,getActivity:activityFor,
+    clips:state.clips,selected:state.selected,getImage,getActivity:activityFor,readonly:()=>hostReadonly,
     onSelect:id=>select(id),onFrame:()=>{},
     onPreview:clips=>renderTiming(clips),onDragEnd:()=>timeline.invalidate(),
     onCommit:(clips,beforeClips)=>{finishPromptEdit();const before={...C.copy(state),clips:beforeClips};state.clips=clips;commit(before);},
@@ -732,14 +735,14 @@
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');
     if(button){
-      const allowedWhileRunning=new Set(['help','close-editor','close-dialog']);
+      const allowedWhileRunning=new Set(['help','close-editor','close-dialog','toggle-prompt-view','pointer','hand','zoom-out','zoom-in','fit']);
       if(hostReadonly&&!allowedWhileRunning.has(button.dataset.action))return;
       if(!button.disabled)actions[button.dataset.action]?.();
       return;
     }
     const preview=target.closest('[data-preview-ref]');if(preview){previewAsset(preview.dataset.previewRef);return;}
-    const remove=target.closest('[data-delete-asset]');if(remove){deleteAsset(remove.dataset.deleteAsset);return;}
-    const insert=target.closest('[data-insert-ref]');if(insert){insertReference(insert.dataset.insertRef);return;}
+    const remove=target.closest('[data-delete-asset]');if(remove){if(!hostReadonly)deleteAsset(remove.dataset.deleteAsset);return;}
+    const insert=target.closest('[data-insert-ref]');if(insert){if(!hostReadonly)insertReference(insert.dataset.insertRef);return;}
 
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
@@ -756,12 +759,12 @@
   durationNumber.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishDurationEdit();e.target.blur();}});
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
   $('#zoomRange').addEventListener('input',e=>{timeline.zoom((.22*Math.pow(24/.22,Number(e.target.value)/100))/timeline.ppf);});
-  app.addEventListener('dragstart',e=>{const ref=e.target.closest('[data-reference]');if(ref){e.dataTransfer.setData('application/x-terrydirector-asset',ref.dataset.reference);e.dataTransfer.effectAllowed='copy';}});
+  app.addEventListener('dragstart',e=>{const ref=e.target.closest('[data-reference]');if(ref){if(hostReadonly){e.preventDefault();return;}e.dataTransfer.setData('application/x-terrydirector-asset',ref.dataset.reference);e.dataTransfer.effectAllowed='copy';}});
   for(const id of ['referenceDrop','timelineBody']){
-    const host=$('#'+id);host.addEventListener('dragover',e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';if(id==='referenceDrop')host.classList.add('is-dragover');});
+    const host=$('#'+id);host.addEventListener('dragover',e=>{e.preventDefault();if(hostReadonly){e.dataTransfer.dropEffect='none';return;}e.dataTransfer.dropEffect='copy';if(id==='referenceDrop')host.classList.add('is-dragover');});
     host.addEventListener('dragleave',e=>{if(!host.contains(e.relatedTarget))host.classList.remove('is-dragover');});
     host.addEventListener('drop',e=>{
-      e.preventDefault();host.classList.remove('is-dragover');
+      e.preventDefault();host.classList.remove('is-dragover');if(hostReadonly)return;
       let targetId=null;
       if(id==='timelineBody'){const clip=timeline.hitTest(timeline.point(e));if(!clip){toast('请放到一个片段上。');return;}select(clip.id);targetId=clip.id;}
       if(e.dataTransfer.files.length)importFiles(e.dataTransfer.files,targetId);
@@ -769,10 +772,15 @@
     });
   }
   window.addEventListener('keydown',e=>{
-    if(hostReadonly)return;
     if(e.target.closest('input,textarea,select,[contenteditable=true],dialog,.h3-menu')||$('#dialog').open)return;
     const key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
     if(key==='escape'){timeline.cancel();return;}
+    if(hostReadonly){
+      if(mod)return;
+      if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();timeline.setFrame(timeline.frame+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?C.FPS:1));}
+      else if(key==='v')actions.pointer();else if(key==='h')actions.hand();else if(key==='f')actions.fit();else if(key==='+'||key==='=')actions['zoom-in']();else if(key==='-')actions['zoom-out']();else if(key==='home'){e.preventDefault();timeline.setFrame(0);}else if(key==='end'){e.preventDefault();timeline.setFrame(timeline.total);}
+      return;
+    }
     if(mod&&key==='z'){e.preventDefault();actions[e.shiftKey?'redo':'undo']();return;}if(mod&&key==='y'){e.preventDefault();actions.redo();return;}if(mod)return;
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();timeline.setFrame(timeline.frame+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?C.FPS:1));}
     else if(['Delete','Backspace'].includes(e.key)){e.preventDefault();actions.delete();}
