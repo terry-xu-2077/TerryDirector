@@ -151,7 +151,8 @@ class TerryDirectorConfig(io.ComfyNode):
         missing = [
             name
             for name, value in required_links.items()
-            if value is None or value == LINK_COMPONENT_VALUE
+            if value is None
+            or (isinstance(value, str) and value == LINK_COMPONENT_VALUE)
         ]
         if missing:
             raise ValueError(
