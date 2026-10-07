@@ -66,11 +66,13 @@ function normalizeConfig(value) {
   }
 
   const base = defaultConfig();
-  const rawDoc = source?.document && typeof source.document === "object"
-    ? source.document
-    : source && typeof source === "object" && (Array.isArray(source.clips) || Array.isArray(source.assets))
-      ? source
-      : {};
+  if (!source || typeof source !== "object" || source.version !== 3) {
+    return base;
+  }
+  const rawDoc =
+    source.document && typeof source.document === "object"
+      ? source.document
+      : base.document;
 
   const clips = Array.isArray(rawDoc.clips) && rawDoc.clips.length
     ? rawDoc.clips.map((raw, index) => {
