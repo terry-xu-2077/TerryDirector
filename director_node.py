@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import math
 import folder_paths
-import torch
 import comfy.samplers
-import nodes
 from comfy_api.latest import io
+from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_core import (
     config_json,
@@ -16,31 +16,6 @@ from .director_core import (
 
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
 AUTO_UPSCALER = "自动选择兼容模型"
-
-
-def _files(category: str) -> list[str]:
-    try:
-        values = list(folder_paths.get_filename_list(category))
-    except Exception:
-        values = []
-    return values or [""]
-
-
-def _vae_options() -> list[str]:
-    try:
-        values = list(nodes.VAELoader.vae_list(nodes.VAELoader))
-    except Exception:
-        values = _files("vae")
-    return values or [""]
-
-
-def _preferred(values: list[str], *needles: str) -> str:
-    for needle in needles:
-        needle = needle.lower()
-        for value in values:
-            if needle in value.lower():
-                return value
-    return values[0] if values else ""
 
 
 def _native_combo(options: list[str], default: str | None = None) -> dict:
@@ -60,22 +35,13 @@ def _latent_upscaler_options() -> list[str]:
     return [AUTO_UPSCALER, *models]
 
 
-def _resolve_model(value, weight_dtype: str):
-    if not isinstance(value, str):
-        return value
-    return nodes.UNETLoader().load_unet(value, weight_dtype)[0]
-
-
-def _resolve_clip(value, clip_type: str):
-    if not isinstance(value, str):
-        return value
-    return nodes.CLIPLoader().load_clip(value, type=clip_type, device="default")[0]
-
-
-def _resolve_vae(value):
-    if not isinstance(value, str):
-        return value
-    return nodes.VAELoader().load_vae(value)[0]
+def _resolution(aspect_ratio: str, megapixels: float, multiple: int) -> tuple[int, int]:
+    w_ratio, h_ratio = ASPECT_RATIOS[aspect_ratio]
+    total_pixels = float(megapixels) * 1024 * 1024
+    scale = math.sqrt(total_pixels / (w_ratio * h_ratio))
+    width = round(w_ratio * scale / multiple) * multiple
+    height = round(h_ratio * scale / multiple) * multiple
+    return int(width), int(height)
 
 
 def _resolve_sampler(value):
@@ -90,6 +56,7 @@ def _resolve_sigmas(value, model, steps: int, denoise: float):
     steps = max(1, int(steps))
     denoise = float(denoise)
     if denoise <= 0.0:
+        import torch
         return torch.FloatTensor([])
     total_steps = steps if denoise >= 1.0 else int(steps / denoise)
     sigmas = comfy.samplers.calculate_sigmas(
@@ -114,66 +81,37 @@ class TerryDirectorConfig(io.ComfyNode):
                 "settings into one connection for the main TerryDirector node."
             ),
             inputs=[
-                io.Model.Input(
-                    "model",
-                    display_name="UNet名称",
-                    extra_dict=_native_combo(
-                        _files("diffusion_models"),
-                        _preferred(_files("diffusion_models"), "minimax_h3"),
-                    ),
-                ),
+                io.Model.Input("model"),
+                io.Clip.Input("clip"),
+                io.Vae.Input("vae", display_name="视频VAE"),
+                io.Vae.Input("audio_vae", display_name="音频VAE"),
                 io.Combo.Input(
-                    "model_weight_dtype",
-                    display_name="UNet精度",
-                    options=["default", "fp8_e4m3fn", "fp8_e4m3fn_fast", "fp8_e5m2"],
-                    default="default",
+                    "aspect_ratio",
+                    display_name="宽高比",
+                    options=AspectRatio,
+                    default=AspectRatio.WIDESCREEN,
+                ),
+                io.Float.Input(
+                    "megapixels",
+                    display_name="百万像素",
+                    default=1.0,
+                    min=0.1,
+                    max=16.0,
+                    step=0.1,
+                ),
+                io.ResolutionPreview.Input(
+                    "resolution_preview",
+                    ratio_widget="aspect_ratio",
+                    megapixels_widget="megapixels",
+                    multiple_widget="multiple",
+                ),
+                io.Int.Input(
+                    "multiple",
+                    default=32,
+                    min=8,
+                    max=128,
+                    step=4,
                     advanced=True,
-                ),
-                io.Clip.Input(
-                    "clip",
-                    display_name="CLIP名称",
-                    extra_dict=_native_combo(
-                        _files("text_encoders"),
-                        _preferred(_files("text_encoders"), "minimax_h3"),
-                    ),
-                ),
-                io.Combo.Input(
-                    "clip_type",
-                    display_name="CLIP类型",
-                    options=["minimax"],
-                    default="minimax",
-                ),
-                io.Vae.Input(
-                    "vae",
-                    display_name="视频VAE",
-                    extra_dict=_native_combo(
-                        _vae_options(),
-                        _preferred(_vae_options(), "minimax_h3_video_vae"),
-                    ),
-                ),
-                io.Vae.Input(
-                    "audio_vae",
-                    display_name="音频VAE",
-                    extra_dict=_native_combo(
-                        _vae_options(),
-                        _preferred(_vae_options(), "minimax_h3_audio_vae"),
-                    ),
-                ),
-                io.Int.Input(
-                    "width",
-                    display_name="width",
-                    default=1344,
-                    min=32,
-                    max=16384,
-                    step=32,
-                ),
-                io.Int.Input(
-                    "height",
-                    display_name="height",
-                    default=768,
-                    min=32,
-                    max=16384,
-                    step=32,
                 ),
                 io.Sampler.Input(
                     "sampler",
@@ -255,22 +193,15 @@ class TerryDirectorConfig(io.ComfyNode):
         )
 
     @classmethod
-    def validate_inputs(cls, **kwargs):
-        # MODEL/CLIP/VAE/SAMPLER/SIGMAS rows intentionally accept either the
-        # native widget value or a real upstream object through the same socket.
-        return True
-
-    @classmethod
     def execute(
         cls,
         model,
-        model_weight_dtype,
         clip,
-        clip_type,
         vae,
         audio_vae,
-        width,
-        height,
+        aspect_ratio,
+        megapixels,
+        multiple,
         sampler,
         sigmas,
         sigmas_steps,
@@ -281,11 +212,9 @@ class TerryDirectorConfig(io.ComfyNode):
         second_pass_method,
         second_pass_model=AUTO_UPSCALER,
         second_pass_high_steps=4,
+        resolution_preview=None,
     ):
-        model = _resolve_model(model, model_weight_dtype)
-        clip = _resolve_clip(clip, clip_type)
-        vae = _resolve_vae(vae)
-        audio_vae = _resolve_vae(audio_vae)
+        width, height = _resolution(aspect_ratio, megapixels, multiple)
         sampler = _resolve_sampler(sampler)
         sigmas = _resolve_sigmas(
             sigmas,
