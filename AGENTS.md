@@ -27,7 +27,7 @@
 ## 成熟实现优先
 
 - 新增需求或优化前，先查 `docs/07_REFERENCE_IMPLEMENTATIONS.md` 中用户指定的四个参考：Songssx TimelineDirector、AIMixer Director（AI 搅拌手）、yolain Easy Media（乱乱呀）与 nkxx188 H3 Easy。先定位已有节点、示例工作流和具体实现，再决定本项目需要的适配。
-- 当前生成基础沿用 Songssx 的规划 / 编码 / 有限分段采样链路，由一次 ComfyUI 工作流在内部展开各段。其他参考用于补齐明确需求，不据此另造外部分段调度器。
+- 当前普通生成基础以 **ComfyUI 原生 MiniMax H3 节点 + GraphBuilder 展开** 为准：ReferenceToVideo、AddGuide、BasicGuider、SamplerCustomAdvanced、VAE 解码。Songssx / AIMixer / Easy Media / H3 Easy 用于验证连续性、SelfLift、素材和性能实现，不作为运行时依赖。
 - 优先复用已存在的运行能力，只对需求差异作必要优化；记录参考仓库、固定 commit、文件 / 函数及适配差异。实际引入代码时保留相应来源和许可证信息。
 - 新增参考不自动扩大 UI 范围。保持原生 HTML / CSS / JS、既定单行时间线与资产池；不因参考仓库带有 React、多轨、AI 增强或版本 UI 就自动引入。
 - 本次参考导航核对不等于在用户机器上完成性能比较。实现时复查选用版本和示例，实际生成结果另行记录。
@@ -36,7 +36,7 @@
 
 - 用户于 2026-10-02 确认先记录，等待时机成熟后另行要求加入导演台。调研与兼容性边界见 [docs/08_QUANTFUNC_RESEARCH.md](docs/08_QUANTFUNC_RESEARCH.md)。
 - 当前只保留候选记录，不安装、不增加依赖或 UI 占位、不写接入代码、不改变生成工作流或项目格式。不得因上游更新或判断技术已成熟而自动集成；等待用户明确指令。
-- 未来定位为可选 MODEL 推理加速，不替代 Songssx 的片段规划和有限分段机制。不能为接入而删除 Drift-Control / 音视频遮罩，也不能把 QuantFunc 插值放大当作已选 H3 放大模型 / SelfLift 的等价替代。
+- 未来定位为可选 MODEL 推理加速，不替代 TerryDirector 的时间线编译与原生 H3 执行图。不能把 QuantFunc 插值放大当作 H3 潜空间放大模型 / SelfLift 的等价替代，也不能为了加速破坏现有 Guide、参考素材和 AV 输出语义。
 - 原链路继续作为开发基础。恢复此项工作时，重新核对上游版本，并验证 RTX 3090 / 64GB 环境的端到端收益、连续性、原 SelfLift 与授权条件；静态调研不等于 GPU 实测。
 
 - **浮窗 UI / 时间线修复基线固定为 `408395e7620fe368775515ca515d04fae7a8daed`（Demo 06.11）。** 时间线 Canvas / 交互仍以该基线为准；当前只调整其在浮窗中的整体位置到创作工作区上方。`src/timeline.js`、时间线几何和核心交互保持原样，除非用户明确要求修改时间线。时间线底部不再显示片段统计、缩放 px/s 或状态提示，只保留横向滚动条。
