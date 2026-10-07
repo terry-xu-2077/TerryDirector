@@ -4,10 +4,10 @@ import math
 import folder_paths
 import comfy.samplers
 from comfy_api.latest import io
-from comfy_execution.graph_utils import GraphBuilder
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import compile_timeline
+from .director_h3 import build_single_segment_graph
 from .director_core import (
     FPS,
     config_json,
@@ -294,69 +294,10 @@ class TerryDirector(io.ComfyNode):
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
-        graph = GraphBuilder()
-        conditioning = graph.node(
-            "MiniMaxH3ReferenceToVideo",
-            "td_h3_conditioning",
-            clip=runtime["clip"],
-            vae=runtime["vae"],
-            audio_vae=runtime["audio_vae"],
-            prompt=segment["prompt"],
-            width=runtime["width"],
-            height=runtime["height"],
-            length=segment["h3_frames"],
-            ref_image_size=runtime["params"]["ref_image_size"],
-        )
-        noise = graph.node(
-            "RandomNoise",
-            "td_noise",
-            noise_seed=runtime["params"]["seed"],
-        )
-        guider = graph.node(
-            "BasicGuider",
-            "td_guider",
-            model=runtime["model"],
-            conditioning=conditioning.out(0),
-        )
-        sampled = graph.node(
-            "SamplerCustomAdvanced",
-            "td_sample",
-            noise=noise.out(0),
-            guider=guider.out(0),
-            sampler=runtime["sampler"],
-            sigmas=runtime["sigmas"],
-            latent_image=conditioning.out(1),
-        )
-        decoded_images = graph.node(
-            "VAEDecode",
-            "td_decode_video",
-            samples=sampled.out(0),
-            vae=runtime["vae"],
-        )
-        images = graph.node(
-            "ImageFromBatch",
-            "td_trim_video",
-            image=decoded_images.out(0),
-            batch_index=0,
-            length=segment["output_frames"],
-        )
-        decoded_audio = graph.node(
-            "VAEDecodeAudio",
-            "td_decode_audio",
-            samples=sampled.out(0),
-            vae=runtime["audio_vae"],
-        )
-        audio = graph.node(
-            "TrimAudioDuration",
-            "td_trim_audio",
-            audio=decoded_audio.out(0),
-            start_index=0.0,
-            duration=segment["output_frames"] / FPS,
-        )
-
+        expanded, latent, images, audio = build_single_segment_graph(runtime, segment)
         return io.NodeOutput(
-            [sampled.out(0)],
-            images.out(0),
-            audio.out(0),
-            expand=graph.finalize(),
+            [latent],
+            images,
+            audio,
+            expand=expanded,
         )
