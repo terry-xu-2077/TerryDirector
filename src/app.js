@@ -61,22 +61,22 @@
     'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
     'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
   ];
-  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],resolution:{...R.DEFAULT},audio:true,guide:'画面参考',suspended:false}));
+  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],useGlobalPrompt:true,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',suspended:false}));
   const initial=embedded?[]:demoInitial;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
   function resetActivity(){activity.clear();for(const [id,seconds] of [['clip-1',300],['clip-2',186]])activity.set(id,{status:'completed',progress:1,elapsedSeconds:seconds,completedAt:'2026-09-28T07:00:00Z',example:true});}
   if(!embedded)resetActivity();else activity.clear();
-  let state={clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
+  let state={globalPrompt:'',clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false;
-  let promptEditor=null;
+  let title='远航之前',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false;
+  let promptEditor=null,globalPromptEditor=null;
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('spark')}全局提示词</button></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
@@ -88,7 +88,7 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
@@ -104,7 +104,7 @@
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
-  const getImage=c=>assets.find(a=>c?.refs.includes(a.id)&&a.kind==='image')?.src||'';
+  const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
   function setHostReadonly(value){
     const next=!!value;
@@ -116,6 +116,7 @@
     if(text)text.readOnly=hostReadonly;
     if(visual)visual.contentEditable=hostReadonly?'false':'true';
     if(name)name.readOnly=hostReadonly;
+    const globalButton=$('[data-action=global-prompt]');if(globalButton)globalButton.disabled=hostReadonly;
     renderAll();
   }
   function modal(name,body,confirmText,fn){
@@ -138,7 +139,9 @@
     const c=current(),text=c?.prompt||'';
     $('#noClip').hidden=!!c;
     promptEditor.setContext(c?.id||null,text,promptView);
-    const viewSwitch=$('.prompt-view-switch');
+    const useGlobal=$('#useGlobalPrompt');
+    if(useGlobal){useGlobal.checked=!!c&&c.useGlobalPrompt!==false;useGlobal.disabled=!c||hostReadonly;}
+    const viewSwitch=$('.composer-heading .prompt-view-switch');
     if(viewSwitch){
       const isText=promptView==='text';
       viewSwitch.classList.toggle('is-text',isText);
@@ -218,12 +221,18 @@
     const refs=referencesIn(clip.prompt,entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
     clip.refs=refs;return changed;
   }
+  function effectiveReferences(clip,entries=poolEntries()){
+    if(!clip)return [];
+    const ids=new Set(referencesIn(clip.prompt,entries));
+    if(clip.useGlobalPrompt!==false)for(const id of referencesIn(state.globalPrompt,entries))ids.add(id);
+    return [...ids];
+  }
   function syncAllReferences(){const entries=poolEntries();state.clips.forEach(c=>syncReferences(c,entries));}
   function refreshAssetUsage(){
-    const c=current();
+    const c=current(),entries=poolEntries();
     for(const tile of $('#references').querySelectorAll('[data-reference]')){
-      const id=tile.dataset.reference,used=!!c?.refs.includes(id);
-      const users=state.clips.filter(clip=>clip.refs.includes(id));
+      const id=tile.dataset.reference,used=!!c&&effectiveReferences(c,entries).includes(id);
+      const users=state.clips.filter(clip=>effectiveReferences(clip,entries).includes(id));
       tile.classList.toggle('is-referenced',used);
       const badge=tile.querySelector('.asset-current-use');badge.hidden=!used;
       tile.querySelector('.asset-token').title=users.length
@@ -330,7 +339,7 @@
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',useGlobalPrompt:true,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
@@ -348,15 +357,19 @@
   function deleteAsset(id){
     const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
     finishPromptEdit();
-    const users=state.clips.filter(c=>c.refs.includes(id));
-    const detail=users.length
-      ? `它被 ${users.length} 个片段引用：${users.map(c=>esc(c.name)).join('、')}。确认后也会移除这些片段中的对应引用标签。`
-      : '该素材尚未被任何片段引用。';
+    const entries=poolEntries(),globalUsed=referencesIn(state.globalPrompt,entries).includes(id);
+    const users=state.clips.filter(c=>effectiveReferences(c,entries).includes(id));
+    const detail=globalUsed
+      ? `它被全局提示词引用，并会作用于 ${users.length} 个启用全局提示词的片段。确认后会同时移除全局与片段提示词中的对应引用标签。`
+      : users.length
+        ? `它被 ${users.length} 个片段引用：${users.map(c=>esc(c.name)).join('、')}。确认后也会移除这些片段中的对应引用标签。`
+        : '该素材尚未被任何提示词引用。';
     modal('从资产池删除',`<p>删除「${esc(asset.name)}」？</p><p>${detail}</p><p>不会删除本地文件；可撤销此操作。仅取消某片段的引用，请在该片段提示词中删除对应标签。</p>`,'删除素材',()=>{
       mutate(()=>{
         state.assetIds=state.assetIds.filter(x=>x!==id);
-        const key=mediaKey(mediaNames[asset.kind],asset.number);
-        for(const clip of state.clips)clip.prompt=clip.prompt.replace(mediaPattern(),(raw,kind,number)=>mediaKey(kind,number)===key?'':raw);
+        const key=mediaKey(mediaNames[asset.kind],asset.number),removeTag=(prompt)=>String(prompt||'').replace(mediaPattern(),(raw,kind,number)=>mediaKey(kind,number)===key?'':raw);
+        state.globalPrompt=removeTag(state.globalPrompt);
+        for(const clip of state.clips)clip.prompt=removeTag(clip.prompt);
       });
       // Retain the cached media URL for undo and any active simulation snapshot.
     });
@@ -532,7 +545,7 @@
     $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();}
-  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:8,referenceNumbering:'project-stable',fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local,source})=>({id,name,kind,number,token,requiresReimport:!!local,source:source?{...source}:undefined})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
+  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:9,referenceNumbering:'project-stable',fps:C.FPS,project:{title},globalPrompt:state.globalPrompt,clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local,source})=>({id,name,kind,number,token,requiresReimport:!!local,source:source?{...source}:undefined})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
   function setChainEnabled(enabled){
@@ -588,9 +601,9 @@
       const start=Math.max(0,Number.parseInt(clip?.start,10)||0),end=Math.max(start+1,Number.parseInt(clip?.end,10)||start+C.FPS*10);
       return {id:String(clip?.id||`clip-${index+1}`),name:String(clip?.name||`片段 ${String(index+1).padStart(2,'0')}`),
         start,end,prompt:String(clip?.prompt||''),refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
-        suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
+        useGlobalPrompt:clip?.useGlobalPrompt!==false,suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
     });
-    state={clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
+    state={globalPrompt:String(raw.globalPrompt||''),clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
     history=new C.History();assetGridKey='';activity.clear();
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
@@ -599,8 +612,8 @@
   }
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
-    return {version:1,fps:C.FPS,selected:state.selected,
-      clips:state.clips.map(({id,name,start,end,prompt,refs,suspended})=>({id,name,start,end,prompt,refs:[...refs],suspended:!!suspended})),
+    return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
+      clips:state.clips.map(({id,name,start,end,prompt,refs,useGlobalPrompt,suspended})=>({id,name,start,end,prompt,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
@@ -655,7 +668,7 @@
     delete:()=>{if(!current())return;timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
     suspend:()=>{if(current())mutate(()=>{current().suspended=!current().suspended;});},
-    reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};renderAll();timeline.fit();timeline.setFrame(192);}
+    reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={globalPrompt:'',clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};renderAll();timeline.fit();timeline.setFrame(192);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');
