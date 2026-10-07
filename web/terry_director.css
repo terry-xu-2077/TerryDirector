@@ -446,3 +446,21 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+
+/* Horizontal rows must share one visual center line. */
+.td-node-shell-director .td-mini-head {
+  display: flex;
+  align-items: center !important;
+}
+
+.td-node-shell-director .td-mini-head > strong,
+.td-node-shell-director .td-mini-edit {
+  align-self: center;
+}
+
+.td-node-shell-director .td-mini-stats {
+  top: 50%;
+  transform: translate(-50%, -50%);
+  line-height: 1;
+}
