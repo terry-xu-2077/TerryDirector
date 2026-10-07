@@ -94,7 +94,7 @@
     }
     move(e) {
       const p=this.point(e);
-      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;this.overlay.title=activity?.completedAt?`${c.name} · 完成于 ${new Date(activity.completedAt).toLocaleString()} · ${activity.example?'示例记录':'模拟生成'}`:'';this.overlay.style.cursor=this.hand?'grab':c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
+      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;if(c){const frames=c.end-c.start,aligned=C.h3AlignedFrames(frames),parts=[c.name,`输出 ${Number((frames/C.FPS).toFixed(2))}s · ${frames}帧`,aligned===frames?`H3 已对齐 ${aligned}帧`:`H3 内部 ${aligned}帧 · 生成后裁切 ${aligned-frames}帧`];if(activity?.completedAt)parts.push(`完成于 ${new Date(activity.completedAt).toLocaleString()}`);this.overlay.title=parts.join(' · ');}else this.overlay.title='';this.overlay.style.cursor=this.hand?'grab':c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
       const d=this.drag;
       if(d.mode==='pan'){this.scroll=d.scroll+d.origin.x-p.x;this.clampScroll();this.invalidate();return;}
       if(d.mode==='seek'){this.setFrame(this.frameAt(p.x));return;}
@@ -203,31 +203,41 @@
       }
       ctx.restore();
     }
-    // Small visual gap only; overlap remains passive and hit testing is unchanged.
-    get overlapLeaderGap() { return 8; }
-    overlapCallouts(ctx) {
+    // Seam labels are derived from clip geometry and never become hit targets.
+    get seamLeaderGap() { return 8; }
+    seamCallouts(ctx) {
       const left=this.inset+4,right=this.width-5,bottom=this.y()+this.trackHeight+3;
-      const items=C.overlaps(this.clips).map(o=>{
-        const x=this.x(o.start),width=o.frames*this.ppf;
-        const focused=[this.selected,this.hover,this.drag?.id].some(id=>id===o.a||id===o.b);
-        const text=`${Number((o.frames/C.FPS).toFixed(2))}s`;
-        return {...o,x,width,focused,text};
-      }).filter(o=>o.x+o.width>left&&o.x<right);
-      ctx.font='11px Consolas,monospace';
+      const items=C.seams(this.clips).map(seam=>{
+        const focused=[this.selected,this.hover,this.drag?.id].some(id=>id===seam.a||id===seam.b);
+        let startX,endX,anchor,text,tone;
+        if(seam.kind==='overlap'){
+          startX=this.x(seam.start);endX=this.x(seam.end);anchor=(startX+endX)/2;
+          text=`重叠 ${Number((seam.frames/C.FPS).toFixed(2))}s`;tone='overlap';
+        }else if(seam.kind==='touch'){
+          startX=endX=anchor=this.x(seam.frame);text='尾帧承接';tone='effect';
+        }else{
+          startX=this.x(seam.start);endX=this.x(seam.end);anchor=(startX+endX)/2;
+          text=`空白 ${Number((seam.frames/C.FPS).toFixed(2))}s`;tone='muted';
+        }
+        return {...seam,startX,endX,anchor,focused,text,tone};
+      }).filter(item=>Math.max(item.startX,item.endX)>=left&&Math.min(item.startX,item.endX)<=right);
+      ctx.font='11px "Segoe UI","Microsoft YaHei",sans-serif';
       const placed=[];
-      // Every visible overlap gets a persistent duration callout.
-      // Focus only changes emphasis; it no longer controls visibility.
-      items.sort((a,b)=>a.start-b.start);
-      for(const o of items){
-        const width=ctx.measureText(o.text).width+18;if(right-left<width)continue;
-        const anchor=C.clamp(o.x+o.width/2,left,right),preferred=C.clamp(anchor-width/2,left,right-width);
-        const candidates=[preferred,left,right-width,...placed.flatMap(p=>[p.x-width-8,p.x+p.width+8])];
-        const fit=candidates.filter(x=>x>=left&&x+width<=right&&placed.every(p=>x+width+8<=p.x||x>=p.x+p.width+8)).sort((a,b)=>Math.abs(a-preferred)-Math.abs(b-preferred))[0];
-        // If the lane is crowded, keep the callout visible at its preferred
-        // anchor instead of hiding it. Overlap between callout bubbles is
-        // preferable to losing the duration information entirely.
+      items.sort((a,b)=>a.anchor-b.anchor);
+      for(const item of items){
+        const bubbleWidth=ctx.measureText(item.text).width+18;
+        if(right-left<bubbleWidth)continue;
+        const anchor=C.clamp(item.anchor,left,right);
+        const preferred=C.clamp(anchor-bubbleWidth/2,left,right-bubbleWidth);
+        const candidates=[
+          preferred,left,right-bubbleWidth,
+          ...placed.flatMap(p=>[p.x-bubbleWidth-8,p.x+p.width+8])
+        ];
+        const fit=candidates
+          .filter(x=>x>=left&&x+bubbleWidth<=right&&placed.every(p=>x+bubbleWidth+8<=p.x||x>=p.x+p.width+8))
+          .sort((a,b)=>Math.abs(a-preferred)-Math.abs(b-preferred))[0];
         const x=fit===undefined?preferred:fit;
-        placed.push({...o,anchor,x,width,y:bottom+this.overlapLeaderGap,height:23,bottom});
+        placed.push({...item,anchor,x,width:bubbleWidth,y:bottom+this.seamLeaderGap,height:23,bottom});
       }
       return placed;
     }
@@ -242,14 +252,22 @@
         ctx.globalAlpha=focused?.10:.05;this.rect(ctx,x,top,width,bottom-top,8,t.overlap);
         ctx.globalAlpha=focused?.85:.40;this.rect(ctx,x,top,width,bottom-top,8,null,t.overlap);ctx.globalAlpha=1;
       }
-      // Duration labels ALWAYS sit below the frame, connected by a visible leader.
-      // The label lane is reserved by trackHeight, never clamped into the overlap.
-      for(const label of this.overlapCallouts(ctx)){
+      // Every adjacent seam explains how the compiler will treat it:
+      // overlap → AV continuity, touching → previous tail frame, gap → independent generation.
+      for(const label of this.seamCallouts(ctx)){
         const center=label.x+label.width/2;
-        ctx.strokeStyle=t.overlap;ctx.globalAlpha=label.focused?.9:.55;ctx.lineWidth=1.2;
-        ctx.beginPath();ctx.moveTo(label.anchor,label.bottom);ctx.lineTo(label.anchor,label.bottom+(label.y-label.bottom)/2);ctx.lineTo(center,label.y);ctx.stroke();
-        this.rect(ctx,label.x,label.y,label.width,label.height,11,t.inset,t.overlap);
-        ctx.globalAlpha=1;ctx.fillStyle=label.focused?t.overlap:t.muted;ctx.textBaseline='middle';
+        const color=label.tone==='overlap'?t.overlap:label.tone==='effect'?t.effect:t.muted;
+        ctx.strokeStyle=color;ctx.globalAlpha=label.focused?.9:.5;ctx.lineWidth=1.2;
+        if(label.kind==='gap'){
+          const gx1=C.clamp(label.startX,this.inset+4,this.width-5),gx2=C.clamp(label.endX,this.inset+4,this.width-5);
+          const gy=label.bottom+3;
+          ctx.beginPath();ctx.moveTo(gx1,gy);ctx.lineTo(gx2,gy);ctx.moveTo(gx1,gy-3);ctx.lineTo(gx1,gy+3);ctx.moveTo(gx2,gy-3);ctx.lineTo(gx2,gy+3);ctx.stroke();
+          ctx.beginPath();ctx.moveTo(label.anchor,gy);ctx.lineTo(center,label.y);ctx.stroke();
+        }else{
+          ctx.beginPath();ctx.moveTo(label.anchor,label.bottom);ctx.lineTo(label.anchor,label.bottom+(label.y-label.bottom)/2);ctx.lineTo(center,label.y);ctx.stroke();
+        }
+        this.rect(ctx,label.x,label.y,label.width,label.height,11,t.inset,color);
+        ctx.globalAlpha=1;ctx.fillStyle=label.focused?color:t.muted;ctx.textBaseline='middle';
         ctx.fillText(label.text,label.x+9,label.y+label.height/2);
       }
       if(this.snapFrame!==null){const x=this.x(this.snapFrame);ctx.setLineDash([3,4]);ctx.strokeStyle=t.snap;ctx.beginPath();ctx.moveTo(x,30);ctx.lineTo(x,h);ctx.stroke();ctx.setLineDash([]);}
