@@ -283,7 +283,7 @@ def build_timeline_graph(
     runtime: dict[str, Any],
     plan: dict[str, Any],
     seed: int,
-) -> tuple[dict[str, Any], Any, Any, Any]:
+) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
     latents: list[Any] = []
@@ -331,9 +331,12 @@ def build_timeline_graph(
         previous_audio = audio
         latents.append(sampled)
 
-    latent_list = graph.node(
-        "TerryDirectorLatentList",
-        "td_latent_list",
+    packed_output = graph.node(
+        "TerryDirectorPackOutput",
+        "td_output_pack",
+        images=merged_images,
+        audio=merged_audio,
+        fps=FPS,
         **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
     )
-    return graph.finalize(), latent_list.out(0), merged_images, merged_audio
+    return graph.finalize(), packed_output.out(0)
