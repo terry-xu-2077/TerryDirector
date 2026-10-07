@@ -142,6 +142,23 @@ class DirectorCompileTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "maximum length"):
             compile_timeline(document)
 
+    def test_unreferenced_pool_assets_do_not_enter_text_only_task(self):
+        document = {
+            "fps": 24,
+            "clips": [clip("a", 0, 120, "A text-only H3 prompt with no media tags.")],
+            "assets": [
+                asset("image-1", "image", 1, "refs/unused.png"),
+                asset("audio-1", "audio", 1, "refs/unused.wav"),
+            ],
+        }
+        segment = compile_timeline(document)["segments"][0]
+        self.assertEqual(segment["assets"], {
+            "images": [],
+            "videos": [],
+            "audios": [],
+        })
+        self.assertEqual(segment["prompt"], "A text-only H3 prompt with no media tags.")
+
     def test_missing_prompt_asset_is_an_error(self):
         document = {
             "fps": 24,
