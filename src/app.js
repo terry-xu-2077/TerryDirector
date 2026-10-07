@@ -230,13 +230,24 @@
   function syncAllReferences(){const entries=poolEntries();state.clips.forEach(c=>syncReferences(c,entries));}
   function refreshAssetUsage(){
     const c=current(),entries=poolEntries();
+    const globalRefs=new Set(referencesIn(state.globalPrompt,entries));
+    const currentLocalRefs=new Set(c?referencesIn(c.prompt,entries):[]);
     for(const tile of $('#references').querySelectorAll('[data-reference]')){
-      const id=tile.dataset.reference,used=!!c&&effectiveReferences(c,entries).includes(id);
+      const id=tile.dataset.reference;
+      const globalUsed=globalRefs.has(id);
+      const localUsed=currentLocalRefs.has(id);
+      const effectiveCurrent=localUsed||(!!c&&c.useGlobalPrompt!==false&&globalUsed);
       const users=state.clips.filter(clip=>effectiveReferences(clip,entries).includes(id));
-      tile.classList.toggle('is-referenced',used);
-      const badge=tile.querySelector('.asset-current-use');badge.hidden=!used;
-      tile.querySelector('.asset-token').title=users.length
-        ? `引用片段：${users.map(clip=>clip.name).join('、')}`:'尚未被片段引用';
+      tile.classList.toggle('is-referenced',globalUsed||localUsed);
+      tile.classList.toggle('is-effective-reference',effectiveCurrent);
+      const badge=tile.querySelector('.asset-current-use');
+      badge.hidden=!(globalUsed||localUsed);
+      badge.textContent=globalUsed&&localUsed?'全局 + 当前':globalUsed?'全局引用':'当前引用';
+      tile.querySelector('.asset-token').title=globalUsed
+        ? ('全局提示词已引用；'+(users.length?'作用片段：'+users.map(clip=>clip.name).join('、'):'当前没有片段启用全局提示词'))
+        : users.length
+          ? ('引用片段：'+users.map(clip=>clip.name).join('、'))
+          : '尚未被片段引用';
       tile.querySelector('[data-insert-ref]').disabled=!c;
     }
   }
