@@ -177,13 +177,15 @@ class TerryDirectorConfig(io.ComfyNode):
                     default=AUTO_UPSCALER,
                     advanced=True,
                 ),
-                io.Int.Input(
-                    "second_pass_high_steps",
-                    display_name="SelfLift 高清步数",
-                    default=4,
-                    min=1,
-                    max=1000,
-                    step=1,
+                io.Float.Input(
+                    "second_pass_high_ratio",
+                    display_name="SelfLift 高清占比",
+                    default=0.25,
+                    min=0.0,
+                    max=1.0,
+                    step=0.01,
+                    display="slider",
+                    tooltip="0.25 = 25%。实际高清步数由总步数 × 高清占比计算。",
                     advanced=True,
                 ),
             ],
@@ -210,7 +212,7 @@ class TerryDirectorConfig(io.ComfyNode):
         ref_image_size,
         second_pass_method,
         second_pass_model=AUTO_UPSCALER,
-        second_pass_high_steps=4,
+        second_pass_high_ratio=0.25,
         resolution_preview=None,
     ):
         width, height = _resolution(aspect_ratio, megapixels, multiple)
@@ -237,7 +239,7 @@ class TerryDirectorConfig(io.ComfyNode):
             ref_image_size=ref_image_size,
             second_pass_method=method,
             second_pass_model=upscaler,
-            second_pass_high_steps=second_pass_high_steps,
+            second_pass_high_ratio=second_pass_high_ratio,
         )
         return io.NodeOutput(packet)
 
