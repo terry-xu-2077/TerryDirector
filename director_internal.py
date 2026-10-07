@@ -18,9 +18,9 @@ class TerryDirectorAssembleMedia(io.ComfyNode):
             inputs=[
                 io.Image.Input("images"),
                 io.Audio.Input("audio"),
-                io.Int.Input("gap_frames", min=0, force_input=True),
-                io.Int.Input("trim_head_frames", min=0, force_input=True),
-                io.Int.Input("fps", min=1, force_input=True),
+                io.Int.Input("gap_frames", min=0),
+                io.Int.Input("trim_head_frames", min=0),
+                io.Int.Input("fps", min=1),
                 io.Image.Input("accumulated_images", optional=True),
                 io.Audio.Input("accumulated_audio", optional=True),
             ],
