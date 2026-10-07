@@ -23,7 +23,6 @@ class DirectorCoreTests(unittest.TestCase):
             "height": 768,
             "sampler": object(),
             "sigmas": object(),
-            "seed": 123,
             "ref_image_size": "match",
             "second_pass_method": "none",
             "second_pass_model": "",
@@ -69,7 +68,7 @@ class DirectorCoreTests(unittest.TestCase):
         runtime = self._runtime(second_pass_method="selflift", second_pass_model="h3.safetensors")
         self.assertEqual(runtime["type"], RUNTIME_CONFIG_TYPE)
         self.assertEqual(runtime["width"], 1344)
-        self.assertEqual(runtime["params"]["seed"], 123)
+        self.assertNotIn("seed", runtime["params"])
         self.assertEqual(runtime["params"]["second_pass"]["method"], "selflift")
         self.assertEqual(runtime["params"]["second_pass"]["model"], "h3.safetensors")
         self.assertEqual(runtime["params"]["second_pass"]["high_ratio"], 0.25)
