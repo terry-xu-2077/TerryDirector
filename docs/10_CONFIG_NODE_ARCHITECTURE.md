@@ -3,12 +3,13 @@
 > 决策日期：2026-10-05  
 > 本文覆盖旧的“主节点直接接入全部模型 / 采样输入”形态。 `docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md` 继续保留为历史演进记录；与本文冲突时以本文为准。
 
-## 1. 两个可见节点
+## 1. 三个可见节点
 
-画布上使用两个 TerryDirector 节点：
+画布上使用三个 TerryDirector 节点：
 
 1. **TerryDirector 配置**：集中接收模型、编码器、VAE、尺寸、采样器、SIGMAS 与生成参数，输出一个 `TERRYDIRECTOR_CONFIG`。
-2. **TerryDirector**：接收“导演配置”以及主节点自己的原生 Seed 控件，保存创作编排并打开页内导演台，输出分段 LATENT 列表、合并 IMAGE 和合并 AUDIO。
+2. **TerryDirector**：接收“导演配置”以及主节点自己的原生 Seed 控件，保存创作编排并打开页内导演台；右侧只输出一个 `TERRYDIRECTOR_OUTPUT`，用户可见名称为“导演输出”。
+3. **导演输出**：接收“导演输出”，解包并输出标准 `VIDEO / LATENT / IMAGE / AUDIO`。其中 VIDEO 直接由最终合并画面、合并音频和 24fps 通过 ComfyUI 原生 `VideoFromComponents` 构造，不额外写文件、不预编码。
 
 ```text
 MODEL ─────┐
@@ -17,10 +18,11 @@ VAE ───────┤
 Audio VAE ─┤
 width ─────┤
 height ────┤
-sampler ───┤ → TerryDirector 配置 → 导演配置 → TerryDirector
-sigmas ────┤                                      ├─ 分段潜变量
-参考图尺寸 ┤                                      └─ 合并音频
-二采方案 ──┘
+sampler ───┤ → TerryDirector 配置 → 导演配置 → TerryDirector → 导演输出
+sigmas ────┤                                                   ├─ 视频
+参考图尺寸 ┤                                                   ├─ 分段潜变量
+二采方案 ──┘                                                   ├─ 合并画面
+                                                              └─ 合并音频
 ```
 
 ## 2. 配置节点职责
@@ -51,11 +53,11 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 
 音频连续不再是配置项：时间线上相邻片段有重叠时，执行层自动延续音频 latent；无重叠时音频独立；仅首尾贴合时只做视觉尾帧承接。
 
-输出为内部连线类型 `TERRYDIRECTOR_CONFIG`。该类型只用于 TerryDirector 节点之间传递运行上下文，不是用户下游结果协议，也不取代标准 LATENT / IMAGE / AUDIO 输出。
+配置节点输出为内部连线类型 `TERRYDIRECTOR_CONFIG`。该类型只用于配置节点向 TerryDirector 主节点传递运行上下文。主节点另输出 `TERRYDIRECTOR_OUTPUT`，只用于连接配套“导演输出”节点；标准 VIDEO / LATENT / IMAGE / AUDIO 由配套节点向用户暴露。
 
 ## 3. 主节点职责
 
-主 TerryDirector 节点左侧只保留一个可见输入：**导演配置**。
+主 TerryDirector 节点左侧只保留一个可见输入：**导演配置**；右侧只保留一个可见输出：**导演输出**。
 
 主节点运行输入为“导演配置 + Seed”；其中 Seed 使用 ComfyUI 原生可连接控件。主节点内部创作 UI 只展示：
 
@@ -92,7 +94,9 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 - 图片 / 视频 / 音频参考素材加载；视频参考自动转换为 24fps 帧序列
 - 重叠 AddGuide、首尾贴合尾帧 Guide、空隙独立生成
 - 合并 IMAGE / AUDIO：H3 尾部裁切、重叠去重、黑帧 / 静音 gap
-- 三个标准输出端口执行链
+- 主节点单一 `TERRYDIRECTOR_OUTPUT` 输出
+- 配套“导演输出”节点：VIDEO / 分段 LATENT / 合并 IMAGE / 合并 AUDIO
+- 标准 VIDEO 由合并音画直接构造，无需额外“创建视频”节点
 
 尚未实现：
 
