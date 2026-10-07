@@ -11,7 +11,7 @@
       this.inset = 70; this.ruler = 32; this.width = 1; this.height = 1;
       this.snapEnabled = true; this.chainEnabled = true; this.hand = false; this.showWave = false;
       this.images = new Map(); this.hover = null; this.drag = null; this.playing = false;
-      this.dirty = true; this.raf = 0; this.snapFrame = null;
+      this.dirty = true; this.raf = 0; this.snapFrame = null; this.callouts = [];
       this.content = host.querySelector('.content'); this.overlay = host.querySelector('.overlay');
       this.ctx = this.content.getContext('2d'); this.ox = this.overlay.getContext('2d');
       this.abort = new AbortController(); const signal = this.abort.signal;
@@ -79,11 +79,23 @@
       }
       return front;
     }
+    hitSeamControl(p) {
+      return this.callouts.find(label=>
+        label.kind==='touch'&&
+        p.x>=label.x&&p.x<=label.x+label.width&&
+        p.y>=label.y&&p.y<=label.y+label.height
+      )||null;
+    }
     down(e) {
       if(e.button!==0&&e.button!==1)return;
       e.preventDefault();this.overlay.focus({preventScroll:true});this.stop();
       const p=this.point(e); if(p.x<this.inset)return;
       const readonly=!!this.options.readonly?.();
+      const seamControl=e.button===0?this.hitSeamControl(p):null;
+      if(seamControl){
+        if(!readonly)this.options.onTransitionMenu?.(seamControl,{clientX:e.clientX,clientY:e.clientY});
+        this.overlay.style.cursor=readonly?'default':'pointer';this.invalidate();return;
+      }
       this.overlay.setPointerCapture(e.pointerId);
       if(e.button===1||this.hand){this.drag={mode:'pan',origin:p,scroll:this.scroll,pointer:e.pointerId};this.overlay.style.cursor='grabbing';return;}
       const c=this.hitTest(p);
@@ -96,7 +108,7 @@
     }
     move(e) {
       const p=this.point(e);
-      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;if(c){const frames=c.end-c.start,aligned=C.h3AlignedFrames(frames),parts=[c.name,`输出 ${Number((frames/C.FPS).toFixed(2))}s · ${frames}帧`,aligned===frames?`H3 已对齐 ${aligned}帧`:`H3 内部 ${aligned}帧 · 生成后裁切 ${aligned-frames}帧`];if(activity?.completedAt)parts.push(`完成于 ${new Date(activity.completedAt).toLocaleString()}`);this.overlay.title=parts.join(' · ');}else this.overlay.title='';const readonly=!!this.options.readonly?.();this.overlay.style.cursor=this.hand?'grab':readonly?(c?'pointer':'default'):c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
+      if(!this.drag){const seamControl=this.hitSeamControl(p),readonly=!!this.options.readonly?.();if(seamControl){this.hover=null;this.overlay.title=readonly?'运行中不可修改镜头衔接':'切换镜头衔接模式';this.overlay.style.cursor=readonly?'default':'pointer';this.invalidate();return;}const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;if(c){const frames=c.end-c.start,aligned=C.h3AlignedFrames(frames),parts=[c.name,`输出 ${Number((frames/C.FPS).toFixed(2))}s · ${frames}帧`,aligned===frames?`H3 已对齐 ${aligned}帧`:`H3 内部 ${aligned}帧 · 生成后裁切 ${aligned-frames}帧`];if(activity?.completedAt)parts.push(`完成于 ${new Date(activity.completedAt).toLocaleString()}`);this.overlay.title=parts.join(' · ');}else this.overlay.title='';this.overlay.style.cursor=this.hand?'grab':readonly?(c?'pointer':'default'):c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
       const d=this.drag;
       if(d.mode==='pan'){this.scroll=d.scroll+d.origin.x-p.x;this.clampScroll();this.invalidate();return;}
       if(d.mode==='seek'){this.setFrame(this.frameAt(p.x));return;}
@@ -221,7 +233,10 @@
           startX=this.x(seam.start);endX=this.x(seam.end);anchor=(startX+endX)/2;
           text=`重叠 ${Number((seam.frames/C.FPS).toFixed(2))}s`;tone='overlap';
         }else if(seam.kind==='touch'){
-          startX=endX=anchor=this.x(seam.frame);text='尾帧承接';tone='effect';
+          const mode=this.options.getTransitionMode?.(seam.b)||'tail_continuation';
+          const labels={tail_reference:'尾帧参考',tail_continuation:'尾帧续接',independent:'独立'};
+          startX=endX=anchor=this.x(seam.frame);text=labels[mode]||labels.tail_continuation;tone='effect';
+          seam={...seam,dropdown:true,mode};
         }else{
           startX=this.x(seam.start);endX=this.x(seam.end);anchor=(startX+endX)/2;
           text=`空白 ${Number((seam.frames/C.FPS).toFixed(2))}s`;tone='muted';
@@ -232,7 +247,7 @@
       const placed=[];
       items.sort((a,b)=>a.anchor-b.anchor);
       for(const item of items){
-        const bubbleWidth=ctx.measureText(item.text).width+18;
+        const bubbleWidth=ctx.measureText(item.text).width+(item.dropdown?31:18);
         if(right-left<bubbleWidth)continue;
         const anchor=C.clamp(item.anchor,left,right);
         const preferred=C.clamp(anchor-bubbleWidth/2,left,right-bubbleWidth);
@@ -259,9 +274,10 @@
         ctx.globalAlpha=focused?.10:.05;this.rect(ctx,x,top,width,bottom-top,8,t.overlap);
         ctx.globalAlpha=focused?.85:.40;this.rect(ctx,x,top,width,bottom-top,8,null,t.overlap);ctx.globalAlpha=1;
       }
-      // Every adjacent seam explains how the compiler will treat it:
-      // overlap → AV continuity, touching → previous tail frame, gap → independent generation.
-      for(const label of this.seamCallouts(ctx)){
+      // Every adjacent seam explains how the compiler will treat it.
+      // Touching seams expose a tiny dropdown for per-cut transition intent.
+      this.callouts=this.seamCallouts(ctx);
+      for(const label of this.callouts){
         const center=label.x+label.width/2;
         const color=label.tone==='overlap'?t.overlap:label.tone==='effect'?t.effect:t.muted;
         ctx.strokeStyle=color;ctx.globalAlpha=label.focused?.9:.5;ctx.lineWidth=1.2;
@@ -276,6 +292,11 @@
         this.rect(ctx,label.x,label.y,label.width,label.height,11,t.inset,color);
         ctx.globalAlpha=1;ctx.fillStyle=label.focused?color:t.muted;ctx.textBaseline='middle';
         ctx.fillText(label.text,label.x+9,label.y+label.height/2);
+        if(label.dropdown){
+          const cx=label.x+label.width-13,cy=label.y+label.height/2;
+          ctx.strokeStyle=label.focused?color:t.muted;ctx.lineWidth=1.25;ctx.beginPath();
+          ctx.moveTo(cx-3,cy-2);ctx.lineTo(cx,cy+1.5);ctx.lineTo(cx+3,cy-2);ctx.stroke();
+        }
       }
       if(this.snapFrame!==null){const x=this.x(this.snapFrame);ctx.setLineDash([3,4]);ctx.strokeStyle=t.snap;ctx.beginPath();ctx.moveTo(x,30);ctx.lineTo(x,h);ctx.stroke();ctx.setLineDash([]);}
       ctx.restore();
