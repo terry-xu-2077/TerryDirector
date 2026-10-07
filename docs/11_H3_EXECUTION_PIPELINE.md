@@ -69,6 +69,10 @@ UI 不暴露这个限制；生成完成后裁回用户时间线长度。
 
 第一片段若不是从 frame 0 开始，同样把前面的时间视为 gap。
 
+### suspended
+
+被挂起的片段仍保留在创作时间线上，但不生成 H3 任务。编译器将其视为空白时间；下一有效片段的连续性关系跳过所有挂起片段，直接与左侧最近的未挂起片段重新计算 overlap / tail_frame / gap。若时间线尾部由挂起片段延长，最终 IMAGE / AUDIO 在对应区间补黑帧与静音。
+
 ## 4. 素材编号
 
 导演台使用项目级稳定编号，例如 `<Picture 9>`。
@@ -148,3 +152,10 @@ TerryDirector 保持三个标准输出：
 7. 缓存、低显存分块与性能优化
 
 不要跨阶段提前堆兼容层、缓存层或可选模式。
+
+## 9. 中断与显存清理
+
+正常完成时不主动卸载模型，继续使用 ComfyUI 的 Smart Memory / 模型复用策略。
+
+当属于 TerryDirector 的运行收到 `execution_interrupted` 时，前端调用 ComfyUI 原生 `api.freeMemory({freeExecutionCache:true})`。该请求由 prompt worker 在中断收尾后处理，执行模型卸载、执行缓存清理、GC 与 `soft_empty_cache()`，避免中断的动态子图和大模型长期占用资源。
+
