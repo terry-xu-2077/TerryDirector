@@ -29,6 +29,7 @@
 
 - 新增需求或优化前，先查 `docs/07_REFERENCE_IMPLEMENTATIONS.md` 中用户指定的四个参考：Songssx TimelineDirector、AIMixer Director（AI 搅拌手）、yolain Easy Media（乱乱呀）与 nkxx188 H3 Easy。先定位已有节点、示例工作流和具体实现，再决定本项目需要的适配。
 - 当前普通生成基础以 **ComfyUI 原生 MiniMax H3 节点 + GraphBuilder 展开** 为准：ReferenceToVideo、AddGuide、BasicGuider、SamplerCustomAdvanced、VAE 解码。Songssx / AIMixer / Easy Media / H3 Easy 用于验证连续性、SelfLift、素材和性能实现，不作为运行时依赖。
+- TerryDirector 主节点是动态 GraphBuilder 编排节点，`fingerprint_inputs()` 固定返回 `NaN`，确保每次 Queue 都重新编译 / 展开 H3 子图；不能复用上一次中断留下的 ephemeral subgraph cache。实际 MODEL / CLIP / VAE 等上游加载仍由 ComfyUI 自己缓存，不等于每次重新加载所有模型。
 - 优先复用已存在的运行能力，只对需求差异作必要优化；记录参考仓库、固定 commit、文件 / 函数及适配差异。实际引入代码时保留相应来源和许可证信息。
 - 新增参考不自动扩大 UI 范围。保持原生 HTML / CSS / JS、既定单行时间线与资产池；不因参考仓库带有 React、多轨、AI 增强或版本 UI 就自动引入。
 - 本次参考导航核对不等于在用户机器上完成性能比较。实现时复查选用版本和示例，实际生成结果另行记录。
