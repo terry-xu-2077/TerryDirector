@@ -460,6 +460,52 @@
   white-space: nowrap;
 }
 
+.td-mini-clip-progress {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  bottom: 2px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,.08);
+  pointer-events: none;
+}
+.td-mini-clip-progress > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tdn-orange);
+}
+.td-node-shell-director .td-mini-clip.is-running {
+  border-color: rgba(255,159,67,.9);
+  box-shadow: 0 0 0 1px rgba(255,159,67,.16), 0 4px 14px rgba(255,159,67,.18);
+}
+.td-node-shell-director .td-mini-clip.is-completed .td-mini-clip-progress > i {
+  background: rgba(255,181,107,.72);
+}
+.td-node-shell-director .td-mini-clip.is-error {
+  border-color: rgba(255,110,110,.78);
+}
+.td-mini-overall-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255,255,255,.05);
+  pointer-events: none;
+}
+.td-mini-overall-progress > i {
+  display: block;
+  height: 100%;
+  border-radius: 0 999px 999px 0;
+  background: var(--tdn-orange);
+  box-shadow: 0 0 7px rgba(255,159,67,.5);
+}
+
 
 /* Horizontal rows must share one visual center line. */
 .td-node-shell-director .td-mini-head {
