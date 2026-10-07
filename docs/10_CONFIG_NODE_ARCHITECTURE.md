@@ -32,6 +32,8 @@ Seed ──────┤                                      ├─ 合并画
 
 MODEL / CLIP / 视频 VAE / 音频 VAE 使用纯原生接入点，不在配置节点重复加载器选项。分辨率使用 ComfyUI 原生 Resolution Selector 形态：宽高比、百万像素、实时“宽 × 高 / MP”预览，nearest multiple 放高级设置。SAMPLER / SIGMAS 保留原生可连接 Widget，以便简单工作流不必额外堆节点。
 
+ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入；它只负责显示计算结果，不参与 Queue 的必需输入校验。
+
 当前输入：
 
 - `MODEL`
