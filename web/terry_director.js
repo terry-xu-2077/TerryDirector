@@ -71,6 +71,7 @@ function activityPayload(node) {
 }
 
 function pushActivity(node) {
+  renderNode(node);
   if (!frameReady || activeNode !== node || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
     { type: "terrydirector:activity", activity: activityPayload(node) },
@@ -385,6 +386,37 @@ function escapeHtml(value) {
   })[char]);
 }
 
+const ASSET_LABELS = { image: "picture", video: "video", audio: "audio" };
+const ASSET_TAG_PATTERN = /<(Picture|Video|Audio)\\s+(\\d+)>/gi;
+
+function referencedAssetIds(prompt, assets) {
+  const lookup = new Map(
+    assets.map(asset => [
+      `${ASSET_LABELS[asset.kind]}:${Number(asset.number)}`,
+      asset.id,
+    ])
+  );
+  const ids = new Set();
+  for (const match of String(prompt || "").matchAll(ASSET_TAG_PATTERN)) {
+    const id = lookup.get(`${match[1].toLowerCase()}:${Number(match[2])}`);
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+function authoredAssetIds(documentData) {
+  const assets = documentData.assets || [];
+  const ids = referencedAssetIds(documentData.globalPrompt, assets);
+  for (const clip of documentData.clips || []) {
+    for (const id of referencedAssetIds(clip.prompt, assets)) ids.add(id);
+  }
+  return ids;
+}
+
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
 function configWidget(node) {
   return node.widgets?.find(widget => widget.name === "config_json") || null;
 }
@@ -425,26 +457,63 @@ function writeConfig(node, config, render = true) {
   if (render) renderNode(node);
 }
 
-function timelineHtml(documentData) {
+function timelineHtml(documentData, activity = {}) {
   const clips = documentData.clips || [];
   if (!clips.length) {
     return '<div class="td-mini-empty">尚无片段 · 点击编辑</div>';
   }
 
   const total = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
-  return clips
+  const activeClips = clips.filter(clip => !clip.suspended);
+  const totalWork = activeClips.reduce(
+    (sum, clip) => sum + Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0)),
+    0
+  );
+  let completedWork = 0;
+  let hasRunState = false;
+
+  const clipHtml = clips
     .map((clip, index) => {
       const left = Math.max(0, Math.min(100, (clip.start / total) * 100));
       const width = Math.max(
         0.8,
         Math.min(100 - left, ((clip.end - clip.start) / total) * 100)
       );
+      const record = activity?.[clip.id] || {};
+      const running = !clip.suspended && record.status === RUN_RUNNING;
+      const completed = !clip.suspended && record.status === RUN_COMPLETED;
+      const failed = !clip.suspended && record.status === RUN_ERROR;
+      const progress = completed ? 1 : running ? clamp01(record.progress) : 0;
+      const durationFrames = Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0));
+      if (running || completed || failed) hasRunState = true;
+      if (!clip.suspended) completedWork += durationFrames * progress;
+
       const selected = clip.id === documentData.selected ? " is-selected" : "";
       const suspended = clip.suspended ? " is-suspended" : "";
-      const duration=timeText(Math.max(0,(Number(clip.end)||0)-(Number(clip.start)||0)));
-      return `<div class="td-mini-clip${selected}${suspended}" style="left:${left}%;width:${width}%;z-index:${clip.id === documentData.selected ? 4 : index + 1}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span></div>`;
+      const runClass = running ? " is-running" : completed ? " is-completed" : failed ? " is-error" : "";
+      const duration = timeText(Math.max(0, durationFrames));
+      const percent = Math.round(progress * 100);
+      const statusText = running
+        ? (percent > 0 ? `生成中 ${percent}%` : "准备中")
+        : completed
+          ? "已完成"
+          : failed
+            ? "生成失败"
+            : "";
+      const title = statusText ? `${clip.name} · ${statusText}` : clip.name;
+      const progressHtml = (running || completed)
+        ? `<span class="td-mini-clip-progress"><i style="width:${percent}%"></i></span>`
+        : "";
+
+      return `<div class="td-mini-clip${selected}${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running ? 12 : clip.id === documentData.selected ? 4 : index + 1}" title="${escapeHtml(title)}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span>${progressHtml}</div>`;
     })
     .join("");
+
+  const overall = totalWork > 0 ? clamp01(completedWork / totalWork) : 0;
+  const overallHtml = hasRunState
+    ? `<div class="td-mini-overall-progress" title="总生成进度 ${Math.round(overall * 100)}%"><i style="width:${Math.round(overall * 1000) / 10}%"></i></div>`
+    : "";
+  return clipHtml + overallHtml;
 }
 
 function renderNode(node) {
@@ -454,12 +523,9 @@ function renderNode(node) {
   const config = readConfig(node);
   const doc = config.document;
   const total = Math.max(0, ...doc.clips.map(clip => clip.end || 0));
-  const usedAssetIds = new Set(
-    doc.clips.flatMap(clip =>
-      clip.suspended ? [] : (Array.isArray(clip.refs) ? clip.refs : [])
-    )
-  );
+  const usedAssetIds = authoredAssetIds(doc);
   const usedAssets = doc.assets.filter(asset => usedAssetIds.has(asset.id)).length;
+  const activity = ensureActivity(node);
   const totalSeconds = Number((total / FPS).toFixed((total / FPS) % 1 ? 2 : 0));
 
   root.innerHTML = `<div class="td-node-card td-node-card-director">
@@ -474,7 +540,7 @@ function renderNode(node) {
         <span class="td-node-spacer"></span>
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
-      <div class="td-mini-timeline" data-action="edit" title="打开时间线编辑器">${timelineHtml(doc)}</div>
+      <div class="td-mini-timeline" data-action="edit" title="打开时间线编辑器">${timelineHtml(doc, activity)}</div>
     </div>
   </div>`;
 
