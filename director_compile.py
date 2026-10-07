@@ -140,6 +140,15 @@ def _continuity(
         return {"kind": "gap", "frames": delta}, delta, 0
 
     if delta == 0:
+        mode = clip.get("transitionMode") or "tail_continuation"
+        if mode == "independent":
+            return {"kind": "independent"}, 0, 0
+        if mode == "tail_reference":
+            return {
+                "kind": "tail_reference",
+                "source_segment_id": previous["id"],
+                "source_frame": int(previous["end"]) - int(previous["start"]) - 1,
+            }, 0, 0
         return {
             "kind": "tail_frame",
             "source_segment_id": previous["id"],
@@ -215,6 +224,10 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
         effective_prompt = _effective_prompt(document, clip)
         prompt, local_assets = _compile_assets(effective_prompt, assets)
         continuity, gap_before, trim_head = _continuity(previous, clip)
+        if continuity["kind"] == "tail_reference" and len(local_assets["images"]) >= MAX_REFERENCE_IMAGES:
+            raise ValueError(
+                "TerryDirector 尾帧参考需要占用 1 个图片参考位；当前片段最多可再引用 8 张图片"
+            )
         trim_tail = generated_frames - output_frames
 
         segment = {
@@ -227,6 +240,7 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
             "h3_frames": generated_frames,
             "prompt": prompt,
             "uses_global_prompt": clip.get("useGlobalPrompt") is not False,
+            "transition_mode": clip.get("transitionMode") or "tail_continuation",
             "assets": local_assets,
             "continuity": continuity,
             "assembly": {
