@@ -17,7 +17,7 @@ def asset(asset_id, kind, number, path):
     }
 
 
-def clip(clip_id, start, end, prompt="", suspended=False):
+def clip(clip_id, start, end, prompt="", suspended=False, use_global=True):
     return {
         "id": clip_id,
         "name": clip_id,
@@ -25,6 +25,7 @@ def clip(clip_id, start, end, prompt="", suspended=False):
         "end": end,
         "prompt": prompt,
         "refs": [],
+        "useGlobalPrompt": use_global,
         "suspended": suspended,
     }
 
@@ -122,6 +123,35 @@ class DirectorCompileTests(unittest.TestCase):
             ["<Picture 1>", "<Picture 2>"],
         )
         self.assertEqual(segment["assets"]["audios"][0]["local_tag"], "<Audio 1>")
+
+    def test_global_prompt_is_prefixed_and_can_own_all_asset_references(self):
+        document = {
+            "fps": 24,
+            "globalPrompt": "subject_definitions:\n<Picture 9> hero reference.",
+            "clips": [clip("a", 0, 120, "detailed_description:\nThe camera pushes in.")],
+            "assets": [asset("image-9", "image", 9, "refs/hero.png")],
+        }
+
+        segment = compile_timeline(document)["segments"][0]
+        self.assertEqual(
+            segment["prompt"],
+            "subject_definitions:\n<Picture 1> hero reference.\n\ndetailed_description:\nThe camera pushes in.",
+        )
+        self.assertTrue(segment["uses_global_prompt"])
+        self.assertEqual([item["id"] for item in segment["assets"]["images"]], ["image-9"])
+
+    def test_segment_can_disable_global_prompt_and_its_asset_references(self):
+        document = {
+            "fps": 24,
+            "globalPrompt": "Use <Picture 99> globally.",
+            "clips": [clip("a", 0, 120, "Segment only.", use_global=False)],
+            "assets": [],
+        }
+
+        segment = compile_timeline(document)["segments"][0]
+        self.assertFalse(segment["uses_global_prompt"])
+        self.assertEqual(segment["prompt"], "Segment only.")
+        self.assertEqual(segment["assets"], {"images": [], "videos": [], "audios": []})
 
     def test_reference_count_uses_native_h3_limits(self):
         assets = [asset(f"image-{i}", "image", i, f"refs/{i}.png") for i in range(1, 11)]
