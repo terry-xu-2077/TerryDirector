@@ -336,19 +336,4 @@ def build_timeline_graph(
         "td_latent_list",
         **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
     )
-    preview_video = graph.node(
-        "CreateVideo",
-        "td_preview_create",
-        images=merged_images,
-        audio=merged_audio,
-        fps=float(FPS),
-        codec="none",
-    )
-    graph.node(
-        "VideoTrim",
-        "td_preview_video",
-        video=preview_video.out(0),
-        trim={},
-        strict_duration=False,
-    )
     return graph.finalize(), latent_list.out(0), merged_images, merged_audio
