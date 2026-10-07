@@ -9,7 +9,7 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
   "sigmas_denoise",
   "second_pass_method",
   "second_pass_model",
-  "second_pass_high_steps",
+  "second_pass_high_ratio",
 ]);
 const FPS = 24;
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
@@ -240,7 +240,7 @@ function setNativeWidgetHidden(widget, hidden) {
 function syncSecondPassWidgets(node) {
   const method = node.widgets?.find(widget => widget.name === "second_pass_method");
   const model = node.widgets?.find(widget => widget.name === "second_pass_model");
-  const steps = node.widgets?.find(widget => widget.name === "second_pass_high_steps");
+  const steps = node.widgets?.find(widget => widget.name === "second_pass_high_ratio");
   const showSelfLift = method?.value === "SelfLift";
 
   setNativeWidgetHidden(model, !showSelfLift);
