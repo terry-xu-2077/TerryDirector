@@ -83,18 +83,20 @@
       if(e.button!==0&&e.button!==1)return;
       e.preventDefault();this.overlay.focus({preventScroll:true});this.stop();
       const p=this.point(e); if(p.x<this.inset)return;
+      const readonly=!!this.options.readonly?.();
       this.overlay.setPointerCapture(e.pointerId);
       if(e.button===1||this.hand){this.drag={mode:'pan',origin:p,scroll:this.scroll,pointer:e.pointerId};this.overlay.style.cursor='grabbing';return;}
       const c=this.hitTest(p);
       if(p.y<this.ruler||(!c&&Math.abs(this.x(this.frame)-p.x)<7)||!c){this.drag={mode:'seek',pointer:e.pointerId};this.setFrame(this.frameAt(p.x));return;}
-      const mode=this.edgeAt(c,p);
       this.selected=c.id;this.options.onSelect?.(c.id);
+      if(readonly){this.overlay.style.cursor='default';this.invalidate();return;}
+      const mode=this.edgeAt(c,p);
       this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,pointer:e.pointerId,last:p,follow:(mode==='move'||mode==='right')&&this.chainEnabled};
       this.overlay.style.cursor=mode==='move'?'grabbing':'ew-resize';this.invalidate();
     }
     move(e) {
       const p=this.point(e);
-      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;if(c){const frames=c.end-c.start,aligned=C.h3AlignedFrames(frames),parts=[c.name,`输出 ${Number((frames/C.FPS).toFixed(2))}s · ${frames}帧`,aligned===frames?`H3 已对齐 ${aligned}帧`:`H3 内部 ${aligned}帧 · 生成后裁切 ${aligned-frames}帧`];if(activity?.completedAt)parts.push(`完成于 ${new Date(activity.completedAt).toLocaleString()}`);this.overlay.title=parts.join(' · ');}else this.overlay.title='';this.overlay.style.cursor=this.hand?'grab':c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
+      if(!this.drag){const c=this.hitTest(p);this.hover=c?.id||null;const activity=c?this.options.getActivity?.(c):null;if(c){const frames=c.end-c.start,aligned=C.h3AlignedFrames(frames),parts=[c.name,`输出 ${Number((frames/C.FPS).toFixed(2))}s · ${frames}帧`,aligned===frames?`H3 已对齐 ${aligned}帧`:`H3 内部 ${aligned}帧 · 生成后裁切 ${aligned-frames}帧`];if(activity?.completedAt)parts.push(`完成于 ${new Date(activity.completedAt).toLocaleString()}`);this.overlay.title=parts.join(' · ');}else this.overlay.title='';const readonly=!!this.options.readonly?.();this.overlay.style.cursor=this.hand?'grab':readonly?(c?'pointer':'default'):c?(this.edgeAt(c,p)!=='move'?'ew-resize':'grab'):'default';this.invalidate();return;}
       const d=this.drag;
       if(d.mode==='pan'){this.scroll=d.scroll+d.origin.x-p.x;this.clampScroll();this.invalidate();return;}
       if(d.mode==='seek'){this.setFrame(this.frameAt(p.x));return;}
@@ -185,17 +187,18 @@
         this.label(ctx,c.name,descriptionX,titleY,width-(descriptionX-x)-12);
         const activity=this.options.getActivity?.(c)||{status:'idle',progress:0};
         const running=!suspended&&activity.status==='running',done=!suspended&&activity.status==='completed',failed=!suspended&&activity.status==='error';
-        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=failed?t.warning:done?t.success:running?t.progress:t.ruler;
+        const seconds=Number((activity.elapsedSeconds||0).toFixed(1)),progress=C.clamp(activity.progress||0,0,1),percent=Math.round(progress*100);
+        const progressDone=running&&percent>=100,visualDone=done||progressDone;
+        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=failed?t.warning:visualDone?t.success:running?t.progress:t.ruler;
         ctx.beginPath();ctx.arc(x+16,statusY,2.5,0,Math.PI*2);ctx.fill();
         ctx.fillStyle=failed?t.warning:t.muted;
-        const seconds=Number((activity.elapsedSeconds||0).toFixed(1)),percent=Math.round((activity.progress||0)*100);
         const text=suspended?'已挂起 · 编译为空白'
           :failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
-          :running?(activity.real?(percent>=100?`已完成 · 生成耗时 ${seconds}s`:percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
-          :done?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
+          :visualDone?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
+          :running?(activity.real?(percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
           :'待生成';
         this.label(ctx,text,x+24,statusY,width-35);
-        if(running){const span=Math.max(0,width-18);this.rect(ctx,x+9,y+ch-7,span,4,2,t.progressTrack);this.rect(ctx,x+9,y+ch-7,span*C.clamp(activity.progress||0,0,1),4,2,t.progress);}
+        if(running||visualDone){const span=Math.max(0,width-18),fill=visualDone?t.success:t.progress;this.rect(ctx,x+9,y+ch-7,span,4,2,t.progressTrack);this.rect(ctx,x+9,y+ch-7,span*(visualDone?1:progress),4,2,fill);}
         if(this.showWave&&ch>=70){ctx.strokeStyle=t.wave;ctx.globalAlpha=.18;ctx.beginPath();for(let xx=x+13;xx<x+width-12;xx+=3){const a=2+3*Math.abs(Math.sin(xx*.053+i)*Math.cos(xx*.081));ctx.moveTo(xx,y+ch-36-a);ctx.lineTo(xx,y+ch-36+a);}ctx.stroke();ctx.globalAlpha=1;}
         ctx.restore();
       });
