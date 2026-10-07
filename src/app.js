@@ -61,7 +61,7 @@
     'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
     'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
   ];
-  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],resolution:{...R.DEFAULT},seed:241907+i,audio:true,guide:'画面参考',suspended:false}));
+  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],resolution:{...R.DEFAULT},audio:true,guide:'画面参考',suspended:false}));
   const initial=embedded?[]:demoInitial;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
@@ -69,8 +69,7 @@
   if(!embedded)resetActivity();else activity.clear();
   let state={clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null,embedDirty=false,hostReadonly=false;
-  let generationPreviewEnabled=true,lastPreviewRun=null;
+  let title='远航之前',promptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false;
   let promptEditor=null;
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
@@ -262,32 +261,6 @@
     const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='comfy-input'?'ComfyUI input/'+asset.source.path:asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
     if(!d.open)d.showModal();
   }
-  function renderGenerationPreview(){
-    const toggle=$('#generationPreviewToggle');
-    toggle.setAttribute('aria-checked',String(generationPreviewEnabled));
-    toggle.querySelector('.preview-switch-value').textContent=generationPreviewEnabled?'开启':'关闭';
-    const img=$('#generationPreviewImage'),empty=$('#generationPreviewEmpty');
-    // Progress belongs to the task, not the preview switch or editing selection.
-    const run=lastPreviewRun,record=run?activity.get(run.id):null;
-    const progress=record?.progress||0;
-    $('#generationPreviewClip').textContent=run?run.label:'尚未运行任务';
-    $('#generationPreviewBar').style.width=`${Math.round(progress*100)}%`;
-    $('#generationPreviewStatus').textContent=record?.status==='running'?`模拟 ${Math.round(progress*100)}% · ${record.elapsedSeconds.toFixed(1)}s`:run?'模拟完成 · 参考静帧占位，非模型输出':'当前未连接 ComfyUI';
-    // The panel and its controls stay in layout. OFF only stops displaying preview frames.
-    if(!generationPreviewEnabled||!$('#projectHome').hidden){
-      img.removeAttribute('src');img.hidden=true;img.style.filter='none';
-      $('.generation-preview-noise').style.opacity='0';
-      empty.hidden=false;empty.textContent=generationPreviewEnabled?'等待生成预览':'生成预览已关闭';
-      return;
-    }
-    // Never show the newly selected clip's reference as if it were the run's output.
-    const src=run?.source||'';
-    if(src){if(img.getAttribute('src')!==src)img.src=src;img.hidden=false;empty.hidden=true;}
-    else{img.removeAttribute('src');img.hidden=true;empty.hidden=false;empty.textContent=run?'本次模拟没有画面占位':'等待生成预览';}
-    img.style.filter=record?.status==='running'?`blur(${(1-progress)*8}px) saturate(${.55+progress*.55})`:'none';
-    $('.generation-preview-noise').style.opacity=record?.status==='running'?String((1-progress)*.32):'0';
-  }
-  function setGenerationPreview(enabled){generationPreviewEnabled=!!enabled;renderGenerationPreview();}
   function resolutionFromControls(){
     const ratio=$('#aspectRatioSelect'),mp=$('#megapixelsInput'),multiple=$('#multipleInput');
     if(!current()||!mp.validity.valid||!multiple.validity.valid)return null;
@@ -320,12 +293,7 @@
     const result=resolutionFromControls();
     // Partial/invalid input never enters project data; keep the last valid settings.
     if(result)c.resolution=result.settings;
-    renderResolutionResult();renderActivity();
-  }
-  function renderActivity(){
-    const c=current(),a=activityFor(c),button=$('#generateButton');button.disabled=!c||!!jobId||!(c.prompt||'').trim()||!resolutionFromControls();
-    button.innerHTML=icon('spark')+(jobId?(jobId===c?.id?`模拟生成 ${Math.round(a.progress*100)}%`:'其他片段生成中…'):'模拟生成当前片段');
-    button.title='只演示生成进度，不调用 ComfyUI';renderGenerationPreview();
+    renderResolutionResult();
   }
   function renderAll(){
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
@@ -359,21 +327,10 @@
     onView:v=>{const max=Math.max(v.visible,v.contentWidth),width=Math.min(100,v.visible/max*100);$('#scrollThumb').style.width=width+'%';$('#scrollThumb').style.left=Math.min(100-width,v.scroll/max*100)+'%';$('#zoomRange').value=Math.log(v.ppf/.22)/Math.log(24/.22)*100;}
   });
   renderAll();timeline.setFrame(embedded?0:8*C.FPS);
-  function generate(){
-    const c=current();if(jobId||!c||!(c.prompt||'').trim()||!resolutionFromControls())return;
-    finishResolutionEdit();
-    finishPromptEdit();const id=c.id,start=performance.now();jobId=id;lastPreviewRun={id,label:`片段 ${state.clips.indexOf(c)+1} · ${c.name}`,source:getImage(c)};
-    const record={status:'running',progress:0,elapsedSeconds:0,completedAt:null,example:false};activity.set(id,record);renderActivity();timeline.invalidate();
-    jobTimer=setInterval(()=>{
-      record.elapsedSeconds=(performance.now()-start)/1000;record.progress=Math.min(1,record.elapsedSeconds/6);
-      if(record.progress>=1){clearInterval(jobTimer);jobTimer=0;jobId=null;record.status='completed';record.completedAt=new Date().toISOString();toast('模拟完成：已更新耗时，未生成视频。');}
-      renderActivity();timeline.invalidate();
-    },100);
-  }
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
@@ -571,10 +528,10 @@
     assets=withSamples?sampleAssets.slice():[];
     nextPoolNumber={image:withSamples?4:1,video:1,audio:1};assetGridKey='';
   }
-  function showHome(){finishPromptEdit();promptEditor.closeMenu();stopDialogMedia();$('#generationPreviewImage').removeAttribute('src');timeline.stop();$('#workspace').hidden=true;$('#timelineResize').hidden=true;$('#timelinePanel').hidden=true;$('#projectHome').hidden=false;
+  function showHome(){finishPromptEdit();promptEditor.closeMenu();stopDialogMedia();timeline.stop();$('#workspace').hidden=true;$('#timelineResize').hidden=true;$('#timelinePanel').hidden=true;$('#projectHome').hidden=false;
     $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
-  function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();renderGenerationPreview(); }
+  function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();}
   function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:8,referenceNumbering:'project-stable',fps:C.FPS,project:{title},clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local,source})=>({id,name,kind,number,token,requiresReimport:!!local,source:source?{...source}:undefined})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
     const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
   }
