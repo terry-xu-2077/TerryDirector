@@ -8,7 +8,7 @@
 画布上使用两个 TerryDirector 节点：
 
 1. **TerryDirector 配置**：集中接收模型、编码器、VAE、尺寸、采样器、SIGMAS 与生成参数，输出一个 `TERRYDIRECTOR_CONFIG`。
-2. **TerryDirector**：只接收一个“导演配置”输入，保存创作编排并打开页内导演台，输出分段 LATENT 列表、合并 IMAGE 和合并 AUDIO。
+2. **TerryDirector**：接收“导演配置”以及主节点自己的原生 Seed 控件，保存创作编排并打开页内导演台，输出分段 LATENT 列表、合并 IMAGE 和合并 AUDIO。
 
 ```text
 MODEL ─────┐
@@ -19,7 +19,6 @@ width ─────┤
 height ────┤
 sampler ───┤ → TerryDirector 配置 → 导演配置 → TerryDirector
 sigmas ────┤                                      ├─ 分段潜变量
-Seed ──────┤                                      ├─ 合并画面
 参考图尺寸 ┤                                      └─ 合并音频
 二采方案 ──┘
 ```
@@ -43,7 +42,6 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 - 外接 `width / height`
 - `SAMPLER`
 - `SIGMAS`
-- Seed
 - 参考图尺寸
 - 二采方案
 
@@ -59,7 +57,7 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 
 主 TerryDirector 节点左侧只保留一个可见输入：**导演配置**。
 
-主节点内部只展示：
+主节点运行输入为“导演配置 + Seed”；其中 Seed 使用 ComfyUI 原生可连接控件。主节点内部创作 UI 只展示：
 
 - 只读迷你时间线
 - 总时长 / 片段排列摘要
@@ -79,14 +77,14 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 - 片段时长和重叠
 - 保存并退出
 
-不出现模型、尺寸、Seed、采样器、SIGMAS、SelfLift 或预览设置。预览继续交给采样链上的独立预览节点。
+导演台浮窗不出现模型、尺寸、Seed、采样器、SIGMAS、SelfLift 或预览设置。Seed 只出现在 TerryDirector 主节点本体；预览继续交给工作流下游独立节点。
 
 ## 5. 当前实现状态
 
 已实现：
 
 - 配置节点 schema 与 `TERRYDIRECTOR_CONFIG`
-- 主节点单一可见输入
+- 主节点可见运行输入为“导演配置 + Seed”
 - 创作状态与 runtime 配置分离
 - 主节点迷你时间线 / 页内编辑器
 - Timeline Compiler：H3 帧对齐、素材局部编号、overlap / tail-frame / gap
