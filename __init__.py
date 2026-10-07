@@ -5,7 +5,11 @@ from typing_extensions import override
 from comfy_api.latest import ComfyExtension, io
 
 from .director_node import TerryDirector, TerryDirectorConfig
-from .director_internal import TerryDirectorAssembleMedia, TerryDirectorResampleReferenceVideo
+from .director_internal import (
+    TerryDirectorAssembleMedia,
+    TerryDirectorLatentList,
+    TerryDirectorResampleReferenceVideo,
+)
 from . import server_routes as _server_routes  # noqa: F401 - register routes on import
 
 WEB_DIRECTORY = "./web"
@@ -18,6 +22,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorConfig,
             TerryDirector,
             TerryDirectorAssembleMedia,
+            TerryDirectorLatentList,
             TerryDirectorResampleReferenceVideo,
         ]
 
