@@ -75,7 +75,22 @@ UI 不暴露这个限制；生成完成后裁回用户时间线长度。
 
 被挂起的片段仍保留在创作时间线上，但不生成 H3 任务。编译器将其视为空白时间；下一有效片段的连续性关系跳过所有挂起片段，直接与左侧最近的未挂起片段重新计算 overlap / tail_frame / gap。若时间线尾部由挂起片段延长，最终 IMAGE / AUDIO 在对应区间补黑帧与静音。
 
-## 4. 素材编号
+## 4. 全局提示词
+
+TerryDirector 文档保存一份节点级全局提示词。每个片段保存独立的“使用全局提示词”状态，默认开启。
+
+编译单个片段时：
+
+```text
+启用：全局 Prompt + 空行 + 片段 Prompt
+关闭：仅片段 Prompt
+```
+
+全局 Prompt 放在片段 Prompt 前。随后才执行素材标签扫描与本地编号重写，因此人物、场景、服装、声音等公共参考可以只在全局 Prompt 中写一次；片段本身可以完全不含 `<Picture n> / <Video n> / <Audio n>`。只要片段启用全局提示词，这些全局引用就会正常进入该片段 H3 任务；关闭后不得加载。
+
+素材数量上限同样针对合并后的单片段最终 Prompt 计算。
+
+## 5. 素材编号
 
 导演台使用项目级稳定编号，例如 `<Picture 9>`。
 
@@ -87,7 +102,7 @@ H3 官方 ReferenceToVideo 每个任务按当前输入重新从 1 编号，因�
 
 当前片段只加载 Prompt 实际引用的素材；不同媒体类型分别独立从 1 编号。
 
-## 5. 第一阶段采样
+## 6. 第一阶段采样
 
 普通片段执行链：
 
@@ -111,7 +126,7 @@ H3 AV LATENT
 
 不在 TerryDirector 内重新实现 H3 video/audio sigma 映射，也不自定义普通 sampler。
 
-## 6. SelfLift
+## 7. SelfLift
 
 SelfLift 在普通链完全跑通后接入。
 
@@ -135,7 +150,7 @@ SelfLift 是一次渐进采样：
 
 Lift 后立即卸载 Upscaler；高清阶段首尾 / Guide 关键帧按目标分辨率重新 VAE Encode，不直接插值低清关键帧 latent。
 
-## 7. 输出
+## 8. 输出
 
 TerryDirector 不为导演台 UI 额外创建 VIDEO 或编码临时预览文件；IMAGE / AUDIO 输出交给工作流下游的 CreateVideo / Preview / SaveVideo 等节点。导演台内的局部运行只使用 Partial Execution 选择当前 TerryDirector 本身作为执行目标。
 
@@ -145,7 +160,7 @@ TerryDirector 保持三个标准输出：
 - `合并画面`：IMAGE，已按时间线裁掉 H3 尾部补帧、重叠重复帧并补 gap
 - `合并音频`：AUDIO，与最终画面时间线等长
 
-## 8. 实施顺序
+## 9. 实施顺序
 
 1. Timeline Compiler
 2. 单片段真实 H3 生成
@@ -157,7 +172,7 @@ TerryDirector 保持三个标准输出：
 
 不要跨阶段提前堆兼容层、缓存层或可选模式。
 
-## 9. 中断与显存清理
+## 10. 中断与显存清理
 
 正常完成时不主动卸载模型，继续使用 ComfyUI 的 Smart Memory / 模型复用策略。
 
