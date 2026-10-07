@@ -102,6 +102,7 @@ class TerryDirectorConfig(io.ComfyNode):
                 ),
                 io.ResolutionPreview.Input(
                     "resolution_preview",
+                    optional=False,
                     ratio_widget="aspect_ratio",
                     megapixels_widget="megapixels",
                     multiple_widget="multiple",
@@ -117,6 +118,7 @@ class TerryDirectorConfig(io.ComfyNode):
                 io.Sampler.Input(
                     "sampler",
                     display_name="采样器",
+                    advanced=True,
                     extra_dict=_native_combo(
                         list(comfy.samplers.SAMPLER_NAMES),
                         "res_multistep",
@@ -125,6 +127,7 @@ class TerryDirectorConfig(io.ComfyNode):
                 io.Sigmas.Input(
                     "sigmas",
                     display_name="调度器",
+                    advanced=True,
                     extra_dict=_native_combo(
                         list(comfy.samplers.SCHEDULER_NAMES),
                         "simple",
@@ -136,6 +139,7 @@ class TerryDirectorConfig(io.ComfyNode):
                     default=8,
                     min=1,
                     max=10000,
+                    advanced=True,
                 ),
                 io.Float.Input(
                     "sigmas_denoise",
@@ -153,23 +157,27 @@ class TerryDirectorConfig(io.ComfyNode):
                     min=0,
                     max=0xFFFFFFFFFFFFFFFF,
                     control_after_generate=True,
+                    advanced=True,
                 ),
                 io.Combo.Input(
                     "ref_image_size",
                     display_name="参考图尺寸",
                     options=["match", "max"],
                     default="match",
+                    advanced=True,
                 ),
                 io.Boolean.Input(
                     "continue_audio_latent",
                     display_name="音频连续",
                     default=True,
+                    advanced=True,
                 ),
                 io.Combo.Input(
                     "second_pass_method",
                     display_name="二采方案",
                     options=["无", "SelfLift"],
                     default="无",
+                    advanced=True,
                 ),
                 io.Combo.Input(
                     "second_pass_model",
