@@ -4,8 +4,8 @@ import json
 from typing import Any
 
 FPS = 24
-CONFIG_VERSION = 3
-DOCUMENT_VERSION = 1
+CONFIG_VERSION = 4
+DOCUMENT_VERSION = 2
 RUNTIME_CONFIG_VERSION = 1
 RUNTIME_CONFIG_TYPE = "TERRYDIRECTOR_CONFIG"
 
@@ -15,6 +15,7 @@ def default_document() -> dict[str, Any]:
         "version": DOCUMENT_VERSION,
         "fps": FPS,
         "selected": "clip-1",
+        "globalPrompt": "",
         "clips": [
             {
                 "id": "clip-1",
@@ -23,6 +24,7 @@ def default_document() -> dict[str, Any]:
                 "end": 10 * FPS,
                 "prompt": "",
                 "refs": [],
+                "useGlobalPrompt": True,
                 "suspended": False,
             }
         ],
@@ -74,6 +76,7 @@ def normalize_document(value: Any) -> dict[str, Any]:
             "end": end,
             "prompt": str(raw.get("prompt") or ""),
             "refs": refs,
+            "useGlobalPrompt": raw.get("useGlobalPrompt") is not False,
             "suspended": raw.get("suspended") is True,
         })
 
@@ -113,6 +116,7 @@ def normalize_document(value: Any) -> dict[str, Any]:
         "version": DOCUMENT_VERSION,
         "fps": FPS,
         "selected": selected,
+        "globalPrompt": str(value.get("globalPrompt") or ""),
         "clips": clips,
         "assets": assets,
     }
