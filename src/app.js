@@ -69,7 +69,7 @@
   if(!embedded)resetActivity();else activity.clear();
   let state={clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null,embedDirty=false;
+  let title='远航之前',promptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,jobTimer=0,jobId=null,timeline=null,embedDirty=false,hostReadonly=false;
   let generationPreviewEnabled=true,lastPreviewRun=null;
   let promptEditor=null;
   const app=$('#app');
@@ -101,18 +101,51 @@
         </section>
     </main>
     <input type="file" id="fileInput" accept="image/*,video/*,audio/*" multiple hidden>
+    <div class="run-preview-overlay" id="runPreviewOverlay" hidden>
+      <section class="run-preview-window" role="dialog" aria-modal="true" aria-label="生成结果预览">
+        <header><strong>生成结果</strong><button class="run-preview-close" id="runPreviewClose" type="button" aria-label="关闭视频预览">${icon('close')}</button></header>
+        <div class="run-preview-stage"><video id="runPreviewVideo" controls playsinline></video></div>
+      </section>
+    </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
   const getImage=c=>assets.find(a=>c?.refs.includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
+  function setHostReadonly(value){
+    const next=!!value;
+    if(hostReadonly===next)return;
+    hostReadonly=next;
+    document.body.classList.toggle('td-run-readonly',hostReadonly);
+    app.setAttribute('aria-busy',String(hostReadonly));
+    const text=$('#promptText'),visual=$('#promptVisual'),name=$('#clipName');
+    if(text)text.readOnly=hostReadonly;
+    if(visual)visual.contentEditable=hostReadonly?'false':'true';
+    if(name)name.readOnly=hostReadonly;
+    renderAll();
+  }
+  function closeRunPreview(){
+    const overlay=$('#runPreviewOverlay'),video=$('#runPreviewVideo');
+    if(video){video.pause();video.removeAttribute('src');video.load();}
+    if(overlay)overlay.hidden=true;
+  }
+  function showRunPreview(url){
+    if(!url)return;
+    const overlay=$('#runPreviewOverlay'),video=$('#runPreviewVideo');
+    if(!overlay||!video)return;
+    video.src=url;
+    overlay.hidden=false;
+    video.load();
+    video.play().catch(()=>{});
+  }
   function modal(name,body,confirmText,fn){
     promptEditor?.closeMenu();stopDialogMedia();const d=$('#dialog');d.dataset.mode='';$('#dialogTitle').textContent=name;$('#dialogBody').innerHTML=body;
     $('#dialogActions').innerHTML=confirmText?`<button class="button ghost" data-action="close-dialog">取消</button><button class="button primary" id="dialogConfirm">${esc(confirmText)}</button>`:'<button class="button" data-action="close-dialog">完成</button>';
     if(confirmText)$('#dialogConfirm').onclick=()=>{if(fn?.()!==false)d.close();};if(!d.open)d.showModal();
   }
   function markEdited(){
+    if(hostReadonly)return;
     if(embedded){
       embedDirty=true;
       window.parent.postMessage({type:'terrydirector:dirty',dirty:true},hostOrigin);
@@ -120,8 +153,8 @@
   }
   function finishPromptEdit(){if(editBefore){if(history.push(editBefore,state))markEdited();editBefore=null;updateHistory();}}
   function commit(before){syncAllReferences();history.push(before,state);renderAll();markEdited();}
-  function mutate(fn){finishResolutionEdit();finishPromptEdit();const before=C.copy(state);fn();commit(before);}
-  function updateHistory(){ $('[data-action=undo]').disabled=!history.undoItems.length;$('[data-action=redo]').disabled=!history.redoItems.length; }
+  function mutate(fn){if(hostReadonly)return;finishResolutionEdit();finishPromptEdit();const before=C.copy(state);fn();commit(before);}
+  function updateHistory(){ $('[data-action=undo]').disabled=hostReadonly||!history.undoItems.length;$('[data-action=redo]').disabled=hostReadonly||!history.redoItems.length; }
   function renderPrompt(){
     const c=current(),text=c?.prompt||'';
     $('#noClip').hidden=!!c;
@@ -147,7 +180,7 @@
     const number=$('#clipDurationNumber'),range=$('#clipDurationRange');
     if(!number||!range)return;
     const control=number.closest('.clip-duration-control');
-    const enabled=!!c;
+    const enabled=!!c&&!hostReadonly;
     number.disabled=!enabled;range.disabled=!enabled;
     if(!c){number.value='';if(control)control.title='';return;}
     const frames=c.end-c.start,seconds=frames/C.FPS,aligned=C.h3AlignedFrames(frames);
@@ -165,11 +198,12 @@
     renderClipDuration(clips);
   }
   function beginDurationEdit(){
-    if(!current()||durationEditBefore)return;
+    if(hostReadonly||!current()||durationEditBefore)return;
     finishPromptEdit();
     durationEditBefore=C.copy(state);
   }
   function previewDuration(seconds){
+    if(hostReadonly)return;
     const c=current(),value=Number(seconds);
     if(!c||!Number.isFinite(value))return;
     const frames=Math.max(C.FPS,Math.round(value*C.FPS)),targetEnd=c.start+frames;
@@ -317,10 +351,10 @@
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
     syncAllReferences();
     const c=current();$('#clipNumber').textContent=c?`片段 ${state.clips.indexOf(c)+1}`:'暂无片段';
-    $('#clipName').value=c?.name||'';$('#clipName').disabled=!c;$('#clipName').hidden=!c;
+    $('#clipName').value=c?.name||'';$('#clipName').disabled=!c||hostReadonly;$('#clipName').hidden=!c;
     const suspendButton=$('[data-action=suspend]');
     if(suspendButton){
-      suspendButton.disabled=!c;
+      suspendButton.disabled=!c||hostReadonly;
       suspendButton.classList.toggle('is-active',!!c?.suspended);
       suspendButton.setAttribute('aria-pressed',String(!!c?.suspended));
       suspendButton.title=c?.suspended?'恢复当前片段生成':'挂起当前片段：编译时视为空白';
@@ -332,8 +366,8 @@
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
     getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
-    onBeforeChange:()=>{if(!editBefore)editBefore=C.copy(state);},
-    onChange:text=>{const c=current();if(c){c.prompt=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
+    onBeforeChange:()=>{if(hostReadonly)return false;if(!editBefore)editBefore=C.copy(state);},
+    onChange:text=>{if(hostReadonly)return;const c=current();if(c){c.prompt=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
     onCommit:finishPromptEdit,
     onHistory:redo=>actions[redo?'redo':'undo']()
   });
@@ -581,6 +615,7 @@
   }
   function applyHostActivity(payload){
     if(!embedded)return;
+    setHostReadonly(!!payload?.readonly);
     const records=payload?.clips&&typeof payload.clips==='object'?payload.clips:{};
     activity.clear();
     for(const clip of state.clips){
@@ -644,6 +679,7 @@
     if(!d.open)d.showModal();
   }
   function queueWorkflow(){
+    if(hostReadonly)return;
     finishDurationEdit();finishPromptEdit();syncAllReferences();
     if(!embedded){toast('正式嵌入 ComfyUI 后可从这里运行整个工作流。');return;}
     embedDirty=false;
@@ -654,6 +690,7 @@
     },hostOrigin);
   }
   function saveToHost(){
+    if(hostReadonly)return;
     finishPromptEdit();
     if(!embedded){markEdited();toast('已保存编排。正式接入 ComfyUI 后会同时隐藏浮窗。');return;}
     embedDirty=false;
@@ -684,7 +721,13 @@
     reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};renderAll();timeline.fit();timeline.setFrame(192);}
   };
   app.addEventListener('click',e=>{
-    const target=e.target,button=target.closest('[data-action]');if(button){if(!button.disabled)actions[button.dataset.action]?.();return;}
+    const target=e.target,button=target.closest('[data-action]');
+    if(button){
+      const allowedWhileRunning=new Set(['help','close-editor','close-dialog']);
+      if(hostReadonly&&!allowedWhileRunning.has(button.dataset.action))return;
+      if(!button.disabled)actions[button.dataset.action]?.();
+      return;
+    }
     const preview=target.closest('[data-preview-ref]');if(preview){previewAsset(preview.dataset.previewRef);return;}
     const remove=target.closest('[data-delete-asset]');if(remove){deleteAsset(remove.dataset.deleteAsset);return;}
     const insert=target.closest('[data-insert-ref]');if(insert){insertReference(insert.dataset.insertRef);return;}
@@ -715,6 +758,7 @@
     });
   }
   window.addEventListener('keydown',e=>{
+    if(hostReadonly){if(e.key==='Escape')closeRunPreview();return;}
     if(e.target.closest('input,textarea,select,[contenteditable=true],dialog,.h3-menu')||$('#dialog').open)return;
     const key=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
     if(key==='escape'){timeline.cancel();return;}
@@ -744,11 +788,14 @@
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
+      else if(message.type==='terrydirector:preview-video')showRunPreview(message.url);
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
     window.parent.postMessage({type:'terrydirector:ready'},hostOrigin);
   }
-  window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();});
+  $('#runPreviewClose').addEventListener('click',closeRunPreview);
+  $('#runPreviewOverlay').addEventListener('click',e=>{if(e.target===e.currentTarget)closeRunPreview();});
+  window.addEventListener('pagehide',()=>{closeRunPreview();stopDialogMedia();promptEditor.closeMenu();});
   window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));});
 })();
