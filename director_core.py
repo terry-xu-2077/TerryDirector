@@ -171,7 +171,6 @@ def make_runtime_config(
     sigmas: Any,
     seed: int = 0,
     ref_image_size: str = "match",
-    continue_audio_latent: bool = True,
     second_pass_method: str = "none",
     second_pass_model: str = "",
     second_pass_high_steps: int = 4,
@@ -199,7 +198,6 @@ def make_runtime_config(
         "params": {
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, _as_int(seed, 0))),
             "ref_image_size": image_size,
-            "continue_audio_latent": bool(continue_audio_latent),
             "second_pass": _normalize_second_pass(
                 second_pass_method, second_pass_model, second_pass_high_steps
             ),
@@ -234,7 +232,6 @@ def require_runtime_config(value: Any) -> dict[str, Any]:
             "ref_image_size": str(params.get("ref_image_size") or "match")
             if str(params.get("ref_image_size") or "match") in {"match", "max"}
             else "match",
-            "continue_audio_latent": bool(params.get("continue_audio_latent", True)),
             "second_pass": _normalize_second_pass(
                 second.get("method"), second.get("model"), second.get("high_steps")
             ),
