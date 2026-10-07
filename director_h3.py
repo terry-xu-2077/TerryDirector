@@ -281,7 +281,7 @@ def _decode_segment(
 def build_timeline_graph(
     runtime: dict[str, Any],
     plan: dict[str, Any],
-) -> tuple[dict[str, Any], list[Any], Any, Any]:
+) -> tuple[dict[str, Any], Any, Any, Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
     latents: list[Any] = []
@@ -328,4 +328,9 @@ def build_timeline_graph(
         previous_audio = audio
         latents.append(sampled)
 
-    return graph.finalize(), latents, merged_images, merged_audio
+    latent_list = graph.node(
+        "TerryDirectorLatentList",
+        "td_latent_list",
+        **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
+    )
+    return graph.finalize(), latent_list.out(0), merged_images, merged_audio
