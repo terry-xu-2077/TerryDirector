@@ -36,7 +36,8 @@ def _latent_upscaler_options() -> list[str]:
 
 
 def _resolution(aspect_ratio: str, megapixels: float, multiple: int) -> tuple[int, int]:
-    w_ratio, h_ratio = ASPECT_RATIOS[aspect_ratio]
+    ratio = aspect_ratio if isinstance(aspect_ratio, AspectRatio) else AspectRatio(aspect_ratio)
+    w_ratio, h_ratio = ASPECT_RATIOS[ratio]
     total_pixels = float(megapixels) * 1024 * 1024
     scale = math.sqrt(total_pixels / (w_ratio * h_ratio))
     width = round(w_ratio * scale / multiple) * multiple
@@ -89,7 +90,7 @@ class TerryDirectorConfig(io.ComfyNode):
                     "aspect_ratio",
                     display_name="宽高比",
                     options=AspectRatio,
-                    default=AspectRatio.WIDESCREEN,
+                    default=AspectRatio.WIDESCREEN_H,
                 ),
                 io.Float.Input(
                     "megapixels",
