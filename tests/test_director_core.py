@@ -53,22 +53,17 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertEqual(config["document"]["clips"][0]["end"], 6)
         self.assertEqual(config["document"]["clips"][0]["refs"], [])
 
-    def test_legacy_runtime_params_are_discarded_but_document_survives(self):
-        payload = {
-            "version": 2,
-            "params": {
-                "seed": 999,
-                "selflift": {"enabled": True},
-            },
-            "document": {
-                "selected": "a",
-                "clips": [{"id": "a", "name": "A", "start": 0, "end": FPS, "prompt": "", "refs": []}],
-                "assets": [],
-            },
-        }
-        normalized = normalize_config(payload)
-        self.assertNotIn("params", normalized)
-        self.assertEqual(normalized["document"]["clips"][0]["name"], "A")
+    def test_rejects_old_creative_config_version(self):
+        payload = default_config()
+        payload["version"] = 2
+        with self.assertRaises(ValueError):
+            normalize_config(payload)
+
+    def test_rejects_old_runtime_config_version(self):
+        runtime = self._runtime()
+        runtime["version"] = 0
+        with self.assertRaises(ValueError):
+            require_runtime_config(runtime)
 
     def test_runtime_packet_contains_generation_dependencies(self):
         runtime = self._runtime(second_pass_method="selflift", second_pass_model="h3.safetensors")
