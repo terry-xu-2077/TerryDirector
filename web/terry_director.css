@@ -499,3 +499,9 @@
 .td-node-shell-director .td-mini-timeline {
   overflow: hidden;
 }
+
+.td-node-shell-director .td-mini-clip.is-suspended {
+  opacity: .42;
+  border-style: dashed;
+  filter: saturate(.35);
+}
