@@ -12,8 +12,9 @@
     return { start, end: Math.max(start, end), frames: Math.max(0, end - start) };
   }
   function seams(clips) {
-    return clips.slice(1).map((b, i) => {
-      const a = clips[i];
+    const active = clips.filter(clip => !clip.suspended);
+    return active.slice(1).map((b, i) => {
+      const a = active[i];
       const delta = b.start - a.end;
       if (delta < 0) {
         return {
