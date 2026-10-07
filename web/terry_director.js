@@ -82,9 +82,6 @@ function ensurePromptRun(node, promptId) {
   if (node.__tdPromptId === promptId) return;
   node.__tdPromptId = promptId;
   node.__tdLocalRunLock = false;
-  if (node.__tdEditorRunRequested) {
-    node.__tdEditorRunPromptId = promptId;
-  }
   node.__tdRunActivity = blankActivity(node);
   pushActivity(node);
 }
@@ -171,37 +168,6 @@ function applyProgressState(detail) {
   }
 }
 
-function previewUrl(item) {
-  if (!item?.filename) return "";
-  const params = new URLSearchParams({
-    filename: item.filename,
-    type: item.type || "temp",
-  });
-  if (item.subfolder) params.set("subfolder", item.subfolder);
-  params.set("t", Date.now().toString());
-  return `/view?${params.toString()}`;
-}
-
-function pushRunPreview(node, promptId) {
-  const preview = node.__tdRunPreview;
-  if (
-    !preview ||
-    preview.promptId !== promptId ||
-    node.__tdEditorRunPromptId !== promptId ||
-    !frameReady ||
-    activeNode !== node ||
-    !frame?.contentWindow
-  ) return;
-
-  frame.contentWindow.postMessage(
-    {
-      type: "terrydirector:preview-video",
-      url: preview.url,
-    },
-    location.origin
-  );
-}
-
 function finishPromptActivity(promptId, success, message = "") {
   let matched = false;
   for (const node of app.graph?._nodes || []) {
@@ -225,17 +191,9 @@ function finishPromptActivity(promptId, success, message = "") {
         record.error = message || "生成失败";
       }
     }
-    const showPreview =
-      success &&
-      node.__tdEditorRunPromptId === promptId &&
-      node.__tdRunPreview?.promptId === promptId;
-
     node.__tdPromptId = null;
     node.__tdLocalRunLock = false;
-    node.__tdEditorRunRequested = false;
     pushActivity(node);
-    if (showPreview) pushRunPreview(node, promptId);
-    node.__tdEditorRunPromptId = null;
   }
   return matched;
 }
@@ -245,19 +203,6 @@ function bindExecutionActivity() {
   bindExecutionActivity.bound = true;
 
   api.addEventListener("progress_state", event => applyProgressState(event.detail));
-
-  api.addEventListener("executed", event => {
-    const detail = event.detail || {};
-    if (!/td_preview_video/i.test(String(detail.node || ""))) return;
-    const node = directorNodeFromId(detail.display_node);
-    const item = detail.output?.video?.[0];
-    const url = previewUrl(item);
-    if (!node || !url) return;
-    node.__tdRunPreview = {
-      promptId: detail.prompt_id,
-      url,
-    };
-  });
 
   api.addEventListener("execution_cached", event => {
     const promptId = event.detail?.prompt_id;
@@ -689,21 +634,16 @@ function ensureEditorOverlay() {
       writeConfig(node, next);
       editorDirty = false;
 
-      node.__tdEditorRunRequested = true;
-      node.__tdEditorRunPromptId = null;
-      node.__tdRunPreview = null;
       node.__tdLocalRunLock = true;
       node.__tdRunActivity = blankActivity(node);
       pushActivity(node);
 
       void app.queuePrompt(0, 1, [String(node.id)]).then(queued => {
         if (!queued && !node.__tdPromptId) {
-          node.__tdEditorRunRequested = false;
           node.__tdLocalRunLock = false;
           pushActivity(node);
         }
       }).catch(() => {
-        node.__tdEditorRunRequested = false;
         node.__tdLocalRunLock = false;
         pushActivity(node);
       });
