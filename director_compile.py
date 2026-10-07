@@ -113,6 +113,20 @@ def _compile_assets(
     return _TAG_RE.sub(replace_tag, prompt), groups
 
 
+def _effective_prompt(document: dict[str, Any], clip: dict[str, Any]) -> str:
+    """Build the exact prompt H3 receives for one segment."""
+    segment_prompt = str(clip.get("prompt") or "")
+    if clip.get("useGlobalPrompt") is False:
+        return segment_prompt
+
+    global_prompt = str(document.get("globalPrompt") or "")
+    if not global_prompt:
+        return segment_prompt
+    if not segment_prompt:
+        return global_prompt
+    return f"{global_prompt.rstrip()}\n\n{segment_prompt.lstrip()}"
+
+
 def _continuity(
     previous: dict[str, Any] | None,
     clip: dict[str, Any],
@@ -198,7 +212,8 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
                 f"TerryDirector segment {index + 1} exceeds H3 maximum length "
                 f"({H3_MAX_FRAMES} frames at {FPS} fps)"
             )
-        prompt, local_assets = _compile_assets(str(clip.get("prompt") or ""), assets)
+        effective_prompt = _effective_prompt(document, clip)
+        prompt, local_assets = _compile_assets(effective_prompt, assets)
         continuity, gap_before, trim_head = _continuity(previous, clip)
         trim_tail = generated_frames - output_frames
 
@@ -211,6 +226,7 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
             "output_frames": output_frames,
             "h3_frames": generated_frames,
             "prompt": prompt,
+            "uses_global_prompt": clip.get("useGlobalPrompt") is not False,
             "assets": local_assets,
             "continuity": continuity,
             "assembly": {
