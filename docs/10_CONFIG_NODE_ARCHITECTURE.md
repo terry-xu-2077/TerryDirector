@@ -87,11 +87,14 @@ MODEL / CLIP / 视频 VAE / 音频 VAE 使用纯原生接入点，不在配置�
 - 主节点单一可见输入
 - 创作状态与 runtime 配置分离
 - 主节点迷你时间线 / 页内编辑器
-- 三个标准输出端口定义
+- Timeline Compiler：H3 帧对齐、素材局部编号、overlap / tail-frame / gap
+- GraphBuilder 原生 H3 分段采样展开
+- 图片 / 视频 / 音频参考素材加载；视频参考自动转换为 24fps 帧序列
+- 重叠 AddGuide、首尾贴合尾帧 Guide、空隙独立生成
+- 合并 IMAGE / AUDIO：H3 尾部裁切、重叠去重、黑帧 / 静音 gap
+- 三个标准输出端口执行链
 
 尚未实现：
 
-- MiniMax H3 实际分段采样
-- 重叠连续性执行
 - SelfLift 运行链路
-- 最终音画合并执行
+- 缓存 / 低显存分块等性能层
