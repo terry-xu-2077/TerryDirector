@@ -130,7 +130,9 @@ input,textarea { min-width:0; }
 .timeline-canvas { position:absolute;inset:0;width:100%;height:100%;display:block; }
 .timeline-canvas.overlay { touch-action:none;cursor:default; }
 .timeline-canvas.overlay:focus-visible { outline-offset:-2px; }
-.timeline-bottom { flex-shrink:0;height:18px;display:flex;align-items:center;padding:0 19px 4px 70px;gap:15px; }
+.timeline-bottom { position:relative;flex-shrink:0;height:18px;display:flex;align-items:center;padding:0 19px 4px 70px;gap:15px; }
+.timeline-run-progress { position:absolute;left:70px;right:19px;top:0;height:3px;overflow:hidden;border-radius:999px;background:color-mix(in srgb,var(--td-timeline-progress-track) 92%,transparent);pointer-events:none; }
+.timeline-run-progress>i { display:block;height:100%;border-radius:inherit;background:var(--td-timeline-progress);box-shadow:0 0 8px color-mix(in srgb,var(--td-timeline-progress) 48%,transparent); }
 .timeline-scroll { flex:1;position:relative;height:10px;touch-action:none;border-radius:3px;background:var(--td-bg-inset); }
 .scroll-thumb { position:absolute;top:2px;bottom:2px;background:var(--td-neutral-elevated);border-radius:3px;min-width:16px; }
 .timeline-bottom small { white-space:nowrap;flex:none;font:10px "Consolas",monospace;color:var(--td-text-muted); }
