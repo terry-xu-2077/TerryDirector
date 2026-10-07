@@ -277,6 +277,13 @@ class TerryDirector(io.ComfyNode):
         )
 
     @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        # TerryDirector expands an ephemeral H3 execution graph. Always rebuild
+        # it for a new Queue so an interrupted run can never reuse stale
+        # expanded-node cache state.
+        return float("NaN")
+
+    @classmethod
     def execute(cls, director_config, config_json):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
