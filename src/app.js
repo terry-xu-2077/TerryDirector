@@ -180,6 +180,7 @@
     durationEditBefore=null;
     updateHistory();
     renderAll();
+    requestAnimationFrame(()=>timeline?.fit());
   }
   function poolEntries(){
     const active=new Set(state.assetIds);
