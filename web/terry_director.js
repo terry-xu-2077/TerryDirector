@@ -483,6 +483,22 @@ function writeConfig(node, config, render = true) {
   if (render) renderNode(node);
 }
 
+function miniRulerHtml(totalFrames) {
+  const totalSeconds = Math.max(0, totalFrames / FPS);
+  const desired = totalSeconds / 6;
+  const candidates = [1, 2, 3, 5, 10, 15, 20, 30, 60, 120, 300, 600];
+  const step = candidates.find(value => value >= desired) || candidates.at(-1);
+  const ticks = [];
+  for (let seconds = 0; seconds <= totalSeconds + 0.0001; seconds += step) {
+    const left = totalSeconds ? (seconds / totalSeconds) * 100 : 0;
+    const minutes = Math.floor(seconds / 60);
+    const remain = Math.round(seconds % 60);
+    const label = `${String(minutes).padStart(2, "0")}:${String(remain).padStart(2, "0")}`;
+    ticks.push(`<span class="td-mini-ruler-tick${seconds === 0 ? " is-first" : ""}" style="left:${left}%"><b>${label}</b><i></i></span>`);
+  }
+  return `<div class="td-mini-ruler" aria-hidden="true">${ticks.join("")}</div>`;
+}
+
 function timelineHtml(documentData, activity = {}) {
   const clips = documentData.clips || [];
   if (!clips.length) {
@@ -533,7 +549,7 @@ function timelineHtml(documentData, activity = {}) {
         ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
         : "";
 
-      return `<div class="td-mini-clip${selected}${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : clip.id === documentData.selected ? 4 : index + 1}" title="${escapeHtml(title)}"><span class="td-mini-label">${escapeHtml(clip.name)}</span><span class="td-mini-duration">${duration}</span>${progressHtml}</div>`;
+      return `<div class="td-mini-clip${selected}${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : clip.id === documentData.selected ? 4 : index + 1}" title="${escapeHtml(title)}"><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
     })
     .join("");
 
@@ -541,7 +557,7 @@ function timelineHtml(documentData, activity = {}) {
   const overallHtml = hasRunState
     ? `<div class="td-mini-overall-progress" title="总生成进度 ${Math.round(overall * 100)}%"><i style="width:${Math.round(overall * 1000) / 10}%"></i></div>`
     : "";
-  return clipHtml + overallHtml;
+  return miniRulerHtml(total) + clipHtml + overallHtml;
 }
 
 function renderNode(node) {
@@ -660,8 +676,8 @@ function mountNode(node) {
     root,
     {
       hideOnZoom: false,
-      getMinHeight: () => 92,
-      getMaxHeight: () => 118,
+      getMinHeight: () => 118,
+      getMaxHeight: () => 148,
       margin: 3,
     }
   );
@@ -681,10 +697,10 @@ function mountNode(node) {
   };
 
   const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
-  if ((node.size?.[1] || 0) > 290 || (node.size?.[1] || 0) < 175) {
-    node.setSize?.([width, 215]);
+  if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
+    node.setSize?.([width, 245]);
   } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
-    node.setSize?.([DIRECTOR_MIN_WIDTH, node.size?.[1] || 215]);
+    node.setSize?.([DIRECTOR_MIN_WIDTH, node.size?.[1] || 245]);
   }
 
   renderNode(node);
