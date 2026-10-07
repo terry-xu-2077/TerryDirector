@@ -7,6 +7,7 @@ from .director_core import FPS
 
 H3_MIN_FRAMES = 5
 H3_FRAME_STEP = 17
+H3_MAX_FRAMES = 3592
 MAX_REFERENCE_IMAGES = 9
 MAX_REFERENCE_VIDEOS = 3
 MAX_REFERENCE_AUDIOS = 3
@@ -183,6 +184,11 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
 
         output_frames = end - start
         generated_frames = h3_align_frames(output_frames)
+        if generated_frames > H3_MAX_FRAMES:
+            raise ValueError(
+                f"TerryDirector segment {index + 1} exceeds H3 maximum length "
+                f"({H3_MAX_FRAMES} frames at {FPS} fps)"
+            )
         prompt, local_assets = _compile_assets(str(clip.get("prompt") or ""), assets)
         continuity, gap_before, trim_head = _continuity(previous, clip)
         trim_tail = generated_frames - output_frames
