@@ -149,14 +149,6 @@ class TerryDirectorConfig(io.ComfyNode):
                     step=0.01,
                     advanced=True,
                 ),
-                io.Int.Input(
-                    "seed",
-                    display_name="Seed",
-                    default=0,
-                    min=0,
-                    max=0xFFFFFFFFFFFFFFFF,
-                    control_after_generate=True,
-                ),
                 io.Combo.Input(
                     "ref_image_size",
                     display_name="参考图尺寸",
@@ -208,7 +200,6 @@ class TerryDirectorConfig(io.ComfyNode):
         sigmas,
         sigmas_steps,
         sigmas_denoise,
-        seed,
         ref_image_size,
         second_pass_method,
         second_pass_model=AUTO_UPSCALER,
@@ -235,7 +226,6 @@ class TerryDirectorConfig(io.ComfyNode):
             height=height,
             sampler=sampler,
             sigmas=sigmas,
-            seed=seed,
             ref_image_size=ref_image_size,
             second_pass_method=method,
             second_pass_model=upscaler,
@@ -259,6 +249,14 @@ class TerryDirector(io.ComfyNode):
             ),
             inputs=[
                 DirectorConfigData.Input("director_config", display_name="导演配置"),
+                io.Int.Input(
+                    "seed",
+                    display_name="Seed",
+                    default=0,
+                    min=0,
+                    max=0xFFFFFFFFFFFFFFFF,
+                    control_after_generate=True,
+                ),
                 io.String.Input(
                     "config_json",
                     default=config_json(),
@@ -273,6 +271,7 @@ class TerryDirector(io.ComfyNode):
                 io.Image.Output(display_name="合并画面"),
                 io.Audio.Output(display_name="合并音频"),
             ],
+            is_output_node=True,
             enable_expand=True,
         )
 
@@ -284,7 +283,7 @@ class TerryDirector(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, director_config, config_json):
+    def execute(cls, director_config, seed, config_json):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
         plan = compile_timeline(config["document"])
@@ -292,7 +291,7 @@ class TerryDirector(io.ComfyNode):
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
-        expanded, latents, images, audio = build_timeline_graph(runtime, plan)
+        expanded, latents, images, audio = build_timeline_graph(runtime, plan, seed)
         return io.NodeOutput(
             latents,
             images,
