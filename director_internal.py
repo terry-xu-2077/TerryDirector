@@ -4,6 +4,43 @@ import torch
 
 from comfy_api.latest import io
 
+DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
+
+
+class TerryDirectorPackOutput(io.ComfyNode):
+    """Internal packer for the single TerryDirector public output socket."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        template = io.Autogrow.TemplatePrefix(
+            io.Latent.Input("latent"),
+            prefix="latent_",
+            min=1,
+            max=64,
+        )
+        return io.Schema(
+            node_id="TerryDirectorPackOutput",
+            display_name="TerryDirector Pack Output (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Autogrow.Input("latents", template=template),
+                io.Image.Input("images"),
+                io.Audio.Input("audio"),
+                io.Int.Input("fps", min=1),
+            ],
+            outputs=[DirectorOutputData.Output(display_name="导演输出")],
+        )
+
+    @classmethod
+    def execute(cls, latents, images, audio, fps) -> io.NodeOutput:
+        return io.NodeOutput({
+            "fps": int(fps),
+            "segment_latents": list(latents.values()),
+            "images": images,
+            "audio": audio,
+        })
+
 
 class TerryDirectorAssembleMedia(io.ComfyNode):
     """Internal timeline assembly: remove overlap head, insert gaps, append AV media."""
@@ -135,29 +172,3 @@ class TerryDirectorResampleReferenceVideo(io.ComfyNode):
         indices = torch.round(positions * source_fps / target_fps).to(torch.long)
         indices.clamp_(0, count - 1)
         return io.NodeOutput(images.index_select(0, indices))
-
-
-
-class TerryDirectorLatentList(io.ComfyNode):
-    """Internal container used to expose segment latents through a native list output."""
-
-    @classmethod
-    def define_schema(cls) -> io.Schema:
-        template = io.Autogrow.TemplatePrefix(
-            io.Latent.Input("latent"),
-            prefix="latent_",
-            min=1,
-            max=64,
-        )
-        return io.Schema(
-            node_id="TerryDirectorLatentList",
-            display_name="TerryDirector Latent List (Internal)",
-            category="MiniMax H3/TerryDirector/Internal",
-            is_dev_only=True,
-            inputs=[io.Autogrow.Input("latents", template=template)],
-            outputs=[io.Latent.Output()],
-        )
-
-    @classmethod
-    def execute(cls, latents) -> io.NodeOutput:
-        return io.NodeOutput(list(latents.values()))
