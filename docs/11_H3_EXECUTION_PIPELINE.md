@@ -52,14 +52,29 @@ UI 不暴露这个限制；生成完成后裁回用户时间线长度。
 - 音频 Guide 覆盖完整重叠时长
 - 合并时裁掉当前片段开头的重叠帧
 
-### tail_frame
+### touch / 首尾贴合
 
 `current.start == previous.end`
 
-- 自动取上一片段最终可见尾帧
-- 作为当前片段 frame 0 的视觉 Guide
-- 不延续音频 latent
-- 不裁当前片段头部
+首尾贴合只表示时间上连续，实际镜头关系由后一个片段的 `transitionMode` 决定：
+
+- `tail_reference` / **尾帧参考**（新建接缝默认）
+  - 自动取上一片段最终可见尾帧
+  - 作为当前片段额外的 H3 图片参考
+  - 只用于人物 / 场景状态、色彩、光线和整体基调连续
+  - 当前片段仍按自己的 Prompt 重新构图、重新运镜
+  - 不作为 frame 0 Guide，不延续音频 latent，不裁当前片段头部
+  - 尾帧参考占用一个 H3 图片参考位，因此当前片段最多再引用 8 张普通图片
+- `tail_continuation` / **尾帧续接**
+  - 自动取上一片段最终可见尾帧
+  - 作为当前片段 frame 0 的视觉 Guide
+  - 用于无缝续接 / 一镜到底式连续镜头
+  - 不延续音频 latent，不裁当前片段头部
+- `independent` / **独立**
+  - 时间上仍首尾贴合
+  - 生成时完全不读取上一片段
+
+兼容规则：旧工作流没有 `transitionMode` 字段时继续按 `tail_continuation` 解释，保留此前已验证通过的尾帧续接行为。新建片段的默认值来自 ComfyUI Settings 中 TerryDirector 的“默认镜头衔接”，产品默认 `tail_reference`。Settings 只影响新片段，不批量改写已有时间线。
 
 ### gap
 
