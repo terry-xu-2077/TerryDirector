@@ -1,6 +1,17 @@
 import { app } from "/scripts/app.js";
 
 const NODE_CLASS = "TerryDirector";
+const CONFIG_NODE_CLASS = "TerryDirectorConfig";
+const CONFIG_ADVANCED_WIDGETS = new Set([
+  "multiple",
+  "sampler",
+  "sigmas",
+  "sigmas_denoise",
+  "continue_audio_latent",
+  "second_pass_method",
+  "second_pass_model",
+  "second_pass_high_steps",
+]);
 const FPS = 24;
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
 
@@ -219,6 +230,24 @@ function renderNode(node) {
   });
 }
 
+function applyConfigAdvancedVisibility(node) {
+  if (!node || node.comfyClass !== CONFIG_NODE_CLASS) return;
+
+  for (const widget of node.widgets || []) {
+    if (!CONFIG_ADVANCED_WIDGETS.has(widget.name)) continue;
+
+    // Use ComfyUI's own widget visibility contract. Do not hide DOM/canvas
+    // controls ourselves; setting the native widget's advanced state makes
+    // the built-in "显示高级输入" footer own visibility on every surface.
+    widget.advanced = true;
+    if (widget.options) widget.options.advanced = true;
+    widget.syncLiveVisibilityOptions?.();
+  }
+
+  node.setDirtyCanvas?.(true, true);
+  node.graph?.setDirtyCanvas?.(true, true);
+}
+
 function mountNode(node) {
   if (node.__tdRoot) {
     hideBackingWidget(configWidget(node));
@@ -377,11 +406,15 @@ app.registerExtension({
   nodeCreated(node) {
     if (node.comfyClass === NODE_CLASS) {
       queueMicrotask(() => mountNode(node));
+    } else if (node.comfyClass === CONFIG_NODE_CLASS) {
+      queueMicrotask(() => applyConfigAdvancedVisibility(node));
     }
   },
   loadedGraphNode(node) {
     if (node.comfyClass === NODE_CLASS) {
       queueMicrotask(() => mountNode(node));
+    } else if (node.comfyClass === CONFIG_NODE_CLASS) {
+      queueMicrotask(() => applyConfigAdvancedVisibility(node));
     }
   },
 });
