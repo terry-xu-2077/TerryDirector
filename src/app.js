@@ -146,13 +146,19 @@
     const c=clips.find(x=>x.id===state.selected);
     const number=$('#clipDurationNumber'),range=$('#clipDurationRange');
     if(!number||!range)return;
+    const control=number.closest('.clip-duration-control');
     const enabled=!!c;
     number.disabled=!enabled;range.disabled=!enabled;
-    if(!c){number.value='';return;}
-    const seconds=(c.end-c.start)/C.FPS;
+    if(!c){number.value='';if(control)control.title='';return;}
+    const frames=c.end-c.start,seconds=frames/C.FPS,aligned=C.h3AlignedFrames(frames);
     number.value=Number(seconds.toFixed(2));
     range.max='15';
     range.value=String(Math.min(15,seconds));
+    const hint=aligned===frames
+      ? `输出 ${Number(seconds.toFixed(2))}s · ${frames} 帧 · H3 已对齐`
+      : `输出 ${Number(seconds.toFixed(2))}s · ${frames} 帧 · H3 内部生成 ${aligned} 帧后裁切 ${aligned-frames} 帧`;
+    if(control)control.title=hint;
+    number.title=hint;range.title=hint;
   }
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
