@@ -13,6 +13,7 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
   "second_pass_high_ratio",
 ]);
 const FPS = 24;
+const DIRECTOR_MIN_WIDTH = 460;
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
 
 
@@ -496,6 +497,20 @@ function applyConfigAdvancedVisibility(node) {
 
 function mountNode(node) {
   ensureActivity(node);
+
+  if (!node.__tdMinWidthBound) {
+    const originalOnResize = node.onResize;
+    node.onResize = function(size) {
+      if (Array.isArray(size) && size[0] < DIRECTOR_MIN_WIDTH) {
+        size[0] = DIRECTOR_MIN_WIDTH;
+      }
+      originalOnResize?.call(this, size);
+    };
+    node.__tdMinWidthBound = true;
+  }
+  if (Array.isArray(node.size) && node.size[0] < DIRECTOR_MIN_WIDTH) {
+    node.size[0] = DIRECTOR_MIN_WIDTH;
+  }
   if (node.__tdRoot) {
     hideBackingWidget(configWidget(node));
     renderNode(node);
@@ -538,11 +553,11 @@ function mountNode(node) {
     });
   };
 
-  const width = Math.max(430, Math.min(520, node.size?.[0] || 470));
+  const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
   if ((node.size?.[1] || 0) > 290 || (node.size?.[1] || 0) < 175) {
     node.setSize?.([width, 215]);
-  } else if ((node.size?.[0] || 0) < 430) {
-    node.setSize?.([430, node.size?.[1] || 215]);
+  } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
+    node.setSize?.([DIRECTOR_MIN_WIDTH, node.size?.[1] || 215]);
   }
 
   renderNode(node);
