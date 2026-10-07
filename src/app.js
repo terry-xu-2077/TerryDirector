@@ -631,7 +631,7 @@
     const commitDraft=()=>{if(beforeText!==null&&beforeText!==draft){undo.push(beforeText);redo.length=0;}beforeText=null;};
     const refresh=()=>{globalPromptEditor.setContext('global-prompt',draft,globalPromptView);const button=$('.global-prompt-view-switch'),isText=globalPromptView==='text';button.classList.toggle('is-text',isText);button.setAttribute('aria-pressed',String(isText));button.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';count();};
     globalPromptEditor=new window.TDH3Editor({
-      visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),
+      visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),menuRoot:d,
       getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
       onBeforeChange:()=>{if(beforeText===null)beforeText=draft;},
       onChange:text=>{draft=text;count();},onCommit:commitDraft,
