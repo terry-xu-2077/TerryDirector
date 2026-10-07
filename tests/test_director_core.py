@@ -41,6 +41,7 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertEqual(document["version"], 2)
         self.assertEqual(document["globalPrompt"], "")
         self.assertTrue(document["clips"][0]["useGlobalPrompt"])
+        self.assertEqual(document["clips"][0]["transitionMode"], "tail_reference")
 
     def test_runtime_packet_has_no_manual_audio_continuity_flag(self):
         runtime = self._runtime()
@@ -60,6 +61,13 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertEqual(config["document"]["clips"][0]["refs"], [])
         self.assertEqual(config["document"]["globalPrompt"], "shared")
         self.assertFalse(config["document"]["clips"][0]["useGlobalPrompt"])
+        self.assertEqual(config["document"]["clips"][0]["transitionMode"], "tail_continuation")
+
+    def test_preserves_explicit_transition_mode(self):
+        payload = default_config()
+        payload["document"]["clips"][0]["transitionMode"] = "independent"
+        normalized = normalize_config(payload)
+        self.assertEqual(normalized["document"]["clips"][0]["transitionMode"], "independent")
 
     def test_rejects_old_creative_config_version(self):
         payload = default_config()
