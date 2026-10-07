@@ -19,6 +19,7 @@ class TerryDirectorAssembleMedia(io.ComfyNode):
                 io.Image.Input("images"),
                 io.Audio.Input("audio"),
                 io.Int.Input("gap_frames", min=0),
+                io.Int.Input("gap_after_frames", min=0),
                 io.Int.Input("trim_head_frames", min=0),
                 io.Int.Input("fps", min=1),
                 io.Image.Input("accumulated_images", optional=True),
@@ -36,12 +37,14 @@ class TerryDirectorAssembleMedia(io.ComfyNode):
         images,
         audio,
         gap_frames,
+        gap_after_frames,
         trim_head_frames,
         fps,
         accumulated_images=None,
         accumulated_audio=None,
     ) -> io.NodeOutput:
         gap = int(gap_frames)
+        gap_after = int(gap_after_frames)
         trim = int(trim_head_frames)
         fps = int(fps)
         if fps < 1:
@@ -82,6 +85,16 @@ class TerryDirectorAssembleMedia(io.ComfyNode):
             if accumulated_waveform.shape[:-1] != current_waveform.shape[:-1]:
                 raise ValueError("TerryDirector assembled segments must share one audio channel layout")
             current_waveform = torch.cat((accumulated_waveform, current_waveform), dim=-1)
+
+        if gap_after:
+            black = current_images.new_zeros(
+                (gap_after, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+            )
+            current_images = torch.cat((current_images, black), dim=0)
+            silence = current_waveform.new_zeros(
+                (*current_waveform.shape[:-1], round((gap_after / fps) * sample_rate))
+            )
+            current_waveform = torch.cat((current_waveform, silence), dim=-1)
 
         return io.NodeOutput(
             current_images,
