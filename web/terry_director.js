@@ -1,4 +1,5 @@
 import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
 
 const NODE_CLASS = "TerryDirector";
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
@@ -13,6 +14,218 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
+
+
+const RUN_IDLE = "idle";
+const RUN_RUNNING = "running";
+const RUN_COMPLETED = "completed";
+const RUN_ERROR = "error";
+
+function directorNodeFromId(value) {
+  if (value == null) return null;
+  const id = String(value);
+  return (app.graph?._nodes || []).find(
+    node => node?.comfyClass === NODE_CLASS && String(node.id) === id
+  ) || null;
+}
+
+function blankActivity(node) {
+  const clips = readConfig(node).document.clips || [];
+  return Object.fromEntries(clips.map(clip => [
+    clip.id,
+    {
+      status: RUN_IDLE,
+      progress: 0,
+      elapsedSeconds: 0,
+      completedAt: null,
+      error: "",
+    },
+  ]));
+}
+
+function ensureActivity(node) {
+  node.__tdRunActivity ||= blankActivity(node);
+  const clips = readConfig(node).document.clips || [];
+  const valid = new Set(clips.map(clip => clip.id));
+  for (const id of Object.keys(node.__tdRunActivity)) {
+    if (!valid.has(id)) delete node.__tdRunActivity[id];
+  }
+  for (const clip of clips) {
+    node.__tdRunActivity[clip.id] ||= {
+      status: RUN_IDLE,
+      progress: 0,
+      elapsedSeconds: 0,
+      completedAt: null,
+      error: "",
+    };
+  }
+  return node.__tdRunActivity;
+}
+
+function activityPayload(node) {
+  return { clips: clone(ensureActivity(node)) };
+}
+
+function pushActivity(node) {
+  if (!frameReady || activeNode !== node || !frame?.contentWindow) return;
+  frame.contentWindow.postMessage(
+    { type: "terrydirector:activity", activity: activityPayload(node) },
+    location.origin
+  );
+}
+
+function ensurePromptRun(node, promptId) {
+  if (node.__tdPromptId === promptId) return;
+  node.__tdPromptId = promptId;
+  node.__tdRunActivity = blankActivity(node);
+  pushActivity(node);
+}
+
+function segmentIndex(nodeId) {
+  const match = String(nodeId ?? "").match(/td_s(\d+)_/i);
+  return match ? Number(match[1]) - 1 : -1;
+}
+
+function applyProgressState(detail) {
+  const promptId = detail?.prompt_id;
+  const states = Object.values(detail?.nodes || {});
+  const byDirector = new Map();
+
+  for (const state of states) {
+    const node = directorNodeFromId(state?.display_node_id);
+    if (!node) continue;
+    const index = segmentIndex(state?.node_id);
+    if (index < 0) continue;
+    ensurePromptRun(node, promptId);
+    if (!byDirector.has(node)) byDirector.set(node, new Map());
+    const bySegment = byDirector.get(node);
+    if (!bySegment.has(index)) bySegment.set(index, []);
+    bySegment.get(index).push(state);
+  }
+
+  for (const [node, segments] of byDirector) {
+    const clips = readConfig(node).document.clips || [];
+    const activity = ensureActivity(node);
+    let changed = false;
+
+    for (const [index, nodeStates] of segments) {
+      const clip = clips[index];
+      if (!clip) continue;
+      const previous = activity[clip.id];
+      const now = performance.now();
+      const sample = nodeStates.find(state => /td_s\d+_sample(?:$|[^a-z0-9])/i.test(String(state.node_id)));
+      const assemble = nodeStates.find(state => /td_s\d+_assemble(?:$|[^a-z0-9])/i.test(String(state.node_id)));
+      const failed = nodeStates.some(state => state.state === RUN_ERROR);
+      const active = nodeStates.some(state => state.state === RUN_RUNNING);
+      const startedAt = previous.startedAt || (active || sample ? now : null);
+      let next = previous;
+
+      if (failed) {
+        next = {
+          ...previous,
+          status: RUN_ERROR,
+          progress: previous.progress || 0,
+          elapsedSeconds: startedAt ? (now - startedAt) / 1000 : previous.elapsedSeconds,
+          completedAt: null,
+          error: "生成失败",
+          startedAt,
+        };
+      } else if (assemble?.state === "finished") {
+        next = {
+          ...previous,
+          status: RUN_COMPLETED,
+          progress: 1,
+          elapsedSeconds: startedAt ? (now - startedAt) / 1000 : previous.elapsedSeconds,
+          completedAt: previous.completedAt || new Date().toISOString(),
+          error: "",
+          startedAt,
+        };
+      } else if (sample || active) {
+        const max = Number(sample?.max) || 0;
+        const value = Number(sample?.value) || 0;
+        next = {
+          ...previous,
+          status: RUN_RUNNING,
+          progress: sample ? (max > 0 ? Math.max(0, Math.min(1, value / max)) : 0) : 0,
+          elapsedSeconds: startedAt ? (now - startedAt) / 1000 : 0,
+          completedAt: null,
+          error: "",
+          startedAt,
+        };
+      }
+
+      if (JSON.stringify(next) !== JSON.stringify(previous)) {
+        activity[clip.id] = next;
+        changed = true;
+      }
+    }
+    if (changed) pushActivity(node);
+  }
+}
+
+function finishPromptActivity(promptId, success, message = "") {
+  for (const node of app.graph?._nodes || []) {
+    if (node?.comfyClass !== NODE_CLASS || node.__tdPromptId !== promptId) continue;
+    const activity = ensureActivity(node);
+    const now = performance.now();
+    for (const record of Object.values(activity)) {
+      if (success) {
+        if (record.status !== RUN_IDLE) {
+          record.status = RUN_COMPLETED;
+          record.progress = 1;
+          record.completedAt ||= new Date().toISOString();
+          if (record.startedAt) record.elapsedSeconds = (now - record.startedAt) / 1000;
+          record.error = "";
+        }
+      } else if (record.status === RUN_RUNNING) {
+        record.status = RUN_ERROR;
+        record.completedAt = null;
+        if (record.startedAt) record.elapsedSeconds = (now - record.startedAt) / 1000;
+        record.error = message || "生成失败";
+      }
+    }
+    node.__tdPromptId = null;
+    pushActivity(node);
+  }
+}
+
+function bindExecutionActivity() {
+  if (bindExecutionActivity.bound) return;
+  bindExecutionActivity.bound = true;
+
+  api.addEventListener("progress_state", event => applyProgressState(event.detail));
+
+  api.addEventListener("execution_cached", event => {
+    const promptId = event.detail?.prompt_id;
+    for (const id of event.detail?.nodes || []) {
+      const node = directorNodeFromId(id);
+      if (!node) continue;
+      ensurePromptRun(node, promptId);
+      const activity = ensureActivity(node);
+      for (const record of Object.values(activity)) {
+        record.status = RUN_COMPLETED;
+        record.progress = 1;
+        record.completedAt = new Date().toISOString();
+        record.error = "";
+      }
+      pushActivity(node);
+    }
+  });
+
+  api.addEventListener("execution_success", event => {
+    finishPromptActivity(event.detail?.prompt_id, true);
+  });
+  api.addEventListener("execution_error", event => {
+    finishPromptActivity(
+      event.detail?.prompt_id,
+      false,
+      event.detail?.exception_message || "生成失败"
+    );
+  });
+  api.addEventListener("execution_interrupted", event => {
+    finishPromptActivity(event.detail?.prompt_id, false, "生成已中断");
+  });
+}
 
 function ensureCss() {
   if (document.querySelector('link[data-terrydirector-style]')) return;
@@ -179,7 +392,12 @@ function writeConfig(node, config, render = true) {
   const widget = configWidget(node);
   if (!widget) return;
   const normalized = normalizeConfig(config);
-  widget.value = JSON.stringify(normalized);
+  const nextValue = JSON.stringify(normalized);
+  if (widget.value !== nextValue) {
+    node.__tdRunActivity = null;
+    node.__tdPromptId = null;
+  }
+  widget.value = nextValue;
   widget.callback?.(widget.value);
   markChanged(node);
   if (render) renderNode(node);
@@ -277,6 +495,7 @@ function applyConfigAdvancedVisibility(node) {
 }
 
 function mountNode(node) {
+  ensureActivity(node);
   if (node.__tdRoot) {
     hideBackingWidget(configWidget(node));
     renderNode(node);
@@ -363,6 +582,7 @@ function ensureEditorOverlay() {
         );
         pendingDocument = null;
       }
+      if (activeNode) pushActivity(activeNode);
     } else if (message.type === "terrydirector:save" && activeNode) {
       const next = readConfig(activeNode);
       next.document = message.document || defaultDocument();
@@ -394,6 +614,7 @@ function openEditor(node, button) {
       { type: "terrydirector:load", document: documentData },
       location.origin
     );
+    pushActivity(node);
   } else {
     pendingDocument = documentData;
   }
@@ -430,6 +651,7 @@ app.registerExtension({
   async setup() {
     ensureCss();
     ensureEditorOverlay();
+    bindExecutionActivity();
   },
   nodeCreated(node) {
     if (node.comfyClass === NODE_CLASS) {
