@@ -36,6 +36,12 @@ class DirectorCoreTests(unittest.TestCase):
         self.assertNotIn("params", config)
         self.assertIn("document", config)
 
+    def test_global_prompt_defaults_on_for_every_segment(self):
+        document = default_config()["document"]
+        self.assertEqual(document["version"], 2)
+        self.assertEqual(document["globalPrompt"], "")
+        self.assertTrue(document["clips"][0]["useGlobalPrompt"])
+
     def test_runtime_packet_has_no_manual_audio_continuity_flag(self):
         runtime = self._runtime()
         self.assertNotIn("continue_audio_latent", runtime["params"])
@@ -44,17 +50,20 @@ class DirectorCoreTests(unittest.TestCase):
         payload = default_config()
         payload["document"] = {
             "selected": "missing",
-            "clips": [{"id": "a", "start": 5, "end": 5, "prompt": "x", "refs": ["bad"]}],
+            "globalPrompt": "shared",
+            "clips": [{"id": "a", "start": 5, "end": 5, "prompt": "x", "refs": ["bad"], "useGlobalPrompt": False}],
             "assets": [{"id": "ok", "kind": "image", "number": 2, "source": {"path": "ref/a.png"}}],
         }
         config = normalize_config(payload)
         self.assertEqual(config["document"]["selected"], "a")
         self.assertEqual(config["document"]["clips"][0]["end"], 6)
         self.assertEqual(config["document"]["clips"][0]["refs"], [])
+        self.assertEqual(config["document"]["globalPrompt"], "shared")
+        self.assertFalse(config["document"]["clips"][0]["useGlobalPrompt"])
 
     def test_rejects_old_creative_config_version(self):
         payload = default_config()
-        payload["version"] = 2
+        payload["version"] = 3
         with self.assertRaises(ValueError):
             normalize_config(payload)
 
@@ -91,7 +100,7 @@ class DirectorCoreTests(unittest.TestCase):
     def test_accepts_serialized_json(self):
         payload = default_config()
         normalized = normalize_config(json.dumps(payload, ensure_ascii=False))
-        self.assertEqual(normalized["version"], 3)
+        self.assertEqual(normalized["version"], 4)
 
 
 if __name__ == "__main__":
