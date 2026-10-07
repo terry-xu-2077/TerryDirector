@@ -432,12 +432,21 @@ function renderNode(node) {
   const config = readConfig(node);
   const doc = config.document;
   const total = Math.max(0, ...doc.clips.map(clip => clip.end || 0));
+  const usedAssetIds = new Set(
+    doc.clips.flatMap(clip => Array.isArray(clip.refs) ? clip.refs : [])
+  );
+  const usedAssets = doc.assets.filter(asset => usedAssetIds.has(asset.id)).length;
+  const totalSeconds = Number((total / FPS).toFixed((total / FPS) % 1 ? 2 : 0));
 
   root.innerHTML = `<div class="td-node-card td-node-card-director">
     <div class="td-mini-wrap td-mini-wrap-director">
       <div class="td-mini-head">
         <strong>时间线</strong>
-        <span class="td-mini-stats">总时长：${timeText(total)} <i></i> 导入资产：${doc.assets.length}</span>
+        <span class="td-mini-stats">
+          总时长：<b>${totalSeconds}</b>s
+          <i></i>
+          导入资产：<b>${doc.assets.length}</b><em>（<b>${usedAssets}</b> 个被使用）</em>
+        </span>
         <span class="td-node-spacer"></span>
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
