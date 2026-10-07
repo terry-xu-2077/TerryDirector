@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import math
+from fractions import Fraction
 import folder_paths
 import comfy.samplers
-from comfy_api.latest import io
+from comfy_api.latest import InputImpl, Types, io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import compile_timeline
@@ -16,7 +17,20 @@ from .director_core import (
 )
 
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
+DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 AUTO_UPSCALER = "自动选择兼容模型"
+
+
+def _require_director_output(value):
+    if not isinstance(value, dict):
+        raise ValueError("TerryDirector 导演输出无效")
+    required = {"fps", "segment_latents", "images", "audio"}
+    missing = sorted(required.difference(value))
+    if missing:
+        raise ValueError(f"TerryDirector 导演输出缺少字段: {', '.join(missing)}")
+    if not isinstance(value["segment_latents"], list):
+        raise ValueError("TerryDirector 导演输出中的分段潜变量必须是列表")
+    return value
 
 
 def _native_combo(options: list[str], default: str | None = None) -> dict:
@@ -267,9 +281,7 @@ class TerryDirector(io.ComfyNode):
                 ),
             ],
             outputs=[
-                io.Latent.Output(display_name="分段潜变量", is_output_list=True),
-                io.Image.Output(display_name="合并画面"),
-                io.Audio.Output(display_name="合并音频"),
+                DirectorOutputData.Output(display_name="导演输出"),
             ],
             is_output_node=True,
             enable_expand=True,
@@ -291,10 +303,61 @@ class TerryDirector(io.ComfyNode):
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
-        expanded, latents, images, audio = build_timeline_graph(runtime, plan, seed)
+        expanded, director_output = build_timeline_graph(runtime, plan, seed)
         return io.NodeOutput(
-            latents,
+            director_output,
+            expand=expanded,
+        )
+
+
+class TerryDirectorOutput(io.ComfyNode):
+    """Unpack TerryDirector's single result socket into native ComfyUI media types."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorOutput",
+            display_name="导演输出",
+            search_aliases=["TerryDirector 输出", "TerryDirector 解码"],
+            category="MiniMax H3/TerryDirector",
+            description=(
+                "将 TerryDirector 的导演输出解包为标准 VIDEO、分段 LATENT、"
+                "合并 IMAGE 和合并 AUDIO。视频直接由合并画面和音频构造，"
+                "无需额外连接“创建视频”节点。"
+            ),
+            inputs=[
+                DirectorOutputData.Input("director_output", display_name="导演输出"),
+            ],
+            outputs=[
+                io.Video.Output(display_name="视频"),
+                io.Latent.Output(display_name="分段潜变量", is_output_list=True),
+                io.Image.Output(display_name="合并画面"),
+                io.Audio.Output(display_name="合并音频"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, director_output):
+        packet = _require_director_output(director_output)
+        fps = int(packet["fps"])
+        if fps < 1:
+            raise ValueError("TerryDirector 导演输出帧率必须大于 0")
+
+        images = packet["images"]
+        audio = packet["audio"]
+        segment_latents = packet["segment_latents"]
+        video = InputImpl.VideoFromComponents(
+            Types.VideoComponents(
+                images=images,
+                audio=audio,
+                frame_rate=Fraction(fps, 1),
+            ),
+            bit_depth=8,
+            color_space="sRGB",
+        )
+        return io.NodeOutput(
+            video,
+            segment_latents,
             images,
             audio,
-            expand=expanded,
         )
