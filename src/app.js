@@ -556,7 +556,7 @@
     button.title=timeline.chainEnabled?'后续联动已开启：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动':'后续联动已关闭：移动和裁剪仅影响当前片段';
     button.setAttribute('aria-label',button.title);
   }
-  function help(){modal('时间线编排 Demo','<p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>时间线接缝会自动显示生成语义：重叠 = 连续生成；首尾贴合 = 尾帧承接；存在空隙 = 独立生成。它们都由片段位置派生，不需要手动选择模式。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
+  function help(){modal('时间线编排 Demo','<p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>全局提示词通过顶栏按钮在浮窗中编辑；新建片段默认启用“使用全局”。编译时先拼接全局提示词，再拼接片段提示词，并从合并后的 Prompt 扫描实际引用素材。</p><p>时间线接缝会自动显示生成语义：重叠 = 连续生成；首尾贴合 = 尾帧承接；存在空隙 = 独立生成。它们都由片段位置派生，不需要手动选择模式。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
   function assetFromDocument(raw,index){
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;
@@ -617,6 +617,31 @@
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
+  function destroyGlobalPromptEditor(){
+    if(globalPromptEditor){globalPromptEditor.destroy();globalPromptEditor=null;}
+  }
+  function openGlobalPrompt(){
+    if(hostReadonly)return;
+    finishPromptEdit();promptEditor?.closeMenu();stopDialogMedia();destroyGlobalPromptEditor();
+    const d=$('#dialog');d.dataset.mode='global-prompt';$('#dialogTitle').textContent='全局提示词';
+    $('#dialogBody').innerHTML=`<div class="global-prompt-shell"><div class="global-prompt-toolbar"><span class="subtle">默认作用于所有片段；单个片段可在编辑栏关闭。</span><button class="prompt-view-switch global-prompt-view-switch" type="button" aria-label="切换全局提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></div><div class="prompt-editor global-prompt-editor"><div class="prompt-editor-body"><textarea id="globalPromptText" aria-label="全局提示词" placeholder="填写人物、场景、服装、声音或公共参考；输入 @ 引用资产，输入 / 插入 H3 语法。" spellcheck="false"></textarea><div id="globalPromptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="全局可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="填写全局提示词，输入 @ 引用资产，输入 / 插入 H3 语法"></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="globalPromptCount" class="subtle prompt-count"></span></div></div></div>`;
+    $('#dialogActions').innerHTML='<button class="button ghost" id="globalPromptCancel">取消</button><button class="button primary" id="globalPromptSave">保存全局提示词</button>';
+    let draft=state.globalPrompt||'',beforeText=null;const undo=[],redo=[];
+    const count=()=>{$('#globalPromptCount').textContent=`${draft.length} 字`;};
+    const commitDraft=()=>{if(beforeText!==null&&beforeText!==draft){undo.push(beforeText);redo.length=0;}beforeText=null;};
+    const refresh=()=>{globalPromptEditor.setContext('global-prompt',draft,globalPromptView);const button=$('.global-prompt-view-switch'),isText=globalPromptView==='text';button.classList.toggle('is-text',isText);button.setAttribute('aria-pressed',String(isText));button.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';count();};
+    globalPromptEditor=new window.TDH3Editor({
+      visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),
+      getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
+      onBeforeChange:()=>{if(beforeText===null)beforeText=draft;},
+      onChange:text=>{draft=text;count();},onCommit:commitDraft,
+      onHistory:isRedo=>{commitDraft();const from=isRedo?redo:undo,to=isRedo?undo:redo;if(!from.length)return;to.push(draft);draft=from.pop();refresh();}
+    });
+    $('.global-prompt-view-switch').addEventListener('click',()=>{commitDraft();globalPromptView=globalPromptView==='visual'?'text':'visual';refresh();});
+    $('#globalPromptCancel').onclick=()=>d.close();
+    $('#globalPromptSave').onclick=()=>{commitDraft();const before=C.copy(state);if(draft!==state.globalPrompt){state.globalPrompt=draft;commit(before);}d.close();};
+    refresh();if(!d.open)d.showModal();
+  }
   function confirmCloseEditor(){
     promptEditor?.closeMenu();stopDialogMedia();
     const d=$('#dialog');
@@ -649,6 +674,7 @@
   }
   const actions={
     new:newClip,
+    'global-prompt':openGlobalPrompt,
     'upload-assets':()=>$('#fileInput').click(),
     'pick-input':pickInputAssets,
     help,
@@ -684,6 +710,8 @@
 
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
+  $('#useGlobalPrompt').addEventListener('change',e=>{if(current())mutate(()=>current().useGlobalPrompt=!!e.target.checked);});
+  $('#dialog').addEventListener('close',()=>{if($('#dialog').dataset.mode==='global-prompt')destroyGlobalPromptEditor();});
   const durationRange=$('#clipDurationRange'),durationNumber=$('#clipDurationNumber');
   durationRange.addEventListener('pointerdown',beginDurationEdit);
   durationRange.addEventListener('input',e=>{beginDurationEdit();previewDuration(e.target.valueAsNumber);});
