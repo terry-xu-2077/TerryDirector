@@ -197,12 +197,6 @@
   background: #b397ff;
   box-shadow: 2px 0 5px rgba(155,120,255,.8), 7px 0 12px rgba(155,120,255,.25);
 }
-.td-mini-clip.is-selected {
-  z-index: 4;
-  border-color: rgba(255,159,67,.62);
-  background: linear-gradient(180deg, rgba(255,159,67,.22), rgba(255,159,67,.08));
-}
-.td-mini-clip.is-selected::before { background: #ffb56b; box-shadow: 2px 0 5px rgba(255,159,67,.9), 7px 0 12px rgba(255,159,67,.28); }
 .td-mini-label { display: block; overflow: hidden; padding: 5px 5px 0 7px; color: #dcd7e2; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 
 .td-node-actions { padding: 8px 9px 9px; }
@@ -486,24 +480,6 @@
 }
 .td-node-shell-director .td-mini-clip.is-error {
   border-color: rgba(255,110,110,.78);
-}
-.td-mini-overall-progress {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  height: 3px;
-  overflow: hidden;
-  background: rgba(255,255,255,.05);
-  pointer-events: none;
-}
-.td-mini-overall-progress > i {
-  display: block;
-  height: 100%;
-  border-radius: 0 999px 999px 0;
-  background: var(--tdn-orange);
-  box-shadow: 0 0 7px rgba(255,159,67,.5);
 }
 
 
