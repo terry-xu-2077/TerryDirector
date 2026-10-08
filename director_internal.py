@@ -41,7 +41,7 @@ class TerryDirectorPackOutput(io.ComfyNode):
 
 
 class TerryDirectorAdvancedFinish(io.ComfyNode):
-    """Wait for SaveVideo to finish before forwarding the director output."""
+    """Save using native SaveVideo, return its preview UI on the director node."""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -52,17 +52,29 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
             is_dev_only=True,
             inputs=[
                 DirectorOutputData.Input("director_output"),
-                io.Video.Input("saved_video"),
+                io.Video.Input("video"),
+                io.String.Input("filename_prefix"),
+                io.String.Input("format"),
+                io.String.Input("codec"),
             ],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
         )
 
     @classmethod
-    def execute(cls, director_output, saved_video) -> io.NodeOutput:
-        if saved_video is None:
-            raise RuntimeError("TerryDirector Advanced：SaveVideo 未返回有效视频，不能标记保存完成")
-        print("[TerryDirector Advanced] SaveVideo dependency completed; forwarding director output", flush=True)
-        return io.NodeOutput(director_output)
+    def execute(cls, director_output, video, filename_prefix, format, codec) -> io.NodeOutput:
+        from comfy_extras.nodes_video import SaveVideo
+
+        if video is None:
+            raise RuntimeError("TerryDirector Advanced 视频创建失败，未保存")
+        print("[TerryDirector Advanced] Saving video via native SaveVideo...", flush=True)
+        native = SaveVideo.execute(
+            video=video,
+            filename_prefix=str(filename_prefix),
+            format=str(format),
+            codec={"codec": str(codec)},
+        )
+        print("[TerryDirector Advanced] Native SaveVideo completed", flush=True)
+        return io.NodeOutput(director_output, ui=native.ui)
 
 
 class TerryDirectorAssembleMedia(io.ComfyNode):
