@@ -47,3 +47,14 @@
 - 原保存链使用展开图中的独立 `SaveVideo` 子节点，在用户提供的三段运行日志中没有证明已保存文件。当前改为 `TerryDirectorAdvancedFinish` 中直接执行 ComfyUI 原生 `SaveVideo.execute`，并将返回的 `PreviewVideo` UI 元数据透出，保存失败不得标记 Advanced 成功。
 - 新增 `[TerryDirector Advanced] Saving video via native SaveVideo...` 与 `Native SaveVideo completed` 日志，便于通过短片段独立验证。未运行用户本机，不能声称真实保存已通过验收。
 - 下一阶段：集成独立实时采样预览通道，不能把最终 MP4 播放混同于 KJ 每步 latent 预览；分段持久缓存和局部重跑仍未做。
+
+
+## 2026-10-08 · 局部重跑第一版
+- Advanced 完整生成时，每个活动片段的采样后 LATENT 写入 `output/.terrydirector_cache/<node-id>/<clip-id>.pt`。
+- 选中片段重跑时，只对目标片段执行 H3 conditioning / sampling；其他片段从磁盘读取 LATENT，仅重新解码、时间线拼接和最终视频保存。
+- 目标片段使用独立的“重跑 Seed”。前端默认跟随节点顶部全局 Seed；用户修改后仅作用于当前选中片段，“全局”按钮恢复跟随。
+- 重跑成功后覆盖目标片段 LATENT 缓存；后续片段仍保留之前生成结果，因此不会因为尾帧依赖自动连锁重跑。
+- 缓存签名当前校验生成宽高、H3 对齐帧数和输出帧数。尺寸/时长变化后尝试局部重跑会明确要求先完整生成。
+- 缓存读节点 fingerprint 使用文件 mtime/size，防止 ComfyUI execution cache 返回旧 LATENT。
+- 第一次更新到此版本后必须先完整生成一次，旧版本运行结果没有 LATENT 磁盘缓存。
+- 尚未实机验收：需要确认 CPU 落盘 LATENT 可被当前 MiniMax H3 VAE 正常重新解码，以及多段尾帧参考时仅目标采样器执行。
