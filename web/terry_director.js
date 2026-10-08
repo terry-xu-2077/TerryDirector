@@ -357,8 +357,10 @@ function suspendAdvancedFinalVideo(node) {
   if (video) {
     try {
       video.pause();
-      video.removeAttribute("src");
-      video.load();
+      if (video.currentSrc || video.getAttribute("src")) {
+        video.removeAttribute("src");
+        video.load();
+      }
     } catch {}
     video.hidden = true;
   }
@@ -1390,7 +1392,7 @@ function renderAdvancedNode(node) {
   const source = node.__tdPreviewUrl;
   const syncPlaybackButton = () => {
     if (!playButton) return;
-    const canPlay = !!source && !node.__tdLivePreviewActive;
+    const canPlay = !!source && !node.__tdLivePreviewActive && !runBusy;
     playButton.disabled = !canPlay;
     const playing = canPlay && !video.paused && !video.ended;
     playButton.textContent = playing ? "⏸" : "▶";
