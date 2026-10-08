@@ -770,3 +770,51 @@
    Portrait clips stay fully contained inside the square-bounded viewport. */
 .td-node-shell-advanced .td-adv-player.is-landscape .td-adv-video { object-fit:cover; }
 .td-node-shell-advanced .td-adv-player:not(.is-landscape) .td-adv-video { object-fit:contain; }
+
+
+/* Local rerun controls: compact, aligned with the existing Advanced action row. */
+.td-node-shell-advanced .td-adv-actions {
+  gap:10px;
+  flex-wrap:wrap;
+}
+.td-node-shell-advanced .td-adv-selected {
+  min-width:0;
+  flex:1 1 160px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.td-node-shell-advanced .td-adv-rerun-tools {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:6px;
+  margin-left:auto;
+}
+.td-node-shell-advanced .td-adv-rerun-seed-label {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:var(--tdn-muted);
+  font-size:10px;
+  white-space:nowrap;
+}
+.td-node-shell-advanced .td-adv-rerun-seed {
+  width:118px;
+  height:27px;
+  padding:0 7px;
+  border:1px solid var(--tdn-border);
+  border-radius:7px;
+  color:var(--tdn-text);
+  background:var(--tdn-panel);
+  font-variant-numeric:tabular-nums;
+}
+.td-node-shell-advanced .td-adv-seed-global {
+  min-width:38px;
+  color:#c9bddf;
+}
+.td-node-shell-advanced [data-adv="rerun"] {
+  border-color:rgba(155,120,255,.34);
+  background:rgba(155,120,255,.12);
+  white-space:nowrap;
+}
