@@ -371,18 +371,16 @@ def build_timeline_graph(
             "CreateVideo", "td_advanced_create_video",
             images=merged_images, audio=merged_audio, fps=float(FPS),
         )
-        saved = graph.node(
-            "SaveVideo", "td_advanced_save_video",
+        # Run native SaveVideo.execute INSIDE the terminal dependency.
+        # A standalone SaveVideo output node in an expanded graph could be
+        # pruned or its UI event could be hidden from the parent.
+        final = graph.node(
+            "TerryDirectorAdvancedFinish", "td_advanced_finish",
+            director_output=output,
             video=created.out(0),
             filename_prefix=video_export["filename_prefix"],
             format=video_export["format"],
-            codec={"codec": video_export["codec"]},
-        )
-        # The exported video must be an ancestor of the director output,
-        # otherwise ComfyUI can finish the director without saving the file.
-        final = graph.node(
-            "TerryDirectorAdvancedFinish", "td_advanced_finish",
-            director_output=output, saved_video=saved.out(0),
+            codec=video_export["codec"],
         )
         output = final.out(0)
     return graph.finalize(), output
