@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+import hashlib
+import json
 import folder_paths
 import comfy.samplers
 from comfy_api.latest import io
@@ -32,6 +34,60 @@ def _preview_tiny_vae_default(options: list[str]) -> str:
         if str(value).replace("\\", "/").split("/")[-1].lower() == "taeh3.safetensors":
             return value
     return "none"
+
+
+def _execution_signature(runtime, plan, seed) -> str:
+    segments = []
+    for segment in plan.get("segments", []):
+        refs = segment.get("assets", {})
+        prompt_hash = hashlib.sha1(
+            str(segment.get("prompt", "")).encode("utf-8")
+        ).hexdigest()[:10]
+        segments.append({
+            "id": str(segment.get("id")),
+            "start": int(segment.get("start_frame", 0)),
+            "end": int(segment.get("end_frame", 0)),
+            "out": int(segment.get("output_frames", 0)),
+            "h3": int(segment.get("h3_frames", 0)),
+            "transition": str(segment.get("transition_mode", "")),
+            "continuity": str(segment.get("continuity", {}).get("kind", "")),
+            "images": len(refs.get("images", [])),
+            "videos": len(refs.get("videos", [])),
+            "audios": len(refs.get("audios", [])),
+            "prompt": prompt_hash,
+        })
+
+    sigmas = runtime.get("sigmas")
+    try:
+        sigma_values = [round(float(value), 8) for value in sigmas.detach().cpu().flatten().tolist()]
+    except Exception:
+        try:
+            sigma_values = [round(float(value), 8) for value in sigmas]
+        except Exception:
+            sigma_values = [str(type(sigmas).__name__)]
+
+    payload = {
+        "width": int(runtime.get("width", 0)),
+        "height": int(runtime.get("height", 0)),
+        "seed": int(seed),
+        "ref_image_size": runtime.get("params", {}).get("ref_image_size"),
+        "sampler": type(runtime.get("sampler")).__name__,
+        "sigmas": sigma_values,
+        "segments": segments,
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return digest
+
+
+def _log_execution_signature(label, runtime, plan, seed):
+    digest = _execution_signature(runtime, plan, seed)
+    print(
+        f"[TerryDirector][Diagnostic] {label} input_signature={digest} "
+        f"size={int(runtime.get('width', 0))}x{int(runtime.get('height', 0))} "
+        f"segments={len(plan.get('segments', []))} seed={int(seed)}",
+        flush=True,
+    )
 
 
 def _require_director_output(value):
@@ -329,6 +385,7 @@ class TerryDirector(io.ComfyNode):
             config["document"],
             tail_reference_prompt=tail_reference_prompt,
         )
+        _log_execution_signature("Base", runtime, plan, seed)
 
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
@@ -425,6 +482,7 @@ class TerryDirectorAdvanced(TerryDirector):
         plan = compile_timeline(
             config["document"], tail_reference_prompt=tail_reference_prompt,
         )
+        _log_execution_signature("Advanced", runtime, plan, seed)
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
         if video_format == "webm" and video_codec == "h264":
