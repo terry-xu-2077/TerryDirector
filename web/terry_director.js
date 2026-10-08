@@ -570,6 +570,7 @@ function writeConfig(node, config, render = true) {
   if (widget.value !== nextValue) {
     node.__tdRunActivity = null;
     node.__tdPromptId = null;
+    if (node.comfyClass === ADVANCED_NODE_CLASS) node.__tdRerunCacheReady = false;
   }
   widget.value = nextValue;
   widget.callback?.(widget.value);
@@ -754,6 +755,11 @@ function renderAdvancedNode(node) {
   const px = frames => Math.max(1, Math.round(frames / FPS * pixelsPerSecond));
   const trackWidth = Math.max(1, px(totalFrames));
   const activity = ensureActivity(node);
+  const allSegmentsCompleted = clips.length > 0 &&
+    clips.every(clip => activity[clip.id]?.status === RUN_COMPLETED);
+  if (allSegmentsCompleted) node.__tdRerunCacheReady = true;
+  const rerunHasCache = !!node.__tdRerunCacheReady;
+  const rerunBusy = !!node.__tdPromptId || !!node.__tdLocalRunLock;
   const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(v => v * pixelsPerSecond >= 72) || 600;
   const rulerHtml = Array.from({ length: Math.min(300, Math.floor(totalSeconds / tickStep) + 1) }, (_, i) => {
     const seconds = i * tickStep;
@@ -803,13 +809,15 @@ function renderAdvancedNode(node) {
       </div>
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
-      <div class="td-adv-rerun-tools">
+      ${rerunHasCache ? `<div class="td-adv-rerun-tools${rerunBusy ? " is-busy" : ""}">
         <label class="td-adv-rerun-seed-label">重跑 Seed
-          <input class="td-adv-rerun-seed" type="text" inputmode="numeric" value="${escapeHtml(selectedRerunSeed)}" title="默认跟随顶部全局 Seed；修改后仅用于当前选中片段"/>
+          <span class="td-adv-rerun-seed-box">
+            <input class="td-adv-rerun-seed" type="text" inputmode="numeric" value="${escapeHtml(selectedRerunSeed)}" title="默认跟随顶部全局 Seed；修改后仅用于当前选中片段" ${rerunBusy ? "disabled" : ""}/>
+            <button type="button" class="td-adv-seed-random" data-adv="seed-random" title="为当前片段随机一个重跑 Seed" aria-label="随机重跑 Seed" ${rerunBusy ? "disabled" : ""}>🎲</button>
+          </span>
         </label>
-        <button type="button" class="td-adv-seed-random" data-adv="seed-random" title="为当前片段随机一个重跑 Seed" aria-label="随机重跑 Seed">🎲</button>
-        <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存">↻ 重跑此片段</button>
-      </div>
+        <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存" ${rerunBusy ? "disabled" : ""}>↻ 重跑此片段</button>
+      </div>` : ""}
     </div>
     <details class="td-adv-preview-settings"><summary>视频预览 <small>实时采样预览 · 待接入</small></summary><label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label><label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label><label>预览帧数<input data-widget="preview_frames" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_frames")?.value ?? 1)}"/></label><label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label><label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label></details><details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
@@ -911,8 +919,8 @@ function renderAdvancedNode(node) {
     }
     state.rerunSeedCustom[state.selected] = raw;
   });
-  root.querySelector('[data-adv="seed-random"]')?.addEventListener("click", () => {
-    if (!state.selected || !rerunSeedInput) return;
+  root.querySelector('[data-adv="seed-random"]')?.addEventListener("click", event => {
+    if (!rerunHasCache || rerunBusy || event.currentTarget.disabled || !state.selected || !rerunSeedInput) return;
     const words = new Uint32Array(2);
     crypto.getRandomValues(words);
     // Keep the generated value within JS's exact integer range so the hidden
@@ -923,7 +931,7 @@ function renderAdvancedNode(node) {
     rerunSeedInput.value = value;
   });
   root.querySelector('[data-adv="rerun"]')?.addEventListener("click", buttonEvent => {
-    if (!state.selected || node.__tdPromptId || node.__tdLocalRunLock) return;
+    if (!rerunHasCache || rerunBusy || buttonEvent.currentTarget.disabled || !state.selected || node.__tdPromptId || node.__tdLocalRunLock) return;
     const rawSeed = String(rerunSeedInput?.value ?? node.widgets?.find(w => w.name === "seed")?.value ?? 0).trim();
     if (!/^\d+$/.test(rawSeed)) return;
     const numericSeed = Number(rawSeed);
