@@ -459,16 +459,6 @@ class TerryDirectorAdvanced(TerryDirector):
         if preview_mode not in {"first", "half", "all"}:
             preview_mode = "half"
 
-        if bool(preview_enabled) and preview_mode == "first":
-            # ComfyUI defaults sampler previews to "none". Enable its built-in
-            # H3 previewer for this expanded sampling graph; MiniMax H3 declares
-            # taeh3 and falls back to its native Latent2RGB factors if needed.
-            try:
-                import latent_preview
-                latent_preview.set_preview_method("taesd")
-            except Exception:
-                pass
-
         if bool(preview_enabled) and preview_mode != "first":
             try:
                 import nodes as comfy_nodes
@@ -477,17 +467,26 @@ class TerryDirectorAdvanced(TerryDirector):
                         "max_resolution": int(preview_max_resolution),
                         "jpeg_quality": int(preview_jpeg_quality),
                         # Multi-frame mode owns the Advanced preview surface,
-                        # so the sampler's ordinary single-frame preview stays suppressed.
+                        # so the ordinary single-frame sampler preview stays suppressed.
                         "suppress_default_preview": True,
                         "frame_mode": preview_mode,
                         "preview_fps": int(preview_fps),
                         "tiny_vae": str(preview_tiny_vae or "none"),
                     }
                 else:
-                    # Graceful capability fallback: single-frame preview remains available.
                     preview_mode = "first"
             except Exception:
                 preview_mode = "first"
+
+        if bool(preview_enabled) and preview_mode == "first":
+            # ComfyUI defaults sampler previews to "none". Enable the built-in
+            # H3 previewer for this expanded sampling graph.
+            try:
+                import latent_preview
+                latent_preview.set_preview_method("taesd")
+            except Exception:
+                pass
+
 
         expanded, director_output = build_timeline_graph(
             runtime, plan, seed,
