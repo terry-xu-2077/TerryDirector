@@ -385,7 +385,7 @@ class TerryDirectorAdvanced(TerryDirector):
                     options=["auto", "h264", "av1"], default="auto"),
                 # New preview settings must stay AFTER the original save widgets,
                 # otherwise ComfyUI restores old widgets_values into the wrong types.
-                io.Boolean.Input("preview_enabled", default=True, socketless=True),
+                io.Boolean.Input("preview_enabled", default=False, socketless=True),
                 io.Int.Input("preview_max_resolution", default=1024, min=0, max=8192, socketless=True),
                 io.Int.Input("preview_jpeg_quality", default=80, min=30, max=100, socketless=True),
                 io.Int.Input("preview_frames", default=1, min=1, max=1024, socketless=True),
@@ -421,7 +421,7 @@ class TerryDirectorAdvanced(TerryDirector):
         tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
         save_subfolder="TerryDirector", filename_prefix="video/TerryDirector",
         video_format="auto", video_codec="auto",
-        preview_enabled=True, preview_max_resolution=1024,
+        preview_enabled=False, preview_max_resolution=1024,
         preview_jpeg_quality=80, preview_frames=1, preview_fps=12,
         preview_suppress_default=True,
         rerun_clip_id="", rerun_seed=0,
