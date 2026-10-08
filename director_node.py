@@ -517,13 +517,43 @@ class TerryDirectorAdvanced(TerryDirector):
                 flush=True,
             )
 
-        # PERFORMANCE VALIDATION:
-        # Restore Advanced video/save + the refactored terminal batch cache.
-        # Live preview remains disabled in this validation path so cache impact
-        # can be measured independently.
+        # Restore the production live-preview path after the performance
+        # isolation run. 1 fps uses ComfyUI's built-in H3/TAESD preview;
+        # >1 fps uses KJ ModelPreviewOverride when that node is available.
+        preview_override = None
+        target_preview_fps = max(1, min(24, int(preview_fps)))
+        preview_mode = "off"
+
+        if bool(preview_enabled) and target_preview_fps > 1:
+            try:
+                import nodes as comfy_nodes
+                if "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS:
+                    preview_override = {
+                        "max_resolution": int(preview_max_resolution),
+                        "jpeg_quality": int(preview_jpeg_quality),
+                        "suppress_default_preview": True,
+                        "preview_fps": target_preview_fps,
+                        "tiny_vae": str(preview_tiny_vae or "none"),
+                    }
+                    preview_mode = f"kj-{target_preview_fps}fps"
+                else:
+                    target_preview_fps = 1
+            except Exception:
+                target_preview_fps = 1
+
+        if bool(preview_enabled) and target_preview_fps == 1:
+            # ComfyUI defaults sampler previews to "none". Enable its built-in
+            # MiniMax H3 single-frame preview path for this expanded graph.
+            try:
+                import latent_preview
+                latent_preview.set_preview_method("taesd")
+                preview_mode = "core-1fps"
+            except Exception:
+                preview_mode = "core-1fps-unavailable"
+
         print(
             "[TerryDirector Advanced][Diagnostic] Running video/save + terminal batch cache "
-            "(preview disabled)",
+            f"preview={preview_mode}",
             flush=True,
         )
         expanded, director_output = build_timeline_graph(
@@ -537,7 +567,7 @@ class TerryDirectorAdvanced(TerryDirector):
             },
             cache_key=cache_key,
             rerun=rerun,
-            preview_override=None,
+            preview_override=preview_override,
             diagnostic_label="Advanced",
             diagnostic_input_signature=diagnostic_signature,
         )
