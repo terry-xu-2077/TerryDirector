@@ -805,7 +805,7 @@ function renderAdvancedNode(node) {
         <label class="td-adv-rerun-seed-label">重跑 Seed
           <input class="td-adv-rerun-seed" type="text" inputmode="numeric" value="${escapeHtml(selectedRerunSeed)}" title="默认跟随顶部全局 Seed；修改后仅用于当前选中片段"/>
         </label>
-        <button type="button" class="td-adv-seed-global" data-adv="seed-global" title="恢复为顶部全局 Seed">全局</button>
+        <button type="button" class="td-adv-seed-random" data-adv="seed-random" title="为当前片段随机一个重跑 Seed" aria-label="随机重跑 Seed">🎲</button>
         <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存">↻ 重跑此片段</button>
       </div>
     </div>
@@ -909,10 +909,16 @@ function renderAdvancedNode(node) {
     }
     state.rerunSeedCustom[state.selected] = raw;
   });
-  root.querySelector('[data-adv="seed-global"]')?.addEventListener("click", () => {
-    if (!state.selected) return;
-    delete state.rerunSeedCustom[state.selected];
-    if (rerunSeedInput) rerunSeedInput.value = String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
+  root.querySelector('[data-adv="seed-random"]')?.addEventListener("click", () => {
+    if (!state.selected || !rerunSeedInput) return;
+    const words = new Uint32Array(2);
+    crypto.getRandomValues(words);
+    // Keep the generated value within JS's exact integer range so the hidden
+    // ComfyUI INT widget receives the same seed that the user sees.
+    const randomSeed = ((words[0] & 0x1fffff) * 0x100000000) + words[1];
+    const value = String(randomSeed);
+    state.rerunSeedCustom[state.selected] = value;
+    rerunSeedInput.value = value;
   });
   root.querySelector('[data-adv="rerun"]')?.addEventListener("click", buttonEvent => {
     if (!state.selected || node.__tdPromptId || node.__tdLocalRunLock) return;
