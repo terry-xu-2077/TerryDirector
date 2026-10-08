@@ -755,3 +755,13 @@
 
 /* Landscape: intrinsic aspect ratio. Portrait/square: square viewport. */
 .td-node-shell-advanced .td-adv-player { aspect-ratio:var(--td-viewport-ratio, 1) !important; }
+
+
+.td-node-shell-advanced .td-adv-controls .td-adv-locate {height:25px;padding:0 9px;border:1px solid rgba(155,120,255,.34);background:rgba(155,120,255,.12);border-radius:7px;font-size:10px;white-space:nowrap;}
+.td-node-shell-advanced .td-adv-preview-toggle {display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:var(--tdn-muted);font-size:10px;cursor:pointer;}
+.td-node-shell-advanced .td-adv-preview-toggle input {appearance:auto;width:13px;height:13px;padding:0;margin:0;accent-color:var(--tdn-violet);}
+.td-node-shell-advanced .td-adv-preview-settings {border-top:1px solid var(--tdn-border);padding:9px 0 4px;color:var(--tdn-text);}
+.td-node-shell-advanced .td-adv-preview-settings summary {font-weight:600;font-size:11px;cursor:pointer;}
+.td-node-shell-advanced .td-adv-preview-settings small {float:right;color:var(--tdn-muted);font-weight:400;}
+.td-node-shell-advanced .td-adv-preview-settings label:not(.td-adv-preview-toggle){display:block;margin-top:7px;font-size:10px;color:var(--tdn-muted);}
+.td-node-shell-advanced .td-adv-preview-settings input[type=number]{display:block;margin-top:4px;}
