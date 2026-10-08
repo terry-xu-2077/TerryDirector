@@ -765,3 +765,8 @@
 .td-node-shell-advanced .td-adv-preview-settings small {float:right;color:var(--tdn-muted);font-weight:400;}
 .td-node-shell-advanced .td-adv-preview-settings label:not(.td-adv-preview-toggle){display:block;margin-top:7px;font-size:10px;color:var(--tdn-muted);}
 .td-node-shell-advanced .td-adv-preview-settings input[type=number]{display:block;margin-top:4px;}
+
+/* Landscape clips are allowed to crop a tiny edge caused by 32px dimension rounding.
+   Portrait clips stay fully contained inside the square-bounded viewport. */
+.td-node-shell-advanced .td-adv-player.is-landscape .td-adv-video { object-fit:cover; }
+.td-node-shell-advanced .td-adv-player:not(.is-landscape) .td-adv-video { object-fit:contain; }
