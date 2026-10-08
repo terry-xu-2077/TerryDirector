@@ -82,16 +82,11 @@ def _condition_segment(
             1,
             f"{prefix}_tail_reference",
         )
-        image_index = len(segment["assets"]["images"])
+        picture_number = int(continuity["picture_number"])
+        image_index = picture_number - 1
+        if image_index != len(segment["assets"]["images"]):
+            raise ValueError("TerryDirector 尾帧参考图片编号与实际参考输入顺序不一致")
         references[f"ref_images.ref_image_{image_index}"] = tail
-        picture_number = image_index + 1
-        prompt = (
-            f"{prompt.rstrip()}\n\n"
-            "[镜头连续性参考]\n"
-            f"<Picture {picture_number}> 为上一镜头最终帧。"
-            "仅参考人物与场景状态、色彩、光线和整体基调；"
-            "当前镜头按照本段描述重新构图与运镜。"
-        ).lstrip()
 
     conditioning = graph.node(
         "MiniMaxH3ReferenceToVideo",
