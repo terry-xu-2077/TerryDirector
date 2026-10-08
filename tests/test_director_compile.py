@@ -104,7 +104,9 @@ class DirectorCompileTests(unittest.TestCase):
         second = compile_timeline(document)["segments"][1]
         self.assertEqual(second["continuity"]["kind"], "tail_reference")
         self.assertEqual(second["continuity"]["source_frame"], 119)
+        self.assertEqual(second["continuity"]["picture_number"], 1)
         self.assertEqual(second["transition_mode"], "tail_reference")
+        self.assertIn("<Picture 1>", second["prompt"])
         self.assertEqual(second["assembly"]["trim_head_frames"], 0)
 
     def test_touch_can_be_independent(self):
@@ -119,6 +121,51 @@ class DirectorCompileTests(unittest.TestCase):
         second = compile_timeline(document)["segments"][1]
         self.assertEqual(second["continuity"], {"kind": "independent"})
         self.assertEqual(second["transition_mode"], "independent")
+
+    def test_tail_reference_prompt_uses_actual_picture_slot_after_normal_refs(self):
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 120),
+                clip(
+                    "b",
+                    120,
+                    240,
+                    "<Picture 4> subject and <Picture 7> location.",
+                    transition="tail_reference",
+                ),
+            ],
+            "assets": [
+                asset("image-4", "image", 4, "refs/subject.png"),
+                asset("image-7", "image", 7, "refs/location.png"),
+            ],
+        }
+        second = compile_timeline(
+            document,
+            tail_reference_prompt="continuity: {picture} is the previous final frame; slot {picture_number}.",
+        )["segments"][1]
+
+        self.assertEqual(second["continuity"]["picture_number"], 3)
+        self.assertEqual(
+            second["prompt"],
+            "<Picture 1> subject and <Picture 2> location.\n\n"
+            "continuity: <Picture 3> is the previous final frame; slot 3.",
+        )
+
+    def test_tail_reference_prompt_without_placeholder_gets_correct_tag_prefixed(self):
+        document = {
+            "fps": 24,
+            "clips": [
+                clip("a", 0, 120),
+                clip("b", 120, 240, transition="tail_reference"),
+            ],
+            "assets": [],
+        }
+        second = compile_timeline(
+            document,
+            tail_reference_prompt="参考上一镜头的视觉基调。",
+        )["segments"][1]
+        self.assertEqual(second["prompt"], "<Picture 1> 参考上一镜头的视觉基调。")
 
     def test_tail_reference_reserves_one_image_reference_slot(self):
         assets = [asset(f"image-{i}", "image", i, f"refs/{i}.png") for i in range(1, 10)]
