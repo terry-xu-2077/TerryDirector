@@ -88,6 +88,7 @@ def _log_execution_signature(label, runtime, plan, seed):
         f"segments={len(plan.get('segments', []))} seed={int(seed)}",
         flush=True,
     )
+    return digest
 
 
 def _require_director_output(value):
@@ -385,12 +386,20 @@ class TerryDirector(io.ComfyNode):
             config["document"],
             tail_reference_prompt=tail_reference_prompt,
         )
-        _log_execution_signature("Base", runtime, plan, seed)
+        diagnostic_signature = _log_execution_signature(
+            "Base", runtime, plan, seed
+        )
 
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
-        expanded, director_output = build_timeline_graph(runtime, plan, seed)
+        expanded, director_output = build_timeline_graph(
+            runtime,
+            plan,
+            seed,
+            diagnostic_label="Base",
+            diagnostic_input_signature=diagnostic_signature,
+        )
         return io.NodeOutput(
             director_output,
             expand=expanded,
@@ -482,7 +491,9 @@ class TerryDirectorAdvanced(TerryDirector):
         plan = compile_timeline(
             config["document"], tail_reference_prompt=tail_reference_prompt,
         )
-        _log_execution_signature("Advanced", runtime, plan, seed)
+        diagnostic_signature = _log_execution_signature(
+            "Advanced", runtime, plan, seed
+        )
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
         if video_format == "webm" and video_codec == "h264":
@@ -527,6 +538,8 @@ class TerryDirectorAdvanced(TerryDirector):
             cache_key=cache_key,
             rerun=rerun,
             preview_override=None,
+            diagnostic_label="Advanced",
+            diagnostic_input_signature=diagnostic_signature,
         )
         return io.NodeOutput(director_output, expand=expanded)
 
