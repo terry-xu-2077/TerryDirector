@@ -16,7 +16,7 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
-const ADVANCED_NODE_HEIGHT = 620;
+const ADVANCED_NODE_MIN_HEIGHT = 620;
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
@@ -918,24 +918,64 @@ function advancedAspectRatio(node) {
   return width > 0 && height > 0 ? width / height : 16 / 9;
 }
 
-function advancedPlayerHeight(_node, ratio = advancedAspectRatio(_node)) {
-  // Important: never derive preview height from the current node width.
-  // Users may widen Advanced purely to expose more timeline. The media viewport
-  // keeps a stable baseline height and simply gains black side space.
+function advancedPlayerMetrics(node, ratio = advancedAspectRatio(node)) {
   const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : (16 / 9);
   const viewportRatio = safeRatio >= 1 ? safeRatio : 1;
-  return Math.max(180, Math.round(ADVANCED_PREVIEW_BASE_WIDTH / viewportRatio));
+  const baseHeight = ADVANCED_PREVIEW_BASE_WIDTH / viewportRatio;
+
+  // Width-only resize must not enlarge the media viewport. Extra vertical
+  // node space, however, is deliberately converted into player height.
+  const nodeHeight = Math.max(
+    ADVANCED_NODE_MIN_HEIGHT,
+    Number(node?.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT
+  );
+  const extraHeight = Math.max(0, nodeHeight - ADVANCED_NODE_MIN_HEIGHT);
+  let height = Math.max(180, baseHeight + extraHeight);
+  let width = height * viewportRatio;
+
+  // The requested vertical growth can only use width that physically exists
+  // inside the node. Horizontal expansion beyond this point is timeline-only.
+  const availableWidth = Math.max(
+    220,
+    (Number(node?.size?.[0]) || DIRECTOR_MIN_WIDTH) - 36
+  );
+  if (width > availableWidth) {
+    const scale = availableWidth / width;
+    width = availableWidth;
+    height *= scale;
+  }
+
+  return {
+    width: Math.round(width),
+    height: Math.round(height),
+  };
+}
+
+function advancedPlayerHeight(node, ratio = advancedAspectRatio(node)) {
+  return advancedPlayerMetrics(node, ratio).height;
 }
 
 function syncAdvancedAspect(node) {
   if (node?.comfyClass !== ADVANCED_NODE_CLASS || !node.__tdRoot) return;
   const ratio = advancedAspectRatio(node);
+  const metrics = advancedPlayerMetrics(node, ratio);
   node.__tdAspectRatio = ratio;
+
   const player = node.__tdRoot.querySelector(".td-adv-player");
   if (player) {
-    player.style.setProperty("--td-player-height", `${advancedPlayerHeight(node, ratio)}px`);
+    player.style.width = `${metrics.width}px`;
+    player.style.maxWidth = "100%";
+    player.style.height = `${metrics.height}px`;
+    player.style.setProperty("--td-player-height", `${metrics.height}px`);
     player.classList.toggle("is-landscape", ratio >= 1);
   }
+
+  const controls = node.__tdRoot.querySelector(".td-adv-controls");
+  if (controls) {
+    controls.style.width = `${metrics.width}px`;
+    controls.style.maxWidth = "100%";
+  }
+
   const video = node.__tdRoot.querySelector(".td-adv-video");
   if (video) video.style.aspectRatio = String(ratio);
 }
@@ -1027,15 +1067,16 @@ function renderAdvancedNode(node) {
   const formats = ["auto", "mp4", "mkv", "webm"];
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
+  const playerMetrics = advancedPlayerMetrics(node);
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="width:min(100%, ${ADVANCED_PREVIEW_BASE_WIDTH}px);max-width:${ADVANCED_PREVIEW_BASE_WIDTH}px;height:${advancedPlayerHeight(node)}px;aspect-ratio:auto;margin-left:auto;margin-right:auto;--td-player-height:${advancedPlayerHeight(node)}px" aria-label="视频预览">
+    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="width:${playerMetrics.width}px;max-width:100%;height:${playerMetrics.height}px;aspect-ratio:auto;margin-left:auto;margin-right:auto;--td-player-height:${playerMetrics.height}px" aria-label="视频预览">
       <video class="td-adv-video" style="aspect-ratio:${advancedAspectRatio(node)}" playsinline preload="metadata"></video>
       <img class="td-adv-live-image" alt="实时采样预览" hidden/>
       <video class="td-adv-live-video" muted loop autoplay playsinline hidden></video>
       <div class="td-adv-live-status" hidden>实时预览</div>
       <div class="td-adv-placeholder">▶<span>${node.__tdLivePreviewActive ? "等待采样预览" : "等待生成视频"}</span></div>
     </div>
-    <div class="td-adv-controls" style="width:min(100%, ${ADVANCED_PREVIEW_BASE_WIDTH}px);max-width:${ADVANCED_PREVIEW_BASE_WIDTH}px;margin-left:auto;margin-right:auto">
+    <div class="td-adv-controls" style="width:${playerMetrics.width}px;max-width:100%;margin-left:auto;margin-right:auto">
       <button type="button" data-adv="play" aria-label="播放或暂停" disabled>▶</button>
       <span class="td-adv-clock">${format(state.time)} / ${format(totalSeconds)}</span>
       <span class="td-adv-spacer"></span>
@@ -1372,10 +1413,12 @@ function mountNode(node) {
       if (Array.isArray(size) && size[0] < DIRECTOR_MIN_WIDTH) {
         size[0] = DIRECTOR_MIN_WIDTH;
       }
-      if (Array.isArray(size) && this.comfyClass === ADVANCED_NODE_CLASS) {
-        // Advanced resize is intentionally horizontal-only. The node is a
-        // timeline workspace; widening it must not scale the media viewport.
-        size[1] = this.__tdAdvancedLockedHeight || ADVANCED_NODE_HEIGHT;
+      if (
+        Array.isArray(size) &&
+        this.comfyClass === ADVANCED_NODE_CLASS &&
+        size[1] < ADVANCED_NODE_MIN_HEIGHT
+      ) {
+        size[1] = ADVANCED_NODE_MIN_HEIGHT;
       }
       originalOnResize?.call(this, size);
       if (this.comfyClass === ADVANCED_NODE_CLASS) {
@@ -1388,11 +1431,14 @@ function mountNode(node) {
     node.size[0] = DIRECTOR_MIN_WIDTH;
   }
   if (node.__tdRoot) {
-    if (node.comfyClass === ADVANCED_NODE_CLASS) {
-      node.__tdAdvancedLockedHeight = ADVANCED_NODE_HEIGHT;
-      if ((node.size?.[1] || 0) !== ADVANCED_NODE_HEIGHT) {
-        node.setSize?.([node.size?.[0] || DIRECTOR_MIN_WIDTH, ADVANCED_NODE_HEIGHT]);
-      }
+    if (
+      node.comfyClass === ADVANCED_NODE_CLASS &&
+      (node.size?.[1] || 0) < ADVANCED_NODE_MIN_HEIGHT
+    ) {
+      node.setSize?.([
+        node.size?.[0] || DIRECTOR_MIN_WIDTH,
+        ADVANCED_NODE_MIN_HEIGHT,
+      ]);
     }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
@@ -1436,7 +1482,7 @@ function mountNode(node) {
     {
       hideOnZoom: false,
       getMinHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? 455 : 118,
-      getMaxHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? 540 : 148,
+      getMaxHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? undefined : 148,
       margin: 3,
     }
   );
@@ -1457,9 +1503,8 @@ function mountNode(node) {
 
   const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
-    node.__tdAdvancedLockedHeight = ADVANCED_NODE_HEIGHT;
-    if ((node.size?.[1] || 0) !== ADVANCED_NODE_HEIGHT) {
-      node.setSize?.([node.size?.[0] || width, ADVANCED_NODE_HEIGHT]);
+    if ((node.size?.[1] || 0) < ADVANCED_NODE_MIN_HEIGHT) {
+      node.setSize?.([node.size?.[0] || width, ADVANCED_NODE_MIN_HEIGHT]);
     }
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
     node.setSize?.([width, 245]);
