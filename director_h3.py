@@ -302,6 +302,7 @@ def build_timeline_graph(
     runtime: dict[str, Any],
     plan: dict[str, Any],
     seed: int,
+    video_export: dict[str, str] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
@@ -363,4 +364,25 @@ def build_timeline_graph(
         audio=merged_audio,
         **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
     )
-    return graph.finalize(), packed_output.out(0)
+    output = packed_output.out(0)
+    if video_export is not None:
+        # Reuse ComfyUI core video nodes rather than maintain a second encoder.
+        created = graph.node(
+            "CreateVideo", "td_advanced_create_video",
+            images=merged_images, audio=merged_audio, fps=float(FPS),
+        )
+        saved = graph.node(
+            "SaveVideo", "td_advanced_save_video",
+            video=created.out(0),
+            filename_prefix=video_export["filename_prefix"],
+            format=video_export["format"],
+            codec={"codec": video_export["codec"]},
+        )
+        # The exported video must be an ancestor of the director output,
+        # otherwise ComfyUI can finish the director without saving the file.
+        final = graph.node(
+            "TerryDirectorAdvancedFinish", "td_advanced_finish",
+            director_output=output, saved_video=saved.out(0),
+        )
+        output = final.out(0)
+    return graph.finalize(), output
