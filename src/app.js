@@ -80,7 +80,7 @@
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
       <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
-      <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}${ib('help','keyboard','操作说明')}<button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
+      <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
       <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
@@ -102,6 +102,7 @@
         </section>
     </main>
     <input type="file" id="fileInput" accept="image/*,video/*,audio/*" multiple hidden>
+    <input type="file" id="timelineImportInput" accept="application/json,.json" hidden>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
@@ -124,6 +125,7 @@
     if(visual)visual.contentEditable=hostReadonly?'false':'true';
     if(name)name.readOnly=hostReadonly;
     const globalButton=$('[data-action=global-prompt]');if(globalButton)globalButton.disabled=hostReadonly;
+    const importButton=$('[data-action=import-timeline]');if(importButton)importButton.disabled=hostReadonly;
     renderAll();
   }
   function modal(name,body,confirmText,fn){
@@ -608,8 +610,47 @@
     $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();}
-  function exportConfig(){finishResolutionEdit();finishPromptEdit();const payload={format:'terrydirector-demo',version:9,referenceNumbering:'project-stable',fps:C.FPS,project:{title},globalPrompt:state.globalPrompt,clips:state.clips.map(c=>({...C.copy(c),resolution:{...c.resolution,...R.calculate(c.resolution)}})),assets:poolEntries().map(({id,name,kind,number,token,local,source})=>({id,name,kind,number,token,requiresReimport:!!local,source:source?{...source}:undefined})),note:'任务编排 Demo，不是 ComfyUI 工作流。不包含媒体文件。'};
-    const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='TerryDirector-demo.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);
+  function exportTimelineData(){
+    finishResolutionEdit();finishPromptEdit();syncAllReferences();
+    const payload={
+      format:'terrydirector-timeline',
+      version:1,
+      exportedAt:new Date().toISOString(),
+      document:documentPayload()
+    };
+    const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
+    const a=document.createElement('a');a.href=url;a.download='TerryDirector-timeline.json';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    toast('已导出 TerryDirector 时间线数据。');
+  }
+  function importedDocument(raw){
+    if(!raw||typeof raw!=='object')throw new Error('文件内容不是有效的 TerryDirector 数据。');
+    if(raw.format==='terrydirector-timeline'&&raw.document&&typeof raw.document==='object')return raw.document;
+    if(raw.document&&typeof raw.document==='object'&&Array.isArray(raw.document.clips))return raw.document;
+    if(Array.isArray(raw.clips)){
+      return {
+        version:2,
+        fps:Number(raw.fps)||C.FPS,
+        selected:raw.selected||raw.clips[0]?.id||null,
+        globalPrompt:String(raw.globalPrompt||''),
+        clips:raw.clips,
+        assets:Array.isArray(raw.assets)?raw.assets:[]
+      };
+    }
+    throw new Error('没有找到 TerryDirector 时间线数据。');
+  }
+  async function importTimelineFile(file){
+    if(hostReadonly||!file)return;
+    try{
+      const raw=JSON.parse(await file.text()),documentData=importedDocument(raw);
+      if(Number(documentData.fps||C.FPS)!==C.FPS)throw new Error(`时间线帧率必须为 ${C.FPS} fps。`);
+      loadDocument(documentData);
+      embedDirty=true;
+      if(embedded)window.parent.postMessage({type:'terrydirector:dirty',dirty:true},hostOrigin);
+      toast(`已导入 ${state.clips.length} 个片段；保存并退出后写回节点。`);
+    }catch(error){
+      modal('导入失败',`<p>${esc(error?.message||'无法读取该 JSON 文件。')}</p>`);
+    }
   }
   function setChainEnabled(enabled){
     timeline.cancel();timeline.chainEnabled=!!enabled;
@@ -739,6 +780,8 @@
   const actions={
     new:newClip,
     'global-prompt':openGlobalPrompt,
+    'import-timeline':()=>{if(!hostReadonly)$('#timelineImportInput').click();},
+    'export-timeline':exportTimelineData,
     'upload-assets':()=>$('#fileInput').click(),
     'pick-input':pickInputAssets,
     help,
@@ -763,7 +806,7 @@
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');
     if(button){
-      const allowedWhileRunning=new Set(['help','close-editor','close-dialog','toggle-prompt-view','pointer','hand','zoom-out','zoom-in','fit']);
+      const allowedWhileRunning=new Set(['close-editor','close-dialog','toggle-prompt-view','pointer','hand','zoom-out','zoom-in','fit','export-timeline']);
       if(hostReadonly&&!allowedWhileRunning.has(button.dataset.action))return;
       if(!button.disabled)actions[button.dataset.action]?.();
       return;
@@ -786,6 +829,7 @@
   durationNumber.addEventListener('blur',finishDurationEdit);
   durationNumber.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishDurationEdit();e.target.blur();}});
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
+  $('#timelineImportInput').addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file)void importTimelineFile(file);});
   $('#zoomRange').addEventListener('input',e=>{timeline.zoom((.22*Math.pow(24/.22,Number(e.target.value)/100))/timeline.ppf);});
   app.addEventListener('dragstart',e=>{const ref=e.target.closest('[data-reference]');if(ref){if(hostReadonly){e.preventDefault();return;}e.dataTransfer.setData('application/x-terrydirector-asset',ref.dataset.reference);e.dataTransfer.effectAllowed='copy';}});
   for(const id of ['referenceDrop','timelineBody']){
