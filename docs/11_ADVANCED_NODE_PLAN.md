@@ -76,3 +76,12 @@
 - 预览帧改为三档：`首帧 / 半数帧 / 所有帧`，默认 `半数帧`。H3 按每段实际时间 latent token 数映射到 KJ `preview_frames`。
 - 新增 `Tiny VAE` 选择，直接读取 `models/vae_approx`；若检测到 `taeh3.safetensors` 则作为新节点默认值，否则为 `none`。
 - KJ Preview Override 改为按采样片段单独包装 model，因此不同长度片段可以使用各自的首帧/半数/全帧预览采样数量。
+
+
+## 2026-10-08 · 预览模式收敛
+- 预览 UI 不暴露底层实现名称。
+- “首帧”始终可用；Advanced 在该模式下直接接收 ComfyUI 的带节点元数据采样预览，并显示在顶部共用窗口。
+- ComfyUI 0.39.0 默认 sampler preview method 为 none，因此 Advanced 在启用“首帧”预览时主动开启 H3 内置 TAESD preview 路径；若 taeh3 不可用，核心可回退到 H3 自带 Latent2RGB 因子。
+- “半数帧”（默认）与“所有帧”仅在检测到多帧预览能力时可选；能力缺失时两项在 UI 中禁用并自动回退到“首帧”。
+- 多帧模式内部固定屏蔽普通单帧 sampler preview，不再向用户暴露“屏蔽默认预览”选项。
+- “预览模型”仅在多帧模式显示；首帧模式隐藏多帧专属参数。
