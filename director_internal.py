@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
+import time
 
 import folder_paths
 import torch
@@ -47,12 +49,20 @@ class TerryDirectorPackOutput(io.ComfyNode):
 
 
 
-def _advanced_cache_path(cache_key: str, segment_id: str) -> str:
+def _advanced_cache_root(cache_key: str) -> str:
     safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "default"))[:160]
-    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:160]
     root = os.path.join(folder_paths.get_output_directory(), ".terrydirector_cache", safe_key)
     os.makedirs(root, exist_ok=True)
-    return os.path.join(root, f"{safe_segment}.pt")
+    return root
+
+
+def _advanced_cache_path(cache_key: str, segment_id: str) -> str:
+    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:160]
+    return os.path.join(_advanced_cache_root(cache_key), f"{safe_segment}.pt")
+
+
+def _advanced_state_path(cache_key: str) -> str:
+    return os.path.join(_advanced_cache_root(cache_key), "state.json")
 
 
 def _cache_to_cpu(value):
@@ -177,13 +187,18 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
                 io.String.Input("filename_prefix"),
                 io.String.Input("format"),
                 io.String.Input("codec"),
+                io.String.Input("cache_key"),
+                io.String.Input("segment_ids_json"),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
         )
 
     @classmethod
-    def execute(cls, director_output, video, filename_prefix, format, codec) -> io.NodeOutput:
+    def execute(
+        cls, director_output, video, filename_prefix, format, codec,
+        cache_key, segment_ids_json,
+    ) -> io.NodeOutput:
         if video is None:
             raise RuntimeError("TerryDirector Advanced 视频创建失败，未保存")
 
@@ -221,6 +236,33 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
             metadata=saved_metadata,
         )
         print("[TerryDirector Advanced] Native video save completed", flush=True)
+
+        try:
+            segment_ids = json.loads(str(segment_ids_json or "[]"))
+            if not isinstance(segment_ids, list):
+                segment_ids = []
+        except Exception:
+            segment_ids = []
+        state = {
+            "version": 1,
+            "saved_at": time.time(),
+            "video": {
+                "filename": file,
+                "subfolder": subfolder,
+                "type": io.FolderType.output.value,
+            },
+            "segment_ids": [str(value) for value in segment_ids],
+        }
+        state_path = _advanced_state_path(str(cache_key))
+        fd, temp_state = tempfile.mkstemp(prefix="td_state_", suffix=".json", dir=os.path.dirname(state_path))
+        os.close(fd)
+        try:
+            with open(temp_state, "w", encoding="utf-8") as handle:
+                json.dump(state, handle, ensure_ascii=False)
+            os.replace(temp_state, state_path)
+        finally:
+            if os.path.exists(temp_state):
+                os.remove(temp_state)
 
         # Publish this as a normal video asset without PreviewVideo.
         # ComfyUI's task/assets system recognizes ResultItem lists under
