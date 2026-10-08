@@ -1135,7 +1135,12 @@ function syncAdvancedTimelineOverflow(node) {
   const track = node.__tdRoot.querySelector(".td-adv-track");
   if (!scroller || !track) return;
 
-  const hasOverflow = track.scrollWidth > scroller.clientWidth + 2;
+  const requiredWidth = Number(track.dataset.minTrackWidth) || 0;
+  const viewportWidth = scroller.clientWidth;
+  // Only the 40px minimum clip hit-area threshold is allowed to create
+  // horizontal scrolling. Borders, labels and the playhead may visually
+  // overhang by a few pixels but must never summon a scrollbar.
+  const hasOverflow = requiredWidth > viewportWidth + 1;
   scroller.classList.toggle("has-overflow", hasOverflow);
 
   if (!hasOverflow) {
@@ -1252,7 +1257,7 @@ function renderAdvancedNode(node) {
     <div class="td-adv-timeline-panel">
       <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
       <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="自适应时间线">
-        <div class="td-adv-track" style="width:100%;min-width:${minTimelineTrackWidth}px">
+        <div class="td-adv-track" data-min-track-width="${minTimelineTrackWidth}" style="width:100%;min-width:${minTimelineTrackWidth}px;box-sizing:border-box">
           ${rulerHtml}
           ${clipHtml}
           <div class="td-adv-playhead" style="left:${Math.max(0,Math.min(100,state.time/Math.max(totalSeconds,1)*100))}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
@@ -1335,7 +1340,7 @@ function renderAdvancedNode(node) {
   const clock = root.querySelector(".td-adv-clock");
   const follow = () => {
     updateHead();
-    if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
+    if (!scroller.classList.contains("has-overflow")) return;
     const position = state.time / Math.max(totalSeconds, 1) * track.scrollWidth;
     node.__tdAutoTimelineScroll = true;
     scroller.scrollLeft = Math.max(
@@ -1385,7 +1390,7 @@ function renderAdvancedNode(node) {
     if (!node.__tdAutoTimelineScroll) state.manualScroll = true;
   }, { passive: true });
   scroller.addEventListener("wheel", event => {
-    if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
+    if (!scroller.classList.contains("has-overflow")) return;
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) && !event.shiftKey) return;
     scroller.scrollLeft += event.deltaY + event.deltaX;
     state.manualScroll = true;
