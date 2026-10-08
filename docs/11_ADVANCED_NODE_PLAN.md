@@ -58,3 +58,13 @@
 - 缓存读节点 fingerprint 使用文件 mtime/size，防止 ComfyUI execution cache 返回旧 LATENT。
 - 第一次更新到此版本后必须先完整生成一次，旧版本运行结果没有 LATENT 磁盘缓存。
 - 尚未实机验收：需要确认 CPU 落盘 LATENT 可被当前 MiniMax H3 VAE 正常重新解码，以及多段尾帧参考时仅目标采样器执行。
+\n
+## 2026-10-08 · KJ 实时采样预览接入
+- Advanced 在“启用预览”开启时，会在展开执行图中插入 `ModelPreviewOverrideKJ`，使用同一份 H3 model 包装采样器。
+- 参数直接映射到 KJ 源节点：`max_resolution`、`jpeg_quality`、`suppress_default_preview`、`preview_frames`、`preview_fps`；MiniMax H3 的 `audio_vae` 同步传入。
+- 未安装 KJNodes 时不阻断生成，只在控制台提示并跳过实时预览。
+- 前端监听 `kj_preview_override`，Expanded GraphBuilder ID（如 `321.0.0.td_advanced_preview_override`）解析回 Advanced 父节点。
+- 实时 JPEG / Animated WebP / MP4 都显示在 Advanced 顶部同一个预览容器里；采样过程中禁止点击播放/暂停。
+- 最终视频保存完成后，实时预览状态清空，同一个窗口切回最终视频。
+- 最终视频支持点击画面播放/暂停；左侧播放按钮根据 `play/pause/ended` 事件同步显示 ▶ / ⏸。
+- 这一轮尚需 ComfyUI 0.39.0 + KJNodes 实机验证。
