@@ -259,6 +259,131 @@
     if(clip.useGlobalPrompt!==false)for(const id of referencesIn(state.globalPrompt,entries))ids.add(id);
     return [...ids];
   }
+
+  const referenceLimits={image:9,video:3,audio:3};
+  const referenceKindLabels={image:'图片',video:'视频',audio:'音频'};
+
+  function referencesByKind(prompt,entries=poolEntries()){
+    const byId=new Map(entries.map(a=>[a.id,a]));
+    const result={image:new Set(),video:new Set(),audio:new Set()};
+    for(const id of referencesIn(prompt,entries)){
+      const asset=byId.get(id);
+      if(asset&&result[asset.kind])result[asset.kind].add(id);
+    }
+    return result;
+  }
+
+  function previousActiveClip(clip,clips=state.clips){
+    const index=clips.findIndex(item=>item.id===clip?.id);
+    if(index<0)return null;
+    for(let i=index-1;i>=0;i--)if(!clips[i].suspended)return clips[i];
+    return null;
+  }
+
+  function reservesTailReferenceSlot(clip,clips=state.clips,transitionMode=clip?.transitionMode){
+    if(!clip||clip.suspended)return false;
+    const previous=previousActiveClip(clip,clips);
+    if(!previous)return false;
+    return Number(clip.start)===Number(previous.end)
+      && normalizeTransitionMode(transitionMode,'tail_continuation')==='tail_reference';
+  }
+
+  function referenceBudgetForClip(clip,{
+    localPrompt=clip?.prompt||'',
+    globalPrompt=state.globalPrompt,
+    useGlobal=clip?.useGlobalPrompt!==false,
+    transitionMode=clip?.transitionMode,
+    entries=poolEntries(),
+    clips=state.clips
+  }={}){
+    const local=referencesByKind(localPrompt,entries);
+    const global=useGlobal?referencesByKind(globalPrompt,entries):{image:new Set(),video:new Set(),audio:new Set()};
+    const counts={},limits={},violations=[];
+    const tailReserved=reservesTailReferenceSlot(clip,clips,transitionMode);
+    for(const kind of Object.keys(referenceLimits)){
+      const merged=new Set([...local[kind],...global[kind]]);
+      counts[kind]=merged.size;
+      limits[kind]=referenceLimits[kind]-(kind==='image'&&tailReserved?1:0);
+      if(counts[kind]>limits[kind])violations.push({
+        kind,count:counts[kind],limit:limits[kind],tailReserved:kind==='image'&&tailReserved
+      });
+    }
+    return {ok:!violations.length,counts,limits,violations,tailReserved};
+  }
+
+  function referenceLimitReason(clip,budget){
+    const violation=budget?.violations?.[0];
+    if(!violation)return '';
+    const extra=violation.tailReserved?'；尾帧参考会额外占用 1 个图片参考位':'';
+    return `片段「${clip?.name||'未命名片段'}」的${referenceKindLabels[violation.kind]}参考为 ${violation.count}/${violation.limit}${extra}`;
+  }
+
+  function replaceOneRawTag(text,raw){
+    const source=String(text||''),needle=String(raw||'');
+    if(!needle)return source;
+    const index=source.toLowerCase().indexOf(needle.toLowerCase());
+    return index<0?source:source.slice(0,index)+source.slice(index+needle.length);
+  }
+
+  function promptWithAsset(text,asset,replacingRaw=null){
+    let next=replaceOneRawTag(text,replacingRaw);
+    const raw=`<${asset.token||String(asset.raw||'').replace(/^<|>$/g,'')}>`;
+    if(!raw||raw==='<>')return next;
+    if(next&&!/\s$/.test(next))next+=' ';
+    return next+raw;
+  }
+
+  function clipAssetAvailability(asset,{value,replacingRaw}={}){
+    const clip=current();
+    if(!clip)return {allowed:false,reason:'请先选择片段'};
+    const entries=poolEntries(),source=entries.find(item=>item.id===asset.id);
+    if(!source)return {allowed:false,reason:'资产不在当前资产池'};
+    const localPrompt=promptWithAsset(value??clip.prompt,source,replacingRaw);
+    const budget=referenceBudgetForClip(clip,{localPrompt,entries});
+    return budget.ok?{allowed:true}:{allowed:false,reason:referenceLimitReason(clip,budget)};
+  }
+
+  function globalAssetAvailability(asset,{value,replacingRaw}={}){
+    const entries=poolEntries(),source=entries.find(item=>item.id===asset.id);
+    if(!source)return {allowed:false,reason:'资产不在当前资产池'};
+    const globalPrompt=promptWithAsset(value??state.globalPrompt,source,replacingRaw);
+    const globalSets=referencesByKind(globalPrompt,entries);
+    for(const kind of Object.keys(referenceLimits)){
+      if(globalSets[kind].size>referenceLimits[kind]){
+        return {allowed:false,reason:`全局提示词的${referenceKindLabels[kind]}参考最多 ${referenceLimits[kind]} 个`};
+      }
+    }
+    for(const clip of state.clips){
+      if(clip.suspended||clip.useGlobalPrompt===false)continue;
+      const budget=referenceBudgetForClip(clip,{globalPrompt,useGlobal:true,entries});
+      if(!budget.ok)return {allowed:false,reason:referenceLimitReason(clip,budget)};
+    }
+    return {allowed:true};
+  }
+
+  function validateGlobalPrompt(globalPrompt){
+    const entries=poolEntries(),globalSets=referencesByKind(globalPrompt,entries);
+    for(const kind of Object.keys(referenceLimits)){
+      if(globalSets[kind].size>referenceLimits[kind]){
+        return {ok:false,reason:`全局提示词的${referenceKindLabels[kind]}参考最多 ${referenceLimits[kind]} 个`};
+      }
+    }
+    for(const clip of state.clips){
+      if(clip.suspended||clip.useGlobalPrompt===false)continue;
+      const budget=referenceBudgetForClip(clip,{globalPrompt,useGlobal:true,entries});
+      if(!budget.ok)return {ok:false,clip,budget,reason:referenceLimitReason(clip,budget)};
+    }
+    return {ok:true};
+  }
+
+  function showReferenceLimitDialog(title,clip,budget){
+    const reason=referenceLimitReason(clip,budget);
+    const violation=budget?.violations?.[0];
+    const detail=violation?.tailReserved
+      ? '<p class="subtle">当前片段使用尾帧参考，上一片段尾帧会占用 1 个图片参考位，因此普通图片引用最多 8 个。</p>'
+      : '<p class="subtle">全局提示词与片段提示词会合并后按唯一资产计数；重复引用同一资产只算一次。</p>';
+    modal(title,`<p>${esc(reason||'当前参考资产数量超过 MiniMax H3 上限。')}</p>${detail}`);
+  }
   function syncAllReferences(){const entries=poolEntries();state.clips.forEach(c=>syncReferences(c,entries));}
   function refreshAssetUsage(){
     const c=current(),entries=poolEntries();
@@ -280,7 +405,15 @@
         : users.length
           ? ('引用片段：'+users.map(clip=>clip.name).join('、'))
           : '尚未被片段引用';
-      tile.querySelector('[data-insert-ref]').disabled=!c||hostReadonly;
+      const insertButton=tile.querySelector('[data-insert-ref]');
+      const source=entries.find(item=>item.id===id);
+      const availability=c&&source
+        ? clipAssetAvailability({id:source.id,raw:`<${source.token}>`,token:source.token},{value:c.prompt})
+        : {allowed:false,reason:'请先选择片段'};
+      insertButton.disabled=!c||hostReadonly||!availability.allowed;
+      insertButton.title=availability.allowed
+        ? `插入 <${source?.token||''}> 到当前片段`
+        : (availability.reason||'当前参考资产额度已满');
       const removeButton=tile.querySelector('[data-delete-asset]');if(removeButton)removeButton.disabled=hostReadonly;
     }
   }
@@ -367,6 +500,7 @@
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
     getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
+    getAssetAvailability:clipAssetAvailability,
     onBeforeChange:()=>{if(hostReadonly)return false;if(!editBefore)editBefore=C.copy(state);},
     onChange:text=>{if(hostReadonly)return;const c=current();if(c){c.prompt=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
     onCommit:finishPromptEdit,
@@ -397,6 +531,15 @@
     menu.addEventListener('click',e=>{
       const button=e.target.closest('[data-transition-mode]');if(!button)return;
       const mode=normalizeTransitionMode(button.dataset.transitionMode,'tail_reference');
+      const target=state.clips.find(c=>c.id===seam.b);
+      if(target){
+        const budget=referenceBudgetForClip(target,{transitionMode:mode});
+        if(!budget.ok){
+          closeTransitionMenu();
+          showReferenceLimitDialog('无法切换片段承接方式',target,budget);
+          return;
+        }
+      }
       mutate(()=>{const target=state.clips.find(c=>c.id===seam.b);if(target)target.transitionMode=mode;});
       closeTransitionMenu();timeline?.invalidate();
     });
@@ -413,7 +556,15 @@
   function appendReferences(clip,ids){
     const entries=poolEntries(),used=new Set(referencesIn(clip.prompt,entries));
     const add=entries.filter(a=>ids.includes(a.id)&&!used.has(a.id));
-    if(add.length)clip.prompt+=(clip.prompt&&!clip.prompt.endsWith('\n')?'\n':'')+add.map(a=>`<${a.token}>`).join(' ');
+    const blocked=[];
+    for(const asset of add){
+      const nextPrompt=promptWithAsset(clip.prompt,asset);
+      const budget=referenceBudgetForClip(clip,{localPrompt:nextPrompt,entries});
+      if(!budget.ok){blocked.push({asset,budget});continue;}
+      clip.prompt=nextPrompt;
+      used.add(asset.id);
+    }
+    return blocked;
   }
   function addReference(id,clipId=state.selected){
     const clip=state.clips.find(c=>c.id===clipId);
@@ -440,7 +591,9 @@
     });
   }
   function insertReference(id){
-    const a=poolEntries().find(x=>x.id===id);if(!a||!current())return;
+    const a=poolEntries().find(x=>x.id===id),clip=current();if(!a||!clip)return;
+    const availability=clipAssetAvailability({id:a.id,raw:`<${a.token}>`,token:a.token},{value:clip.prompt});
+    if(!availability.allowed){toast(availability.reason||'当前参考资产额度已满');return;}
     promptEditor.insert(`<${a.token}>`);
   }
   async function uploadInputFile(file){
@@ -738,13 +891,22 @@
     globalPromptEditor=new window.TDH3Editor({
       visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),menuRoot:d,
       getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
+      getAssetAvailability:globalAssetAvailability,
       onBeforeChange:()=>{if(beforeText===null)beforeText=draft;},
       onChange:text=>{draft=text;count();},onCommit:commitDraft,
       onHistory:isRedo=>{commitDraft();const from=isRedo?redo:undo,to=isRedo?undo:redo;if(!from.length)return;to.push(draft);draft=from.pop();refresh();}
     });
     $('.global-prompt-view-switch').addEventListener('click',()=>{commitDraft();globalPromptView=globalPromptView==='visual'?'text':'visual';refresh();});
     $('#globalPromptCancel').onclick=()=>d.close();
-    $('#globalPromptSave').onclick=()=>{commitDraft();const before=C.copy(state);if(draft!==state.globalPrompt){state.globalPrompt=draft;commit(before);}d.close();};
+    $('#globalPromptSave').onclick=()=>{
+      commitDraft();
+      const validation=validateGlobalPrompt(draft);
+      if(!validation.ok){
+        toast(validation.reason||'全局提示词的参考资产超过当前可用额度');
+        return;
+      }
+      const before=C.copy(state);if(draft!==state.globalPrompt){state.globalPrompt=draft;commit(before);}d.close();
+    };
     refresh();if(!d.open)d.showModal();
   }
   function confirmCloseEditor(){
@@ -817,7 +979,19 @@
 
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
-  $('#useGlobalPrompt').addEventListener('change',e=>{if(current())mutate(()=>current().useGlobalPrompt=!!e.target.checked);});
+  $('#useGlobalPrompt').addEventListener('change',e=>{
+    const clip=current();if(!clip)return;
+    const enabled=!!e.target.checked;
+    if(enabled){
+      const budget=referenceBudgetForClip(clip,{useGlobal:true});
+      if(!budget.ok){
+        e.target.checked=false;
+        showReferenceLimitDialog('无法启用全局提示词',clip,budget);
+        return;
+      }
+    }
+    mutate(()=>clip.useGlobalPrompt=enabled);
+  });
   $('#dialog').addEventListener('close',()=>{if($('#dialog').dataset.mode==='global-prompt')destroyGlobalPromptEditor();});
   const durationRange=$('#clipDurationRange'),durationNumber=$('#clipDurationNumber');
   durationRange.addEventListener('pointerdown',beginDurationEdit);
