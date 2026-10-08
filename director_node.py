@@ -427,6 +427,30 @@ class TerryDirectorAdvanced(TerryDirector):
                 flush=True,
             )
 
+        preview_override = None
+        if bool(preview_enabled):
+            try:
+                import nodes as comfy_nodes
+                if "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS:
+                    preview_override = {
+                        "max_resolution": int(preview_max_resolution),
+                        "jpeg_quality": int(preview_jpeg_quality),
+                        "suppress_default_preview": bool(preview_suppress_default),
+                        "preview_frames": int(preview_frames),
+                        "preview_fps": int(preview_fps),
+                    }
+                else:
+                    print(
+                        "[TerryDirector Advanced] KJ Model Preview Override is not installed; "
+                        "live sampling preview disabled.",
+                        flush=True,
+                    )
+            except Exception as exc:
+                print(
+                    f"[TerryDirector Advanced] Could not enable KJ preview override: {exc}",
+                    flush=True,
+                )
+
         expanded, director_output = build_timeline_graph(
             runtime, plan, seed,
             video_export={
@@ -436,6 +460,7 @@ class TerryDirectorAdvanced(TerryDirector):
             },
             cache_key=cache_key,
             rerun=rerun,
+            preview_override=preview_override,
         )
         return io.NodeOutput(director_output, expand=expanded)
 
