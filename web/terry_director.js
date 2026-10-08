@@ -630,6 +630,43 @@ function renderNode(node) {
 
 // Advanced review is intentionally independent of the full editor timeline.
 // Persist UI selection in memory, never in the creative document.
+function advancedAspectRatio(node) {
+  const input = node.inputs?.find(item => item.name === "director_config");
+  const link = input?.link != null ? app.graph?.links?.[input.link] : null;
+  const configNode = link ? app.graph?.getNodeById?.(link.origin_id) : null;
+  if (configNode?.comfyClass !== CONFIG_NODE_CLASS) return 16 / 9;
+  const value = String(configNode.widgets?.find(widget => widget.name === "aspect_ratio")?.value ?? "");
+  const match = value.match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/);
+  if (!match) return 16 / 9;
+  const width = Number(match[1]), height = Number(match[2]);
+  return width > 0 && height > 0 ? width / height : 16 / 9;
+}
+
+function syncAdvancedAspect(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS || !node.__tdRoot) return;
+  const ratio = advancedAspectRatio(node);
+  if (Math.abs((node.__tdAspectRatio || 0) - ratio) < 0.00001) return;
+  const previous = node.__tdAspectRatio || (16 / 9);
+  node.__tdAspectRatio = ratio;
+  const player = node.__tdRoot.querySelector(".td-adv-player");
+  if (player) player.style.aspectRatio = String(ratio);
+  const availableWidth = Math.max(200, (node.size?.[0] || 460) - 40);
+  const deltaHeight = availableWidth / ratio - availableWidth / previous;
+  if (Math.abs(deltaHeight) > 1 && Array.isArray(node.size)) {
+    node.setSize?.([node.size[0], Math.max(320, Math.round(node.size[1] + deltaHeight))]);
+  }
+  node.graph?.setDirtyCanvas?.(true, true);
+}
+
+function syncLinkedAdvancedNodes(configNode) {
+  for (const node of app.graph?._nodes || []) {
+    if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
+    const input = node.inputs?.find(item => item.name === "director_config");
+    const link = input?.link != null ? app.graph?.links?.[input.link] : null;
+    if (link && String(link.origin_id) === String(configNode.id)) syncAdvancedAspect(node);
+  }
+}
+
 function renderAdvancedNode(node) {
   const root = node.__tdRoot;
   if (!root) return;
@@ -684,7 +721,7 @@ function renderAdvancedNode(node) {
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player" aria-label="视频预览">
+    <div class="td-adv-player" style="aspect-ratio:${advancedAspectRatio(node)}" aria-label="视频预览">
       <video class="td-adv-video" playsinline preload="metadata"></video>
       <div class="td-adv-placeholder">▶<span>等待生成视频</span></div>
     </div>
@@ -846,6 +883,16 @@ function applyConfigAdvancedVisibility(node) {
   }
 
   syncSecondPassWidgets(node);
+  const ratio = node.widgets?.find(widget => widget.name === "aspect_ratio");
+  if (ratio && !ratio.__tdAdvancedAspectBound) {
+    const original = ratio.callback;
+    ratio.callback = function(...args) {
+      const result = original?.apply(this, args);
+      queueMicrotask(() => syncLinkedAdvancedNodes(node));
+      return result;
+    };
+    ratio.__tdAdvancedAspectBound = true;
+  }
 }
 
 function mountNode(node) {
@@ -929,6 +976,18 @@ function mountNode(node) {
   }
 
   renderNode(node);
+  if (node.comfyClass === ADVANCED_NODE_CLASS) {
+    const previousConnection = node.onConnectionsChange;
+    if (!node.__tdAspectConnectionBound) {
+      node.onConnectionsChange = function(...args) {
+        const result = previousConnection?.apply(this, args);
+        queueMicrotask(() => syncAdvancedAspect(this));
+        return result;
+      };
+      node.__tdAspectConnectionBound = true;
+    }
+    queueMicrotask(() => syncAdvancedAspect(node));
+  }
 }
 
 let overlay = null;
