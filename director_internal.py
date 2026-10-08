@@ -105,11 +105,16 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
         )
         print("[TerryDirector Advanced] Native video save completed", flush=True)
 
+        # Pass only lightweight file metadata to TerryDirector's custom UI.
+        # Do NOT return PreviewVideo here, otherwise ComfyUI mounts a second
+        # native video widget underneath the Advanced panel.
         return io.NodeOutput(
             director_output,
-            ui=ui.PreviewVideo([
-                ui.SavedResult(file, subfolder, io.FolderType.output)
-            ]),
+            ui={
+                "td_saved_video": [
+                    ui.SavedResult(file, subfolder, io.FolderType.output)
+                ]
+            },
         )
 
 
