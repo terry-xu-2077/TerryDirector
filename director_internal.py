@@ -486,6 +486,56 @@ class TerryDirectorAssembleMedia(io.ComfyNode):
             )
             current_waveform = torch.cat((current_waveform, silence), dim=-1)
 
+        try:
+            process_rss_mb = None
+            system_used_pct = None
+            system_available_mb = None
+            try:
+                import psutil
+                process_rss_mb = psutil.Process().memory_info().rss / (1024 * 1024)
+                vm = psutil.virtual_memory()
+                system_used_pct = float(vm.percent)
+                system_available_mb = vm.available / (1024 * 1024)
+            except Exception:
+                pass
+
+            cuda_text = "cuda=n/a"
+            if torch.cuda.is_available():
+                try:
+                    free_bytes, total_bytes = torch.cuda.mem_get_info()
+                    allocated = torch.cuda.memory_allocated()
+                    reserved = torch.cuda.memory_reserved()
+                    cuda_text = (
+                        f"cuda_free={free_bytes / (1024 * 1024):.0f}MB/"
+                        f"{total_bytes / (1024 * 1024):.0f}MB "
+                        f"torch_alloc={allocated / (1024 * 1024):.0f}MB "
+                        f"torch_reserved={reserved / (1024 * 1024):.0f}MB"
+                    )
+                except Exception:
+                    pass
+
+            image_mb = current_images.numel() * current_images.element_size() / (1024 * 1024)
+            audio_mb = current_waveform.numel() * current_waveform.element_size() / (1024 * 1024)
+            host_parts = []
+            if process_rss_mb is not None:
+                host_parts.append(f"rss={process_rss_mb:.0f}MB")
+            if system_used_pct is not None:
+                host_parts.append(f"ram={system_used_pct:.1f}%")
+            if system_available_mb is not None:
+                host_parts.append(f"ram_free={system_available_mb:.0f}MB")
+            host_text = " ".join(host_parts) if host_parts else "ram=n/a"
+
+            print(
+                f"[TerryDirector][Perf] Assemble checkpoint: "
+                f"frames={int(current_images.shape[0])} "
+                f"images={image_mb:.1f}MB audio={audio_mb:.1f}MB "
+                f"device={current_images.device} {host_text} {cuda_text}",
+                flush=True,
+            )
+        except Exception:
+            # Diagnostic logging must never affect generation.
+            pass
+
         return io.NodeOutput(
             current_images,
             {"waveform": current_waveform, "sample_rate": sample_rate},
