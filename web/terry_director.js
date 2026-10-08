@@ -650,13 +650,14 @@ function renderAdvancedNode(node) {
     const value = Math.max(0, seconds || 0);
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
   };
-  const px = frames => Math.max(64, Math.round(frames / FPS * 14));
-  const durationPx = Math.max(1, ...clips.map(c => px(Number(c.end) - Number(c.start))));
-  const endPx = clips.reduce((max, c) => Math.max(max, Math.round((Number(c.start) / FPS) * 14) + px(Number(c.end) - Number(c.start))), 0);
-  const trackWidth = Math.max(endPx, durationPx, 1);
+  const shortestFrames = Math.max(1, Math.min(...clips.map(c => Math.max(1, Number(c.end) - Number(c.start)))));
+  // One proportional scale for every clip: preserve time mapping while guaranteeing click targets.
+  const pixelsPerSecond = Math.max(14, 64 * FPS / shortestFrames);
+  const px = frames => Math.max(1, Math.round(frames / FPS * pixelsPerSecond));
+  const trackWidth = Math.max(1, px(totalFrames));
   const activity = ensureActivity(node);
   const clipHtml = clips.map((clip, index) => {
-    const left = Math.round(Number(clip.start) / FPS * 14);
+    const left = px(Number(clip.start));
     const width = px(Number(clip.end) - Number(clip.start));
     const status = activity[clip.id]?.status || RUN_IDLE;
     return `<button type="button" class="td-adv-clip${clip.id === state.selected ? " is-selected" : ""}" style="left:${left}px;width:${width}px" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
@@ -705,7 +706,7 @@ function renderAdvancedNode(node) {
   const scrub = root.querySelector(".td-adv-scrub");
   const clock = root.querySelector(".td-adv-clock");
   const follow = () => {
-    const position = Math.round(state.time * 14);
+    const position = Math.round(state.time * pixelsPerSecond);
     scroller.scrollLeft = Math.max(0, position - scroller.clientWidth * .35);
   };
   const setTime = value => {
