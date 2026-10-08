@@ -381,11 +381,29 @@ class TerryDirectorAdvanced(TerryDirector):
         save_subfolder="TerryDirector", filename_prefix="video/TerryDirector",
         video_format="auto", video_codec="auto",
     ):
-        # Settings are stored for upcoming integrated media export.
-        # No encoding or file-saving side effect is performed in this stage.
-        return super().execute(
-            director_config, seed, config_json, tail_reference_prompt
+        runtime = require_runtime_config(director_config)
+        config = normalize_config(config_json)
+        plan = compile_timeline(
+            config["document"], tail_reference_prompt=tail_reference_prompt,
         )
+        if runtime["params"]["second_pass"]["method"] != "none":
+            raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
+        if video_format == "webm" and video_codec == "h264":
+            raise ValueError("WebM 容器不支持 H.264，请选择 auto 或 av1")
+        prefix = str(filename_prefix or "video/TerryDirector").replace("\\\\", "/")
+        # Backward compatibility: old Advanced workflows had a separate subfolder.
+        folder = str(save_subfolder or "TerryDirector").strip().strip("/")
+        if prefix == "TerryDirector" and folder:
+            prefix = folder + "/TerryDirector"
+        expanded, director_output = build_timeline_graph(
+            runtime, plan, seed,
+            video_export={
+                "filename_prefix": prefix,
+                "format": str(video_format or "auto"),
+                "codec": str(video_codec or "auto"),
+            },
+        )
+        return io.NodeOutput(director_output, expand=expanded)
 
 
 class TerryDirectorOutput(io.ComfyNode):
