@@ -10,6 +10,7 @@ from .director_internal import (
     TerryDirectorCacheLatent,
     TerryDirectorLoadCachedLatent,
     TerryDirectorAssembleMedia,
+    TerryDirectorAssembleTimeline,
     TerryDirectorPackOutput,
     TerryDirectorResampleReferenceVideo,
 )
@@ -31,6 +32,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,
             TerryDirectorAssembleMedia,
+            TerryDirectorAssembleTimeline,
             TerryDirectorResampleReferenceVideo,
         ]
 
