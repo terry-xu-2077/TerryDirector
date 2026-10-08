@@ -427,67 +427,20 @@ class TerryDirectorAdvanced(TerryDirector):
         )
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
-        if video_format == "webm" and video_codec == "h264":
-            raise ValueError("WebM 容器不支持 H.264，请选择 auto 或 av1")
-        prefix = str(filename_prefix or "video/TerryDirector").replace("\\\\", "/")
-        # Backward compatibility: old Advanced workflows had a separate subfolder.
-        folder = str(save_subfolder or "TerryDirector").strip().strip("/")
-        if prefix == "TerryDirector" and folder:
-            prefix = folder + "/TerryDirector"
-        cache_key = str(cls.hidden.unique_id)
-        rerun = None
-        if str(rerun_clip_id or "").strip():
-            rerun = {
-                "segment_id": str(rerun_clip_id).strip(),
-                "seed": int(rerun_seed),
-            }
-            print(
-                f"[TerryDirector Advanced] Local rerun: segment={rerun['segment_id']} "
-                f"seed={rerun['seed']}",
-                flush=True,
-            )
 
-        preview_override = None
-        target_preview_fps = max(1, min(24, int(preview_fps)))
-
-        if bool(preview_enabled) and target_preview_fps > 1:
-            try:
-                import nodes as comfy_nodes
-                if "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS:
-                    preview_override = {
-                        "max_resolution": int(preview_max_resolution),
-                        "jpeg_quality": int(preview_jpeg_quality),
-                        "suppress_default_preview": True,
-                        "preview_fps": target_preview_fps,
-                        "tiny_vae": str(preview_tiny_vae or "none"),
-                    }
-                else:
-                    target_preview_fps = 1
-            except Exception:
-                target_preview_fps = 1
-
-        if bool(preview_enabled) and target_preview_fps == 1:
-            # ComfyUI defaults sampler previews to "none". Enable its built-in
-            # MiniMax H3 single-frame preview path for this expanded graph.
-            try:
-                import latent_preview
-                latent_preview.set_preview_method("taesd")
-            except Exception:
-                pass
-
-
-        expanded, director_output = build_timeline_graph(
-            runtime, plan, seed,
-            video_export={
-                "filename_prefix": prefix,
-                "format": str(video_format or "auto"),
-                "codec": str(video_codec or "auto"),
-            },
-            cache_key=cache_key,
-            rerun=rerun,
-            preview_override=preview_override,
+        # TEMP PERFORMANCE DIAGNOSTIC:
+        # Run Advanced through the exact same expanded graph as the base
+        # TerryDirector node. No preview wrapper, cache nodes, CreateVideo,
+        # AdvancedFinish or file save are attached. This isolates whether the
+        # slowdown comes from Advanced's extra terminal graph topology.
+        print(
+            "[TerryDirector Advanced][Diagnostic] Running exact base execution graph "
+            "(no preview/cache/video/save)",
+            flush=True,
         )
+        expanded, director_output = build_timeline_graph(runtime, plan, seed)
         return io.NodeOutput(director_output, expand=expanded)
+
 
 
 class TerryDirectorOutput(io.ComfyNode):
