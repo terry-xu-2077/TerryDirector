@@ -458,6 +458,17 @@ class TerryDirectorAdvanced(TerryDirector):
         preview_mode = str(preview_frame_mode or "half").lower()
         if preview_mode not in {"first", "half", "all"}:
             preview_mode = "half"
+
+        if bool(preview_enabled) and preview_mode == "first":
+            # ComfyUI defaults sampler previews to "none". Enable its built-in
+            # H3 previewer for this expanded sampling graph; MiniMax H3 declares
+            # taeh3 and falls back to its native Latent2RGB factors if needed.
+            try:
+                import latent_preview
+                latent_preview.set_preview_method("taesd")
+            except Exception:
+                pass
+
         if bool(preview_enabled) and preview_mode != "first":
             try:
                 import nodes as comfy_nodes
