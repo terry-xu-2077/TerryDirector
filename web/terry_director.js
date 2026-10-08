@@ -656,13 +656,24 @@ function renderAdvancedNode(node) {
   const px = frames => Math.max(1, Math.round(frames / FPS * pixelsPerSecond));
   const trackWidth = Math.max(1, px(totalFrames));
   const activity = ensureActivity(node);
+  const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(v => v * pixelsPerSecond >= 72) || 600;
+  const rulerHtml = Array.from({ length: Math.min(300, Math.floor(totalSeconds / tickStep) + 1) }, (_, i) => {
+    const seconds = i * tickStep;
+    return `<span class="td-mini-ruler-tick${i === 0 ? " is-first" : ""}" style="left:${Math.round(seconds * pixelsPerSecond)}px"><b>${format(seconds)}</b><i></i></span>`;
+  }).join("");
   const clipHtml = clips.map((clip, index) => {
     const left = px(Number(clip.start));
     const width = px(Number(clip.end) - Number(clip.start));
-    const status = activity[clip.id]?.status || RUN_IDLE;
-    return `<button type="button" class="td-adv-clip${clip.id === state.selected ? " is-selected" : ""}" style="left:${left}px;width:${width}px" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
-      <span>片段 ${index + 1}</span><small>${timeText(Number(clip.end) - Number(clip.start))}</small>
-      ${status === RUN_RUNNING ? '<i class="td-adv-working"></i>' : ""}
+    const record = activity[clip.id] || {};
+    const running = record.status === RUN_RUNNING;
+    const completed = record.status === RUN_COMPLETED;
+    const failed = record.status === RUN_ERROR;
+    const percent = completed ? 100 : Math.round(clamp01(record.progress) * 100);
+    const classes = [clip.suspended ? "is-suspended" : "", running ? "is-running" : "", completed ? "is-completed" : "", failed ? "is-error" : "", clip.id === state.selected ? "is-selected" : ""].filter(Boolean).join(" ");
+    return `<button type="button" class="td-mini-clip td-adv-clip ${classes}" style="left:${left}px;width:${width}px" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
+      <div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${timeText(Number(clip.end)-Number(clip.start))}</span></div>
+      <span class="td-mini-label">${escapeHtml(clip.name)}</span>
+      ${running || completed ? `<span class="td-mini-clip-progress"><i style="width:${percent}%"></i></span>` : ""}
     </button>`;
   }).join("");
   const saveDir = node.widgets?.find(w => w.name === "save_subfolder")?.value || "TerryDirector";
@@ -678,9 +689,10 @@ function renderAdvancedNode(node) {
       <span class="td-adv-spacer"></span>
       <button type="button" data-adv="follow" title="定位播放头">◎ 定位</button>
     </div>
-    <div class="td-adv-section-title"><strong>播放时间线</strong><span>${clips.length} 段 · ${format(totalSeconds)}</span></div>
-    <div class="td-adv-scroll" tabindex="0" aria-label="横向滚动时间线">
+    <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
+    <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="横向滚动时间线">
       <div class="td-adv-track" style="width:${trackWidth}px">
+        <div class="td-mini-ruler">${rulerHtml}</div>
         ${clipHtml}
         <input type="range" class="td-adv-scrub" min="0" max="${totalSeconds}" step="${1/FPS}" value="${Math.min(totalSeconds,state.time)}" aria-label="播放时间定位"/>
       </div>
@@ -691,7 +703,7 @@ function renderAdvancedNode(node) {
       <label>保存子目录<input data-widget="save_subfolder" value="${escapeHtml(saveDir)}"/></label>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
     </details>
-    <div class="td-adv-edit"><button type="button" data-action="edit">✦ 编辑时间线</button></div>
+    
   </div>`;
   const video = root.querySelector(".td-adv-video");
   const source = node.__tdPreviewUrl;
