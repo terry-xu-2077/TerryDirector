@@ -42,3 +42,15 @@
 .h3-time-row input { display:block;width:100%;background:var(--td-bg-inset);color:var(--td-text-main);border:1px solid var(--td-border);border-radius:5px;height:32px;padding:0 6px;margin-top:5px; }
 .h3-apply { border:1px solid var(--td-border);border-radius:5px;background:var(--td-accent-soft);height:32px;padding:0 10px; }
 @media (max-width:760px) { .h3-editor .h3-chip { font-size:11px; }.h3-menu-footer { font-size:9px; } }
+
+
+.h3-menu-item:disabled,
+.h3-menu-item.is-disabled {
+  opacity:.42;
+  cursor:not-allowed;
+}
+.h3-menu-item:disabled.is-active,
+.h3-menu-item.is-disabled.is-active {
+  background:transparent;
+  box-shadow:none;
+}
