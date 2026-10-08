@@ -39,6 +39,9 @@ input,textarea { min-width:0; }
 .crumbs>svg { width:13px; }
 .crumbs>button:not(.icon-button) { border:0;background:transparent;color:var(--td-text-main);padding:4px 0;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .top-actions { margin-left:auto;display:flex;align-items:center;gap:12px; }
+.top-data-actions { display:flex;align-items:center;gap:6px; }
+.top-data-button { min-height:30px;padding:0 10px;font-size:11px; }
+.top-data-button svg { width:14px;height:14px; }
 .prototype { color:var(--td-text-muted);font-size:10px;letter-spacing:1px; }
 .icon-button { display:inline-flex;align-items:center;justify-content:center;flex:none;width:auto;height:29px;gap:5px;white-space:nowrap;font-size:11px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--td-text-secondary);padding:0 7px; }
 .icon-button:hover { background:var(--td-bg-hover);color:var(--td-text-main); }
