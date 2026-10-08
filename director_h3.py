@@ -341,9 +341,8 @@ def build_timeline_graph(
     cache_signatures: list[str] = []
     previous_images = None
     previous_audio = None
-    decoded_images: list[Any] = []
-    decoded_audios: list[Any] = []
-    assembly_specs: list[dict[str, Any]] = []
+    merged_images = None
+    merged_audio = None
 
     rerun_segment_id = str(rerun.get("segment_id")) if rerun else None
     rerun_seed = int(rerun.get("seed", seed)) if rerun else int(seed)
@@ -411,33 +410,29 @@ def build_timeline_graph(
 
         images, audio = _decode_segment(graph, runtime, segment, sampled, prefix)
 
-        decoded_images.append(images)
-        decoded_audios.append(audio)
-        assembly_specs.append(dict(segment["assembly"]))
+        assembly_inputs: dict[str, Any] = {
+            "images": images,
+            "audio": audio,
+            "gap_frames": segment["assembly"]["gap_before_frames"],
+            "gap_after_frames": segment["assembly"]["gap_after_frames"],
+            "trim_head_frames": segment["assembly"]["trim_head_frames"],
+            "fps": FPS,
+        }
+        if merged_images is not None:
+            assembly_inputs["accumulated_images"] = merged_images
+            assembly_inputs["accumulated_audio"] = merged_audio
+
+        assembled = graph.node(
+            "TerryDirectorAssembleMedia",
+            f"{prefix}_assemble",
+            **assembly_inputs,
+        )
+        merged_images = assembled.out(0)
+        merged_audio = assembled.out(1)
         previous_images = images
         previous_audio = audio
         latents.append(sampled)
         cache_signatures.append(signature)
-
-    assembled = graph.node(
-        "TerryDirectorAssembleTimeline",
-        "td_timeline_assemble",
-        assembly_json=__import__("json").dumps(
-            assembly_specs,
-            ensure_ascii=False,
-        ),
-        fps=FPS,
-        **{
-            f"images.image_{index}": image
-            for index, image in enumerate(decoded_images)
-        },
-        **{
-            f"audios.audio_{index}": audio
-            for index, audio in enumerate(decoded_audios)
-        },
-    )
-    merged_images = assembled.out(0)
-    merged_audio = assembled.out(1)
 
     packed_output = graph.node(
         "TerryDirectorPackOutput",
