@@ -338,6 +338,7 @@ def build_timeline_graph(
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
     latents: list[Any] = []
+    cache_signatures: list[str] = []
     previous_images = None
     previous_audio = None
     merged_images = None
@@ -396,15 +397,6 @@ def build_timeline_graph(
             sampled = _sample_segment(
                 graph, segment_runtime, positive, latent, prefix, segment_seed
             )
-            if cache_key is not None:
-                sampled = graph.node(
-                    "TerryDirectorCacheLatent",
-                    f"{prefix}_cache_save",
-                    latent=sampled,
-                    cache_key=cache_key,
-                    segment_id=segment_id,
-                    signature=signature,
-                ).out(0)
         else:
             if cache_key is None:
                 raise RuntimeError("TerryDirector Advanced 局部重跑缺少缓存标识")
@@ -440,6 +432,7 @@ def build_timeline_graph(
         previous_images = images
         previous_audio = audio
         latents.append(sampled)
+        cache_signatures.append(signature)
 
     packed_output = graph.node(
         "TerryDirectorPackOutput",
@@ -470,6 +463,11 @@ def build_timeline_graph(
                 [str(segment["id"]) for segment in plan["segments"]],
                 ensure_ascii=False,
             ),
+            segment_signatures_json=__import__("json").dumps(
+                cache_signatures,
+                ensure_ascii=False,
+            ),
+            cache_only_segment_id=str(rerun_segment_id or ""),
         )
         output = final.out(0)
     return graph.finalize(), output
