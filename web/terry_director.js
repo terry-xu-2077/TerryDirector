@@ -16,6 +16,7 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
+const ADVANCED_NODE_HEIGHT = 620;
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
@@ -1027,14 +1028,14 @@ function renderAdvancedNode(node) {
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="--td-player-height:${advancedPlayerHeight(node)}px" aria-label="视频预览">
+    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="width:min(100%, ${ADVANCED_PREVIEW_BASE_WIDTH}px);max-width:${ADVANCED_PREVIEW_BASE_WIDTH}px;height:${advancedPlayerHeight(node)}px;aspect-ratio:auto;margin-left:auto;margin-right:auto;--td-player-height:${advancedPlayerHeight(node)}px" aria-label="视频预览">
       <video class="td-adv-video" style="aspect-ratio:${advancedAspectRatio(node)}" playsinline preload="metadata"></video>
       <img class="td-adv-live-image" alt="实时采样预览" hidden/>
       <video class="td-adv-live-video" muted loop autoplay playsinline hidden></video>
       <div class="td-adv-live-status" hidden>实时预览</div>
       <div class="td-adv-placeholder">▶<span>${node.__tdLivePreviewActive ? "等待采样预览" : "等待生成视频"}</span></div>
     </div>
-    <div class="td-adv-controls">
+    <div class="td-adv-controls" style="width:min(100%, ${ADVANCED_PREVIEW_BASE_WIDTH}px);max-width:${ADVANCED_PREVIEW_BASE_WIDTH}px;margin-left:auto;margin-right:auto">
       <button type="button" data-adv="play" aria-label="播放或暂停" disabled>▶</button>
       <span class="td-adv-clock">${format(state.time)} / ${format(totalSeconds)}</span>
       <span class="td-adv-spacer"></span>
@@ -1371,6 +1372,11 @@ function mountNode(node) {
       if (Array.isArray(size) && size[0] < DIRECTOR_MIN_WIDTH) {
         size[0] = DIRECTOR_MIN_WIDTH;
       }
+      if (Array.isArray(size) && this.comfyClass === ADVANCED_NODE_CLASS) {
+        // Advanced resize is intentionally horizontal-only. The node is a
+        // timeline workspace; widening it must not scale the media viewport.
+        size[1] = this.__tdAdvancedLockedHeight || ADVANCED_NODE_HEIGHT;
+      }
       originalOnResize?.call(this, size);
       if (this.comfyClass === ADVANCED_NODE_CLASS) {
         queueMicrotask(() => syncAdvancedAspect(this));
@@ -1382,6 +1388,12 @@ function mountNode(node) {
     node.size[0] = DIRECTOR_MIN_WIDTH;
   }
   if (node.__tdRoot) {
+    if (node.comfyClass === ADVANCED_NODE_CLASS) {
+      node.__tdAdvancedLockedHeight = ADVANCED_NODE_HEIGHT;
+      if ((node.size?.[1] || 0) !== ADVANCED_NODE_HEIGHT) {
+        node.setSize?.([node.size?.[0] || DIRECTOR_MIN_WIDTH, ADVANCED_NODE_HEIGHT]);
+      }
+    }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
@@ -1445,7 +1457,10 @@ function mountNode(node) {
 
   const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
-    if ((node.size?.[1] || 0) < 590) node.setSize?.([width, 620]);
+    node.__tdAdvancedLockedHeight = ADVANCED_NODE_HEIGHT;
+    if ((node.size?.[1] || 0) !== ADVANCED_NODE_HEIGHT) {
+      node.setSize?.([node.size?.[0] || width, ADVANCED_NODE_HEIGHT]);
+    }
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
     node.setSize?.([width, 245]);
   } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
