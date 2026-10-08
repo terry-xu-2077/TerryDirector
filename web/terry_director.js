@@ -550,14 +550,6 @@ function timelineHtml(documentData, activity = {}) {
   }
 
   const total = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
-  const activeClips = clips.filter(clip => !clip.suspended);
-  const totalWork = activeClips.reduce(
-    (sum, clip) => sum + Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0)),
-    0
-  );
-  let completedWork = 0;
-  let hasRunState = false;
-
   const clipHtml = clips
     .map((clip, index) => {
       const left = Math.max(0, Math.min(100, (clip.start / total) * 100));
@@ -574,10 +566,6 @@ function timelineHtml(documentData, activity = {}) {
       const progressDone = running && percent >= 100;
       const visualCompleted = completed || progressDone;
       const durationFrames = Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0));
-      if (running || completed || failed) hasRunState = true;
-      if (!clip.suspended) completedWork += durationFrames * (visualCompleted ? 1 : progress);
-
-      const selected = clip.id === documentData.selected ? " is-selected" : "";
       const suspended = clip.suspended ? " is-suspended" : "";
       const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
       const duration = timeText(Math.max(0, durationFrames));
@@ -593,15 +581,11 @@ function timelineHtml(documentData, activity = {}) {
         ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
         : "";
 
-      return `<div class="td-mini-clip${selected}${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : clip.id === documentData.selected ? 4 : index + 1}" title="${escapeHtml(title)}"><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
+      return `<div class="td-mini-clip${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : index + 1}" title="${escapeHtml(title)}"><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
     })
     .join("");
 
-  const overall = totalWork > 0 ? clamp01(completedWork / totalWork) : 0;
-  const overallHtml = hasRunState
-    ? `<div class="td-mini-overall-progress" title="总生成进度 ${Math.round(overall * 100)}%"><i style="width:${Math.round(overall * 1000) / 10}%"></i></div>`
-    : "";
-  return miniRulerHtml(total) + clipHtml + overallHtml;
+  return miniRulerHtml(total) + clipHtml;
 }
 
 function renderNode(node) {
