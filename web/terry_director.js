@@ -677,7 +677,12 @@ function renderAdvancedNode(node) {
     </button>`;
   }).join("");
   const saveDir = node.widgets?.find(w => w.name === "save_subfolder")?.value || "TerryDirector";
-  const prefix = node.widgets?.find(w => w.name === "filename_prefix")?.value || "TerryDirector";
+  const prefix = node.widgets?.find(w => w.name === "filename_prefix")?.value || "video/TerryDirector";
+  const videoFormat = node.widgets?.find(w => w.name === "video_format")?.value || "auto";
+  const videoCodec = node.widgets?.find(w => w.name === "video_codec")?.value || "auto";
+  const formats = ["auto", "mp4", "mkv", "webm"];
+  const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
+  const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
     <div class="td-adv-player" aria-label="视频预览">
       <video class="td-adv-video" playsinline preload="metadata"></video>
@@ -700,8 +705,9 @@ function renderAdvancedNode(node) {
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
     <button type="button" data-adv="rerun" disabled title="分段持久缓存接入后启用">↻ 重跑此片段（待接入）</button></div>
     <details class="td-adv-export"><summary>文件保存 <small>待接入编码</small></summary>
-      <label>保存子目录<input data-widget="save_subfolder" value="${escapeHtml(saveDir)}"/></label>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
+      <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
+      <label>编解码器<select data-widget="video_codec">${options(codecs, videoCodec)}</select></label>
     </details>
     
   </div>`;
@@ -783,6 +789,17 @@ function renderAdvancedNode(node) {
   root.querySelectorAll("[data-widget]").forEach(input => input.addEventListener("change", () => {
     const widget = node.widgets?.find(w => w.name === input.dataset.widget);
     if (widget) { widget.value = input.value; widget.callback?.(input.value); markChanged(node); }
+    if (input.dataset.widget === "video_format") {
+      const codecInput = root.querySelector('[data-widget="video_codec"]');
+      const allowed = input.value === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
+      if (!allowed.includes(codecInput.value)) {
+        codecInput.value = "auto";
+        const codecWidget = node.widgets?.find(w => w.name === "video_codec");
+        if (codecWidget) codecWidget.value = "auto";
+      }
+      codecInput.innerHTML = allowed.map(v => `<option value="${v}">${v}</option>`).join("");
+      codecInput.value = node.widgets?.find(w => w.name === "video_codec")?.value || "auto";
+    }
   }));
 }
 
@@ -854,6 +871,8 @@ function mountNode(node) {
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
     }
     renderNode(node);
     return;
