@@ -2,6 +2,8 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 
 const NODE_CLASS = "TerryDirector";
+const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
+const isDirector = node => node?.comfyClass === NODE_CLASS || node?.comfyClass === ADVANCED_NODE_CLASS;
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
 const CONFIG_ADVANCED_WIDGETS = new Set([
   "multiple",
@@ -60,7 +62,7 @@ function directorNodeFromId(value) {
   if (value == null) return null;
   const id = String(value);
   return (app.graph?._nodes || []).find(
-    node => node?.comfyClass === NODE_CLASS && String(node.id) === id
+    node => isDirector(node) && String(node.id) === id
   ) || null;
 }
 
@@ -217,7 +219,7 @@ function applyProgressState(detail) {
 function finishPromptActivity(promptId, success, message = "") {
   let matched = false;
   for (const node of app.graph?._nodes || []) {
-    if (node?.comfyClass !== NODE_CLASS || node.__tdPromptId !== promptId) continue;
+    if (!isDirector(node) || node.__tdPromptId !== promptId) continue;
     matched = true;
     const activity = ensureActivity(node);
     const now = performance.now();
@@ -486,7 +488,7 @@ function syncTailReferencePromptWidget(node, mark = false) {
 
 function syncAllTailReferencePromptWidgets() {
   for (const node of app.graph?._nodes || []) {
-    if (node?.comfyClass === NODE_CLASS) syncTailReferencePromptWidget(node, true);
+    if (isDirector(node)) syncTailReferencePromptWidget(node, true);
   }
 }
 
@@ -591,6 +593,7 @@ function timelineHtml(documentData, activity = {}) {
 function renderNode(node) {
   const root = node.__tdRoot;
   if (!root) return;
+  if (node.comfyClass === ADVANCED_NODE_CLASS) return renderAdvancedNode(node);
 
   const config = readConfig(node);
   const doc = config.document;
@@ -621,6 +624,127 @@ function renderNode(node) {
   root.querySelectorAll('[data-action="edit"]').forEach(button => {
     button.addEventListener("click", () => openEditor(node, button));
   });
+}
+
+
+
+// Advanced review is intentionally independent of the full editor timeline.
+// Persist UI selection in memory, never in the creative document.
+function renderAdvancedNode(node) {
+  const root = node.__tdRoot;
+  if (!root) return;
+  const doc = readConfig(node).document;
+  const clips = (doc.clips || []).filter(clip => !clip.suspended);
+  const totalFrames = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
+  const totalSeconds = totalFrames / FPS;
+  const state = node.__tdReview ||= { selected: doc.selected, time: 0, manualScroll: false };
+  if (!clips.some(c => c.id === state.selected)) state.selected = clips[0]?.id || null;
+  const previousTrack = root.querySelector(".td-adv-scroll");
+  const previousScroll = previousTrack?.scrollLeft || 0;
+  const oldVideo = root.querySelector(".td-adv-video");
+  if (oldVideo && Number.isFinite(oldVideo.currentTime)) {
+    state.time = oldVideo.currentTime;
+    oldVideo.pause();
+  }
+  const format = seconds => {
+    const value = Math.max(0, seconds || 0);
+    return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
+  };
+  const px = frames => Math.max(64, Math.round(frames / FPS * 14));
+  const durationPx = Math.max(1, ...clips.map(c => px(Number(c.end) - Number(c.start))));
+  const endPx = clips.reduce((max, c) => Math.max(max, Math.round((Number(c.start) / FPS) * 14) + px(Number(c.end) - Number(c.start))), 0);
+  const trackWidth = Math.max(endPx, durationPx, 1);
+  const activity = ensureActivity(node);
+  const clipHtml = clips.map((clip, index) => {
+    const left = Math.round(Number(clip.start) / FPS * 14);
+    const width = px(Number(clip.end) - Number(clip.start));
+    const status = activity[clip.id]?.status || RUN_IDLE;
+    return `<button type="button" class="td-adv-clip${clip.id === state.selected ? " is-selected" : ""}" style="left:${left}px;width:${width}px" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
+      <span>片段 ${index + 1}</span><small>${timeText(Number(clip.end) - Number(clip.start))}</small>
+      ${status === RUN_RUNNING ? '<i class="td-adv-working"></i>' : ""}
+    </button>`;
+  }).join("");
+  const saveDir = node.widgets?.find(w => w.name === "save_subfolder")?.value || "TerryDirector";
+  const prefix = node.widgets?.find(w => w.name === "filename_prefix")?.value || "TerryDirector";
+  root.innerHTML = `<div class="td-node-card td-node-card-advanced">
+    <div class="td-adv-player" aria-label="视频预览">
+      <video class="td-adv-video" playsinline preload="metadata"></video>
+      <div class="td-adv-placeholder">▶<span>等待生成视频</span></div>
+    </div>
+    <div class="td-adv-controls">
+      <button type="button" data-adv="play" aria-label="播放或暂停" disabled>▶</button>
+      <span class="td-adv-clock">${format(state.time)} / ${format(totalSeconds)}</span>
+      <span class="td-adv-spacer"></span>
+      <button type="button" data-adv="follow" title="定位播放头">◎ 定位</button>
+    </div>
+    <div class="td-adv-section-title"><strong>播放时间线</strong><span>${clips.length} 段 · ${format(totalSeconds)}</span></div>
+    <div class="td-adv-scroll" tabindex="0" aria-label="横向滚动时间线">
+      <div class="td-adv-track" style="width:${trackWidth}px">
+        ${clipHtml}
+        <input type="range" class="td-adv-scrub" min="0" max="${totalSeconds}" step="${1/FPS}" value="${Math.min(totalSeconds,state.time)}" aria-label="播放时间定位"/>
+      </div>
+    </div>
+    <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
+    <button type="button" data-adv="rerun" disabled title="分段持久缓存接入后启用">↻ 重跑此片段（待接入）</button></div>
+    <details class="td-adv-export"><summary>文件保存 <small>待接入编码</small></summary>
+      <label>保存子目录<input data-widget="save_subfolder" value="${escapeHtml(saveDir)}"/></label>
+      <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
+    </details>
+    <div class="td-adv-edit"><button type="button" data-action="edit">✦ 编辑时间线</button></div>
+  </div>`;
+  const video = root.querySelector(".td-adv-video");
+  const source = node.__tdPreviewUrl;
+  if (source) {
+    video.src = source;
+    root.querySelector(".td-adv-placeholder").hidden = true;
+    root.querySelector('[data-adv="play"]').disabled = false;
+    video.addEventListener("loadedmetadata", () => { video.currentTime = Math.min(state.time, video.duration || 0); });
+  }
+  const scroller = root.querySelector(".td-adv-scroll");
+  scroller.scrollLeft = previousScroll;
+  const scrub = root.querySelector(".td-adv-scrub");
+  const clock = root.querySelector(".td-adv-clock");
+  const follow = () => {
+    const position = Math.round(state.time / FPS * FPS * 14);
+    scroller.scrollLeft = Math.max(0, position - scroller.clientWidth * .35);
+  };
+  const setTime = value => {
+    state.time = Math.max(0, Math.min(totalSeconds, Number(value) || 0));
+    clock.textContent = `${format(state.time)} / ${format(totalSeconds)}`;
+    scrub.value = String(state.time);
+    if (source && Number.isFinite(video.duration)) video.currentTime = Math.min(state.time, video.duration);
+  };
+  scrub.addEventListener("input", () => setTime(scrub.value));
+  scroller.addEventListener("wheel", event => {
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) && !event.shiftKey) return;
+    scroller.scrollLeft += event.deltaY + event.deltaX;
+    state.manualScroll = true;
+    event.preventDefault();
+  }, { passive: false });
+  scroller.addEventListener("scroll", () => { state.manualScroll = true; }, { passive: true });
+  root.querySelectorAll("[data-clip]").forEach(button => button.addEventListener("click", () => {
+    const clip = clips.find(c => c.id === button.dataset.clip);
+    if (!clip) return;
+    state.selected = clip.id;
+    setTime(Number(clip.start) / FPS);
+    root.querySelectorAll("[data-clip]").forEach(item => item.classList.toggle("is-selected", item === button));
+    root.querySelector(".td-adv-selected").textContent = `已选中：${clip.name}`;
+  }));
+  root.querySelector('[data-adv="follow"]').addEventListener("click", () => { state.manualScroll = false; follow(); });
+  root.querySelector('[data-adv="play"]').addEventListener("click", () => {
+    if (video.paused) void video.play(); else video.pause();
+  });
+  video.addEventListener("timeupdate", () => {
+    state.time = video.currentTime;
+    scrub.value = String(state.time);
+    clock.textContent = `${format(state.time)} / ${format(totalSeconds)}`;
+    if (!state.manualScroll) follow();
+  });
+  root.querySelector('[data-action="edit"]').addEventListener("click", e => openEditor(node, e.currentTarget));
+  root.querySelectorAll("[data-widget]").forEach(input => input.addEventListener("change", () => {
+    const widget = node.widgets?.find(w => w.name === input.dataset.widget);
+    if (widget) { widget.value = input.value; widget.callback?.(input.value); markChanged(node); }
+  }));
 }
 
 function setNativeWidgetHidden(widget, hidden) {
@@ -699,7 +823,7 @@ function mountNode(node) {
   hideBackingWidget(tailReferencePromptWidget(node));
 
   const root = document.createElement("div");
-  root.className = "td-node-shell td-node-shell-director";
+  root.className = "td-node-shell td-node-shell-director" + (node.comfyClass === ADVANCED_NODE_CLASS ? " td-node-shell-advanced" : "");
   root.addEventListener("pointerdown", event => event.stopPropagation());
   root.addEventListener("wheel", event => event.stopPropagation(), { passive: true });
 
@@ -709,8 +833,8 @@ function mountNode(node) {
     root,
     {
       hideOnZoom: false,
-      getMinHeight: () => 118,
-      getMaxHeight: () => 148,
+      getMinHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? 455 : 118,
+      getMaxHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? 540 : 148,
       margin: 3,
     }
   );
@@ -730,7 +854,9 @@ function mountNode(node) {
   };
 
   const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
-  if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
+  if (node.comfyClass === ADVANCED_NODE_CLASS) {
+    node.setSize?.([width, 620]);
+  } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
     node.setSize?.([width, 245]);
   } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
     node.setSize?.([DIRECTOR_MIN_WIDTH, node.size?.[1] || 245]);
@@ -896,14 +1022,14 @@ app.registerExtension({
     bindExecutionActivity();
   },
   nodeCreated(node) {
-    if (node.comfyClass === NODE_CLASS) {
+    if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
     }
   },
   loadedGraphNode(node) {
-    if (node.comfyClass === NODE_CLASS) {
+    if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
