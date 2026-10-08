@@ -388,18 +388,11 @@ class TerryDirectorAdvanced(TerryDirector):
                 io.Boolean.Input("preview_enabled", default=False, socketless=True),
                 io.Int.Input("preview_max_resolution", default=1024, min=0, max=8192, socketless=True),
                 io.Int.Input("preview_jpeg_quality", default=80, min=30, max=100, socketless=True),
-                io.Int.Input("preview_frames", default=1, min=1, max=1024, socketless=True),
                 io.Int.Input("preview_fps", default=12, min=1, max=24, socketless=True),
                 io.Boolean.Input("preview_suppress_default", default=True, socketless=True),
                 io.String.Input("rerun_clip_id", default="", socketless=True),
                 io.Int.Input(
                     "rerun_seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF,
-                    socketless=True,
-                ),
-                io.Combo.Input(
-                    "preview_frame_mode",
-                    options=["first", "half", "all"],
-                    default="half",
                     socketless=True,
                 ),
                 io.Combo.Input(
@@ -422,10 +415,10 @@ class TerryDirectorAdvanced(TerryDirector):
         save_subfolder="TerryDirector", filename_prefix="video/TerryDirector",
         video_format="auto", video_codec="auto",
         preview_enabled=False, preview_max_resolution=1024,
-        preview_jpeg_quality=80, preview_frames=1, preview_fps=12,
+        preview_jpeg_quality=80, preview_fps=12,
         preview_suppress_default=True,
         rerun_clip_id="", rerun_seed=0,
-        preview_frame_mode="half", preview_tiny_vae="none",
+        preview_tiny_vae="none",
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
