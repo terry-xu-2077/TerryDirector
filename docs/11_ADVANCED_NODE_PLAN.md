@@ -61,7 +61,7 @@
 \n
 ## 2026-10-08 · KJ 实时采样预览接入
 - Advanced 在“启用预览”开启时，会在展开执行图中插入 `ModelPreviewOverrideKJ`，使用同一份 H3 model 包装采样器。
-- 参数直接映射到 KJ 源节点：`max_resolution`、`jpeg_quality`、`suppress_default_preview`、`preview_frames`、`preview_fps`；MiniMax H3 的 `audio_vae` 同步传入。
+- 参数直接映射到 KJ 源节点：`max_resolution`、`jpeg_quality`、`suppress_default_preview`、`preview_fps`；MiniMax H3 的 `audio_vae` 同步传入。
 - 未安装 KJNodes 时不阻断生成，只在控制台提示并跳过实时预览。
 - 前端监听 `kj_preview_override`，Expanded GraphBuilder ID（如 `321.0.0.td_advanced_preview_override`）解析回 Advanced 父节点。
 - 实时 JPEG / Animated WebP / MP4 都显示在 Advanced 顶部同一个预览容器里；采样过程中禁止点击播放/暂停。
@@ -73,7 +73,7 @@
 - Advanced 最终保存完成后在 `output/.terrydirector_cache/<node-id>/state.json` 持久化最新视频文件与活动片段 ID。
 - 节点重新挂载（包括切换到其他工作流后再切回来）时，从 `/terrydirector/api/advanced-state` 恢复最终视频、片段完成状态和局部重跑可用状态，不再依赖完成瞬间前端是否处于当前工作流。
 - “启用预览”关闭时隐藏整个“视频预览”折叠栏；开启后才显示 KJ Preview Override 参数。
-- 预览帧改为三档：`首帧 / 半数帧 / 所有帧`，默认 `半数帧`。H3 按每段实际时间 latent token 数映射到 KJ `preview_frames`。
+- 预览采用连续 FPS 控制，默认 12 FPS；1 FPS 为单帧预览，多帧模式按目标 FPS 映射 H3 temporal latent token 密度。
 - 新增 `Tiny VAE` 选择，直接读取 `models/vae_approx`；若检测到 `taeh3.safetensors` 则作为新节点默认值，否则为 `none`。
 - KJ Preview Override 改为按采样片段单独包装 model，因此不同长度片段可以使用各自的首帧/半数/全帧预览采样数量。
 
@@ -93,4 +93,3 @@
 - 多帧预览将目标 FPS 映射到 H3 temporal latent token 密度：约按 `target_fps / 24` 抽取 latent-time tokens，12 FPS 等价于约半数时间密度，24 FPS 为全密度。
 - 未检测到多帧预览能力时，预览 FPS 自动锁定为 1 且输入禁用，不额外向用户解释底层实现。
 - 最大分辨率、JPEG 质量、预览模型仅在 FPS > 1 且多帧能力可用时显示。
-- 旧 `preview_frame_mode` / `preview_frames` 参数暂留作序列化兼容，但不再参与 Advanced UI 或执行决策。
