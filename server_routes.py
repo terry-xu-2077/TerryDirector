@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import mimetypes
+import re
 from pathlib import Path
 
 import folder_paths
@@ -9,6 +11,7 @@ from server import PromptServer
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 INPUT_ROOT = Path(folder_paths.get_input_directory()).resolve()
+OUTPUT_ROOT = Path(folder_paths.get_output_directory()).resolve()
 SUPPORTED = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".svg"},
     "video": {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"},
@@ -135,3 +138,26 @@ async def terrydirector_latent_upscalers(request: web.Request) -> web.Response:
     except Exception:
         models = []
     return web.json_response({"models": models})
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/advanced-state")
+async def terrydirector_advanced_state(request: web.Request) -> web.Response:
+    node_id = str(request.query.get("node_id") or "").strip()
+    if not node_id:
+        return web.json_response({"state": None})
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", node_id)[:160]
+    path = (OUTPUT_ROOT / ".terrydirector_cache" / safe / "state.json").resolve()
+    cache_root = (OUTPUT_ROOT / ".terrydirector_cache").resolve()
+    if not _within(cache_root, path) or not path.is_file():
+        return web.json_response({"state": None})
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return web.json_response({"state": None})
+    video = state.get("video") if isinstance(state, dict) else None
+    if isinstance(video, dict):
+        rel = Path(str(video.get("subfolder") or "")) / str(video.get("filename") or "")
+        candidate = (OUTPUT_ROOT / rel).resolve()
+        if not _within(OUTPUT_ROOT, candidate) or not candidate.is_file():
+            return web.json_response({"state": None})
+    return web.json_response({"state": state})
