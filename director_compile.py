@@ -11,6 +11,12 @@ H3_MAX_FRAMES = 3592
 MAX_REFERENCE_IMAGES = 9
 MAX_REFERENCE_VIDEOS = 3
 MAX_REFERENCE_AUDIOS = 3
+DEFAULT_TAIL_REFERENCE_PROMPT = (
+    "[镜头连续性参考]\n"
+    "{picture} 为上一镜头最终帧。"
+    "仅参考人物与场景状态、色彩、光线和整体基调；"
+    "当前镜头按照本段描述重新构图与运镜。"
+)
 
 _ASSET_LABEL = {
     "image": "Picture",
@@ -113,6 +119,32 @@ def _compile_assets(
     return _TAG_RE.sub(replace_tag, prompt), groups
 
 
+def _tail_reference_prompt(template: str, picture_number: int) -> str:
+    """Resolve the user template against the actual H3 image-reference slot."""
+    number = max(1, int(picture_number))
+    picture = f"<Picture {number}>"
+    raw = str(template or "").strip() or DEFAULT_TAIL_REFERENCE_PROMPT
+    had_placeholder = "{picture}" in raw or "{picture_number}" in raw
+    raw = raw.replace("{picture}", picture).replace("{picture_number}", str(number))
+
+    # A tail-reference prompt is specifically about this dynamic image. If the
+    # user typed a literal Picture ordinal, normalize it to the actual slot so
+    # later changes to ordinary references cannot silently desync the prompt.
+    literal_picture = re.compile(r"<Picture\s+\d+>", re.IGNORECASE)
+    if literal_picture.search(raw):
+        raw = literal_picture.sub(picture, raw)
+    elif not had_placeholder:
+        raw = f"{picture} {raw}"
+    return raw
+
+
+def _append_tail_reference_prompt(prompt: str, template: str, picture_number: int) -> str:
+    extra = _tail_reference_prompt(template, picture_number)
+    if not prompt:
+        return extra
+    return f"{prompt.rstrip()}\n\n{extra}"
+
+
 def _effective_prompt(document: dict[str, Any], clip: dict[str, Any]) -> str:
     """Build the exact prompt H3 receives for one segment."""
     segment_prompt = str(clip.get("prompt") or "")
@@ -175,7 +207,10 @@ def _continuity(
     }, 0, overlap
 
 
-def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
+def compile_timeline(
+    document: dict[str, Any],
+    tail_reference_prompt: str = DEFAULT_TAIL_REFERENCE_PROMPT,
+) -> dict[str, Any]:
     """Compile TerryDirector's creative timeline into deterministic H3 segment tasks."""
     if not isinstance(document, dict):
         raise ValueError("TerryDirector document must be an object")
@@ -224,9 +259,17 @@ def compile_timeline(document: dict[str, Any]) -> dict[str, Any]:
         effective_prompt = _effective_prompt(document, clip)
         prompt, local_assets = _compile_assets(effective_prompt, assets)
         continuity, gap_before, trim_head = _continuity(previous, clip)
-        if continuity["kind"] == "tail_reference" and len(local_assets["images"]) >= MAX_REFERENCE_IMAGES:
-            raise ValueError(
-                "TerryDirector 尾帧参考需要占用 1 个图片参考位；当前片段最多可再引用 8 张图片"
+        if continuity["kind"] == "tail_reference":
+            if len(local_assets["images"]) >= MAX_REFERENCE_IMAGES:
+                raise ValueError(
+                    "TerryDirector 尾帧参考需要占用 1 个图片参考位；当前片段最多可再引用 8 张图片"
+                )
+            picture_number = len(local_assets["images"]) + 1
+            continuity["picture_number"] = picture_number
+            prompt = _append_tail_reference_prompt(
+                prompt,
+                tail_reference_prompt,
+                picture_number,
             )
         trim_tail = generated_frames - output_frames
 
