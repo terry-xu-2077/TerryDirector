@@ -222,7 +222,7 @@
       }
       ctx.restore();
     }
-    // Seam labels are derived from clip geometry and never become hit targets.
+    // Seam labels are derived from clip geometry; only touching seams expose a small mode hit target.
     get seamLeaderGap() { return 8; }
     seamCallouts(ctx) {
       const left=this.inset+4,right=this.width-5,bottom=this.y()+this.trackHeight+3;
