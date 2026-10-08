@@ -15,6 +15,8 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
+const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
+const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
 const TRANSITION_MODES = new Set(["tail_reference", "tail_continuation", "independent"]);
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
 
@@ -27,6 +29,25 @@ function defaultTransitionMode() {
     app.extensionManager?.setting?.get?.(TRANSITION_SETTING_ID),
     "tail_reference"
   );
+}
+
+function tailReferencePromptSetting() {
+  const value = app.extensionManager?.setting?.get?.(TAIL_REFERENCE_PROMPT_SETTING_ID);
+  return typeof value === "string" && value.trim()
+    ? value
+    : DEFAULT_TAIL_REFERENCE_PROMPT;
+}
+
+function tailReferencePromptSettingRenderer(_name, setter, value) {
+  const textarea = document.createElement("textarea");
+  textarea.className = "td-tail-reference-setting";
+  textarea.rows = 5;
+  textarea.spellcheck = false;
+  textarea.value = typeof value === "string" ? value : DEFAULT_TAIL_REFERENCE_PROMPT;
+  textarea.placeholder = DEFAULT_TAIL_REFERENCE_PROMPT;
+  textarea.title = "使用 {picture} 代表实际的 <Picture N>，使用 {picture_number} 代表实际编号。";
+  textarea.addEventListener("change", () => setter(textarea.value));
+  return textarea;
 }
 
 
@@ -447,6 +468,28 @@ function configWidget(node) {
   return node.widgets?.find(widget => widget.name === "config_json") || null;
 }
 
+function tailReferencePromptWidget(node) {
+  return node.widgets?.find(widget => widget.name === "tail_reference_prompt") || null;
+}
+
+function syncTailReferencePromptWidget(node, mark = false) {
+  const widget = tailReferencePromptWidget(node);
+  if (!widget) return;
+  const value = tailReferencePromptSetting();
+  if (widget.value !== value) {
+    widget.value = value;
+    widget.callback?.(value);
+    if (mark) markChanged(node);
+  }
+  hideBackingWidget(widget);
+}
+
+function syncAllTailReferencePromptWidgets() {
+  for (const node of app.graph?._nodes || []) {
+    if (node?.comfyClass === NODE_CLASS) syncTailReferencePromptWidget(node, true);
+  }
+}
+
 function hideBackingWidget(widget) {
   if (!widget) return;
   widget.__tdHidden = true;
@@ -641,6 +684,7 @@ function applyConfigAdvancedVisibility(node) {
 
 function mountNode(node) {
   ensureActivity(node);
+  syncTailReferencePromptWidget(node);
 
   if (!node.__tdMinWidthBound) {
     const originalOnResize = node.onResize;
@@ -657,6 +701,7 @@ function mountNode(node) {
   }
   if (node.__tdRoot) {
     hideBackingWidget(configWidget(node));
+    hideBackingWidget(tailReferencePromptWidget(node));
     renderNode(node);
     return;
   }
@@ -665,6 +710,7 @@ function mountNode(node) {
   const backing = configWidget(node);
   if (!backing) return;
   hideBackingWidget(backing);
+  hideBackingWidget(tailReferencePromptWidget(node));
 
   const root = document.createElement("div");
   root.className = "td-node-shell td-node-shell-director";
@@ -844,6 +890,17 @@ app.registerExtension({
       tooltip: "决定新建片段与上一片段首尾贴合时的默认关系。不会修改已有接缝。",
       onChange() {
         pushPreferences();
+      },
+    },
+    {
+      id: TAIL_REFERENCE_PROMPT_SETTING_ID,
+      name: "尾帧参考提示词",
+      type: tailReferencePromptSettingRenderer,
+      category: ["TerryDirector", "时间线"],
+      defaultValue: DEFAULT_TAIL_REFERENCE_PROMPT,
+      tooltip: "仅在“尾帧参考”模式生效。{picture} 会在编译时替换为尾帧实际占用的 <Picture N>；{picture_number} 会替换为实际编号。",
+      onChange() {
+        syncAllTailReferencePromptWidgets();
       },
     },
   ],
