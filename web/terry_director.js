@@ -18,6 +18,7 @@ const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
 const ADVANCED_NODE_MIN_HEIGHT = 620;
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
+const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 64;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -1150,6 +1151,8 @@ function renderAdvancedNode(node) {
   if (previousPreviewDetails) state.detailsOpen.preview = previousPreviewDetails.open;
   if (previousExportDetails) state.detailsOpen.export = previousExportDetails.open;
   if (!clips.some(c => c.id === state.selected)) state.selected = clips[0]?.id || null;
+  const previousTimeline = root.querySelector(".td-adv-scroll");
+  const previousTimelineScroll = previousTimeline?.scrollLeft || 0;
   const globalSeed = String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
   const selectedRerunSeed = state.selected && state.rerunSeedCustom[state.selected] != null
     ? String(state.rerunSeedCustom[state.selected])
@@ -1163,6 +1166,14 @@ function renderAdvancedNode(node) {
     const value = Math.max(0, seconds || 0);
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
   };
+  const shortestFrames = Math.max(
+    1,
+    Math.min(...clips.map(clip => Math.max(1, Number(clip.end) - Number(clip.start))))
+  );
+  const minTimelineTrackWidth = Math.max(
+    1,
+    Math.ceil(totalFrames / shortestFrames * ADVANCED_TIMELINE_MIN_CLIP_WIDTH)
+  );
   const activity = ensureActivity(node);
   const allSegmentsCompleted = clips.length > 0 &&
     clips.every(clip => activity[clip.id]?.status === RUN_COMPLETED);
@@ -1224,7 +1235,7 @@ function renderAdvancedNode(node) {
     <div class="td-adv-timeline-panel">
       <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
       <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="自适应时间线">
-        <div class="td-adv-track" style="width:100%">
+        <div class="td-adv-track" style="width:100%;min-width:${minTimelineTrackWidth}px">
           ${rulerHtml}
           ${clipHtml}
           <div class="td-adv-playhead" style="left:${Math.max(0,Math.min(100,state.time/Math.max(totalSeconds,1)*100))}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
@@ -1293,6 +1304,10 @@ function renderAdvancedNode(node) {
   video.addEventListener("ended", syncPlaybackButton);
   syncPlaybackButton();
   const scroller = root.querySelector(".td-adv-scroll");
+  scroller.scrollLeft = Math.min(
+    previousTimelineScroll,
+    Math.max(0, scroller.scrollWidth - scroller.clientWidth)
+  );
   const playhead = root.querySelector(".td-adv-playhead");
   const updateHead = () => {
     const percent = Math.max(0, Math.min(100, state.time / Math.max(totalSeconds, 1) * 100));
@@ -1301,7 +1316,17 @@ function renderAdvancedNode(node) {
     playhead.querySelector(".td-adv-playhead-label").textContent = format(state.time);
   };
   const clock = root.querySelector(".td-adv-clock");
-  const follow = () => updateHead();
+  const follow = () => {
+    updateHead();
+    if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
+    const position = state.time / Math.max(totalSeconds, 1) * track.scrollWidth;
+    node.__tdAutoTimelineScroll = true;
+    scroller.scrollLeft = Math.max(
+      0,
+      Math.min(scroller.scrollWidth - scroller.clientWidth, position - scroller.clientWidth * .35)
+    );
+    requestAnimationFrame(() => { node.__tdAutoTimelineScroll = false; });
+  };
   const setTime = value => {
     state.time = Math.max(0, Math.min(totalSeconds, Number(value) || 0));
     clock.textContent = `${format(state.time)} / ${format(totalSeconds)}`;
@@ -1331,6 +1356,16 @@ function renderAdvancedNode(node) {
     setTime(state.time + (event.key === "ArrowRight" ? 1 : -1) / FPS);
     event.preventDefault();
   });
+  scroller.addEventListener("scroll", () => {
+    if (!node.__tdAutoTimelineScroll) state.manualScroll = true;
+  }, { passive: true });
+  scroller.addEventListener("wheel", event => {
+    if (scroller.scrollWidth <= scroller.clientWidth + 1) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) && !event.shiftKey) return;
+    scroller.scrollLeft += event.deltaY + event.deltaX;
+    state.manualScroll = true;
+    event.preventDefault();
+  }, { passive: false });
   root.querySelectorAll("[data-clip]").forEach(button => button.addEventListener("click", () => {
     const clip = clips.find(c => c.id === button.dataset.clip);
     if (!clip) return;
