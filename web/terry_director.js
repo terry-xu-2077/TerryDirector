@@ -625,6 +625,8 @@ function renderNode(node) {
         <span class="td-mini-stats">
           总时长：<b>${totalSeconds}</b>s
           <i></i>
+          片段数：<b>${doc.clips.length}</b>
+          <i></i>
           导入资产：<b>${doc.assets.length}</b><em>（<b>${usedAssets}</b> 个被使用）</em>
         </span>
         <span class="td-node-spacer"></span>
