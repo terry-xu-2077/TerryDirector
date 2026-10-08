@@ -694,7 +694,7 @@ function renderAdvancedNode(node) {
       <div class="td-adv-track" style="width:${trackWidth}px">
         <div class="td-mini-ruler">${rulerHtml}</div>
         ${clipHtml}
-        <input type="range" class="td-adv-scrub" min="0" max="${totalSeconds}" step="${1/FPS}" value="${Math.min(totalSeconds,state.time)}" aria-label="播放时间定位"/>
+        <div class="td-adv-playhead" style="left:${Math.min(totalSeconds,state.time)*pixelsPerSecond}px" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
       </div>
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
@@ -715,7 +715,12 @@ function renderAdvancedNode(node) {
   }
   const scroller = root.querySelector(".td-adv-scroll");
   scroller.scrollLeft = previousScroll;
-  const scrub = root.querySelector(".td-adv-scrub");
+  const playhead = root.querySelector(".td-adv-playhead");
+  const updateHead = () => {
+    playhead.style.left = `${state.time * pixelsPerSecond}px`;
+    playhead.setAttribute("aria-valuenow", String(state.time));
+    playhead.querySelector(".td-adv-playhead-label").textContent = format(state.time);
+  };
   const clock = root.querySelector(".td-adv-clock");
   const follow = () => {
     const position = Math.round(state.time * pixelsPerSecond);
@@ -724,10 +729,31 @@ function renderAdvancedNode(node) {
   const setTime = value => {
     state.time = Math.max(0, Math.min(totalSeconds, Number(value) || 0));
     clock.textContent = `${format(state.time)} / ${format(totalSeconds)}`;
-    scrub.value = String(state.time);
+    updateHead();
     if (source && Number.isFinite(video.duration)) video.currentTime = Math.min(state.time, video.duration);
   };
-  scrub.addEventListener("input", () => setTime(scrub.value));
+  let draggingHead = false;
+  const track = root.querySelector(".td-adv-track");
+  const seekPointer = event => {
+    const rect = track.getBoundingClientRect();
+    if (!rect.width) return;
+    setTime(Math.round(Math.max(0, Math.min(totalSeconds, (event.clientX - rect.left) / rect.width * totalSeconds)) * FPS) / FPS);
+  };
+  track.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || event.target.closest("[data-clip]")) return;
+    draggingHead = true;
+    track.setPointerCapture(event.pointerId);
+    seekPointer(event);
+    event.stopPropagation();
+  });
+  track.addEventListener("pointermove", event => { if (draggingHead) seekPointer(event); });
+  track.addEventListener("pointerup", () => { draggingHead = false; });
+  track.addEventListener("pointercancel", () => { draggingHead = false; });
+  playhead.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    setTime(state.time + (event.key === "ArrowRight" ? 1 : -1) / FPS);
+    event.preventDefault();
+  });
   scroller.addEventListener("wheel", event => {
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) && !event.shiftKey) return;
     scroller.scrollLeft += event.deltaY + event.deltaX;
@@ -749,7 +775,7 @@ function renderAdvancedNode(node) {
   });
   video.addEventListener("timeupdate", () => {
     state.time = video.currentTime;
-    scrub.value = String(state.time);
+    updateHead();
     clock.textContent = `${format(state.time)} / ${format(totalSeconds)}`;
     if (!state.manualScroll) follow();
   });
