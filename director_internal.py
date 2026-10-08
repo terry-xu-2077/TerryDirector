@@ -59,6 +59,9 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
 
     @classmethod
     def execute(cls, director_output, saved_video) -> io.NodeOutput:
+        if saved_video is None:
+            raise RuntimeError("TerryDirector Advanced：SaveVideo 未返回有效视频，不能标记保存完成")
+        print("[TerryDirector Advanced] SaveVideo dependency completed; forwarding director output", flush=True)
         return io.NodeOutput(director_output)
 
 
