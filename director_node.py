@@ -455,29 +455,28 @@ class TerryDirectorAdvanced(TerryDirector):
             )
 
         preview_override = None
-        if bool(preview_enabled):
+        preview_mode = str(preview_frame_mode or "half").lower()
+        if preview_mode not in {"first", "half", "all"}:
+            preview_mode = "half"
+        if bool(preview_enabled) and preview_mode != "first":
             try:
                 import nodes as comfy_nodes
                 if "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS:
                     preview_override = {
                         "max_resolution": int(preview_max_resolution),
                         "jpeg_quality": int(preview_jpeg_quality),
-                        "suppress_default_preview": bool(preview_suppress_default),
-                        "frame_mode": str(preview_frame_mode or "half"),
+                        # Multi-frame mode owns the Advanced preview surface,
+                        # so the sampler's ordinary single-frame preview stays suppressed.
+                        "suppress_default_preview": True,
+                        "frame_mode": preview_mode,
                         "preview_fps": int(preview_fps),
                         "tiny_vae": str(preview_tiny_vae or "none"),
                     }
                 else:
-                    print(
-                        "[TerryDirector Advanced] KJ Model Preview Override is not installed; "
-                        "live sampling preview disabled.",
-                        flush=True,
-                    )
-            except Exception as exc:
-                print(
-                    f"[TerryDirector Advanced] Could not enable KJ preview override: {exc}",
-                    flush=True,
-                )
+                    # Graceful capability fallback: single-frame preview remains available.
+                    preview_mode = "first"
+            except Exception:
+                preview_mode = "first"
 
         expanded, director_output = build_timeline_graph(
             runtime, plan, seed,
