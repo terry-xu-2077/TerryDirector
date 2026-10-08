@@ -590,6 +590,11 @@
   transform: none;
 }
 
+.td-mini-ruler-tick.is-last > b {
+  left: -5px;
+  transform: translateX(-100%);
+}
+
 .td-mini-ruler-tick > i {
   position: absolute;
   top: 17px;
