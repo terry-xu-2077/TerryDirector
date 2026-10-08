@@ -171,7 +171,7 @@ Lift 后立即卸载 Upscaler；高清阶段首尾 / Guide 关键帧按目标分
 
 ## 8. 输出
 
-TerryDirector 不为导演台 UI 额外写视频预览文件，也不在主节点上暴露多路标准媒体端口。
+TerryDirector 不为导演台 UI 额外写视频预览文件，也不在主节点或配套输出节点中承担 VIDEO 创建 / 编码 / 封装职责。
 
 主节点内部仍完成：
 
@@ -182,14 +182,13 @@ TerryDirector 不为导演台 UI 额外写视频预览文件，也不在主节�
 
 随后通过内部打包节点组成一个 `TERRYDIRECTOR_OUTPUT`，TerryDirector 主节点右侧只输出一个用户可见端口：**导演输出**。
 
-配套可见节点 **导演输出** 接收该对象，并输出：
+配套可见节点 **TerryDirector 输出** 接收该对象，并只输出：
 
-- `视频`：标准 VIDEO；使用 ComfyUI 原生 `VideoFromComponents` 将最终 IMAGE + AUDIO + 24fps 构造成视频对象，不主动写文件，也不提前编码
 - `分段潜变量`：LATENT 原生列表，每项保留完整原始分段 H3 AV latent
 - `合并画面`：IMAGE
 - `合并音频`：AUDIO
 
-因此用户不再需要额外连接“创建视频”节点；VIDEO 仍可继续连接 ComfyUI 的预览、保存和其他视频处理节点。
+该节点只做解包，不创建 VIDEO。视频封装、编码、预览与保存由工作流下游的 ComfyUI 视频节点负责。
 
 导演台内的局部运行继续使用 Partial Execution 选择当前 TerryDirector 主节点本身作为执行目标。
 
@@ -199,7 +198,7 @@ TerryDirector 不为导演台 UI 额外写视频预览文件，也不在主节�
 2. 单片段真实 H3 生成
 3. 图片 / 视频 / 音频资产真实加载与局部编号
 4. 多片段 tail-frame / overlap / gap
-5. 单一导演输出 + 配套 VIDEO / LATENT / IMAGE / AUDIO 输出
+5. 单一导演输出 + 配套 LATENT / IMAGE / AUDIO 解包输出
 6. SelfLift
 7. 缓存、低显存分块与性能优化
 
