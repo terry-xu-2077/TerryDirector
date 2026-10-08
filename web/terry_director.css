@@ -699,7 +699,8 @@
 .td-node-shell-advanced .td-adv-head {position:relative;display:flex;align-items:center;min-height:30px;margin:7px 0 5px;}
 .td-node-shell-advanced .td-adv-head strong {font-size:11px}
 .td-node-shell-advanced .td-adv-head .td-mini-stats {top:50%;transform:translate(-50%,-50%);}
-.td-node-shell-advanced .td-adv-scroll.td-mini-timeline {height:88px;overflow-x:auto!important;overflow-y:hidden!important;cursor:default;background:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px) 0 0 / 100% 15px,#151820;}
+.td-node-shell-advanced .td-adv-scroll.td-mini-timeline {height:88px;overflow-x:hidden!important;overflow-y:hidden!important;cursor:default;background:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px) 0 0 / 100% 15px,#151820;}
+.td-node-shell-advanced .td-adv-scroll.td-mini-timeline.has-overflow {overflow-x:auto!important;}
 .td-node-shell-advanced .td-adv-scroll .td-adv-track {height:70px;min-width:100%;position:relative;}
 .td-node-shell-advanced .td-adv-scroll .td-mini-ruler {inset:0;z-index:0;}
 .td-node-shell-advanced .td-adv-scroll .td-mini-clip.td-adv-clip {top:22px;height:41px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:1px;padding:4px 6px 5px 8px;border:1px solid rgba(155,120,255,.4);border-radius:5px;background:linear-gradient(180deg,rgba(155,120,255,.18),rgba(155,120,255,.07));box-shadow:0 3px 10px rgba(0,0,0,.18);text-align:left;appearance:none;font:inherit;min-width:0;}
@@ -994,4 +995,8 @@
 .td-node-shell-advanced .td-adv-player:not(.is-landscape) .td-adv-live-image,
 .td-node-shell-advanced .td-adv-player:not(.is-landscape) .td-adv-live-video {
   object-fit:contain!important;
+}
+
+.td-node-shell-advanced .td-adv-timeline-panel .td-adv-scroll.td-mini-timeline.has-overflow {
+  overflow-x:auto !important;
 }
