@@ -1154,8 +1154,6 @@ function renderAdvancedNode(node) {
   const selectedRerunSeed = state.selected && state.rerunSeedCustom[state.selected] != null
     ? String(state.rerunSeedCustom[state.selected])
     : globalSeed;
-  const previousTrack = root.querySelector(".td-adv-scroll");
-  const previousScroll = previousTrack?.scrollLeft || 0;
   const oldVideo = root.querySelector(".td-adv-video");
   if (oldVideo && !node.__tdLivePreviewActive && Number.isFinite(oldVideo.currentTime)) {
     state.time = oldVideo.currentTime;
@@ -1165,32 +1163,26 @@ function renderAdvancedNode(node) {
     const value = Math.max(0, seconds || 0);
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
   };
-  const shortestFrames = Math.max(1, Math.min(...clips.map(c => Math.max(1, Number(c.end) - Number(c.start)))));
-  // One proportional scale for every clip: preserve time mapping while guaranteeing click targets.
-  const pixelsPerSecond = Math.max(14, 64 * FPS / shortestFrames);
-  const px = frames => Math.max(1, Math.round(frames / FPS * pixelsPerSecond));
-  const trackWidth = Math.max(1, px(totalFrames));
   const activity = ensureActivity(node);
   const allSegmentsCompleted = clips.length > 0 &&
     clips.every(clip => activity[clip.id]?.status === RUN_COMPLETED);
   if (allSegmentsCompleted) node.__tdRerunCacheReady = true;
   const rerunHasCache = !!node.__tdRerunCacheReady;
   const rerunBusy = !!node.__tdPromptId || !!node.__tdLocalRunLock;
-  const tickStep = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find(v => v * pixelsPerSecond >= 72) || 600;
-  const rulerHtml = Array.from({ length: Math.min(300, Math.floor(totalSeconds / tickStep) + 1) }, (_, i) => {
-    const seconds = i * tickStep;
-    return `<span class="td-mini-ruler-tick${i === 0 ? " is-first" : ""}" style="left:${Math.round(seconds * pixelsPerSecond)}px"><b>${format(seconds)}</b><i></i></span>`;
-  }).join("");
+  const rulerHtml = miniRulerHtml(totalFrames);
   const clipHtml = clips.map((clip, index) => {
-    const left = px(Number(clip.start));
-    const width = px(Number(clip.end) - Number(clip.start));
+    const left = Math.max(0, Math.min(100, Number(clip.start) / totalFrames * 100));
+    const width = Math.max(
+      0.8,
+      Math.min(100 - left, (Number(clip.end) - Number(clip.start)) / totalFrames * 100)
+    );
     const record = activity[clip.id] || {};
     const running = record.status === RUN_RUNNING;
     const completed = record.status === RUN_COMPLETED;
     const failed = record.status === RUN_ERROR;
     const percent = completed ? 100 : Math.round(clamp01(record.progress) * 100);
     const classes = [clip.suspended ? "is-suspended" : "", running ? "is-running" : "", completed ? "is-completed" : "", failed ? "is-error" : "", clip.id === state.selected ? "is-selected" : ""].filter(Boolean).join(" ");
-    return `<button type="button" class="td-mini-clip td-adv-clip ${classes}" style="left:${left}px;width:${width}px" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
+    return `<button type="button" class="td-mini-clip td-adv-clip ${classes}" style="left:${left}%;width:${width}%" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
       <div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${timeText(Number(clip.end)-Number(clip.start))}</span></div>
       <span class="td-mini-label">${escapeHtml(clip.name)}</span>
       ${running || completed ? `<span class="td-mini-clip-progress"><i style="width:${percent}%"></i></span>` : ""}
@@ -1231,11 +1223,11 @@ function renderAdvancedNode(node) {
     </div>
     <div class="td-adv-timeline-panel">
       <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
-      <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="横向滚动时间线">
-        <div class="td-adv-track" style="width:${trackWidth}px">
-          <div class="td-mini-ruler">${rulerHtml}</div>
+      <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="自适应时间线">
+        <div class="td-adv-track" style="width:100%">
+          ${rulerHtml}
           ${clipHtml}
-          <div class="td-adv-playhead" style="left:${Math.min(totalSeconds,state.time)*pixelsPerSecond}px" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
+          <div class="td-adv-playhead" style="left:${Math.max(0,Math.min(100,state.time/Math.max(totalSeconds,1)*100))}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
         </div>
       </div>
     </div>
@@ -1301,18 +1293,15 @@ function renderAdvancedNode(node) {
   video.addEventListener("ended", syncPlaybackButton);
   syncPlaybackButton();
   const scroller = root.querySelector(".td-adv-scroll");
-  scroller.scrollLeft = previousScroll;
   const playhead = root.querySelector(".td-adv-playhead");
   const updateHead = () => {
-    playhead.style.left = `${state.time * pixelsPerSecond}px`;
+    const percent = Math.max(0, Math.min(100, state.time / Math.max(totalSeconds, 1) * 100));
+    playhead.style.left = `${percent}%`;
     playhead.setAttribute("aria-valuenow", String(state.time));
     playhead.querySelector(".td-adv-playhead-label").textContent = format(state.time);
   };
   const clock = root.querySelector(".td-adv-clock");
-  const follow = () => {
-    const position = Math.round(state.time * pixelsPerSecond);
-    scroller.scrollLeft = Math.max(0, position - scroller.clientWidth * .35);
-  };
+  const follow = () => updateHead();
   const setTime = value => {
     state.time = Math.max(0, Math.min(totalSeconds, Number(value) || 0));
     clock.textContent = `${format(state.time)} / ${format(totalSeconds)}`;
@@ -1324,7 +1313,8 @@ function renderAdvancedNode(node) {
   const seekPointer = event => {
     const rect = track.getBoundingClientRect();
     if (!rect.width) return;
-    setTime(Math.round(Math.max(0, Math.min(totalSeconds, ((event.clientX - rect.left) * (track.offsetWidth / rect.width)) / pixelsPerSecond)) * FPS) / FPS);
+    const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+    setTime(Math.round(fraction * totalSeconds * FPS) / FPS);
   };
   track.addEventListener("pointerdown", event => {
     if (event.button !== 0 || event.target.closest("[data-clip]")) return;
@@ -1341,13 +1331,6 @@ function renderAdvancedNode(node) {
     setTime(state.time + (event.key === "ArrowRight" ? 1 : -1) / FPS);
     event.preventDefault();
   });
-  scroller.addEventListener("wheel", event => {
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) && !event.shiftKey) return;
-    scroller.scrollLeft += event.deltaY + event.deltaX;
-    state.manualScroll = true;
-    event.preventDefault();
-  }, { passive: false });
-  scroller.addEventListener("scroll", () => { state.manualScroll = true; }, { passive: true });
   root.querySelectorAll("[data-clip]").forEach(button => button.addEventListener("click", () => {
     const clip = clips.find(c => c.id === button.dataset.clip);
     if (!clip) return;
@@ -1362,7 +1345,7 @@ function renderAdvancedNode(node) {
         : String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
     }
   }));
-  root.querySelector('[data-adv="follow"]').addEventListener("click", () => { state.manualScroll = false; follow(); });
+  root.querySelector('[data-adv="follow"]').addEventListener("click", () => { state.manualScroll = false; follow(); playhead.focus({preventScroll:true}); });
   const toggleFinalPlayback = () => {
     if (!source || node.__tdLivePreviewActive) return;
     if (video.ended) video.currentTime = 0;
