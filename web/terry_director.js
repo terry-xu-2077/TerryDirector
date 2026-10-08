@@ -759,7 +759,7 @@ function renderAdvancedNode(node) {
       <button type="button" data-adv="play" aria-label="播放或暂停" disabled>▶</button>
       <span class="td-adv-clock">${format(state.time)} / ${format(totalSeconds)}</span>
       <span class="td-adv-spacer"></span>
-      <button type="button" data-adv="follow" title="定位播放头">◎ 定位</button>
+      <label class="td-adv-preview-toggle"><input type="checkbox" data-adv="preview-enabled" ${node.widgets?.find(w => w.name === "preview_enabled")?.value !== false ? "checked" : ""}/>启用预览</label><button type="button" class="td-mini-edit td-adv-locate" data-adv="follow" title="定位当前播放头">⌖ 定位</button>
     </div>
     <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
     <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="横向滚动时间线">
@@ -771,7 +771,7 @@ function renderAdvancedNode(node) {
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
     <button type="button" data-adv="rerun" disabled title="分段持久缓存接入后启用">↻ 重跑此片段（待接入）</button></div>
-    <details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
+    <details class="td-adv-preview-settings"><summary>视频预览 <small>实时采样预览 · 待接入</small></summary><label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label><label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label><label>预览帧数<input data-widget="preview_frames" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_frames")?.value ?? 1)}"/></label><label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label><label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label></details><details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
       <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
       <label>编解码器<select data-widget="video_codec">${options(codecs, videoCodec)}</select></label>
@@ -810,7 +810,7 @@ function renderAdvancedNode(node) {
   const seekPointer = event => {
     const rect = track.getBoundingClientRect();
     if (!rect.width) return;
-    setTime(Math.round(Math.max(0, Math.min(totalSeconds, (event.clientX - rect.left) / rect.width * totalSeconds)) * FPS) / FPS);
+    setTime(Math.round(Math.max(0, Math.min(totalSeconds, (event.clientX - rect.left) / pixelsPerSecond)) * FPS) / FPS);
   };
   track.addEventListener("pointerdown", event => {
     if (event.button !== 0 || event.target.closest("[data-clip]")) return;
@@ -853,9 +853,10 @@ function renderAdvancedNode(node) {
     if (!state.manualScroll) follow();
   });
   root.querySelector('[data-action="edit"]').addEventListener("click", e => openEditor(node, e.currentTarget));
+  root.querySelector('[data-adv="preview-enabled"]')?.addEventListener("change", event => {const widget = node.widgets?.find(w => w.name === "preview_enabled"); if (widget) {widget.value = event.target.checked; markChanged(node);} });
   root.querySelectorAll("[data-widget]").forEach(input => input.addEventListener("change", () => {
     const widget = node.widgets?.find(w => w.name === input.dataset.widget);
-    if (widget) { widget.value = input.value; widget.callback?.(input.value); markChanged(node); }
+    if (widget) { widget.value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value; widget.callback?.(widget.value); markChanged(node); }
     if (input.dataset.widget === "video_format") {
       const codecInput = root.querySelector('[data-widget="video_codec"]');
       const allowed = input.value === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
@@ -950,6 +951,7 @@ function mountNode(node) {
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
+      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
     renderNode(node);
     return;
