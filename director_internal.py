@@ -40,6 +40,28 @@ class TerryDirectorPackOutput(io.ComfyNode):
         })
 
 
+class TerryDirectorAdvancedFinish(io.ComfyNode):
+    """Wait for SaveVideo to finish before forwarding the director output."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorAdvancedFinish",
+            display_name="TerryDirector Advanced Finish (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                DirectorOutputData.Input("director_output"),
+                io.Video.Input("saved_video"),
+            ],
+            outputs=[DirectorOutputData.Output(display_name="导演输出")],
+        )
+
+    @classmethod
+    def execute(cls, director_output, saved_video) -> io.NodeOutput:
+        return io.NodeOutput(director_output)
+
+
 class TerryDirectorAssembleMedia(io.ComfyNode):
     """Internal timeline assembly: remove overlap head, insert gaps, append AV media."""
 
