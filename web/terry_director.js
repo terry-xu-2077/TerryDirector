@@ -83,6 +83,54 @@ function b64ToBlob(base64, mime) {
   return new Blob([bytes], { type: mime });
 }
 
+async function restoreAdvancedState(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS || node.__tdStateRestoreInFlight) return;
+  node.__tdStateRestoreInFlight = true;
+  try {
+    const response = await api.fetchApi(
+      "/terrydirector/api/advanced-state?" +
+      new URLSearchParams({ node_id: String(node.id) })
+    );
+    if (!response?.ok) return;
+    const payload = await response.json();
+    const state = payload?.state;
+    const video = state?.video;
+    if (!video?.filename) return;
+
+    const activeClips = (readConfig(node).document.clips || []).filter(clip => !clip.suspended);
+    const currentIds = activeClips.map(clip => String(clip.id));
+    const savedIds = Array.isArray(state.segment_ids) ? state.segment_ids.map(String) : [];
+    const sameSegments = currentIds.length === savedIds.length &&
+      currentIds.every((id, index) => id === savedIds[index]);
+    if (!sameSegments) return;
+
+    const params = new URLSearchParams({
+      filename: video.filename,
+      subfolder: video.subfolder || "",
+      type: video.type || "output",
+    });
+    node.__tdPreviewUrl = "/view?" + params.toString();
+    node.__tdRerunCacheReady = true;
+    node.__tdRunActivity = blankActivity(node);
+    const completedAt = state.saved_at
+      ? new Date(Number(state.saved_at) * 1000).toISOString()
+      : new Date().toISOString();
+    for (const clip of activeClips) {
+      const record = node.__tdRunActivity[clip.id];
+      if (!record) continue;
+      record.status = RUN_COMPLETED;
+      record.progress = 1;
+      record.completedAt = completedAt;
+      record.error = "";
+    }
+    renderNode(node);
+  } catch (error) {
+    console.warn("[TerryDirector] Failed to restore Advanced state", error);
+  } finally {
+    node.__tdStateRestoreInFlight = false;
+  }
+}
+
 function revokeAdvancedLivePreviewUrl(node) {
   if (node?.__tdLivePreviewObjectUrl) {
     URL.revokeObjectURL(node.__tdLivePreviewObjectUrl);
@@ -896,6 +944,21 @@ function renderAdvancedNode(node) {
   const prefix = node.widgets?.find(w => w.name === "filename_prefix")?.value || "video/TerryDirector";
   const videoFormat = node.widgets?.find(w => w.name === "video_format")?.value || "auto";
   const videoCodec = node.widgets?.find(w => w.name === "video_codec")?.value || "auto";
+  const previewEnabled = node.widgets?.find(w => w.name === "preview_enabled")?.value !== false;
+  const previewFrameMode = node.widgets?.find(w => w.name === "preview_frame_mode")?.value || "half";
+  const previewTinyWidget = node.widgets?.find(w => w.name === "preview_tiny_vae");
+  const previewTinyVae = previewTinyWidget?.value || "none";
+  const previewModeOptions = [
+    ["first", "首帧"],
+    ["half", "半数帧"],
+    ["all", "所有帧"],
+  ];
+  const nativeValues = typeof previewTinyWidget?.options?.values === "function"
+    ? previewTinyWidget.options.values(previewTinyWidget)
+    : previewTinyWidget?.options?.values;
+  const tinyVaeValues = Array.isArray(nativeValues) && nativeValues.length
+    ? nativeValues
+    : ["none"];
   const formats = ["auto", "mp4", "mkv", "webm"];
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
@@ -911,7 +974,7 @@ function renderAdvancedNode(node) {
       <button type="button" data-adv="play" aria-label="播放或暂停" disabled>▶</button>
       <span class="td-adv-clock">${format(state.time)} / ${format(totalSeconds)}</span>
       <span class="td-adv-spacer"></span>
-      <label class="td-adv-preview-toggle"><input type="checkbox" data-adv="preview-enabled" ${node.widgets?.find(w => w.name === "preview_enabled")?.value !== false ? "checked" : ""}/>启用预览</label><button type="button" class="td-mini-edit td-adv-locate" data-adv="follow" title="定位当前播放头">⌖ 定位</button>
+      <label class="td-adv-preview-toggle"><input type="checkbox" data-adv="preview-enabled" ${previewEnabled ? "checked" : ""}/>启用预览</label><button type="button" class="td-mini-edit td-adv-locate" data-adv="follow" title="定位当前播放头">⌖ 定位</button>
     </div>
     <div class="td-adv-timeline-panel">
       <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
@@ -934,7 +997,14 @@ function renderAdvancedNode(node) {
         <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存" ${rerunBusy ? "disabled" : ""}>↻ 重跑此片段</button>
       </div>` : ""}
     </div>
-    <details class="td-adv-preview-settings"><summary>视频预览 <small>KJ Preview Override</small></summary><label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label><label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label><label>预览帧数<input data-widget="preview_frames" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_frames")?.value ?? 1)}"/></label><label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label><label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label></details><details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
+    ${previewEnabled ? `<details class="td-adv-preview-settings"><summary>视频预览 <small>KJ Preview Override</small></summary>
+      <label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label>
+      <label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label>
+      <label>预览帧<select data-widget="preview_frame_mode">${previewModeOptions.map(([value,label]) => `<option value="${value}"${value === previewFrameMode ? " selected" : ""}>${label}</option>`).join("")}</select></label>
+      <label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label>
+      <label>Tiny VAE<select data-widget="preview_tiny_vae">${tinyVaeValues.map(value => `<option value="${escapeHtml(String(value))}"${String(value) === String(previewTinyVae) ? " selected" : ""}>${escapeHtml(String(value))}</option>`).join("")}</select></label>
+      <label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label>
+    </details>` : ""}<details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
       <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
       <label>编解码器<select data-widget="video_codec">${options(codecs, videoCodec)}</select></label>
@@ -1121,7 +1191,15 @@ function renderAdvancedNode(node) {
     });
   });
 
-  root.querySelector('[data-adv="preview-enabled"]')?.addEventListener("change", event => {const widget = node.widgets?.find(w => w.name === "preview_enabled"); if (widget) {widget.value = event.target.checked; markChanged(node);} });
+  root.querySelector('[data-adv="preview-enabled"]')?.addEventListener("change", event => {
+    const widget = node.widgets?.find(w => w.name === "preview_enabled");
+    if (!widget) return;
+    widget.value = event.target.checked;
+    widget.callback?.(widget.value);
+    markChanged(node);
+    if (!widget.value) endAdvancedLivePreview(node);
+    renderNode(node);
+  });
   root.querySelectorAll("[data-widget]").forEach(input => input.addEventListener("change", () => {
     const widget = node.widgets?.find(w => w.name === input.dataset.widget);
     if (widget) { widget.value = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value; widget.callback?.(widget.value); markChanged(node); }
@@ -1219,9 +1297,10 @@ function mountNode(node) {
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_frame_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
     renderNode(node);
+    if (node.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
     return;
   }
 
@@ -1235,7 +1314,7 @@ function mountNode(node) {
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_frame_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
   }
 
   const root = document.createElement("div");
@@ -1290,6 +1369,7 @@ function mountNode(node) {
       node.__tdAspectConnectionBound = true;
     }
     queueMicrotask(() => syncAdvancedAspect(node));
+    void restoreAdvancedState(node);
   }
 }
 
