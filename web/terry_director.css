@@ -832,3 +832,23 @@
   background:rgba(155,120,255,.12);
   white-space:nowrap;
 }
+
+/* Timeline module container: visually separate editing/navigation from rerun tools. */
+.td-node-shell-advanced .td-adv-timeline-panel {
+  margin-top:4px;
+  padding:7px 7px 8px;
+  border:1px solid rgba(255,255,255,.055);
+  border-radius:10px;
+  background:rgba(7,9,13,.30);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.018),
+    inset 0 -10px 24px rgba(0,0,0,.08);
+}
+.td-node-shell-advanced .td-adv-timeline-panel .td-adv-head {
+  margin:0 0 6px;
+  padding:0 1px;
+}
+.td-node-shell-advanced .td-adv-timeline-panel .td-adv-scroll.td-mini-timeline {
+  border-color:rgba(255,255,255,.075);
+  box-shadow:inset 0 1px 8px rgba(0,0,0,.16);
+}
