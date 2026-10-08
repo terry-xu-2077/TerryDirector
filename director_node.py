@@ -367,9 +367,9 @@ class TerryDirectorAdvanced(TerryDirector):
                 io.Boolean.Input("preview_enabled", default=True, socketless=True),
                 io.Int.Input("preview_max_resolution", default=1024, min=0, max=8192, socketless=True),
                 io.Int.Input("preview_jpeg_quality", default=80, min=30, max=100, socketless=True),
-                io.Int.Input("preview_frames", default=1, min=1, max=256, socketless=True),
+                io.Int.Input("preview_frames", default=1, min=1, max=1024, socketless=True),
                 io.Int.Input("preview_fps", default=12, min=1, max=60, socketless=True),
-                io.Boolean.Input("preview_suppress_default", default=False, socketless=True),
+                io.Boolean.Input("preview_suppress_default", default=True, socketless=True),
                 io.Combo.Input("video_format", display_name="格式",
                     options=["auto", "mp4", "mkv", "webm"], default="auto"),
                 io.Combo.Input("video_codec", display_name="编解码器",
@@ -388,7 +388,7 @@ class TerryDirectorAdvanced(TerryDirector):
         video_format="auto", video_codec="auto",
         preview_enabled=True, preview_max_resolution=1024,
         preview_jpeg_quality=80, preview_frames=1, preview_fps=12,
-        preview_suppress_default=False,
+        preview_suppress_default=True,
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
