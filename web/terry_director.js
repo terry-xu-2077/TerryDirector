@@ -305,9 +305,10 @@ function bindExecutionActivity() {
       if (parentId) owningNode = directorNodeFromId(parentId);
     }
     if (!owningNode || owningNode.comfyClass !== ADVANCED_NODE_CLASS) return;
-    const video = detail.output?.td_saved_video?.[0] ||
+    const video = detail.output?.video?.[0] ||
+      detail.output?.td_saved_video?.[0] ||
       detail.output?.images?.[0] || detail.output?.videos?.[0] ||
-      detail.output?.gifs?.[0] || detail.output?.video?.[0];
+      detail.output?.gifs?.[0];
     if (!video?.filename) return;
     const params = new URLSearchParams({
       filename: video.filename,
