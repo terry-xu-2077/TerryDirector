@@ -274,17 +274,17 @@ function bindExecutionActivity() {
   api.addEventListener("executed", event => {
     const detail = event.detail || {};
     const nodeId = String(detail.node ?? "");
-    if (!nodeId.includes("td_advanced_save_video")) return;
+    if (!nodeId.includes("td_advanced_finish") && !nodeId.includes("td_advanced_save_video") && !directorNodeFromId(nodeId)) return;
     const displayId = detail.display_node_id ?? detail.display_node ?? detail.parent_node_id;
-    let owningNode = directorNodeFromId(displayId);
+    let owningNode = directorNodeFromId(displayId) || directorNodeFromId(nodeId);
     if (!owningNode) {
       // Expanded node IDs commonly include their parent ID as a prefix.
-      const parentId = nodeId.match(/^(\\d+)[_:]/)?.[1];
+      const parentId = nodeId.match(/^(\d+)[_:]/)?.[1];
       if (parentId) owningNode = directorNodeFromId(parentId);
     }
     if (!owningNode || owningNode.comfyClass !== ADVANCED_NODE_CLASS) return;
-    const video = detail.output?.gifs?.[0] || detail.output?.videos?.[0] ||
-      detail.output?.images?.[0];
+    const video = detail.output?.images?.[0] || detail.output?.videos?.[0] ||
+      detail.output?.gifs?.[0] || detail.output?.video?.[0];
     if (!video?.filename) return;
     const params = new URLSearchParams({
       filename: video.filename,
