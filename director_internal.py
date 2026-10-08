@@ -87,6 +87,12 @@ class TerryDirectorCacheLatent(io.ComfyNode):
         )
 
     @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        # This node has a deliberate disk side effect; never let Comfy skip it
+        # when the sampled latent reaches this point.
+        return float("NaN")
+
+    @classmethod
     def execute(cls, latent, cache_key, segment_id, signature) -> io.NodeOutput:
         path = _advanced_cache_path(cache_key, segment_id)
         payload = {
@@ -123,6 +129,15 @@ class TerryDirectorLoadCachedLatent(io.ComfyNode):
             ],
             outputs=[io.Latent.Output()],
         )
+
+    @classmethod
+    def fingerprint_inputs(cls, cache_key, segment_id, signature, **kwargs):
+        path = _advanced_cache_path(cache_key, segment_id)
+        try:
+            stat = os.stat(path)
+            return f"{stat.st_mtime_ns}:{stat.st_size}:{signature}"
+        except OSError:
+            return float("NaN")
 
     @classmethod
     def execute(cls, cache_key, segment_id, signature) -> io.NodeOutput:
