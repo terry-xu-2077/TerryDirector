@@ -389,7 +389,7 @@ class TerryDirectorAdvanced(TerryDirector):
                 io.Int.Input("preview_max_resolution", default=1024, min=0, max=8192, socketless=True),
                 io.Int.Input("preview_jpeg_quality", default=80, min=30, max=100, socketless=True),
                 io.Int.Input("preview_frames", default=1, min=1, max=1024, socketless=True),
-                io.Int.Input("preview_fps", default=12, min=1, max=60, socketless=True),
+                io.Int.Input("preview_fps", default=12, min=1, max=24, socketless=True),
                 io.Boolean.Input("preview_suppress_default", default=True, socketless=True),
                 io.String.Input("rerun_clip_id", default="", socketless=True),
                 io.Int.Input(
@@ -455,32 +455,27 @@ class TerryDirectorAdvanced(TerryDirector):
             )
 
         preview_override = None
-        preview_mode = str(preview_frame_mode or "half").lower()
-        if preview_mode not in {"first", "half", "all"}:
-            preview_mode = "half"
+        target_preview_fps = max(1, min(24, int(preview_fps)))
 
-        if bool(preview_enabled) and preview_mode != "first":
+        if bool(preview_enabled) and target_preview_fps > 1:
             try:
                 import nodes as comfy_nodes
                 if "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS:
                     preview_override = {
                         "max_resolution": int(preview_max_resolution),
                         "jpeg_quality": int(preview_jpeg_quality),
-                        # Multi-frame mode owns the Advanced preview surface,
-                        # so the ordinary single-frame sampler preview stays suppressed.
                         "suppress_default_preview": True,
-                        "frame_mode": preview_mode,
-                        "preview_fps": int(preview_fps),
+                        "preview_fps": target_preview_fps,
                         "tiny_vae": str(preview_tiny_vae or "none"),
                     }
                 else:
-                    preview_mode = "first"
+                    target_preview_fps = 1
             except Exception:
-                preview_mode = "first"
+                target_preview_fps = 1
 
-        if bool(preview_enabled) and preview_mode == "first":
-            # ComfyUI defaults sampler previews to "none". Enable the built-in
-            # H3 previewer for this expanded sampling graph.
+        if bool(preview_enabled) and target_preview_fps == 1:
+            # ComfyUI defaults sampler previews to "none". Enable its built-in
+            # MiniMax H3 single-frame preview path for this expanded graph.
             try:
                 import latent_preview
                 latent_preview.set_preview_method("taesd")
