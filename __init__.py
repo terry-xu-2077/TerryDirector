@@ -4,7 +4,7 @@ from typing_extensions import override
 
 from comfy_api.latest import ComfyExtension, io
 
-from .director_node import TerryDirector, TerryDirectorConfig, TerryDirectorOutput
+from .director_node import TerryDirector, TerryDirectorAdvanced, TerryDirectorConfig, TerryDirectorOutput
 from .director_internal import (
     TerryDirectorAssembleMedia,
     TerryDirectorPackOutput,
@@ -21,6 +21,7 @@ class TerryDirectorExtension(ComfyExtension):
         return [
             TerryDirectorConfig,
             TerryDirector,
+            TerryDirectorAdvanced,
             TerryDirectorOutput,
             TerryDirectorPackOutput,
             TerryDirectorAssembleMedia,
