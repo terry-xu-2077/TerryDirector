@@ -1,10 +1,78 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import json
 
-from comfy_execution.graph_utils import GraphBuilder
+from comfy_execution.graph_utils import GraphBuilder, is_link
 
 from .director_core import FPS
+
+
+def _graph_value_signature(value, prefix: str):
+    if is_link(value):
+        node_id, output_index = value
+        local_id = (
+            str(node_id)[len(prefix):]
+            if str(node_id).startswith(prefix)
+            else str(node_id)
+        )
+        return ["link", local_id, int(output_index)]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, dict):
+        return {
+            str(key): _graph_value_signature(item, prefix)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_graph_value_signature(item, prefix) for item in value]
+    if hasattr(value, "shape") and hasattr(value, "dtype"):
+        payload = {
+            "type": type(value).__name__,
+            "shape": [int(dim) for dim in getattr(value, "shape", ())],
+            "dtype": str(getattr(value, "dtype", "")),
+        }
+        try:
+            if int(value.numel()) <= 64:
+                payload["values"] = [
+                    round(float(item), 8)
+                    for item in value.detach().cpu().flatten().tolist()
+                ]
+        except Exception:
+            pass
+        return payload
+    return {
+        "type": f"{type(value).__module__}.{type(value).__qualname__}",
+    }
+
+
+def _log_core_graph_signature(graph: GraphBuilder):
+    core = {}
+    prefix = str(graph.prefix)
+    for node_id, node in graph.nodes.items():
+        local_id = (
+            str(node_id)[len(prefix):]
+            if str(node_id).startswith(prefix)
+            else str(node_id)
+        )
+        if not local_id.startswith("td_s"):
+            continue
+        core[local_id] = {
+            "class_type": node.class_type,
+            "inputs": {
+                key: _graph_value_signature(value, prefix)
+                for key, value in sorted(node.inputs.items())
+            },
+        }
+
+    raw = json.dumps(core, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    print(
+        f"[TerryDirector][Diagnostic] core_graph_signature={digest} "
+        f"nodes={len(core)}",
+        flush=True,
+    )
 
 
 def _load_reference_inputs(
@@ -433,6 +501,8 @@ def build_timeline_graph(
         previous_audio = audio
         latents.append(sampled)
         cache_signatures.append(signature)
+
+    _log_core_graph_signature(graph)
 
     packed_output = graph.node(
         "TerryDirectorPackOutput",
