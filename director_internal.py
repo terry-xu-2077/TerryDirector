@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import tempfile
 
 import folder_paths
 import torch
@@ -42,6 +44,106 @@ class TerryDirectorPackOutput(io.ComfyNode):
             "images": images,
             "audio": audio,
         })
+
+
+
+def _advanced_cache_path(cache_key: str, segment_id: str) -> str:
+    safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "default"))[:160]
+    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:160]
+    root = os.path.join(folder_paths.get_output_directory(), ".terrydirector_cache", safe_key)
+    os.makedirs(root, exist_ok=True)
+    return os.path.join(root, f"{safe_segment}.pt")
+
+
+def _cache_to_cpu(value):
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu()
+    if isinstance(value, dict):
+        return {key: _cache_to_cpu(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_cache_to_cpu(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_cache_to_cpu(item) for item in value)
+    return value
+
+
+class TerryDirectorCacheLatent(io.ComfyNode):
+    """Persist one sampled segment latent for Advanced local reruns."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorCacheLatent",
+            display_name="TerryDirector Cache Latent (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Latent.Input("latent"),
+                io.String.Input("cache_key"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+            ],
+            outputs=[io.Latent.Output()],
+        )
+
+    @classmethod
+    def execute(cls, latent, cache_key, segment_id, signature) -> io.NodeOutput:
+        path = _advanced_cache_path(cache_key, segment_id)
+        payload = {
+            "version": 1,
+            "signature": str(signature),
+            "latent": _cache_to_cpu(latent),
+        }
+        fd, temp_path = tempfile.mkstemp(prefix="td_", suffix=".pt", dir=os.path.dirname(path))
+        os.close(fd)
+        try:
+            torch.save(payload, temp_path)
+            os.replace(temp_path, path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        print(f"[TerryDirector Advanced] Cached segment {segment_id}: {path}", flush=True)
+        return io.NodeOutput(latent)
+
+
+class TerryDirectorLoadCachedLatent(io.ComfyNode):
+    """Load an existing sampled latent instead of re-running H3 sampling."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorLoadCachedLatent",
+            display_name="TerryDirector Load Cached Latent (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.String.Input("cache_key"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+            ],
+            outputs=[io.Latent.Output()],
+        )
+
+    @classmethod
+    def execute(cls, cache_key, segment_id, signature) -> io.NodeOutput:
+        path = _advanced_cache_path(cache_key, segment_id)
+        if not os.path.isfile(path):
+            raise RuntimeError(
+                f"TerryDirector Advanced 找不到片段 {segment_id} 的缓存。"
+                "请先完整生成一次，再使用局部重跑。"
+            )
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        if not isinstance(payload, dict) or payload.get("version") != 1:
+            raise RuntimeError(f"TerryDirector Advanced 片段 {segment_id} 缓存格式无效")
+        if str(payload.get("signature")) != str(signature):
+            raise RuntimeError(
+                f"TerryDirector Advanced 片段 {segment_id} 的尺寸/时长已改变，"
+                "请先完整生成一次刷新缓存。"
+            )
+        latent = payload.get("latent")
+        if not isinstance(latent, dict) or "samples" not in latent:
+            raise RuntimeError(f"TerryDirector Advanced 片段 {segment_id} 缓存缺少 LATENT")
+        return io.NodeOutput(latent)
 
 
 class TerryDirectorAdvancedFinish(io.ComfyNode):
