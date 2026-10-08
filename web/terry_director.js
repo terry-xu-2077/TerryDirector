@@ -792,12 +792,14 @@ function renderAdvancedNode(node) {
       <span class="td-adv-spacer"></span>
       <label class="td-adv-preview-toggle"><input type="checkbox" data-adv="preview-enabled" ${node.widgets?.find(w => w.name === "preview_enabled")?.value !== false ? "checked" : ""}/>启用预览</label><button type="button" class="td-mini-edit td-adv-locate" data-adv="follow" title="定位当前播放头">⌖ 定位</button>
     </div>
-    <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
-    <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="横向滚动时间线">
-      <div class="td-adv-track" style="width:${trackWidth}px">
-        <div class="td-mini-ruler">${rulerHtml}</div>
-        ${clipHtml}
-        <div class="td-adv-playhead" style="left:${Math.min(totalSeconds,state.time)*pixelsPerSecond}px" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
+    <div class="td-adv-timeline-panel">
+      <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
+      <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="横向滚动时间线">
+        <div class="td-adv-track" style="width:${trackWidth}px">
+          <div class="td-mini-ruler">${rulerHtml}</div>
+          ${clipHtml}
+          <div class="td-adv-playhead" style="left:${Math.min(totalSeconds,state.time)*pixelsPerSecond}px" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
+        </div>
       </div>
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
