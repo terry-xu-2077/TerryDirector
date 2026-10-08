@@ -130,7 +130,20 @@ function ensurePromptRun(node, promptId) {
   if (node.__tdPromptId === promptId) return;
   node.__tdPromptId = promptId;
   node.__tdLocalRunLock = false;
-  node.__tdRunActivity = blankActivity(node);
+  if (node.__tdRerunActiveClipId) {
+    const activity = ensureActivity(node);
+    const record = activity[node.__tdRerunActiveClipId];
+    if (record) {
+      record.status = RUN_RUNNING;
+      record.progress = 0;
+      record.elapsedSeconds = 0;
+      record.completedAt = null;
+      record.error = "";
+      record.startedAt = performance.now();
+    }
+  } else {
+    node.__tdRunActivity = blankActivity(node);
+  }
   pushActivity(node);
 }
 
@@ -164,6 +177,7 @@ function applyProgressState(detail) {
     for (const [index, nodeStates] of segments) {
       const clip = clips[index];
       if (!clip) continue;
+      if (node.__tdRerunActiveClipId && clip.id !== node.__tdRerunActiveClipId) continue;
       const previous = activity[clip.id];
       const now = performance.now();
       const sample = nodeStates.find(state => /td_s\d+_sample(?:$|[^a-z0-9])/i.test(String(state.node_id)));
@@ -241,6 +255,14 @@ function finishPromptActivity(promptId, success, message = "") {
     }
     node.__tdPromptId = null;
     node.__tdLocalRunLock = false;
+    if (node.__tdRerunActiveClipId) {
+      const widget = node.widgets?.find(w => w.name === "rerun_clip_id");
+      if (widget) {
+        widget.value = "";
+        widget.callback?.("");
+      }
+      node.__tdRerunActiveClipId = null;
+    }
     pushActivity(node);
   }
   return matched;
@@ -709,7 +731,12 @@ function renderAdvancedNode(node) {
   const totalFrames = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
   const totalSeconds = totalFrames / FPS;
   const state = node.__tdReview ||= { selected: doc.selected, time: 0, manualScroll: false };
+  state.rerunSeedCustom ||= {};
   if (!clips.some(c => c.id === state.selected)) state.selected = clips[0]?.id || null;
+  const globalSeed = String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
+  const selectedRerunSeed = state.selected && state.rerunSeedCustom[state.selected] != null
+    ? String(state.rerunSeedCustom[state.selected])
+    : globalSeed;
   const previousTrack = root.querySelector(".td-adv-scroll");
   const previousScroll = previousTrack?.scrollLeft || 0;
   const oldVideo = root.querySelector(".td-adv-video");
@@ -774,7 +801,14 @@ function renderAdvancedNode(node) {
       </div>
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
-    <button type="button" data-adv="rerun" disabled title="分段持久缓存接入后启用">↻ 重跑此片段（待接入）</button></div>
+      <div class="td-adv-rerun-tools">
+        <label class="td-adv-rerun-seed-label">重跑 Seed
+          <input class="td-adv-rerun-seed" type="text" inputmode="numeric" value="${escapeHtml(selectedRerunSeed)}" title="默认跟随顶部全局 Seed；修改后仅用于当前选中片段"/>
+        </label>
+        <button type="button" class="td-adv-seed-global" data-adv="seed-global" title="恢复为顶部全局 Seed">全局</button>
+        <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存">↻ 重跑此片段</button>
+      </div>
+    </div>
     <details class="td-adv-preview-settings"><summary>视频预览 <small>实时采样预览 · 待接入</small></summary><label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label><label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label><label>预览帧数<input data-widget="preview_frames" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_frames")?.value ?? 1)}"/></label><label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label><label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label></details><details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
       <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
@@ -845,6 +879,12 @@ function renderAdvancedNode(node) {
     setTime(Number(clip.start) / FPS);
     root.querySelectorAll("[data-clip]").forEach(item => item.classList.toggle("is-selected", item === button));
     root.querySelector(".td-adv-selected").textContent = `已选中：${clip.name}`;
+    const seedInput = root.querySelector(".td-adv-rerun-seed");
+    if (seedInput) {
+      seedInput.value = state.rerunSeedCustom[clip.id] != null
+        ? String(state.rerunSeedCustom[clip.id])
+        : String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
+    }
   }));
   root.querySelector('[data-adv="follow"]').addEventListener("click", () => { state.manualScroll = false; follow(); });
   root.querySelector('[data-adv="play"]').addEventListener("click", () => {
@@ -857,6 +897,69 @@ function renderAdvancedNode(node) {
     if (!state.manualScroll) follow();
   });
   root.querySelector('[data-action="edit"]').addEventListener("click", e => openEditor(node, e.currentTarget));
+  const rerunSeedInput = root.querySelector(".td-adv-rerun-seed");
+  rerunSeedInput?.addEventListener("change", () => {
+    if (!state.selected) return;
+    const raw = String(rerunSeedInput.value || "").trim();
+    if (!/^\d+$/.test(raw)) {
+      rerunSeedInput.value = state.rerunSeedCustom[state.selected] != null
+        ? String(state.rerunSeedCustom[state.selected])
+        : String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
+      return;
+    }
+    state.rerunSeedCustom[state.selected] = raw;
+  });
+  root.querySelector('[data-adv="seed-global"]')?.addEventListener("click", () => {
+    if (!state.selected) return;
+    delete state.rerunSeedCustom[state.selected];
+    if (rerunSeedInput) rerunSeedInput.value = String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
+  });
+  root.querySelector('[data-adv="rerun"]')?.addEventListener("click", buttonEvent => {
+    if (!state.selected || node.__tdPromptId || node.__tdLocalRunLock) return;
+    const rawSeed = String(rerunSeedInput?.value ?? node.widgets?.find(w => w.name === "seed")?.value ?? 0).trim();
+    if (!/^\d+$/.test(rawSeed)) return;
+    const numericSeed = Number(rawSeed);
+    if (!Number.isFinite(numericSeed) || numericSeed < 0) return;
+
+    const clipWidget = node.widgets?.find(w => w.name === "rerun_clip_id");
+    const seedWidget = node.widgets?.find(w => w.name === "rerun_seed");
+    if (!clipWidget || !seedWidget) return;
+    clipWidget.value = state.selected;
+    clipWidget.callback?.(state.selected);
+    seedWidget.value = numericSeed;
+    seedWidget.callback?.(numericSeed);
+
+    node.__tdRerunActiveClipId = state.selected;
+    node.__tdLocalRunLock = true;
+    const activity = ensureActivity(node);
+    const record = activity[state.selected];
+    if (record) {
+      record.status = RUN_RUNNING;
+      record.progress = 0;
+      record.elapsedSeconds = 0;
+      record.completedAt = null;
+      record.error = "";
+      record.startedAt = performance.now();
+    }
+    pushActivity(node);
+
+    void app.queuePrompt(0, 1, [String(node.id)]).then(queued => {
+      if (!queued && !node.__tdPromptId) {
+        node.__tdLocalRunLock = false;
+        node.__tdRerunActiveClipId = null;
+        clipWidget.value = "";
+        clipWidget.callback?.("");
+        pushActivity(node);
+      }
+    }).catch(() => {
+      node.__tdLocalRunLock = false;
+      node.__tdRerunActiveClipId = null;
+      clipWidget.value = "";
+      clipWidget.callback?.("");
+      pushActivity(node);
+    });
+  });
+
   root.querySelector('[data-adv="preview-enabled"]')?.addEventListener("change", event => {const widget = node.widgets?.find(w => w.name === "preview_enabled"); if (widget) {widget.value = event.target.checked; markChanged(node);} });
   root.querySelectorAll("[data-widget]").forEach(input => input.addEventListener("change", () => {
     const widget = node.widgets?.find(w => w.name === input.dataset.widget);
@@ -955,7 +1058,7 @@ function mountNode(node) {
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
     renderNode(node);
     return;
@@ -971,7 +1074,7 @@ function mountNode(node) {
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
   }
 
   const root = document.createElement("div");
