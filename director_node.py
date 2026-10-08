@@ -19,6 +19,20 @@ DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 AUTO_UPSCALER = "自动选择兼容模型"
 
+def _preview_tiny_vae_options() -> list[str]:
+    try:
+        values = list(folder_paths.get_filename_list("vae_approx"))
+    except Exception:
+        values = []
+    return ["none", *values]
+
+
+def _preview_tiny_vae_default(options: list[str]) -> str:
+    for value in options:
+        if str(value).replace("\\", "/").split("/")[-1].lower() == "taeh3.safetensors":
+            return value
+    return "none"
+
 
 def _require_director_output(value):
     if not isinstance(value, dict):
@@ -382,6 +396,18 @@ class TerryDirectorAdvanced(TerryDirector):
                     "rerun_seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF,
                     socketless=True,
                 ),
+                io.Combo.Input(
+                    "preview_frame_mode",
+                    options=["first", "half", "all"],
+                    default="half",
+                    socketless=True,
+                ),
+                io.Combo.Input(
+                    "preview_tiny_vae",
+                    options=_preview_tiny_vae_options(),
+                    default=_preview_tiny_vae_default(_preview_tiny_vae_options()),
+                    socketless=True,
+                ),
             ],
             hidden=[io.Hidden.unique_id],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
@@ -399,6 +425,7 @@ class TerryDirectorAdvanced(TerryDirector):
         preview_jpeg_quality=80, preview_frames=1, preview_fps=12,
         preview_suppress_default=True,
         rerun_clip_id="", rerun_seed=0,
+        preview_frame_mode="half", preview_tiny_vae="none",
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
@@ -436,8 +463,9 @@ class TerryDirectorAdvanced(TerryDirector):
                         "max_resolution": int(preview_max_resolution),
                         "jpeg_quality": int(preview_jpeg_quality),
                         "suppress_default_preview": bool(preview_suppress_default),
-                        "preview_frames": int(preview_frames),
+                        "frame_mode": str(preview_frame_mode or "half"),
                         "preview_fps": int(preview_fps),
+                        "tiny_vae": str(preview_tiny_vae or "none"),
                     }
                 else:
                     print(
