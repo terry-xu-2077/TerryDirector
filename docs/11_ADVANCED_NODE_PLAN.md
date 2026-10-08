@@ -112,3 +112,11 @@
 - 局部重跑时仍从磁盘加载未重跑片段；目标片段重新采样后，仅在终端阶段覆盖该片段的缓存，不重写其他片段。
 - H3 AV LATENT 的 `NestedTensor` 现在显式搬到 CPU 后再 `torch.save`，避免把 CUDA-backed NestedTensor 直接交给序列化。
 - 新增性能日志：每个缓存的 CPU copy / disk save / 文件大小、缓存批次总耗时、视频保存耗时、Advanced 终端总耗时。
+
+
+## 2026-10-08 · Advanced 性能诊断模式（临时）
+- 为定位 Advanced 与基础版的 H3 采样性能差异，Advanced 后端临时强制使用与基础 TerryDirector 完全相同的 `build_timeline_graph(runtime, plan, seed)`。
+- 本诊断模式不接入 KJ/官方预览 wrapper、不接分段缓存、不创建视频、不调用 AdvancedFinish、不保存文件。
+- 控制台会打印：`[TerryDirector Advanced][Diagnostic] Running exact base execution graph (no preview/cache/video/save)`。
+- 目的：若此模式恢复到基础版速度，则问题在 Advanced 附加执行拓扑；若仍慢，则继续查父节点执行上下文或 ComfyUI/H3 compiler 状态。
+- 这是临时诊断提交，确认结论后需恢复 Advanced 功能链。
