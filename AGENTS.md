@@ -18,11 +18,11 @@
 - 不另开浏览器页面，不启动独立工作台端口。使用原生编辑器和作用域样式，不能把 Demo 的 body / #app 全局样式直接覆盖宿主页面。隐藏时停媒体与无用渲染，运行中任务继续。
 - 保存更新该节点的可序列化编排输入并标记工作流已修改，不自动生成。编辑草稿、已保存编排和已提交快照分离，不能误写其他节点或影响已排队任务。
 - 导演台顶部总时长后提供“生成”按钮；点击前先提交片段时长 / Prompt 编辑并把当前 document 同步回 TerryDirector 节点，然后用 ComfyUI Partial Execution 仅运行当前 TerryDirector 分支，不执行同工作流中的其他导演节点。
-- 导演台内运行完成后**不在 TerryDirector UI 内生成视频预览文件**。主节点内部仍完成 H3 分段解码与最终音画合并，但只通过一个 `TERRYDIRECTOR_OUTPUT` /“导演输出”端口向外暴露结果。配套“导演输出”节点将其解包为标准 VIDEO / LATENT / IMAGE / AUDIO；VIDEO 直接用 ComfyUI 原生 `VideoFromComponents` 由合并画面、合并音频和 24fps 构造，不主动写视频文件，也不额外编码。
+- 导演台内运行完成后**不在 TerryDirector 内承担视频创建 / 编码 / 封装职责**。主节点内部仍完成 H3 分段解码与最终音画合并，但只通过一个 `TERRYDIRECTOR_OUTPUT` /“导演输出”端口向外暴露结果。配套可见节点统一命名为 **`TerryDirector 输出`**，只负责解包为分段 LATENT / 合并 IMAGE / 合并 AUDIO。视频创建、预览、编码和保存全部交给下游 ComfyUI 视频节点。
 - 实现我们自己的规划 / 采样代码与内部 helper，不连接或运行时依赖 Songssx 导演台节点类。成熟源码按许可移植适配并记录来源，不另造外部调度系统。
 - **共享生成参数集中在 TerryDirector 配置节点。** 模型、VAE、尺寸、采样器、SIGMAS、总步数、参考图尺寸和二采方案属于配置节点；**Seed 单独属于 TerryDirector 主节点**，使用 ComfyUI 原生可连接 Seed 控件。导演台浮窗不重复这些运行参数，也不承担生成预览功能。
 - **浮窗没有预览窗，也没有“项目”概念、项目首页、项目标题或项目层级。** 当前布局为顶部栏下方先显示单行时间线，再显示“提示词 + 资产池”创作工作区。浮窗只保留片段时长 / 起止位置、由位置派生的重叠、提示词、资产引用，以及必要的编辑操作与保存退出。时间线缩放、后续联动、可视化 / 原文切换属于编辑操作，不因此删除。
-- **2026-10-08 输出协议更新：**TerryDirector 主节点右侧只保留一个“导演输出”端口，类型为 `TERRYDIRECTOR_OUTPUT`。新增配套可见节点“导演输出”，输入该类型并输出：**视频（VIDEO）/ 分段潜变量（LATENT 原生列表）/ 合并画面（IMAGE）/ 合并音频（AUDIO）**。用户不再需要额外连接 ComfyUI“创建视频”节点；VIDEO 仍是标准 ComfyUI 类型，可继续连接预览、保存或其他视频节点。分段 latent 每项仍是完整 H3 AV latent，按时间线顺序保留重叠；合并画面 / 音频仍由主节点内部完成裁切、去重和 gap 填充。
+- **2026-10-08 输出协议更新：**TerryDirector 主节点右侧只保留一个“导演输出”端口，类型为 `TERRYDIRECTOR_OUTPUT`。配套可见节点统一命名为 **`TerryDirector 输出`**，输入该类型并只输出：**分段潜变量（LATENT 原生列表）/ 合并画面（IMAGE）/ 合并音频（AUDIO）**。该节点不得创建 VIDEO；视频创建、预览、保存由用户按需连接现有 ComfyUI 视频节点。分段 latent 每项仍是完整 H3 AV latent，按时间线顺序保留重叠；合并画面 / 音频仍由主节点内部完成裁切、去重和 gap 填充。
 - SelfLift 是一种二采方案，不是独立总开关。**配置节点**使用“二采方案”下拉菜单，默认“无”；SelfLift 放大模型与高清占比属于其专属配置。执行仍发生在主节点内部采样路径，不增加浮窗参数。
 - 详细已确认边界与技术建议见 09/10/11；普通 H3 时间线编译、原生采样展开、参考素材、段间 Guide 与最终音画合并已进入本地实机验证阶段；SelfLift 尚未接入。QuantFunc 暂缓决定保持不变。
 
@@ -108,7 +108,7 @@
 
 ## 实现阶段 UI Source of Truth
 
-- `docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md` 是当前节点形态、参数归属与三路输出的优先依据；`docs/06_UI_IMPLEMENTATION_BLUEPRINT.md` 中未被覆盖的编辑体验继续作为验收基线。移除浮窗参数区是用户明确要求，不据此扩大其他布局或功能范围。
+- `docs/10_CONFIG_NODE_ARCHITECTURE.md` 是当前节点形态、参数归属与输出协议的优先依据；`docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md` 保留为历史演进记录，`docs/06_UI_IMPLEMENTATION_BLUEPRINT.md` 中未被覆盖的编辑体验继续作为验收基线。移除浮窗参数区是用户明确要求，不据此扩大其他布局或功能范围。
 - 二次潜空间放大的字段与校验参考固定提交 `a81f13b8af4a162467cec4dc377f40b7354d7ffc` 的 [`_selflift_settings`](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/minimax_h3_finite_segments.py#L43-L91)；作用范围仍是整个导演台节点，不误做成片段独立配置，控件不放回浮窗。
 - 相邻片段首尾恰好吸附（当前 startFrame == 上一片段 endFrame）时，时间几何只确定“touch”；实际生成关系由后一个片段的 `transitionMode` 决定。`tail_reference` 把上一片段 endFrame - 1 作为额外 H3 图片参考；`tail_continuation` 把该尾帧作为当前片段 frame 0 Guide；`independent` 不读取上一片段。
 - 有空隙时始终独立；有重叠时始终使用重叠连续性机制。上一片段尚无输出而当前模式需要尾帧时建立生成依赖，不伪造尾帧。
