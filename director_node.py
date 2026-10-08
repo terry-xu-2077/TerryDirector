@@ -427,18 +427,37 @@ class TerryDirectorAdvanced(TerryDirector):
         )
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
+        if video_format == "webm" and video_codec == "h264":
+            raise ValueError("WebM 容器不支持 H.264，请选择 auto 或 av1")
 
-        # TEMP PERFORMANCE DIAGNOSTIC:
-        # Run Advanced through the exact same expanded graph as the base
-        # TerryDirector node. No preview wrapper, cache nodes, CreateVideo,
-        # AdvancedFinish or file save are attached. This isolates whether the
-        # slowdown comes from Advanced's extra terminal graph topology.
+        prefix = str(filename_prefix or "video/TerryDirector").replace("\\", "/")
+        folder = str(save_subfolder or "TerryDirector").strip().strip("/")
+        if prefix == "TerryDirector" and folder:
+            prefix = folder + "/TerryDirector"
+
+        # TEMP PERFORMANCE DIAGNOSTIC #2:
+        # Base H3 segment graph + Advanced CreateVideo/Save terminal only.
+        # Cache, local-rerun and live-preview wrappers remain disabled so this
+        # run isolates whether terminal video/save topology changes upstream
+        # H3 scheduling, prefetch or compiler behavior.
         print(
-            "[TerryDirector Advanced][Diagnostic] Running exact base execution graph "
-            "(no preview/cache/video/save)",
+            "[TerryDirector Advanced][Diagnostic] Running base graph + video/save "
+            "(cache/preview/rerun disabled)",
             flush=True,
         )
-        expanded, director_output = build_timeline_graph(runtime, plan, seed)
+        expanded, director_output = build_timeline_graph(
+            runtime,
+            plan,
+            seed,
+            video_export={
+                "filename_prefix": prefix,
+                "format": str(video_format or "auto"),
+                "codec": str(video_codec or "auto"),
+            },
+            cache_key=None,
+            rerun=None,
+            preview_override=None,
+        )
         return io.NodeOutput(director_output, expand=expanded)
 
 
