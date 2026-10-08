@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import math
-from fractions import Fraction
 import folder_paths
 import comfy.samplers
-from comfy_api.latest import InputImpl, Types, io
+from comfy_api.latest import io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
@@ -24,7 +23,7 @@ AUTO_UPSCALER = "自动选择兼容模型"
 def _require_director_output(value):
     if not isinstance(value, dict):
         raise ValueError("TerryDirector 导演输出无效")
-    required = {"fps", "segment_latents", "images", "audio"}
+    required = {"segment_latents", "images", "audio"}
     missing = sorted(required.difference(value))
     if missing:
         raise ValueError(f"TerryDirector 导演输出缺少字段: {', '.join(missing)}")
@@ -328,25 +327,24 @@ class TerryDirector(io.ComfyNode):
 
 
 class TerryDirectorOutput(io.ComfyNode):
-    """Unpack TerryDirector's single result socket into native ComfyUI media types."""
+    """Unpack TerryDirector's single result socket into native ComfyUI outputs."""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="TerryDirectorOutput",
-            display_name="导演输出",
-            search_aliases=["TerryDirector 输出", "TerryDirector 解码"],
+            display_name="TerryDirector 输出",
+            search_aliases=["导演输出", "TerryDirector 解码"],
             category="MiniMax H3/TerryDirector",
             description=(
-                "将 TerryDirector 的导演输出解包为标准 VIDEO、分段 LATENT、"
-                "合并 IMAGE 和合并 AUDIO。视频直接由合并画面和音频构造，"
-                "无需额外连接“创建视频”节点。"
+                "将 TerryDirector 的导演输出解包为分段 LATENT、"
+                "合并 IMAGE 和合并 AUDIO。视频封装、编码、预览与保存"
+                "由工作流下游的视频节点负责。"
             ),
             inputs=[
                 DirectorOutputData.Input("director_output", display_name="导演输出"),
             ],
             outputs=[
-                io.Video.Output(display_name="视频"),
                 io.Latent.Output(display_name="分段潜变量", is_output_list=True),
                 io.Image.Output(display_name="合并画面"),
                 io.Audio.Output(display_name="合并音频"),
@@ -356,25 +354,8 @@ class TerryDirectorOutput(io.ComfyNode):
     @classmethod
     def execute(cls, director_output):
         packet = _require_director_output(director_output)
-        fps = int(packet["fps"])
-        if fps < 1:
-            raise ValueError("TerryDirector 导演输出帧率必须大于 0")
-
-        images = packet["images"]
-        audio = packet["audio"]
-        segment_latents = packet["segment_latents"]
-        video = InputImpl.VideoFromComponents(
-            Types.VideoComponents(
-                images=images,
-                audio=audio,
-                frame_rate=Fraction(fps, 1),
-            ),
-            bit_depth=8,
-            color_space="sRGB",
-        )
         return io.NodeOutput(
-            video,
-            segment_latents,
-            images,
-            audio,
+            packet["segment_latents"],
+            packet["images"],
+            packet["audio"],
         )
