@@ -935,33 +935,93 @@ function advancedStoredPreviewHeight(node, ratio = advancedAspectRatio(node)) {
   return stored;
 }
 
+function bindAdvancedResizeGestureTracking(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS || node.__tdResizeGestureBound) return;
+  node.__tdResizeGestureBound = true;
+
+  const begin = event => {
+    const handle = event.target?.closest?.("[data-corner]");
+    const owner = handle?.closest?.(".lg-node[data-node-id]");
+    if (!handle || !owner) return;
+    if (String(owner.dataset.nodeId) !== String(node.id)) return;
+
+    node.__tdUserResizeActive = true;
+    node.__tdUserResizeStartSize = [
+      Number(node.size?.[0]) || DIRECTOR_MIN_WIDTH,
+      Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
+    ];
+    node.__tdUserResizeStartPreviewHeight = advancedStoredPreviewHeight(node);
+  };
+
+  const end = () => {
+    node.__tdUserResizeActive = false;
+    node.__tdUserResizeStartSize = null;
+    node.__tdUserResizeStartPreviewHeight = null;
+  };
+
+  document.addEventListener("pointerdown", begin, true);
+  document.addEventListener("pointerup", end, true);
+  document.addEventListener("pointercancel", end, true);
+
+  node.__tdResizeGestureCleanup = () => {
+    document.removeEventListener("pointerdown", begin, true);
+    document.removeEventListener("pointerup", end, true);
+    document.removeEventListener("pointercancel", end, true);
+  };
+
+  const previousRemoved = node.onRemoved;
+  node.onRemoved = function(...args) {
+    node.__tdResizeGestureCleanup?.();
+    node.__tdResizeGestureCleanup = null;
+    return previousRemoved?.apply(this, args);
+  };
+}
+
 function updateAdvancedPreviewHeightFromUserResize(node, size) {
   if (node?.comfyClass !== ADVANCED_NODE_CLASS || !Array.isArray(size)) return;
 
-  const previous = Array.isArray(node.__tdLastResizeSize)
-    ? node.__tdLastResizeSize
-    : [Number(node.size?.[0]) || size[0], Number(node.size?.[1]) || size[1]];
-  const deltaY = Number(size[1]) - Number(previous[1]);
-  node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
-
-  // LiteGraph sets resizing_node only for an actual pointer resize. DOM-widget
-  // layout changes also call onResize, but must never scale the media viewport.
-  const isUserResize = app.canvas?.resizing_node === node;
-  if (!isUserResize || Math.abs(deltaY) < 0.5) return;
+  const vueGestureActive = node.__tdUserResizeActive === true;
+  const legacyGestureActive = app.canvas?.resizing_node === node;
+  if (!vueGestureActive && !legacyGestureActive) {
+    node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
+    return;
+  }
 
   const ratio = advancedAspectRatio(node);
   const base = advancedPreviewBaseHeight(node, ratio);
-  const current = advancedStoredPreviewHeight(node, ratio);
   const viewportRatio = Math.max(1, ratio);
   const availableWidth = Math.max(
     220,
     (Number(size[0]) || DIRECTOR_MIN_WIDTH) - 36
   );
   const maxHeightForWidth = Math.max(base, availableWidth / viewportRatio);
-  node.properties.tdAdvancedPreviewHeight = Math.max(
-    base,
-    Math.min(maxHeightForWidth, current + deltaY)
-  );
+
+  if (vueGestureActive && Array.isArray(node.__tdUserResizeStartSize)) {
+    const startSize = node.__tdUserResizeStartSize;
+    const startPreview = Number(node.__tdUserResizeStartPreviewHeight) || base;
+    const deltaY = Number(size[1]) - Number(startSize[1]);
+    node.properties ||= {};
+    node.properties.tdAdvancedPreviewHeight = Math.max(
+      base,
+      Math.min(maxHeightForWidth, startPreview + deltaY)
+    );
+  } else {
+    // Legacy LiteGraph fallback: resizing_node is only exposed while dragging.
+    const previous = Array.isArray(node.__tdLastResizeSize)
+      ? node.__tdLastResizeSize
+      : [Number(node.size?.[0]) || size[0], Number(node.size?.[1]) || size[1]];
+    const deltaY = Number(size[1]) - Number(previous[1]);
+    if (Math.abs(deltaY) >= 0.5) {
+      const current = advancedStoredPreviewHeight(node, ratio);
+      node.properties ||= {};
+      node.properties.tdAdvancedPreviewHeight = Math.max(
+        base,
+        Math.min(maxHeightForWidth, current + deltaY)
+      );
+    }
+  }
+
+  node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
 }
 
 function advancedPlayerMetrics(node, ratio = advancedAspectRatio(node)) {
@@ -1482,6 +1542,7 @@ function mountNode(node) {
         Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
       ];
       advancedStoredPreviewHeight(node);
+      bindAdvancedResizeGestureTracking(node);
     }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
@@ -1554,6 +1615,7 @@ function mountNode(node) {
       Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
     ];
     advancedStoredPreviewHeight(node);
+    bindAdvancedResizeGestureTracking(node);
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
     node.setSize?.([width, 245]);
   } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
