@@ -313,6 +313,7 @@ def build_timeline_graph(
     video_export: dict[str, str] | None = None,
     cache_key: str | None = None,
     rerun: dict[str, Any] | None = None,
+    preview_override: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
@@ -321,6 +322,22 @@ def build_timeline_graph(
     previous_audio = None
     merged_images = None
     merged_audio = None
+
+    sampling_runtime = runtime
+    if preview_override is not None:
+        preview_model = graph.node(
+            "ModelPreviewOverrideKJ",
+            "td_advanced_preview_override",
+            model=runtime["model"],
+            max_resolution=int(preview_override["max_resolution"]),
+            jpeg_quality=int(preview_override["jpeg_quality"]),
+            suppress_default_preview=bool(preview_override["suppress_default_preview"]),
+            preview_frames=int(preview_override["preview_frames"]),
+            preview_fps=int(preview_override["preview_fps"]),
+            audio_vae=runtime["audio_vae"],
+        )
+        sampling_runtime = dict(runtime)
+        sampling_runtime["model"] = preview_model.out(0)
 
     rerun_segment_id = str(rerun.get("segment_id")) if rerun else None
     rerun_seed = int(rerun.get("seed", seed)) if rerun else int(seed)
@@ -355,7 +372,7 @@ def build_timeline_graph(
             )
             segment_seed = rerun_seed if rerun_segment_id is not None else int(seed)
             sampled = _sample_segment(
-                graph, runtime, positive, latent, prefix, segment_seed
+                graph, sampling_runtime, positive, latent, prefix, segment_seed
             )
             if cache_key is not None:
                 sampled = graph.node(
