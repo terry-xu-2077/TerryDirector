@@ -494,7 +494,8 @@ function miniRulerHtml(totalFrames) {
     const minutes = Math.floor(seconds / 60);
     const remain = Math.round(seconds % 60);
     const label = `${String(minutes).padStart(2, "0")}:${String(remain).padStart(2, "0")}`;
-    ticks.push(`<span class="td-mini-ruler-tick${seconds === 0 ? " is-first" : ""}" style="left:${left}%"><b>${label}</b><i></i></span>`);
+    const edgeClass = seconds === 0 ? " is-first" : Math.abs(seconds - totalSeconds) < 0.001 ? " is-last" : "";
+    ticks.push(`<span class="td-mini-ruler-tick${edgeClass}" style="left:${left}%"><b>${label}</b><i></i></span>`);
   }
   return `<div class="td-mini-ruler" aria-hidden="true">${ticks.join("")}</div>`;
 }
