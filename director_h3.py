@@ -361,7 +361,6 @@ def build_timeline_graph(
         "td_output_pack",
         images=merged_images,
         audio=merged_audio,
-        fps=FPS,
         **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
     )
     return graph.finalize(), packed_output.out(0)
