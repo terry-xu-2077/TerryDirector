@@ -946,10 +946,22 @@ function bindAdvancedResizeGestureTracking(node) {
     if (String(owner.dataset.nodeId) !== String(node.id)) return;
 
     const corner = String(handle.dataset.corner || "SE").toUpperCase();
+    const player = node.__tdRoot?.querySelector(".td-adv-player");
+    const scale = Math.max(0.01, Number(app.canvas?.ds?.scale) || 1);
+    const visibleHeight = player?.getBoundingClientRect?.().height
+      ? player.getBoundingClientRect().height / scale
+      : advancedPlayerMetrics(node).height;
+
+    node.properties ||= {};
+    node.properties.tdAdvancedPreviewHeight = Math.max(
+      advancedPreviewBaseHeight(node),
+      Number(visibleHeight) || advancedPreviewBaseHeight(node)
+    );
+
     node.__tdUserResizeActive = true;
     node.__tdUserResizeCorner = corner;
     node.__tdUserResizeStartClientY = Number(event.clientY);
-    node.__tdUserResizeStartPreviewHeight = advancedStoredPreviewHeight(node);
+    node.__tdUserResizeStartPreviewHeight = node.properties.tdAdvancedPreviewHeight;
     node.__tdUserResizeOwner = owner;
   };
 
@@ -1060,17 +1072,29 @@ function advancedPlayerMetrics(node, ratio = advancedAspectRatio(node)) {
   const desiredHeight = advancedStoredPreviewHeight(node, safeRatio);
   const desiredWidth = desiredHeight * viewportRatio;
 
-  // Horizontal resize is constraint-only: it may shrink a viewport that no
-  // longer fits, but widening the node never increases the stored media size.
+  // Horizontal resize is constraint-only. If the node becomes too narrow,
+  // collapse the stored target to the actually visible size immediately.
+  // This prevents a hidden oversized target from "unlocking" later.
   const availableWidth = Math.max(
     220,
     (Number(node?.size?.[0]) || DIRECTOR_MIN_WIDTH) - 36
   );
-  const scale = Math.min(1, availableWidth / desiredWidth);
+  let visibleHeight = desiredHeight;
+  let visibleWidth = desiredWidth;
+
+  if (desiredWidth > availableWidth) {
+    visibleWidth = availableWidth;
+    visibleHeight = availableWidth / viewportRatio;
+    node.properties ||= {};
+    node.properties.tdAdvancedPreviewHeight = Math.max(
+      advancedPreviewBaseHeight(node, safeRatio),
+      visibleHeight
+    );
+  }
 
   return {
-    width: Math.round(desiredWidth * scale),
-    height: Math.round(desiredHeight * scale),
+    width: Math.round(visibleWidth),
+    height: Math.round(visibleHeight),
   };
 }
 
