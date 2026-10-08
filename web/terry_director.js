@@ -97,10 +97,10 @@ async function loadAdvancedCapabilities(node) {
       multiFramePreview: multiFrame,
     };
     if (!multiFrame) {
-      const modeWidget = node.widgets?.find(w => w.name === "preview_frame_mode");
-      if (modeWidget && modeWidget.value !== "first") {
-        modeWidget.value = "first";
-        modeWidget.callback?.("first");
+      const fpsWidget = node.widgets?.find(w => w.name === "preview_fps");
+      if (fpsWidget && Number(fpsWidget.value) !== 1) {
+        fpsWidget.value = 1;
+        fpsWidget.callback?.(1);
       }
     }
     renderNode(node);
@@ -500,8 +500,8 @@ function bindExecutionActivity() {
       directorNodeFromExecutionId(data.nodeId);
     if (!node || node.comfyClass !== ADVANCED_NODE_CLASS) return;
     if (node.widgets?.find(w => w.name === "preview_enabled")?.value !== true) return;
-    const mode = String(node.widgets?.find(w => w.name === "preview_frame_mode")?.value || "half");
-    if (mode !== "first" || !(data.blob instanceof Blob)) return;
+    const previewFps = Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12);
+    if (previewFps !== 1 || !(data.blob instanceof Blob)) return;
     node.__tdLivePreviewActive = true;
     node.__tdLivePreviewData = { blob: data.blob };
     applyAdvancedLivePreview(node, node.__tdLivePreviewData);
@@ -512,8 +512,8 @@ function bindExecutionActivity() {
     const node = directorNodeFromExecutionId(data.node_id);
     if (!node || node.comfyClass !== ADVANCED_NODE_CLASS) return;
     if (node.widgets?.find(w => w.name === "preview_enabled")?.value !== true) return;
-    const mode = String(node.widgets?.find(w => w.name === "preview_frame_mode")?.value || "half");
-    if (mode === "first") return;
+    const previewFps = Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12);
+    if (previewFps <= 1) return;
     node.__tdLivePreviewActive = true;
     node.__tdLivePreviewData = data;
     applyAdvancedLivePreview(node, data);
@@ -1008,15 +1008,10 @@ function renderAdvancedNode(node) {
   const videoFormat = node.widgets?.find(w => w.name === "video_format")?.value || "auto";
   const videoCodec = node.widgets?.find(w => w.name === "video_codec")?.value || "auto";
   const previewEnabled = node.widgets?.find(w => w.name === "preview_enabled")?.value === true;
-  const previewFrameMode = node.widgets?.find(w => w.name === "preview_frame_mode")?.value || "half";
+  const previewFps = Math.max(1, Math.min(24, Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12) || 12));
   const previewTinyWidget = node.widgets?.find(w => w.name === "preview_tiny_vae");
   const previewTinyVae = previewTinyWidget?.value || "none";
   const multiFramePreview = node.__tdCapabilities?.multiFramePreview;
-  const previewModeOptions = [
-    ["first", "首帧", false],
-    ["half", "半数帧", multiFramePreview === false],
-    ["all", "所有帧", multiFramePreview === false],
-  ];
   const nativeValues = typeof previewTinyWidget?.options?.values === "function"
     ? previewTinyWidget.options.values(previewTinyWidget)
     : previewTinyWidget?.options?.values;
@@ -1062,11 +1057,10 @@ function renderAdvancedNode(node) {
       </div>` : ""}
     </div>
     ${previewEnabled ? `<details class="td-adv-preview-settings"><summary>视频预览</summary>
-      <label>预览帧<select data-widget="preview_frame_mode">${previewModeOptions.map(([value,label,disabled]) => `<option value="${value}"${value === previewFrameMode ? " selected" : ""}${disabled ? " disabled" : ""}>${label}</option>`).join("")}</select></label>
-      ${previewFrameMode !== "first" ? `
+      <label>预览 FPS<input data-widget="preview_fps" type="number" min="1" max="24" step="1" value="${previewFps}" ${multiFramePreview === false ? "disabled" : ""}/></label>
+      ${previewFps > 1 && multiFramePreview === true ? `
         <label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label>
         <label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label>
-        <label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label>
         <label>预览模型<select data-widget="preview_tiny_vae">${tinyVaeValues.map(value => `<option value="${escapeHtml(String(value))}"${String(value) === String(previewTinyVae) ? " selected" : ""}>${escapeHtml(String(value))}</option>`).join("")}</select></label>
       ` : ""}
     </details>` : ""}<details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
@@ -1262,10 +1256,10 @@ function renderAdvancedNode(node) {
     widget.value = event.target.checked;
     widget.callback?.(widget.value);
     if (widget.value && node.__tdCapabilities?.multiFramePreview === false) {
-      const modeWidget = node.widgets?.find(w => w.name === "preview_frame_mode");
-      if (modeWidget && modeWidget.value !== "first") {
-        modeWidget.value = "first";
-        modeWidget.callback?.("first");
+      const fpsWidget = node.widgets?.find(w => w.name === "preview_fps");
+      if (fpsWidget && Number(fpsWidget.value) !== 1) {
+        fpsWidget.value = 1;
+        fpsWidget.callback?.(1);
       }
     }
     markChanged(node);
@@ -1276,16 +1270,15 @@ function renderAdvancedNode(node) {
     const widget = node.widgets?.find(w => w.name === input.dataset.widget);
     if (widget) {
       let nextValue = input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
-      if (input.dataset.widget === "preview_frame_mode" &&
-          nextValue !== "first" &&
-          node.__tdCapabilities?.multiFramePreview === false) {
-        nextValue = "first";
-        input.value = "first";
+      if (input.dataset.widget === "preview_fps") {
+        nextValue = Math.max(1, Math.min(24, Number(nextValue) || 1));
+        if (node.__tdCapabilities?.multiFramePreview === false) nextValue = 1;
+        input.value = String(nextValue);
       }
       widget.value = nextValue;
       widget.callback?.(widget.value);
       markChanged(node);
-      if (input.dataset.widget === "preview_frame_mode") renderNode(node);
+      if (input.dataset.widget === "preview_fps") renderNode(node);
     }
     if (input.dataset.widget === "video_format") {
       const codecInput = root.querySelector('[data-widget="video_codec"]');
