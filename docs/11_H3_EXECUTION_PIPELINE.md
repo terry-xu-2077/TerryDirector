@@ -65,6 +65,10 @@ UI 不暴露这个限制；生成完成后裁回用户时间线长度。
   - 当前片段仍按自己的 Prompt 重新构图、重新运镜
   - 不作为 frame 0 Guide，不延续音频 latent，不裁当前片段头部
   - 尾帧参考占用一个 H3 图片参考位，因此当前片段最多再引用 8 张普通图片
+  - ComfyUI Settings 提供“尾帧参考提示词”模板；`{picture}` 在编译时替换为尾帧实际的 `<Picture N>`，`{picture_number}` 替换为数字 N
+  - 编译器先完成普通图片引用的局部编号，再把尾帧放在下一张图片槽位；例如当前片段已有 `<Picture 1> / <Picture 2> / <Picture 3>`，尾帧就占 `<Picture 4>` 与 `ref_image_3`
+  - 最终槽位写入 `continuity.picture_number`，GraphBuilder 必须使用该值连接尾帧；Prompt 编号与实际 ref_image 顺序不得各自重新计算
+  - 模板缺少 `{picture}` 时自动前置正确 `<Picture N>`；模板中硬编码的 `<Picture n>` 会归一化为实际尾帧槽位
 - `tail_continuation` / **尾帧续接**
   - 自动取上一片段最终可见尾帧
   - 作为当前片段 frame 0 的视觉 Guide
