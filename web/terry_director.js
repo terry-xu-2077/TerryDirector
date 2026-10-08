@@ -16,6 +16,7 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
+const ADVANCED_PREVIEW_MAX_WIDTH = 520;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -852,29 +853,27 @@ function advancedAspectRatio(node) {
   return width > 0 && height > 0 ? width / height : 16 / 9;
 }
 
+function advancedPlayerHeight(node, ratio = advancedAspectRatio(node)) {
+  const availableWidth = Math.max(220, (node?.size?.[0] || 520) - 36);
+  const boundedWidth = Math.min(availableWidth, ADVANCED_PREVIEW_MAX_WIDTH);
+  // Landscape keeps its natural ratio up to the normal/default preview size.
+  // Portrait remains square-bounded so it cannot make the node excessively tall.
+  const viewportRatio = ratio >= 1 ? ratio : 1;
+  return Math.max(180, Math.round(boundedWidth / viewportRatio));
+}
+
 function syncAdvancedAspect(node) {
   if (node?.comfyClass !== ADVANCED_NODE_CLASS || !node.__tdRoot) return;
-  // Landscape uses its true aspect ratio; portrait is letterboxed inside
-  // a square viewport so the node never becomes unusually tall.
   const ratio = advancedAspectRatio(node);
-  const viewportRatio = Math.max(1, ratio);
-  const previousViewportRatio = node.__tdViewportRatio || 1;
   node.__tdAspectRatio = ratio;
-  node.__tdViewportRatio = viewportRatio;
   const player = node.__tdRoot.querySelector(".td-adv-player");
   if (player) {
-    player.style.setProperty("--td-viewport-ratio", String(viewportRatio));
+    player.style.setProperty("--td-player-height", `${advancedPlayerHeight(node, ratio)}px`);
     player.classList.toggle("is-landscape", ratio >= 1);
   }
   const video = node.__tdRoot.querySelector(".td-adv-video");
   if (video) video.style.aspectRatio = String(ratio);
-  if (Math.abs(viewportRatio - previousViewportRatio) > 0.0001 && Array.isArray(node.size)) {
-    const width = Math.max(200, (node.size[0] || 460) - 40);
-    const delta = width / viewportRatio - width / previousViewportRatio;
-    node.setSize?.([node.size[0], Math.max(300, Math.round(node.size[1] + delta))]);
-  }
 }
-
 function syncLinkedAdvancedNodes(configNode) {
   for (const node of app.graph?._nodes || []) {
     if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
@@ -963,7 +962,7 @@ function renderAdvancedNode(node) {
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="--td-viewport-ratio:${Math.max(1, advancedAspectRatio(node))}" aria-label="视频预览">
+    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="--td-player-height:${advancedPlayerHeight(node)}px" aria-label="视频预览">
       <video class="td-adv-video" style="aspect-ratio:${advancedAspectRatio(node)}" playsinline preload="metadata"></video>
       <img class="td-adv-live-image" alt="实时采样预览" hidden/>
       <video class="td-adv-live-video" muted loop autoplay playsinline hidden></video>
@@ -1283,6 +1282,9 @@ function mountNode(node) {
         size[0] = DIRECTOR_MIN_WIDTH;
       }
       originalOnResize?.call(this, size);
+      if (this.comfyClass === ADVANCED_NODE_CLASS) {
+        queueMicrotask(() => syncAdvancedAspect(this));
+      }
     };
     node.__tdMinWidthBound = true;
   }
