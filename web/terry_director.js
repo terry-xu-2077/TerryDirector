@@ -38,6 +38,24 @@ function tailReferencePromptSetting() {
     : DEFAULT_TAIL_REFERENCE_PROMPT;
 }
 
+function transitionModeSettingRenderer(_name, setter, value) {
+  const select = document.createElement("select");
+  select.className = "td-transition-mode-setting";
+  for (const [optionValue, label] of [
+    ["tail_reference", "尾帧参考"],
+    ["tail_continuation", "尾帧续接"],
+    ["independent", "独立"],
+  ]) {
+    const option = document.createElement("option");
+    option.value = optionValue;
+    option.textContent = label;
+    select.append(option);
+  }
+  select.value = normalizeTransitionMode(value, "tail_reference");
+  select.addEventListener("change", () => setter(select.value));
+  return select;
+}
+
 function tailReferencePromptSettingRenderer(_name, setter, value) {
   const textarea = document.createElement("textarea");
   textarea.className = "td-tail-reference-setting";
@@ -863,14 +881,9 @@ app.registerExtension({
     {
       id: TRANSITION_SETTING_ID,
       name: "默认镜头衔接",
-      type: "combo",
+      type: transitionModeSettingRenderer,
       category: ["TerryDirector", "时间线"],
       defaultValue: "tail_reference",
-      options: [
-        { text: "尾帧参考", value: "tail_reference" },
-        { text: "尾帧续接", value: "tail_continuation" },
-        { text: "独立", value: "independent" },
-      ],
       tooltip: "决定新建片段与上一片段首尾贴合时的默认关系。不会修改已有接缝。",
       onChange() {
         pushPreferences();
