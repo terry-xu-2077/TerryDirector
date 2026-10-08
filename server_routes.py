@@ -161,3 +161,15 @@ async def terrydirector_advanced_state(request: web.Request) -> web.Response:
         if not _within(OUTPUT_ROOT, candidate) or not candidate.is_file():
             return web.json_response({"state": None})
     return web.json_response({"state": state})
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/capabilities")
+async def terrydirector_capabilities(request: web.Request) -> web.Response:
+    try:
+        import nodes as comfy_nodes
+        kj_preview = "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS
+    except Exception:
+        kj_preview = False
+    return web.json_response({
+        "multi_frame_preview": bool(kj_preview),
+    })
