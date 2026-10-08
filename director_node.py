@@ -435,14 +435,26 @@ class TerryDirectorAdvanced(TerryDirector):
         if prefix == "TerryDirector" and folder:
             prefix = folder + "/TerryDirector"
 
-        # TEMP PERFORMANCE DIAGNOSTIC #2:
-        # Base H3 segment graph + Advanced CreateVideo/Save terminal only.
-        # Cache, local-rerun and live-preview wrappers remain disabled so this
-        # run isolates whether terminal video/save topology changes upstream
-        # H3 scheduling, prefetch or compiler behavior.
+        cache_key = str(cls.hidden.unique_id)
+        rerun = None
+        if str(rerun_clip_id or "").strip():
+            rerun = {
+                "segment_id": str(rerun_clip_id).strip(),
+                "seed": int(rerun_seed),
+            }
+            print(
+                f"[TerryDirector Advanced] Local rerun: segment={rerun['segment_id']} "
+                f"seed={rerun['seed']}",
+                flush=True,
+            )
+
+        # PERFORMANCE VALIDATION:
+        # Restore Advanced video/save + the refactored terminal batch cache.
+        # Live preview remains disabled in this validation path so cache impact
+        # can be measured independently.
         print(
-            "[TerryDirector Advanced][Diagnostic] Running base graph + video/save "
-            "(cache/preview/rerun disabled)",
+            "[TerryDirector Advanced][Diagnostic] Running video/save + terminal batch cache "
+            "(preview disabled)",
             flush=True,
         )
         expanded, director_output = build_timeline_graph(
@@ -454,8 +466,8 @@ class TerryDirectorAdvanced(TerryDirector):
                 "format": str(video_format or "auto"),
                 "codec": str(video_codec or "auto"),
             },
-            cache_key=None,
-            rerun=None,
+            cache_key=cache_key,
+            rerun=rerun,
             preview_override=None,
         )
         return io.NodeOutput(director_output, expand=expanded)
