@@ -956,6 +956,11 @@ function renderAdvancedNode(node) {
   const totalSeconds = totalFrames / FPS;
   const state = node.__tdReview ||= { selected: doc.selected, time: 0, manualScroll: false };
   state.rerunSeedCustom ||= {};
+  state.detailsOpen ||= {};
+  const previousPreviewDetails = root.querySelector(".td-adv-preview-settings");
+  const previousExportDetails = root.querySelector(".td-adv-export");
+  if (previousPreviewDetails) state.detailsOpen.preview = previousPreviewDetails.open;
+  if (previousExportDetails) state.detailsOpen.export = previousExportDetails.open;
   if (!clips.some(c => c.id === state.selected)) state.selected = clips[0]?.id || null;
   const globalSeed = String(node.widgets?.find(w => w.name === "seed")?.value ?? 0);
   const selectedRerunSeed = state.selected && state.rerunSeedCustom[state.selected] != null
@@ -1056,20 +1061,27 @@ function renderAdvancedNode(node) {
         <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存" ${rerunBusy ? "disabled" : ""}>↻ 重跑此片段</button>
       </div>` : ""}
     </div>
-    ${previewEnabled ? `<details class="td-adv-preview-settings"><summary>视频预览</summary>
+    ${previewEnabled ? `<details class="td-adv-preview-settings"${state.detailsOpen.preview ? " open" : ""}><summary>视频预览</summary>
       <label>预览 FPS<input data-widget="preview_fps" type="number" min="1" max="24" step="1" value="${previewFps}" ${multiFramePreview === false ? "disabled" : ""}/></label>
       ${previewFps > 1 && multiFramePreview === true ? `
         <label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label>
         <label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label>
         <label>预览模型<select data-widget="preview_tiny_vae">${tinyVaeValues.map(value => `<option value="${escapeHtml(String(value))}"${String(value) === String(previewTinyVae) ? " selected" : ""}>${escapeHtml(String(value))}</option>`).join("")}</select></label>
       ` : ""}
-    </details>` : ""}<details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
+    </details>` : ""}<details class="td-adv-export"${state.detailsOpen.export ? " open" : ""}><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
       <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
       <label>编解码器<select data-widget="video_codec">${options(codecs, videoCodec)}</select></label>
     </details>
     
   </div>`;
+  root.querySelector(".td-adv-preview-settings")?.addEventListener("toggle", event => {
+    state.detailsOpen.preview = event.currentTarget.open;
+  });
+  root.querySelector(".td-adv-export")?.addEventListener("toggle", event => {
+    state.detailsOpen.export = event.currentTarget.open;
+  });
+
   const video = root.querySelector(".td-adv-video");
   const player = root.querySelector(".td-adv-player");
   const playButton = root.querySelector('[data-adv="play"]');
