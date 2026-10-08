@@ -104,3 +104,11 @@
 - 从“未使用全局”切换为“使用全局”时先验证合并后的引用预算；若超限，保持关闭并弹窗说明原因。
 - 切换片段承接模式为尾帧参考时也会先验证预算，避免模式切换后产生不可执行配置。
 - 后端编译期额度校验继续保留，作为最终保护。
+
+
+## 2026-10-08 · Advanced 缓存热路径优化
+- 完整生成不再在每个片段的 `SamplerCustomAdvanced -> Decode` 之间同步执行 LATENT 缓存。
+- Advanced 主生成链恢复为与基础版一致的 `Sample -> Decode -> Assemble` 节奏；所有片段完成后，由终端步骤统一将分段 LATENT 写入缓存。
+- 局部重跑时仍从磁盘加载未重跑片段；目标片段重新采样后，仅在终端阶段覆盖该片段的缓存，不重写其他片段。
+- H3 AV LATENT 的 `NestedTensor` 现在显式搬到 CPU 后再 `torch.save`，避免把 CUDA-backed NestedTensor 直接交给序列化。
+- 新增性能日志：每个缓存的 CPU copy / disk save / 文件大小、缓存批次总耗时、视频保存耗时、Advanced 终端总耗时。
