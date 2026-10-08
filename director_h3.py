@@ -463,6 +463,11 @@ def build_timeline_graph(
             filename_prefix=video_export["filename_prefix"],
             format=video_export["format"],
             codec=video_export["codec"],
+            cache_key=str(cache_key or ""),
+            segment_ids_json=__import__("json").dumps(
+                [str(segment["id"]) for segment in plan["segments"]],
+                ensure_ascii=False,
+            ),
         )
         output = final.out(0)
     return graph.finalize(), output
