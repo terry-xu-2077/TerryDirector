@@ -7,7 +7,7 @@ import comfy.samplers
 from comfy_api.latest import InputImpl, Types, io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
-from .director_compile import compile_timeline
+from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_h3 import build_timeline_graph
 from .director_core import (
     config_json,
@@ -279,6 +279,14 @@ class TerryDirector(io.ComfyNode):
                     socketless=True,
                     tooltip="Internal TerryDirector creative state. Managed by the custom UI.",
                 ),
+                io.String.Input(
+                    "tail_reference_prompt",
+                    default=DEFAULT_TAIL_REFERENCE_PROMPT,
+                    multiline=True,
+                    dynamic_prompts=False,
+                    socketless=True,
+                    tooltip="User-level tail-reference prompt template. Synced from ComfyUI Settings.",
+                ),
             ],
             outputs=[
                 DirectorOutputData.Output(display_name="导演输出"),
@@ -295,10 +303,19 @@ class TerryDirector(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, director_config, seed, config_json):
+    def execute(
+        cls,
+        director_config,
+        seed,
+        config_json,
+        tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
+    ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
-        plan = compile_timeline(config["document"])
+        plan = compile_timeline(
+            config["document"],
+            tail_reference_prompt=tail_reference_prompt,
+        )
 
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
