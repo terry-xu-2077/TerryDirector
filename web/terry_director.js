@@ -918,36 +918,69 @@ function advancedAspectRatio(node) {
   return width > 0 && height > 0 ? width / height : 16 / 9;
 }
 
+function advancedPreviewBaseHeight(node, ratio = advancedAspectRatio(node)) {
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : (16 / 9);
+  const viewportRatio = safeRatio >= 1 ? safeRatio : 1;
+  return Math.max(180, Math.round(ADVANCED_PREVIEW_BASE_WIDTH / viewportRatio));
+}
+
+function advancedStoredPreviewHeight(node, ratio = advancedAspectRatio(node)) {
+  node.properties ||= {};
+  const base = advancedPreviewBaseHeight(node, ratio);
+  const stored = Number(node.properties.tdAdvancedPreviewHeight);
+  if (!Number.isFinite(stored) || stored < base) {
+    node.properties.tdAdvancedPreviewHeight = base;
+    return base;
+  }
+  return stored;
+}
+
+function updateAdvancedPreviewHeightFromUserResize(node, size) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS || !Array.isArray(size)) return;
+
+  const previous = Array.isArray(node.__tdLastResizeSize)
+    ? node.__tdLastResizeSize
+    : [Number(node.size?.[0]) || size[0], Number(node.size?.[1]) || size[1]];
+  const deltaY = Number(size[1]) - Number(previous[1]);
+  node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
+
+  // LiteGraph sets resizing_node only for an actual pointer resize. DOM-widget
+  // layout changes also call onResize, but must never scale the media viewport.
+  const isUserResize = app.canvas?.resizing_node === node;
+  if (!isUserResize || Math.abs(deltaY) < 0.5) return;
+
+  const ratio = advancedAspectRatio(node);
+  const base = advancedPreviewBaseHeight(node, ratio);
+  const current = advancedStoredPreviewHeight(node, ratio);
+  const viewportRatio = Math.max(1, ratio);
+  const availableWidth = Math.max(
+    220,
+    (Number(size[0]) || DIRECTOR_MIN_WIDTH) - 36
+  );
+  const maxHeightForWidth = Math.max(base, availableWidth / viewportRatio);
+  node.properties.tdAdvancedPreviewHeight = Math.max(
+    base,
+    Math.min(maxHeightForWidth, current + deltaY)
+  );
+}
+
 function advancedPlayerMetrics(node, ratio = advancedAspectRatio(node)) {
   const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : (16 / 9);
   const viewportRatio = safeRatio >= 1 ? safeRatio : 1;
-  const baseHeight = ADVANCED_PREVIEW_BASE_WIDTH / viewportRatio;
+  const desiredHeight = advancedStoredPreviewHeight(node, safeRatio);
+  const desiredWidth = desiredHeight * viewportRatio;
 
-  // Width-only resize must not enlarge the media viewport. Extra vertical
-  // node space, however, is deliberately converted into player height.
-  const nodeHeight = Math.max(
-    ADVANCED_NODE_MIN_HEIGHT,
-    Number(node?.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT
-  );
-  const extraHeight = Math.max(0, nodeHeight - ADVANCED_NODE_MIN_HEIGHT);
-  let height = Math.max(180, baseHeight + extraHeight);
-  let width = height * viewportRatio;
-
-  // The requested vertical growth can only use width that physically exists
-  // inside the node. Horizontal expansion beyond this point is timeline-only.
+  // Horizontal resize is constraint-only: it may shrink a viewport that no
+  // longer fits, but widening the node never increases the stored media size.
   const availableWidth = Math.max(
     220,
     (Number(node?.size?.[0]) || DIRECTOR_MIN_WIDTH) - 36
   );
-  if (width > availableWidth) {
-    const scale = availableWidth / width;
-    width = availableWidth;
-    height *= scale;
-  }
+  const scale = Math.min(1, availableWidth / desiredWidth);
 
   return {
-    width: Math.round(width),
-    height: Math.round(height),
+    width: Math.round(desiredWidth * scale),
+    height: Math.round(desiredHeight * scale),
   };
 }
 
@@ -1420,6 +1453,9 @@ function mountNode(node) {
       ) {
         size[1] = ADVANCED_NODE_MIN_HEIGHT;
       }
+      if (this.comfyClass === ADVANCED_NODE_CLASS) {
+        updateAdvancedPreviewHeightFromUserResize(this, size);
+      }
       originalOnResize?.call(this, size);
       if (this.comfyClass === ADVANCED_NODE_CLASS) {
         queueMicrotask(() => syncAdvancedAspect(this));
@@ -1439,6 +1475,13 @@ function mountNode(node) {
         node.size?.[0] || DIRECTOR_MIN_WIDTH,
         ADVANCED_NODE_MIN_HEIGHT,
       ]);
+    }
+    if (node.comfyClass === ADVANCED_NODE_CLASS) {
+      node.__tdLastResizeSize = [
+        Number(node.size?.[0]) || DIRECTOR_MIN_WIDTH,
+        Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
+      ];
+      advancedStoredPreviewHeight(node);
     }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
@@ -1506,6 +1549,11 @@ function mountNode(node) {
     if ((node.size?.[1] || 0) < ADVANCED_NODE_MIN_HEIGHT) {
       node.setSize?.([node.size?.[0] || width, ADVANCED_NODE_MIN_HEIGHT]);
     }
+    node.__tdLastResizeSize = [
+      Number(node.size?.[0]) || width,
+      Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
+    ];
+    advancedStoredPreviewHeight(node);
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
     node.setSize?.([width, 245]);
   } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
