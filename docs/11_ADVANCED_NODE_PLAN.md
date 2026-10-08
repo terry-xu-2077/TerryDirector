@@ -39,3 +39,11 @@
 - 前端监听原生 SaveVideo 完成事件并尝试将输出文件接入播放器。
 - **尚未完成 ComfyUI 0.39.0 实机验收**：需要确认 SaveVideo 扩展子图节点的 `executed` 事件及输出文件 URL 能否被父节点准确识别。不能宣称自动预览已经验证可用。
 - 分段持久缓存和局部重跑仍未实现，按钮保持禁用。
+
+
+## 2026-10-08 · 三段实机反馈后修复
+- 修复播放头：轨道未铺满视口时，Seek 按 `pixelsPerSecond` 对应真实片段长度计算，并补偿 LiteGraph 缩放，不再使用整个可见轨道宽度映射总时长。
+- 补充 KJ Model Preview Override 对应的配置 UI：启用开关、最大预览分辨率、JPEG 质量、每步预览帧数、预览 FPS、屏蔽默认预览。**注意这轮仅配置/交互，KJ 的采样包装器和实时图像事件尚未接入；折叠栏显式标记待接入。**
+- 原保存链使用展开图中的独立 `SaveVideo` 子节点，在用户提供的三段运行日志中没有证明已保存文件。当前改为 `TerryDirectorAdvancedFinish` 中直接执行 ComfyUI 原生 `SaveVideo.execute`，并将返回的 `PreviewVideo` UI 元数据透出，保存失败不得标记 Advanced 成功。
+- 新增 `[TerryDirector Advanced] Saving video via native SaveVideo...` 与 `Native SaveVideo completed` 日志，便于通过短片段独立验证。未运行用户本机，不能声称真实保存已通过验收。
+- 下一阶段：集成独立实时采样预览通道，不能把最终 MP4 播放混同于 KJ 每步 latent 预览；分段持久缓存和局部重跑仍未做。
