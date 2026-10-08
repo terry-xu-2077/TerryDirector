@@ -7,6 +7,8 @@ from comfy_api.latest import ComfyExtension, io
 from .director_node import TerryDirector, TerryDirectorAdvanced, TerryDirectorConfig, TerryDirectorOutput
 from .director_internal import (
     TerryDirectorAdvancedFinish,
+    TerryDirectorCacheLatent,
+    TerryDirectorLoadCachedLatent,
     TerryDirectorAssembleMedia,
     TerryDirectorPackOutput,
     TerryDirectorResampleReferenceVideo,
@@ -26,6 +28,8 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorOutput,
             TerryDirectorPackOutput,
             TerryDirectorAdvancedFinish,
+            TerryDirectorCacheLatent,
+            TerryDirectorLoadCachedLatent,
             TerryDirectorAssembleMedia,
             TerryDirectorResampleReferenceVideo,
         ]
