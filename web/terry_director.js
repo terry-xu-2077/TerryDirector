@@ -810,7 +810,7 @@ function renderAdvancedNode(node) {
   const seekPointer = event => {
     const rect = track.getBoundingClientRect();
     if (!rect.width) return;
-    setTime(Math.round(Math.max(0, Math.min(totalSeconds, (event.clientX - rect.left) / pixelsPerSecond)) * FPS) / FPS);
+    setTime(Math.round(Math.max(0, Math.min(totalSeconds, ((event.clientX - rect.left) * (track.offsetWidth / rect.width)) / pixelsPerSecond)) * FPS) / FPS);
   };
   track.addEventListener("pointerdown", event => {
     if (event.button !== 0 || event.target.closest("[data-clip]")) return;
