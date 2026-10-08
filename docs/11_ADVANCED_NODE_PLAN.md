@@ -120,3 +120,11 @@
 - 控制台会打印：`[TerryDirector Advanced][Diagnostic] Running exact base execution graph (no preview/cache/video/save)`。
 - 目的：若此模式恢复到基础版速度，则问题在 Advanced 附加执行拓扑；若仍慢，则继续查父节点执行上下文或 ComfyUI/H3 compiler 状态。
 - 这是临时诊断提交，确认结论后需恢复 Advanced 功能链。
+
+
+## 2026-10-08 · Advanced 性能诊断模式 #2（临时）
+- 纯基础执行图测试前三段约为 2:10 / 1:51 / 2:39，已恢复到基础版正常范围，确认 Advanced 节点类与 UI 本身不是慢点。
+- 第二阶段诊断仅加回 `CreateVideo -> TerryDirectorAdvancedFinish -> video.save_to` 终端链。
+- 本阶段缓存完全禁用：`cache_key=None`，不会读取/写入分段 LATENT 缓存，也不会写 Advanced restore state；局部重跑和实时预览同样不参与执行。
+- 控制台标识：`[TerryDirector Advanced][Diagnostic] Running base graph + video/save (cache/preview/rerun disabled)`。
+- `TerryDirectorAdvancedFinish` 在空 cache_key 时跳过缓存，并打印视频保存与终端总耗时，用于确认“仅终端视频拓扑”是否改变上游 H3 sampler 性能。
