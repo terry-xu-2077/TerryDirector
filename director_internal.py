@@ -68,6 +68,11 @@ def _advanced_state_path(cache_key: str) -> str:
 def _cache_to_cpu(value):
     if isinstance(value, torch.Tensor):
         return value.detach().cpu()
+    # MiniMax H3 AV latents store video/audio tensors in ComfyUI's
+    # NestedTensor wrapper. Handle it explicitly so torch.save never receives
+    # CUDA-backed tensors by accident.
+    if getattr(value, "is_nested", False) and hasattr(value, "cpu"):
+        return value.cpu()
     if isinstance(value, dict):
         return {key: _cache_to_cpu(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -75,6 +80,38 @@ def _cache_to_cpu(value):
     if isinstance(value, tuple):
         return tuple(_cache_to_cpu(item) for item in value)
     return value
+
+
+def _save_advanced_cache_latent(latent, cache_key, segment_id, signature):
+    path = _advanced_cache_path(cache_key, segment_id)
+
+    copy_started = time.perf_counter()
+    cpu_latent = _cache_to_cpu(latent)
+    copy_seconds = time.perf_counter() - copy_started
+
+    payload = {
+        "version": 1,
+        "signature": str(signature),
+        "latent": cpu_latent,
+    }
+    fd, temp_path = tempfile.mkstemp(prefix="td_", suffix=".pt", dir=os.path.dirname(path))
+    os.close(fd)
+
+    disk_started = time.perf_counter()
+    try:
+        torch.save(payload, temp_path)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    disk_seconds = time.perf_counter() - disk_started
+
+    try:
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+    except OSError:
+        size_mb = 0.0
+
+    return path, copy_seconds, disk_seconds, size_mb
 
 
 class TerryDirectorCacheLatent(io.ComfyNode):
@@ -104,21 +141,15 @@ class TerryDirectorCacheLatent(io.ComfyNode):
 
     @classmethod
     def execute(cls, latent, cache_key, segment_id, signature) -> io.NodeOutput:
-        path = _advanced_cache_path(cache_key, segment_id)
-        payload = {
-            "version": 1,
-            "signature": str(signature),
-            "latent": _cache_to_cpu(latent),
-        }
-        fd, temp_path = tempfile.mkstemp(prefix="td_", suffix=".pt", dir=os.path.dirname(path))
-        os.close(fd)
-        try:
-            torch.save(payload, temp_path)
-            os.replace(temp_path, path)
-        finally:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-        print(f"[TerryDirector Advanced] Cached segment {segment_id}: {path}", flush=True)
+        path, copy_seconds, disk_seconds, size_mb = _save_advanced_cache_latent(
+            latent, cache_key, segment_id, signature
+        )
+        print(
+            f"[TerryDirector Advanced][Perf] Cache {segment_id}: "
+            f"cpu={copy_seconds:.3f}s disk={disk_seconds:.3f}s "
+            f"size={size_mb:.1f}MB path={path}",
+            flush=True,
+        )
         return io.NodeOutput(latent)
 
 
@@ -189,6 +220,8 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
                 io.String.Input("codec"),
                 io.String.Input("cache_key"),
                 io.String.Input("segment_ids_json"),
+                io.String.Input("segment_signatures_json"),
+                io.String.Input("cache_only_segment_id"),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
@@ -197,10 +230,80 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
     @classmethod
     def execute(
         cls, director_output, video, filename_prefix, format, codec,
-        cache_key, segment_ids_json,
+        cache_key, segment_ids_json, segment_signatures_json,
+        cache_only_segment_id,
     ) -> io.NodeOutput:
         if video is None:
             raise RuntimeError("TerryDirector Advanced 视频创建失败，未保存")
+
+        terminal_started = time.perf_counter()
+
+        try:
+            segment_ids = json.loads(str(segment_ids_json or "[]"))
+            if not isinstance(segment_ids, list):
+                segment_ids = []
+        except Exception:
+            segment_ids = []
+        try:
+            segment_signatures = json.loads(str(segment_signatures_json or "[]"))
+            if not isinstance(segment_signatures, list):
+                segment_signatures = []
+        except Exception:
+            segment_signatures = []
+
+        packet_latents = (
+            director_output.get("segment_latents", [])
+            if isinstance(director_output, dict)
+            else []
+        )
+        if len(segment_ids) != len(packet_latents) or len(segment_signatures) != len(packet_latents):
+            raise RuntimeError(
+                "TerryDirector Advanced 缓存清单与分段 LATENT 数量不一致"
+            )
+
+        cache_only = str(cache_only_segment_id or "").strip()
+        if cache_only:
+            cache_indices = [
+                index for index, segment_id in enumerate(segment_ids)
+                if str(segment_id) == cache_only
+            ]
+            if not cache_indices:
+                raise RuntimeError(
+                    f"TerryDirector Advanced 找不到要更新缓存的片段: {cache_only}"
+                )
+            cache_mode = f"rerun:{cache_only}"
+        else:
+            cache_indices = list(range(len(segment_ids)))
+            cache_mode = "full"
+
+        cache_started = time.perf_counter()
+        print(
+            f"[TerryDirector Advanced][Perf] Cache batch start: "
+            f"mode={cache_mode} segments={len(cache_indices)}",
+            flush=True,
+        )
+        cache_bytes = 0
+        for index in cache_indices:
+            segment_id = str(segment_ids[index])
+            path, copy_seconds, disk_seconds, size_mb = _save_advanced_cache_latent(
+                packet_latents[index],
+                str(cache_key),
+                segment_id,
+                str(segment_signatures[index]),
+            )
+            cache_bytes += int(size_mb * 1024 * 1024)
+            print(
+                f"[TerryDirector Advanced][Perf] Cache {segment_id}: "
+                f"cpu={copy_seconds:.3f}s disk={disk_seconds:.3f}s "
+                f"size={size_mb:.1f}MB",
+                flush=True,
+            )
+        cache_total = time.perf_counter() - cache_started
+        print(
+            f"[TerryDirector Advanced][Perf] Cache batch complete: "
+            f"{cache_total:.3f}s total={cache_bytes / (1024 * 1024):.1f}MB",
+            flush=True,
+        )
 
         format_name = str(format or "auto")
         codec_name = str(codec or "auto")
@@ -229,20 +332,19 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
         output_path = os.path.join(full_output_folder, file)
 
         print(f"[TerryDirector Advanced] Saving video: {output_path}", flush=True)
+        video_started = time.perf_counter()
         video.save_to(
             output_path,
             format=Types.VideoContainer(format_name),
             codec=Types.VideoCodec(codec_name),
             metadata=saved_metadata,
         )
-        print("[TerryDirector Advanced] Native video save completed", flush=True)
-
-        try:
-            segment_ids = json.loads(str(segment_ids_json or "[]"))
-            if not isinstance(segment_ids, list):
-                segment_ids = []
-        except Exception:
-            segment_ids = []
+        video_seconds = time.perf_counter() - video_started
+        print(
+            f"[TerryDirector Advanced][Perf] Video save complete: "
+            f"{video_seconds:.3f}s path={output_path}",
+            flush=True,
+        )
         state = {
             "version": 1,
             "saved_at": time.time(),
@@ -263,6 +365,12 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
         finally:
             if os.path.exists(temp_state):
                 os.remove(temp_state)
+
+        print(
+            f"[TerryDirector Advanced][Perf] Terminal total: "
+            f"{time.perf_counter() - terminal_started:.3f}s",
+            flush=True,
+        )
 
         # Publish this as a normal video asset without PreviewVideo.
         # ComfyUI's task/assets system recognizes ResultItem lists under
