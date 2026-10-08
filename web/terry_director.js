@@ -965,6 +965,9 @@ function mountNode(node) {
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
+    hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
+    hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
+    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
   }
 
   const root = document.createElement("div");
