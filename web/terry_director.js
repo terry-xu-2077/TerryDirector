@@ -945,26 +945,65 @@ function bindAdvancedResizeGestureTracking(node) {
     if (!handle || !owner) return;
     if (String(owner.dataset.nodeId) !== String(node.id)) return;
 
+    const corner = String(handle.dataset.corner || "SE").toUpperCase();
     node.__tdUserResizeActive = true;
-    node.__tdUserResizeStartSize = [
-      Number(node.size?.[0]) || DIRECTOR_MIN_WIDTH,
-      Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
-    ];
+    node.__tdUserResizeCorner = corner;
+    node.__tdUserResizeStartClientY = Number(event.clientY);
     node.__tdUserResizeStartPreviewHeight = advancedStoredPreviewHeight(node);
+    node.__tdUserResizeOwner = owner;
+  };
+
+  const move = event => {
+    if (!node.__tdUserResizeActive) return;
+    const startY = Number(node.__tdUserResizeStartClientY);
+    const startPreview = Number(node.__tdUserResizeStartPreviewHeight);
+    if (!Number.isFinite(startY) || !Number.isFinite(startPreview)) return;
+
+    const scale = Math.max(0.01, Number(app.canvas?.ds?.scale) || 1);
+    const corner = String(node.__tdUserResizeCorner || "SE");
+    const direction = corner.includes("N") ? -1 : 1;
+    let deltaY = ((Number(event.clientY) - startY) / scale) * direction;
+
+    // Ignore tiny pointer drift while the user is effectively resizing only
+    // horizontally. This keeps horizontal resize strictly timeline-only.
+    if (Math.abs(deltaY) < 3) deltaY = 0;
+
+    const ratio = advancedAspectRatio(node);
+    const base = advancedPreviewBaseHeight(node, ratio);
+    const viewportRatio = Math.max(1, ratio);
+    const ownerWidth = Number(node.__tdUserResizeOwner?.offsetWidth);
+    const availableWidth = Math.max(
+      220,
+      (Number.isFinite(ownerWidth) && ownerWidth > 0
+        ? ownerWidth
+        : Number(node.size?.[0]) || DIRECTOR_MIN_WIDTH) - 36
+    );
+    const maxHeightForWidth = Math.max(base, availableWidth / viewportRatio);
+
+    node.properties ||= {};
+    node.properties.tdAdvancedPreviewHeight = Math.max(
+      base,
+      Math.min(maxHeightForWidth, startPreview + deltaY)
+    );
+    syncAdvancedAspect(node);
   };
 
   const end = () => {
     node.__tdUserResizeActive = false;
-    node.__tdUserResizeStartSize = null;
+    node.__tdUserResizeCorner = null;
+    node.__tdUserResizeStartClientY = null;
     node.__tdUserResizeStartPreviewHeight = null;
+    node.__tdUserResizeOwner = null;
   };
 
   document.addEventListener("pointerdown", begin, true);
+  document.addEventListener("pointermove", move, true);
   document.addEventListener("pointerup", end, true);
   document.addEventListener("pointercancel", end, true);
 
   node.__tdResizeGestureCleanup = () => {
     document.removeEventListener("pointerdown", begin, true);
+    document.removeEventListener("pointermove", move, true);
     document.removeEventListener("pointerup", end, true);
     document.removeEventListener("pointercancel", end, true);
   };
@@ -980,45 +1019,36 @@ function bindAdvancedResizeGestureTracking(node) {
 function updateAdvancedPreviewHeightFromUserResize(node, size) {
   if (node?.comfyClass !== ADVANCED_NODE_CLASS || !Array.isArray(size)) return;
 
-  const vueGestureActive = node.__tdUserResizeActive === true;
-  const legacyGestureActive = app.canvas?.resizing_node === node;
-  if (!vueGestureActive && !legacyGestureActive) {
+  // Vue nodes are handled directly from the pointer gesture above. This
+  // fallback is only for the legacy LiteGraph canvas resize path.
+  if (node.__tdUserResizeActive) {
+    node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
+    return;
+  }
+  if (app.canvas?.resizing_node !== node) {
     node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
     return;
   }
 
-  const ratio = advancedAspectRatio(node);
-  const base = advancedPreviewBaseHeight(node, ratio);
-  const viewportRatio = Math.max(1, ratio);
-  const availableWidth = Math.max(
-    220,
-    (Number(size[0]) || DIRECTOR_MIN_WIDTH) - 36
-  );
-  const maxHeightForWidth = Math.max(base, availableWidth / viewportRatio);
-
-  if (vueGestureActive && Array.isArray(node.__tdUserResizeStartSize)) {
-    const startSize = node.__tdUserResizeStartSize;
-    const startPreview = Number(node.__tdUserResizeStartPreviewHeight) || base;
-    const deltaY = Number(size[1]) - Number(startSize[1]);
+  const previous = Array.isArray(node.__tdLastResizeSize)
+    ? node.__tdLastResizeSize
+    : [Number(node.size?.[0]) || size[0], Number(node.size?.[1]) || size[1]];
+  const deltaY = Number(size[1]) - Number(previous[1]);
+  if (Math.abs(deltaY) >= 0.5) {
+    const ratio = advancedAspectRatio(node);
+    const base = advancedPreviewBaseHeight(node, ratio);
+    const current = advancedStoredPreviewHeight(node, ratio);
+    const viewportRatio = Math.max(1, ratio);
+    const availableWidth = Math.max(
+      220,
+      (Number(size[0]) || DIRECTOR_MIN_WIDTH) - 36
+    );
+    const maxHeightForWidth = Math.max(base, availableWidth / viewportRatio);
     node.properties ||= {};
     node.properties.tdAdvancedPreviewHeight = Math.max(
       base,
-      Math.min(maxHeightForWidth, startPreview + deltaY)
+      Math.min(maxHeightForWidth, current + deltaY)
     );
-  } else {
-    // Legacy LiteGraph fallback: resizing_node is only exposed while dragging.
-    const previous = Array.isArray(node.__tdLastResizeSize)
-      ? node.__tdLastResizeSize
-      : [Number(node.size?.[0]) || size[0], Number(node.size?.[1]) || size[1]];
-    const deltaY = Number(size[1]) - Number(previous[1]);
-    if (Math.abs(deltaY) >= 0.5) {
-      const current = advancedStoredPreviewHeight(node, ratio);
-      node.properties ||= {};
-      node.properties.tdAdvancedPreviewHeight = Math.max(
-        base,
-        Math.min(maxHeightForWidth, current + deltaY)
-      );
-    }
   }
 
   node.__tdLastResizeSize = [Number(size[0]), Number(size[1])];
