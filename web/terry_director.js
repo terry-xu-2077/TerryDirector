@@ -705,7 +705,7 @@ function renderAdvancedNode(node) {
   const scrub = root.querySelector(".td-adv-scrub");
   const clock = root.querySelector(".td-adv-clock");
   const follow = () => {
-    const position = Math.round(state.time / FPS * FPS * 14);
+    const position = Math.round(state.time * 14);
     scroller.scrollLeft = Math.max(0, position - scroller.clientWidth * .35);
   };
   const setTime = value => {
@@ -812,6 +812,10 @@ function mountNode(node) {
   if (node.__tdRoot) {
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
+    if (node.comfyClass === ADVANCED_NODE_CLASS) {
+      hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
+    }
     renderNode(node);
     return;
   }
@@ -821,6 +825,10 @@ function mountNode(node) {
   if (!backing) return;
   hideBackingWidget(backing);
   hideBackingWidget(tailReferencePromptWidget(node));
+  if (node.comfyClass === ADVANCED_NODE_CLASS) {
+    hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
+    hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
+  }
 
   const root = document.createElement("div");
   root.className = "td-node-shell td-node-shell-director" + (node.comfyClass === ADVANCED_NODE_CLASS ? " td-node-shell-advanced" : "");
@@ -855,7 +863,7 @@ function mountNode(node) {
 
   const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
-    node.setSize?.([width, 620]);
+    if ((node.size?.[1] || 0) < 590) node.setSize?.([width, 620]);
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
     node.setSize?.([width, 245]);
   } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
