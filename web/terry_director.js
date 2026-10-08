@@ -307,8 +307,85 @@ function activityPayload(node) {
   };
 }
 
-function pushActivity(node) {
-  renderNode(node);
+function patchAdvancedActivity(node) {
+  const root = node?.__tdRoot;
+  if (!root || node.comfyClass !== ADVANCED_NODE_CLASS) return false;
+  const clips = readConfig(node).document.clips || [];
+  const activity = ensureActivity(node);
+
+  for (const clip of clips) {
+    const button = [...root.querySelectorAll("[data-clip]")]
+      .find(item => item.dataset.clip === String(clip.id));
+    if (!button) continue;
+
+    const record = activity[clip.id] || {};
+    const running = record.status === RUN_RUNNING;
+    const completed = record.status === RUN_COMPLETED;
+    const failed = record.status === RUN_ERROR;
+    const percent = completed ? 100 : Math.round(clamp01(record.progress) * 100);
+
+    button.classList.toggle("is-running", running);
+    button.classList.toggle("is-completed", completed);
+    button.classList.toggle("is-error", failed);
+
+    let progress = button.querySelector(".td-mini-clip-progress");
+    if (running || completed) {
+      if (!progress) {
+        progress = document.createElement("span");
+        progress.className = "td-mini-clip-progress";
+        progress.innerHTML = "<i></i>";
+        button.append(progress);
+      }
+      const bar = progress.querySelector("i");
+      if (bar) bar.style.width = `${percent}%`;
+    } else {
+      progress?.remove();
+    }
+  }
+
+  return true;
+}
+
+function suspendAdvancedFinalVideo(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS || !node.__tdRoot) return;
+  const root = node.__tdRoot;
+  const video = root.querySelector(".td-adv-video");
+  const player = root.querySelector(".td-adv-player");
+  const placeholder = root.querySelector(".td-adv-placeholder");
+  const playButton = root.querySelector('[data-adv="play"]');
+
+  if (video) {
+    try {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    } catch {}
+    video.hidden = true;
+  }
+  player?.classList.remove("has-final-video", "is-playing");
+  if (playButton) {
+    playButton.disabled = true;
+    playButton.textContent = "▶";
+  }
+  if (placeholder) {
+    placeholder.hidden = false;
+    const label = placeholder.querySelector("span");
+    if (label) label.textContent = "生成中";
+  }
+}
+
+function pushActivity(node, { fullRender = false } = {}) {
+  const advancedRunning =
+    node?.comfyClass === ADVANCED_NODE_CLASS &&
+    !!(node.__tdPromptId || node.__tdLocalRunLock);
+
+  if (advancedRunning && !fullRender) {
+    suspendAdvancedFinalVideo(node);
+    if (!patchAdvancedActivity(node)) renderNode(node);
+  } else {
+    renderNode(node);
+  }
+
   if (!frameReady || activeNode !== node || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
     { type: "terrydirector:activity", activity: activityPayload(node) },
@@ -346,7 +423,11 @@ function ensurePromptRun(node, promptId) {
   } else {
     node.__tdRunActivity = blankActivity(node);
   }
-  pushActivity(node);
+  // First transition into a run gets one full render so readonly controls
+  // and run state are synchronized. Subsequent progress_state events only patch
+  // clip activity in place; rebuilding the Advanced DOM would repeatedly tear
+  // down and reload the final <video> element.
+  pushActivity(node, { fullRender: node.comfyClass === ADVANCED_NODE_CLASS });
 }
 
 function segmentIndex(nodeId) {
@@ -1179,10 +1260,17 @@ function renderAdvancedNode(node) {
   const selectedRerunSeed = state.selected && state.rerunSeedCustom[state.selected] != null
     ? String(state.rerunSeedCustom[state.selected])
     : globalSeed;
+  const runBusy = !!(node.__tdPromptId || node.__tdLocalRunLock);
   const oldVideo = root.querySelector(".td-adv-video");
   if (oldVideo && !node.__tdLivePreviewActive && Number.isFinite(oldVideo.currentTime)) {
     state.time = oldVideo.currentTime;
     oldVideo.pause();
+    if (runBusy) {
+      try {
+        oldVideo.removeAttribute("src");
+        oldVideo.load();
+      } catch {}
+    }
   }
   const format = seconds => {
     const value = Math.max(0, seconds || 0);
@@ -1309,7 +1397,7 @@ function renderAdvancedNode(node) {
     playButton.setAttribute("aria-label", playing ? "暂停" : "播放");
     player?.classList.toggle("is-playing", playing);
   };
-  if (source && !node.__tdLivePreviewActive) {
+  if (source && !node.__tdLivePreviewActive && !runBusy) {
     video.hidden = false;
     video.src = source;
     player?.classList.add("has-final-video");
@@ -1320,6 +1408,15 @@ function renderAdvancedNode(node) {
     });
   } else if (node.__tdLivePreviewActive) {
     applyAdvancedLivePreview(node);
+  } else if (runBusy) {
+    video.hidden = true;
+    player?.classList.remove("has-final-video", "is-playing");
+    const placeholder = root.querySelector(".td-adv-placeholder");
+    if (placeholder) {
+      placeholder.hidden = false;
+      const label = placeholder.querySelector("span");
+      if (label) label.textContent = "生成中";
+    }
   }
   video.addEventListener("play", syncPlaybackButton);
   video.addEventListener("pause", syncPlaybackButton);
