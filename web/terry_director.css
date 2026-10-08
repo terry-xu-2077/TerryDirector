@@ -664,7 +664,7 @@
 
 .td-node-shell-advanced{min-width:420px}
 .td-node-card-advanced{padding:8px}
-.td-adv-player{position:relative;width:100%;aspect-ratio:16/9;background:#08090b;border:1px solid #292b31;border-radius:8px;overflow:hidden}
+.td-adv-player{position:relative;width:100%;background:#08090b;border:1px solid #292b31;border-radius:8px;overflow:hidden}
 .td-adv-video{width:100%;height:100%;display:block;object-fit:contain}
 .td-adv-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font-size:25px;color:#737985;pointer-events:none}
 .td-adv-placeholder span{font-size:11px}
@@ -750,11 +750,10 @@
 .td-node-shell-advanced .td-adv-clip.is-selected .td-mini-duration {color:#fff2dc;}
 
 /* Fixed square preview viewport for all aspect ratios. Video is letterboxed. */
-.td-node-shell-advanced .td-adv-player { aspect-ratio:1 / 1 !important;display:flex;align-items:center;justify-content:center; }
+.td-node-shell-advanced .td-adv-player { display:flex;align-items:center;justify-content:center; }
 .td-node-shell-advanced .td-adv-video { width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain; }
 
 /* Landscape: intrinsic aspect ratio. Portrait/square: square viewport. */
-.td-node-shell-advanced .td-adv-player { aspect-ratio:var(--td-viewport-ratio, 1) !important; }
 
 
 .td-node-shell-advanced .td-adv-controls .td-adv-locate {height:25px;padding:0 9px;border:1px solid rgba(155,120,255,.34);background:rgba(155,120,255,.12);border-radius:7px;font-size:10px;white-space:nowrap;}
