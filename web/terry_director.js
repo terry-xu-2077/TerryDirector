@@ -276,7 +276,12 @@ function bindExecutionActivity() {
     const nodeId = String(detail.node ?? "");
     if (!nodeId.includes("td_advanced_save_video")) return;
     const displayId = detail.display_node_id ?? detail.display_node ?? detail.parent_node_id;
-    const owningNode = directorNodeFromId(displayId);
+    let owningNode = directorNodeFromId(displayId);
+    if (!owningNode) {
+      // Expanded node IDs commonly include their parent ID as a prefix.
+      const parentId = nodeId.match(/^(\\d+)[_:]/)?.[1];
+      if (parentId) owningNode = directorNodeFromId(parentId);
+    }
     if (!owningNode || owningNode.comfyClass !== ADVANCED_NODE_CLASS) return;
     const video = detail.output?.gifs?.[0] || detail.output?.videos?.[0] ||
       detail.output?.images?.[0];
