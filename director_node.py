@@ -326,6 +326,63 @@ class TerryDirector(io.ComfyNode):
         )
 
 
+
+class TerryDirectorAdvanced(TerryDirector):
+    """Advanced director: shared sampling engine, dedicated review UI.
+
+    Preview encoding, durable segment reuse and file saving are introduced
+    separately. These settings are declared now without claiming to save media.
+    """
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorAdvanced",
+            display_name="TerryDirector Advanced",
+            category="MiniMax H3/TerryDirector",
+            description="增强版导演节点：只读审片时间线与独立视频占位。视频保存及局部重跑将在后续接入。",
+            inputs=[
+                DirectorConfigData.Input("director_config", display_name="导演配置"),
+                io.Int.Input(
+                    "seed", display_name="Seed", default=0, min=0,
+                    max=0xFFFFFFFFFFFFFFFF, control_after_generate=True,
+                ),
+                io.String.Input(
+                    "config_json", default=config_json(), multiline=True,
+                    dynamic_prompts=False, socketless=True,
+                    tooltip="Internal TerryDirector creative state.",
+                ),
+                io.String.Input(
+                    "tail_reference_prompt", default=DEFAULT_TAIL_REFERENCE_PROMPT,
+                    multiline=True, dynamic_prompts=False, socketless=True,
+                ),
+                io.String.Input(
+                    "save_subfolder", default="TerryDirector", socketless=True,
+                    tooltip="Advanced 保存子目录（相对于 ComfyUI output；保存功能待接入）。",
+                ),
+                io.String.Input(
+                    "filename_prefix", default="TerryDirector", socketless=True,
+                    tooltip="Advanced 文件前缀（保存功能待接入）。",
+                ),
+            ],
+            outputs=[DirectorOutputData.Output(display_name="导演输出")],
+            is_output_node=True,
+            enable_expand=True,
+        )
+
+    @classmethod
+    def execute(
+        cls, director_config, seed, config_json,
+        tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
+        save_subfolder="TerryDirector", filename_prefix="TerryDirector",
+    ):
+        # Settings are stored for upcoming integrated media export.
+        # No encoding or file-saving side effect is performed in this stage.
+        return super().execute(
+            director_config, seed, config_json, tail_reference_prompt
+        )
+
+
 class TerryDirectorOutput(io.ComfyNode):
     """Unpack TerryDirector's single result socket into native ComfyUI outputs."""
 
