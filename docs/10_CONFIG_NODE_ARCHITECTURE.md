@@ -9,7 +9,7 @@
 
 1. **TerryDirector 配置**：集中接收模型、编码器、VAE、尺寸、采样器、SIGMAS 与生成参数，输出一个 `TERRYDIRECTOR_CONFIG`。
 2. **TerryDirector**：接收“导演配置”以及主节点自己的原生 Seed 控件，保存创作编排并打开页内导演台；右侧只输出一个 `TERRYDIRECTOR_OUTPUT`，用户可见名称为“导演输出”。
-3. **导演输出**：接收“导演输出”，解包并输出标准 `VIDEO / LATENT / IMAGE / AUDIO`。其中 VIDEO 直接由最终合并画面、合并音频和 24fps 通过 ComfyUI 原生 `VideoFromComponents` 构造，不额外写文件、不预编码。
+3. **TerryDirector 输出**：接收“导演输出”，只负责解包并输出标准 `LATENT / IMAGE / AUDIO`。不创建 VIDEO；视频封装、编码、预览与保存由下游 ComfyUI 视频节点负责。
 
 ```text
 MODEL ─────┐
@@ -19,10 +19,9 @@ Audio VAE ─┤
 width ─────┤
 height ────┤
 sampler ───┤ → TerryDirector 配置 → 导演配置 → TerryDirector → 导演输出
-sigmas ────┤                                                   ├─ 视频
-参考图尺寸 ┤                                                   ├─ 分段潜变量
-二采方案 ──┘                                                   ├─ 合并画面
-                                                              └─ 合并音频
+sigmas ────┤                                                   ├─ 分段潜变量
+参考图尺寸 ┤                                                   ├─ 合并画面
+二采方案 ──┘                                                   └─ 合并音频
 ```
 
 ## 2. 配置节点职责
@@ -53,7 +52,7 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 
 音频连续不再是配置项：时间线上相邻片段有重叠时，执行层自动延续音频 latent；无重叠时音频独立；仅首尾贴合时只做视觉尾帧承接。
 
-配置节点输出为内部连线类型 `TERRYDIRECTOR_CONFIG`。该类型只用于配置节点向 TerryDirector 主节点传递运行上下文。主节点另输出 `TERRYDIRECTOR_OUTPUT`，只用于连接配套“导演输出”节点；标准 VIDEO / LATENT / IMAGE / AUDIO 由配套节点向用户暴露。
+配置节点输出为内部连线类型 `TERRYDIRECTOR_CONFIG`。该类型只用于配置节点向 TerryDirector 主节点传递运行上下文。主节点另输出 `TERRYDIRECTOR_OUTPUT`，只用于连接配套 `TerryDirector 输出` 节点；标准 LATENT / IMAGE / AUDIO 由配套节点向用户暴露。
 
 ## 3. 主节点职责
 
@@ -95,8 +94,8 @@ ResolutionPreview 使用 ComfyUI 原生默认的可选、socketless 预览输入
 - 重叠 AddGuide、首尾贴合尾帧 Guide、空隙独立生成
 - 合并 IMAGE / AUDIO：H3 尾部裁切、重叠去重、黑帧 / 静音 gap
 - 主节点单一 `TERRYDIRECTOR_OUTPUT` 输出
-- 配套“导演输出”节点：VIDEO / 分段 LATENT / 合并 IMAGE / 合并 AUDIO
-- 标准 VIDEO 由合并音画直接构造，无需额外“创建视频”节点
+- 配套 `TerryDirector 输出` 节点：分段 LATENT / 合并 IMAGE / 合并 AUDIO
+- 视频创建 / 编码 / 预览 / 保存由下游 ComfyUI 视频节点负责
 
 尚未实现：
 
