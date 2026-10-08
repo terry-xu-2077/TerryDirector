@@ -269,6 +269,27 @@ function bindExecutionActivity() {
     }
   });
 
+  // Native SaveVideo reports its saved output through the normal ComfyUI
+  // execution event. The expanded graph's node_id may be namespaced.
+  api.addEventListener("executed", event => {
+    const detail = event.detail || {};
+    const nodeId = String(detail.node ?? "");
+    if (!nodeId.includes("td_advanced_save_video")) return;
+    const displayId = detail.display_node_id ?? detail.display_node ?? detail.parent_node_id;
+    const owningNode = directorNodeFromId(displayId);
+    if (!owningNode || owningNode.comfyClass !== ADVANCED_NODE_CLASS) return;
+    const video = detail.output?.gifs?.[0] || detail.output?.videos?.[0] ||
+      detail.output?.images?.[0];
+    if (!video?.filename) return;
+    const params = new URLSearchParams({
+      filename: video.filename,
+      subfolder: video.subfolder || "",
+      type: video.type || "output",
+    });
+    owningNode.__tdPreviewUrl = "/view?" + params.toString();
+    renderNode(owningNode);
+  });
+
   api.addEventListener("execution_success", event => {
     finishPromptActivity(event.detail?.prompt_id, true);
   });
