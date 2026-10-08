@@ -306,6 +306,24 @@ def _cache_signature(runtime: dict[str, Any], segment: dict[str, Any]) -> str:
     )
 
 
+def _h3_preview_token_count(segment: dict[str, Any]) -> int:
+    frames = max(5, int(segment["h3_frames"]))
+    cycles = max(0, (frames - 5) // 17)
+    # H3 temporal latent pattern: 2 tokens for the first 5 frames,
+    # then 5 tokens per additional 17-frame block.
+    return 2 + 5 * cycles
+
+
+def _preview_frames_for_segment(mode: str, segment: dict[str, Any]) -> int:
+    tokens = _h3_preview_token_count(segment)
+    mode = str(mode or "half").lower()
+    if mode == "first":
+        return 1
+    if mode == "all":
+        return tokens
+    return max(1, (tokens + 1) // 2)
+
+
 def build_timeline_graph(
     runtime: dict[str, Any],
     plan: dict[str, Any],
@@ -322,22 +340,6 @@ def build_timeline_graph(
     previous_audio = None
     merged_images = None
     merged_audio = None
-
-    sampling_runtime = runtime
-    if preview_override is not None:
-        preview_model = graph.node(
-            "ModelPreviewOverrideKJ",
-            "td_advanced_preview_override",
-            model=runtime["model"],
-            max_resolution=int(preview_override["max_resolution"]),
-            jpeg_quality=int(preview_override["jpeg_quality"]),
-            suppress_default_preview=bool(preview_override["suppress_default_preview"]),
-            preview_frames=int(preview_override["preview_frames"]),
-            preview_fps=int(preview_override["preview_fps"]),
-            audio_vae=runtime["audio_vae"],
-        )
-        sampling_runtime = dict(runtime)
-        sampling_runtime["model"] = preview_model.out(0)
 
     rerun_segment_id = str(rerun.get("segment_id")) if rerun else None
     rerun_seed = int(rerun.get("seed", seed)) if rerun else int(seed)
@@ -371,8 +373,26 @@ def build_timeline_graph(
                 prefix,
             )
             segment_seed = rerun_seed if rerun_segment_id is not None else int(seed)
+            segment_runtime = runtime
+            if preview_override is not None:
+                preview_model = graph.node(
+                    "ModelPreviewOverrideKJ",
+                    f"{prefix}_preview_override",
+                    model=runtime["model"],
+                    max_resolution=int(preview_override["max_resolution"]),
+                    jpeg_quality=int(preview_override["jpeg_quality"]),
+                    suppress_default_preview=bool(preview_override["suppress_default_preview"]),
+                    preview_frames=_preview_frames_for_segment(
+                        preview_override.get("frame_mode", "half"), segment
+                    ),
+                    preview_fps=int(preview_override["preview_fps"]),
+                    tiny_vae=str(preview_override.get("tiny_vae") or "none"),
+                    audio_vae=runtime["audio_vae"],
+                )
+                segment_runtime = dict(runtime)
+                segment_runtime["model"] = preview_model.out(0)
             sampled = _sample_segment(
-                graph, sampling_runtime, positive, latent, prefix, segment_seed
+                graph, segment_runtime, positive, latent, prefix, segment_seed
             )
             if cache_key is not None:
                 sampled = graph.node(
