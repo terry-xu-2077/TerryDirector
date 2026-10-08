@@ -1250,7 +1250,7 @@ function renderAdvancedNode(node) {
         <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存" ${rerunBusy ? "disabled" : ""}>↻ 重跑此片段</button>
       </div>` : ""}
     </div>
-    ${previewEnabled ? `<details class="td-adv-preview-settings"${state.detailsOpen.preview ? " open" : ""}><summary>视频预览</summary>
+    ${previewEnabled ? `<details class="td-adv-preview-settings"${state.detailsOpen.preview ? " open" : ""}><summary>视频预览${previewFps > 1 && multiFramePreview === true ? '<small>KJ Preview Override</small>' : ""}</summary>
       <label>预览 FPS<input data-widget="preview_fps" type="number" min="1" max="24" step="1" value="${previewFps}" ${multiFramePreview === false ? "disabled" : ""}/></label>
       ${previewFps > 1 && multiFramePreview === true ? `
         <label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label>
