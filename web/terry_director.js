@@ -644,18 +644,12 @@ function advancedAspectRatio(node) {
 
 function syncAdvancedAspect(node) {
   if (node?.comfyClass !== ADVANCED_NODE_CLASS || !node.__tdRoot) return;
+  // The viewport always occupies a square; only the contained video follows
+  // the director configuration. Never resize the node for portrait footage.
   const ratio = advancedAspectRatio(node);
-  if (Math.abs((node.__tdAspectRatio || 0) - ratio) < 0.00001) return;
-  const previous = node.__tdAspectRatio || (16 / 9);
   node.__tdAspectRatio = ratio;
-  const player = node.__tdRoot.querySelector(".td-adv-player");
-  if (player) player.style.aspectRatio = String(ratio);
-  const availableWidth = Math.max(200, (node.size?.[0] || 460) - 40);
-  const deltaHeight = availableWidth / ratio - availableWidth / previous;
-  if (Math.abs(deltaHeight) > 1 && Array.isArray(node.size)) {
-    node.setSize?.([node.size[0], Math.max(320, Math.round(node.size[1] + deltaHeight))]);
-  }
-  node.graph?.setDirtyCanvas?.(true, true);
+  const video = node.__tdRoot.querySelector(".td-adv-video");
+  if (video) video.style.aspectRatio = String(ratio);
 }
 
 function syncLinkedAdvancedNodes(configNode) {
@@ -721,8 +715,8 @@ function renderAdvancedNode(node) {
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player" style="aspect-ratio:${advancedAspectRatio(node)}" aria-label="视频预览">
-      <video class="td-adv-video" playsinline preload="metadata"></video>
+    <div class="td-adv-player" aria-label="视频预览">
+      <video class="td-adv-video" style="aspect-ratio:${advancedAspectRatio(node)}" playsinline preload="metadata"></video>
       <div class="td-adv-placeholder">▶<span>等待生成视频</span></div>
     </div>
     <div class="td-adv-controls">
