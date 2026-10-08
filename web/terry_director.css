@@ -968,10 +968,19 @@
 /* Advanced width is primarily timeline workspace. Keep the preview height bounded
    and letterbox media instead of scaling/cropping it as the node gets wider. */
 .td-node-shell-advanced .td-adv-player {
-  width:100%;
+  width:min(100%, 440px);
+  max-width:440px;
   height:var(--td-player-height, 280px);
+  margin-left:auto;
+  margin-right:auto;
   aspect-ratio:auto!important;
   background:#08090b;
+}
+.td-node-shell-advanced .td-adv-controls {
+  width:min(100%, 440px);
+  max-width:440px;
+  margin-left:auto;
+  margin-right:auto;
 }
 .td-node-shell-advanced .td-adv-video,
 .td-node-shell-advanced .td-adv-player.is-landscape .td-adv-video,
