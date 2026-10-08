@@ -314,14 +314,16 @@ def _h3_preview_token_count(segment: dict[str, Any]) -> int:
     return 2 + 5 * cycles
 
 
-def _preview_frames_for_segment(mode: str, segment: dict[str, Any]) -> int:
+def _preview_frames_for_fps(preview_fps: int, segment: dict[str, Any]) -> int:
+    """Map target preview FPS onto H3's temporal latent density.
+
+    H3 output runs at 24 fps, but KJ preview_frames samples latent-time tokens.
+    Scaling token count by target_fps / 24 preserves a roughly proportional
+    temporal density without forcing a full 24-fps decode for 12-fps preview.
+    """
     tokens = _h3_preview_token_count(segment)
-    mode = str(mode or "half").lower()
-    if mode == "first":
-        return 1
-    if mode == "all":
-        return tokens
-    return max(1, (tokens + 1) // 2)
+    fps = max(2, min(FPS, int(preview_fps)))
+    return max(2, min(tokens, round(tokens * fps / FPS)))
 
 
 def build_timeline_graph(
@@ -382,8 +384,8 @@ def build_timeline_graph(
                     max_resolution=int(preview_override["max_resolution"]),
                     jpeg_quality=int(preview_override["jpeg_quality"]),
                     suppress_default_preview=bool(preview_override["suppress_default_preview"]),
-                    preview_frames=_preview_frames_for_segment(
-                        preview_override.get("frame_mode", "half"), segment
+                    preview_frames=_preview_frames_for_fps(
+                        int(preview_override["preview_fps"]), segment
                     ),
                     preview_fps=int(preview_override["preview_fps"]),
                     tiny_vae=str(preview_override.get("tiny_vae") or "none"),
