@@ -66,8 +66,8 @@
     while(n&&n!==editor){let c=backward?n.previousSibling:n.nextSibling;while(c){const v=boundaryTag(c,backward);if(v!==undefined)return v;c=backward?c.previousSibling:c.nextSibling;}n=n.parentNode;if(n!==editor&&/^(DIV|P|LI)$/.test(n?.nodeName||''))return null;}return null;
   }
   class H3Editor{
-    constructor({visual,textarea,getAssets,onBeforeChange,onChange,onCommit,onHistory,menuRoot}){
-      Object.assign(this,{visual,textarea,getAssets,onBeforeChange,onChange,onCommit,onHistory});
+    constructor({visual,textarea,getAssets,getAssetAvailability,onBeforeChange,onChange,onCommit,onHistory,menuRoot}){
+      Object.assign(this,{visual,textarea,getAssets,getAssetAvailability,onBeforeChange,onChange,onCommit,onHistory});
       this.menuRoot=menuRoot||document.body;
       this.value='';this.context=null;this.mode='visual';this.composing=false;this.menu=null;this.bookmark=null;this.timer=0;
       this.abort=new AbortController();const signal=this.abort.signal;
@@ -226,7 +226,20 @@
     closeMenu(){if(this.menu){this.menu.element.remove();this.menu=null;this.visual.setAttribute('aria-expanded','false');this.visual.removeAttribute('aria-activedescendant');}}
     openMenu(state){this.closeMenu();state.element=el('div','h3-menu');state.element.id='td-h3-menu';state.element.setAttribute('role','listbox');this.menu=state;this.menuRoot.append(state.element);this.visual.setAttribute('aria-controls',state.element.id);this.visual.setAttribute('aria-expanded','true');this.renderMenu();}
     menuOptions(m){
-      if(m.type==='asset')return (this.getAssets?.()||[]).filter(a=>!m.query||`${a.name} ${a.raw} ${a.kind} ${S.label(a.raw)}`.toLowerCase().includes(m.query)).map(a=>({asset:a}));
+      if(m.type==='asset')return (this.getAssets?.()||[])
+        .filter(a=>!m.query||`${a.name} ${a.raw} ${a.kind} ${S.label(a.raw)}`.toLowerCase().includes(m.query))
+        .map(a=>{
+          const rawAvailability=this.getAssetAvailability?.(a,{
+            value:this.value,
+            replacingRaw:m.chip?.dataset.raw||null
+          });
+          const availability=rawAvailability===false
+            ? {allowed:false,reason:''}
+            : rawAvailability===true||rawAvailability==null
+              ? {allowed:true,reason:''}
+              : {allowed:rawAvailability.allowed!==false,reason:String(rawAvailability.reason||'')};
+          return {asset:a,disabled:!availability.allowed,reason:availability.reason};
+        });
       if(m.type==='camera')return S.cameras.map(([zh,en,detail,raw])=>({command:{label:zh+' · '+en,detail,raw,category:'camera'}}));
       if(m.type==='number'){
         const re=m.kind==='speaker'?/\(S(\d+)\)/gi:/\[Shot\s+(\d+)\]/gi;let max=6;for(const x of this.value.matchAll(re))max=Math.max(max,+x[1]+1);
@@ -247,20 +260,24 @@
       const title=m.type==='asset'?'引用参考':m.type==='camera'?'切换镜头运动':m.type==='number'?(m.kind==='speaker'?'切换说话人序号':'切换镜头序号'):m.query?'搜索 H3 语法':m.category?([...S.categories,S.cameraCategory].find(c=>c.id===m.category)?.label):'H3 语法';
       header.append(el('strong','',title));menu.append(header);
       m.options=this.menuOptions(m);m.active=Math.min(m.active||0,Math.max(0,m.options.length-1));
+      if(m.options[m.active]?.disabled){
+        const first=m.options.findIndex(option=>!option.disabled);
+        if(first>=0)m.active=first;
+      }
       const list=el('div','h3-menu-list');menu.append(list);
       m.options.forEach((option,index)=>{
         const b=el('button','h3-menu-item');b.type='button';b.id='h3-option-'+index;b.setAttribute('role','option');b.tabIndex=-1;
         if(option.category){b.classList.add('is-category');b.append(el('span','h3-category-icon',option.category.icon));const copy=el('span','h3-menu-copy');copy.append(el('b','',option.category.label),el('small','',option.category.detail));b.append(copy,el('span','h3-count',option.count+' ›'));}
-        else if(option.asset){const a=option.asset,thumb=el('span','h3-menu-thumb',a.kind==='audio'?'♪':a.kind==='video'?'▶':'▧');if(a.kind==='picture'&&a.preview){const img=el('img');img.src=a.preview;img.alt='';thumb.replaceChildren(img);}const copy=el('span','h3-menu-copy');copy.append(el('b','',a.name),el('small','',S.label(a.raw)));b.append(thumb,copy);}
+        else if(option.asset){const a=option.asset,thumb=el('span','h3-menu-thumb',a.kind==='audio'?'♪':a.kind==='video'?'▶':'▧');if(a.kind==='picture'&&a.preview){const img=el('img');img.src=a.preview;img.alt='';thumb.replaceChildren(img);}const copy=el('span','h3-menu-copy');copy.append(el('b','',a.name),el('small','',option.disabled?(S.label(a.raw)+' · 已达上限'):S.label(a.raw)));b.append(thumb,copy);if(option.disabled){b.disabled=true;b.classList.add('is-disabled');b.title=option.reason||'当前片段的参考资产额度已满';}}
         else{const c=option.command,copy=el('span','h3-menu-copy');copy.append(el('b','',c.label));if(c.detail)copy.append(el('small','',c.detail));b.title=c.raw;b.append(copy);}
-        b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();m.active=index;this.choose(option);});
+        b.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(option.disabled)return;m.active=index;this.choose(option);});
         b.addEventListener('pointermove',()=>{m.active=index;this.highlight();});list.append(b);
       });
       if(!m.options.length)list.append(el('p','h3-menu-empty',m.type==='asset'?((this.getAssets?.()||[]).length?'没有匹配的参考资产。':'项目资产池暂无图片、视频或音频。'):'没有匹配的 H3 命令。'));
       menu.append(el('div','h3-menu-footer',m.type==='asset'?'继续输入筛选 · ↑↓ 选择 · Enter 插入 · Esc 关闭':'↑↓ 选择 · → / Enter 确认 · ← 返回 · Esc 关闭'));
       this.highlight();this.positionMenu();
     }
-    highlight(){const m=this.menu;if(!m)return;m.element.querySelectorAll('.h3-menu-item').forEach((b,i)=>{b.classList.toggle('is-active',i===m.active);b.setAttribute('aria-selected',String(i===m.active));});this.visual.setAttribute('aria-activedescendant','h3-option-'+m.active);}
+    highlight(){const m=this.menu;if(!m)return;m.element.querySelectorAll('.h3-menu-item').forEach((b,i)=>{const active=i===m.active&&!b.disabled;b.classList.toggle('is-active',active);b.setAttribute('aria-selected',String(active));});this.visual.setAttribute('aria-activedescendant','h3-option-'+m.active);}
     positionMenu(){
       const m=this.menu;if(!m)return;const menu=m.element;
       const r=m.chip?.getBoundingClientRect()||m.anchor?.getBoundingClientRect()||this.visual.getBoundingClientRect();
@@ -275,7 +292,7 @@
     }
     back(){const m=this.menu;if(!m)return;m.category=m.category==='camera'?'shot':null;m.active=0;this.renderMenu();}
     choose(option){
-      const m=this.menu;if(!m||!option)return;
+      const m=this.menu;if(!m||!option||option.disabled)return;
       if(option.category){m.category=option.category.id;m.active=0;this.renderMenu();return;}
       const command=option.command,raw=option.asset?.raw||command?.raw||'';this.onBeforeChange?.();
       if(m.chip){
@@ -292,8 +309,18 @@
       const m=this.menu;if(!m||m.type==='time')return false;
       if(e.key==='Escape'){this.closeMenu();return true;}
       if(e.key==='ArrowLeft'&&m.category&&!m.query){this.back();return true;}
-      if(['ArrowDown','ArrowUp'].includes(e.key)){if(m.options.length)m.active=(m.active+(e.key==='ArrowDown'?1:-1)+m.options.length)%m.options.length;this.highlight();m.element.querySelector('.is-active')?.scrollIntoView({block:'nearest'});return true;}
-      if(['Enter','Tab','ArrowRight'].includes(e.key)){if(m.options.length)this.choose(m.options[m.active]);return true;}
+      if(['ArrowDown','ArrowUp'].includes(e.key)){
+        if(m.options.length){
+          const dir=e.key==='ArrowDown'?1:-1;
+          let next=m.active;
+          for(let step=0;step<m.options.length;step++){
+            next=(next+dir+m.options.length)%m.options.length;
+            if(!m.options[next]?.disabled){m.active=next;break;}
+          }
+        }
+        this.highlight();m.element.querySelector('.is-active')?.scrollIntoView({block:'nearest'});return true;
+      }
+      if(['Enter','Tab','ArrowRight'].includes(e.key)){if(m.options.length&&!m.options[m.active]?.disabled)this.choose(m.options[m.active]);return true;}
       return false;
     }
     tagPointer(e){
