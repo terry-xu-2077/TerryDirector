@@ -18,7 +18,7 @@ const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
 const ADVANCED_NODE_MIN_HEIGHT = 620;
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
-const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 64;
+const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 40;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -1025,6 +1025,8 @@ function bindAdvancedResizeGestureTracking(node) {
   node.onRemoved = function(...args) {
     node.__tdResizeGestureCleanup?.();
     node.__tdResizeGestureCleanup = null;
+    node.__tdTimelineResizeObserver?.disconnect?.();
+    node.__tdTimelineResizeObserver = null;
     return previousRemoved?.apply(this, args);
   };
 }
@@ -1127,6 +1129,21 @@ function syncAdvancedAspect(node) {
   const video = node.__tdRoot.querySelector(".td-adv-video");
   if (video) video.style.aspectRatio = String(ratio);
 }
+function syncAdvancedTimelineOverflow(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS || !node.__tdRoot) return;
+  const scroller = node.__tdRoot.querySelector(".td-adv-scroll");
+  const track = node.__tdRoot.querySelector(".td-adv-track");
+  if (!scroller || !track) return;
+
+  const hasOverflow = track.scrollWidth > scroller.clientWidth + 2;
+  scroller.classList.toggle("has-overflow", hasOverflow);
+
+  if (!hasOverflow) {
+    scroller.scrollLeft = 0;
+    if (node.__tdReview) node.__tdReview.manualScroll = false;
+  }
+}
+
 function syncLinkedAdvancedNodes(configNode) {
   for (const node of app.graph?._nodes || []) {
     if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
@@ -1335,6 +1352,14 @@ function renderAdvancedNode(node) {
   };
   let draggingHead = false;
   const track = root.querySelector(".td-adv-track");
+  node.__tdTimelineResizeObserver?.disconnect?.();
+  if (typeof ResizeObserver === "function") {
+    node.__tdTimelineResizeObserver = new ResizeObserver(() => {
+      syncAdvancedTimelineOverflow(node);
+    });
+    node.__tdTimelineResizeObserver.observe(scroller);
+  }
+  requestAnimationFrame(() => syncAdvancedTimelineOverflow(node));
   const seekPointer = event => {
     const rect = track.getBoundingClientRect();
     if (!rect.width) return;
