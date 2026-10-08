@@ -855,3 +855,20 @@
   background:linear-gradient(rgba(255,255,255,.014) 1px,transparent 1px) 0 0 / 100% 15px,#11141b;
   box-shadow:inset 0 1px 10px rgba(0,0,0,.24);
 }
+
+
+/* Advanced ruler/grid and playhead must span the full timeline viewport. */
+.td-node-shell-advanced .td-adv-scroll .td-adv-track {
+  height:100%;
+  min-height:100%;
+}
+.td-node-shell-advanced .td-adv-scroll .td-mini-ruler {
+  height:100%;
+}
+.td-node-shell-advanced .td-adv-scroll .td-mini-ruler-tick,
+.td-node-shell-advanced .td-adv-scroll .td-mini-ruler-tick > i {
+  bottom:0;
+}
+.td-node-shell-advanced .td-adv-scroll .td-adv-playhead {
+  bottom:1px;
+}
