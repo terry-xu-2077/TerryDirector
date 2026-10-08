@@ -853,7 +853,7 @@ function renderAdvancedNode(node) {
   const previousTrack = root.querySelector(".td-adv-scroll");
   const previousScroll = previousTrack?.scrollLeft || 0;
   const oldVideo = root.querySelector(".td-adv-video");
-  if (oldVideo && Number.isFinite(oldVideo.currentTime)) {
+  if (oldVideo && !node.__tdLivePreviewActive && Number.isFinite(oldVideo.currentTime)) {
     state.time = oldVideo.currentTime;
     oldVideo.pause();
   }
