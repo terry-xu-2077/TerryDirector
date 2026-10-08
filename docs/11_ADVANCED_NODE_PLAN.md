@@ -128,3 +128,11 @@
 - 本阶段缓存完全禁用：`cache_key=None`，不会读取/写入分段 LATENT 缓存，也不会写 Advanced restore state；局部重跑和实时预览同样不参与执行。
 - 控制台标识：`[TerryDirector Advanced][Diagnostic] Running base graph + video/save (cache/preview/rerun disabled)`。
 - `TerryDirectorAdvancedFinish` 在空 cache_key 时跳过缓存，并打印视频保存与终端总耗时，用于确认“仅终端视频拓扑”是否改变上游 H3 sampler 性能。
+
+
+## 2026-10-09 · Advanced 性能诊断模式 #3（临时）
+- CLI 对照结果：关闭 CUDA Graph 明显变慢；关闭 async offload 前三段由约 6:31 增至约 7:10；关闭 fast-disk 会将 64GB 系统内存推近满载并严重拖慢，因此三者均恢复 ComfyUI 默认行为。
+- 第三阶段恢复 Advanced 的 `CreateVideo -> AdvancedFinish` 与“终端批量 LATENT 缓存”，实时预览仍强制不参与执行。
+- 完整生成不再包含逐段 `TerryDirectorCacheLatent` 热路径；全部片段完成后才在 `AdvancedFinish` 中统一写缓存。
+- 控制台标识：`[TerryDirector Advanced][Diagnostic] Running video/save + terminal batch cache (preview disabled)`。
+- 本阶段用于验证：缓存重构后，H3 sampler 是否保持基础版速度，以及终端 batch cache 的真实 CPU copy / disk save 成本。
