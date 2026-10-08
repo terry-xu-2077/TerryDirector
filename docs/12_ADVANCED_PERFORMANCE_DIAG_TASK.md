@@ -1,9 +1,10 @@
 # Advanced 性能差异诊断任务（交给本地 Codex）
 
-> 状态：进行中  
+> 状态：本轮验证已完成；当前代码未复现历史随机灾难性降速
 > 目标：定位并修复 **TerryDirector Advanced 相比基础版出现随机/灾难性采样变慢** 的根因。  
 > 当前仓库诊断基线：代码已加入 Base / Advanced 输入签名、核心 expanded graph 签名，以及 Base→Advanced 逐节点 diff 机制。  
 > 当前代码提交基线：`244eb53`（创建本文档前）。
+> 测试结果：见 [`13_ADVANCED_PERFORMANCE_DIAG_REPORT.md`](13_ADVANCED_PERFORMANCE_DIAG_REPORT.md)。
 
 ---
 
