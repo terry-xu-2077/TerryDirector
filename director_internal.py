@@ -27,15 +27,13 @@ class TerryDirectorPackOutput(io.ComfyNode):
                 io.Autogrow.Input("latents", template=template),
                 io.Image.Input("images"),
                 io.Audio.Input("audio"),
-                io.Int.Input("fps", min=1),
             ],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
         )
 
     @classmethod
-    def execute(cls, latents, images, audio, fps) -> io.NodeOutput:
+    def execute(cls, latents, images, audio) -> io.NodeOutput:
         return io.NodeOutput({
-            "fps": int(fps),
             "segment_latents": list(latents.values()),
             "images": images,
             "audio": audio,
