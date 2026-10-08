@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
+
+import folder_paths
 import torch
 
-from comfy_api.latest import io
+from comfy.cli_args import args
+from comfy_api.latest import io, ui, Types
 
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 
@@ -41,7 +45,7 @@ class TerryDirectorPackOutput(io.ComfyNode):
 
 
 class TerryDirectorAdvancedFinish(io.ComfyNode):
-    """Save using native SaveVideo, return its preview UI on the director node."""
+    """Terminal Advanced step using ComfyUI 0.39.0 native SaveVideo semantics."""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -57,24 +61,56 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
                 io.String.Input("format"),
                 io.String.Input("codec"),
             ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
         )
 
     @classmethod
     def execute(cls, director_output, video, filename_prefix, format, codec) -> io.NodeOutput:
-        from comfy_extras.nodes_video import SaveVideo
-
         if video is None:
             raise RuntimeError("TerryDirector Advanced 视频创建失败，未保存")
-        print("[TerryDirector Advanced] Saving video via native SaveVideo...", flush=True)
-        native = SaveVideo.execute(
-            video=video,
-            filename_prefix=str(filename_prefix),
-            format=str(format),
-            codec={"codec": str(codec)},
+
+        format_name = str(format or "auto")
+        codec_name = str(codec or "auto")
+        if format_name == "auto":
+            format_name = "webm" if codec_name == "av1" else "mp4"
+
+        width, height = video.get_dimensions()
+        full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(
+            str(filename_prefix),
+            folder_paths.get_output_directory(),
+            width,
+            height,
         )
-        print("[TerryDirector Advanced] Native SaveVideo completed", flush=True)
-        return io.NodeOutput(director_output, ui=native.ui)
+
+        saved_metadata = None
+        if not args.disable_metadata:
+            metadata = {}
+            if cls.hidden.extra_pnginfo is not None:
+                metadata.update(cls.hidden.extra_pnginfo)
+            if cls.hidden.prompt is not None:
+                metadata["prompt"] = cls.hidden.prompt
+            if metadata:
+                saved_metadata = metadata
+
+        file = f"{filename}_{counter:05}_.{Types.VideoContainer.get_extension(format_name)}"
+        output_path = os.path.join(full_output_folder, file)
+
+        print(f"[TerryDirector Advanced] Saving video: {output_path}", flush=True)
+        video.save_to(
+            output_path,
+            format=Types.VideoContainer(format_name),
+            codec=Types.VideoCodec(codec_name),
+            metadata=saved_metadata,
+        )
+        print("[TerryDirector Advanced] Native video save completed", flush=True)
+
+        return io.NodeOutput(
+            director_output,
+            ui=ui.PreviewVideo([
+                ui.SavedResult(file, subfolder, io.FolderType.output)
+            ]),
+        )
 
 
 class TerryDirectorAssembleMedia(io.ComfyNode):
