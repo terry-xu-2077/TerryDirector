@@ -652,7 +652,7 @@ function syncAdvancedAspect(node) {
   node.__tdAspectRatio = ratio;
   node.__tdViewportRatio = viewportRatio;
   const player = node.__tdRoot.querySelector(".td-adv-player");
-  if (player) player.style.aspectRatio = String(viewportRatio);
+  if (player) player.style.setProperty("--td-viewport-ratio", String(viewportRatio));
   const video = node.__tdRoot.querySelector(".td-adv-video");
   if (video) video.style.aspectRatio = String(ratio);
   if (Math.abs(viewportRatio - previousViewportRatio) > 0.0001 && Array.isArray(node.size)) {
@@ -725,7 +725,7 @@ function renderAdvancedNode(node) {
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player" style="aspect-ratio:${Math.max(1, advancedAspectRatio(node))}" aria-label="视频预览">
+    <div class="td-adv-player" style="--td-viewport-ratio:${Math.max(1, advancedAspectRatio(node))}" aria-label="视频预览">
       <video class="td-adv-video" style="aspect-ratio:${advancedAspectRatio(node)}" playsinline preload="metadata"></video>
       <div class="td-adv-placeholder">▶<span>等待生成视频</span></div>
     </div>
