@@ -298,11 +298,21 @@ def _decode_segment(
     return images, audio
 
 
+
+def _cache_signature(runtime: dict[str, Any], segment: dict[str, Any]) -> str:
+    return (
+        f"v1:{int(runtime['width'])}x{int(runtime['height'])}:"
+        f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}"
+    )
+
+
 def build_timeline_graph(
     runtime: dict[str, Any],
     plan: dict[str, Any],
     seed: int,
     video_export: dict[str, str] | None = None,
+    cache_key: str | None = None,
+    rerun: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
@@ -312,26 +322,61 @@ def build_timeline_graph(
     merged_images = None
     merged_audio = None
 
+    rerun_segment_id = str(rerun.get("segment_id")) if rerun else None
+    rerun_seed = int(rerun.get("seed", seed)) if rerun else int(seed)
+    if rerun_segment_id is not None and not any(
+        str(segment["id"]) == rerun_segment_id for segment in plan["segments"]
+    ):
+        raise ValueError(f"TerryDirector Advanced 找不到要重跑的片段: {rerun_segment_id}")
+
     for segment in plan["segments"]:
         prefix = f"td_s{segment['index'] + 1}"
-        positive, latent = _condition_segment(
-            graph,
-            runtime,
-            segment,
-            prefix,
-            previous_images,
-        )
-        positive = _apply_continuity(
-            graph,
-            runtime,
-            segment,
-            positive,
-            latent,
-            previous_images,
-            previous_audio,
-            prefix,
-        )
-        sampled = _sample_segment(graph, runtime, positive, latent, prefix, seed)
+        segment_id = str(segment["id"])
+        signature = _cache_signature(runtime, segment)
+        should_sample = rerun_segment_id is None or segment_id == rerun_segment_id
+
+        if should_sample:
+            positive, latent = _condition_segment(
+                graph,
+                runtime,
+                segment,
+                prefix,
+                previous_images,
+            )
+            positive = _apply_continuity(
+                graph,
+                runtime,
+                segment,
+                positive,
+                latent,
+                previous_images,
+                previous_audio,
+                prefix,
+            )
+            segment_seed = rerun_seed if rerun_segment_id is not None else int(seed)
+            sampled = _sample_segment(
+                graph, runtime, positive, latent, prefix, segment_seed
+            )
+            if cache_key is not None:
+                sampled = graph.node(
+                    "TerryDirectorCacheLatent",
+                    f"{prefix}_cache_save",
+                    latent=sampled,
+                    cache_key=cache_key,
+                    segment_id=segment_id,
+                    signature=signature,
+                ).out(0)
+        else:
+            if cache_key is None:
+                raise RuntimeError("TerryDirector Advanced 局部重跑缺少缓存标识")
+            sampled = graph.node(
+                "TerryDirectorLoadCachedLatent",
+                f"{prefix}_cache_load",
+                cache_key=cache_key,
+                segment_id=segment_id,
+                signature=signature,
+            ).out(0)
+
         images, audio = _decode_segment(graph, runtime, segment, sampled, prefix)
 
         assembly_inputs: dict[str, Any] = {
