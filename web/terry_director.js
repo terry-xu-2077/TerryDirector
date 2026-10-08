@@ -66,6 +66,109 @@ function directorNodeFromId(value) {
   ) || null;
 }
 
+function directorNodeFromExecutionId(value) {
+  if (value == null) return null;
+  const raw = String(value);
+  const direct = directorNodeFromId(raw);
+  if (direct) return direct;
+  // Expanded GraphBuilder IDs are prefixed like "321.0.0.node_name".
+  const parent = raw.match(/^(\d+)(?:[.:_]|$)/)?.[1];
+  return parent ? directorNodeFromId(parent) : null;
+}
+
+function b64ToBlob(base64, mime) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+function revokeAdvancedLivePreviewUrl(node) {
+  if (node?.__tdLivePreviewObjectUrl) {
+    URL.revokeObjectURL(node.__tdLivePreviewObjectUrl);
+    node.__tdLivePreviewObjectUrl = null;
+  }
+}
+
+function beginAdvancedLivePreview(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS) return;
+  const enabled = node.widgets?.find(w => w.name === "preview_enabled")?.value !== false;
+  if (!enabled) return;
+  revokeAdvancedLivePreviewUrl(node);
+  node.__tdLivePreviewActive = true;
+  node.__tdLivePreviewData = null;
+}
+
+function endAdvancedLivePreview(node) {
+  if (node?.comfyClass !== ADVANCED_NODE_CLASS) return;
+  revokeAdvancedLivePreviewUrl(node);
+  node.__tdLivePreviewActive = false;
+  node.__tdLivePreviewData = null;
+}
+
+function applyAdvancedLivePreview(node, data = node?.__tdLivePreviewData) {
+  if (!node?.__tdRoot || !node.__tdLivePreviewActive) return;
+  const root = node.__tdRoot;
+  const player = root.querySelector(".td-adv-player");
+  const finalVideo = root.querySelector(".td-adv-video");
+  const liveImage = root.querySelector(".td-adv-live-image");
+  const liveVideo = root.querySelector(".td-adv-live-video");
+  const placeholder = root.querySelector(".td-adv-placeholder");
+  const status = root.querySelector(".td-adv-live-status");
+  const playButton = root.querySelector('[data-adv="play"]');
+  if (!player || !liveImage || !liveVideo) return;
+
+  player.classList.add("is-live-preview");
+  player.classList.remove("has-final-video");
+  if (finalVideo) {
+    finalVideo.pause();
+    finalVideo.hidden = true;
+  }
+  if (playButton) {
+    playButton.disabled = true;
+    playButton.textContent = "▶";
+  }
+  if (status) {
+    const step = Number(data?.step);
+    const total = Number(data?.total);
+    status.hidden = false;
+    status.textContent = Number.isFinite(step) && Number.isFinite(total) && total > 0
+      ? `实时预览  ${step}/${total}`
+      : "实时预览";
+  }
+
+  if (!data?.image) {
+    if (placeholder) {
+      placeholder.hidden = false;
+      placeholder.querySelector("span").textContent = "等待采样预览";
+    }
+    liveImage.hidden = true;
+    liveVideo.hidden = true;
+    return;
+  }
+
+  if (placeholder) placeholder.hidden = true;
+  const mime = String(data.mime || "image/jpeg");
+  if (mime === "video/mp4") {
+    liveImage.hidden = true;
+    liveVideo.hidden = false;
+    revokeAdvancedLivePreviewUrl(node);
+    const url = URL.createObjectURL(b64ToBlob(data.image, mime));
+    node.__tdLivePreviewObjectUrl = url;
+    liveVideo.src = url;
+    liveVideo.currentTime = 0;
+    void liveVideo.play().catch(() => {});
+  } else {
+    revokeAdvancedLivePreviewUrl(node);
+    liveVideo.pause();
+    liveVideo.removeAttribute("src");
+    liveVideo.load();
+    liveVideo.hidden = true;
+    liveImage.hidden = false;
+    liveImage.src = `data:${mime};base64,${data.image}`;
+  }
+}
+
 function blankActivity(node) {
   const clips = readConfig(node).document.clips || [];
   return Object.fromEntries(clips.map(clip => [
@@ -130,6 +233,7 @@ function ensurePromptRun(node, promptId) {
   if (node.__tdPromptId === promptId) return;
   node.__tdPromptId = promptId;
   node.__tdLocalRunLock = false;
+  if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
   if (node.__tdRerunActiveClipId) {
     const activity = ensureActivity(node);
     const record = activity[node.__tdRerunActiveClipId];
@@ -255,6 +359,7 @@ function finishPromptActivity(promptId, success, message = "") {
     }
     node.__tdPromptId = null;
     node.__tdLocalRunLock = false;
+    if (node.comfyClass === ADVANCED_NODE_CLASS) endAdvancedLivePreview(node);
     if (node.__tdRerunActiveClipId) {
       const widget = node.widgets?.find(w => w.name === "rerun_clip_id");
       if (widget) {
@@ -291,19 +396,24 @@ function bindExecutionActivity() {
     }
   });
 
-  // Native SaveVideo reports its saved output through the normal ComfyUI
+  api.addEventListener("kj_preview_override", event => {
+    const data = event.detail || {};
+    const node = directorNodeFromExecutionId(data.node_id);
+    if (!node || node.comfyClass !== ADVANCED_NODE_CLASS) return;
+    if (node.widgets?.find(w => w.name === "preview_enabled")?.value === false) return;
+    node.__tdLivePreviewActive = true;
+    node.__tdLivePreviewData = data;
+    applyAdvancedLivePreview(node, data);
+  });
+
+  // Native video save reports its file metadata through the normal ComfyUI
   // execution event. The expanded graph's node_id may be namespaced.
   api.addEventListener("executed", event => {
     const detail = event.detail || {};
     const nodeId = String(detail.node ?? "");
     if (!nodeId.includes("td_advanced_finish") && !nodeId.includes("td_advanced_save_video") && !directorNodeFromId(nodeId)) return;
     const displayId = detail.display_node_id ?? detail.display_node ?? detail.parent_node_id;
-    let owningNode = directorNodeFromId(displayId) || directorNodeFromId(nodeId);
-    if (!owningNode) {
-      // Expanded node IDs commonly include their parent ID as a prefix.
-      const parentId = nodeId.match(/^(\d+)[_:]/)?.[1];
-      if (parentId) owningNode = directorNodeFromId(parentId);
-    }
+    let owningNode = directorNodeFromId(displayId) || directorNodeFromExecutionId(nodeId);
     if (!owningNode || owningNode.comfyClass !== ADVANCED_NODE_CLASS) return;
     const video = detail.output?.video?.[0] ||
       detail.output?.td_saved_video?.[0] ||
@@ -315,6 +425,7 @@ function bindExecutionActivity() {
       subfolder: video.subfolder || "",
       type: video.type || "output",
     });
+    endAdvancedLivePreview(owningNode);
     owningNode.__tdPreviewUrl = "/view?" + params.toString();
     renderNode(owningNode);
   });
@@ -789,9 +900,12 @@ function renderAdvancedNode(node) {
   const codecs = videoFormat === "webm" ? ["auto", "av1"] : ["auto", "h264", "av1"];
   const options = (items, current) => items.map(v => `<option value="${v}"${v === current ? " selected" : ""}>${v}</option>`).join("");
   root.innerHTML = `<div class="td-node-card td-node-card-advanced">
-    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}" style="--td-viewport-ratio:${Math.max(1, advancedAspectRatio(node))}" aria-label="视频预览">
+    <div class="td-adv-player${advancedAspectRatio(node) >= 1 ? " is-landscape" : ""}${node.__tdLivePreviewActive ? " is-live-preview" : ""}" style="--td-viewport-ratio:${Math.max(1, advancedAspectRatio(node))}" aria-label="视频预览">
       <video class="td-adv-video" style="aspect-ratio:${advancedAspectRatio(node)}" playsinline preload="metadata"></video>
-      <div class="td-adv-placeholder">▶<span>等待生成视频</span></div>
+      <img class="td-adv-live-image" alt="实时采样预览" hidden/>
+      <video class="td-adv-live-video" muted loop autoplay playsinline hidden></video>
+      <div class="td-adv-live-status" hidden>实时预览</div>
+      <div class="td-adv-placeholder">▶<span>${node.__tdLivePreviewActive ? "等待采样预览" : "等待生成视频"}</span></div>
     </div>
     <div class="td-adv-controls">
       <button type="button" data-adv="play" aria-label="播放或暂停" disabled>▶</button>
@@ -820,7 +934,7 @@ function renderAdvancedNode(node) {
         <button type="button" data-adv="rerun" title="只重新采样当前片段，其他片段复用缓存" ${rerunBusy ? "disabled" : ""}>↻ 重跑此片段</button>
       </div>` : ""}
     </div>
-    <details class="td-adv-preview-settings"><summary>视频预览 <small>实时采样预览 · 待接入</small></summary><label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label><label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label><label>预览帧数<input data-widget="preview_frames" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_frames")?.value ?? 1)}"/></label><label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label><label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label></details><details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
+    <details class="td-adv-preview-settings"><summary>视频预览 <small>KJ Preview Override</small></summary><label>最大分辨率<input data-widget="preview_max_resolution" type="number" value="${Number(node.widgets?.find(w => w.name === "preview_max_resolution")?.value ?? 1024)}"/></label><label>JPEG 质量<input data-widget="preview_jpeg_quality" type="number" min="30" max="100" value="${Number(node.widgets?.find(w => w.name === "preview_jpeg_quality")?.value ?? 80)}"/></label><label>预览帧数<input data-widget="preview_frames" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_frames")?.value ?? 1)}"/></label><label>预览 FPS<input data-widget="preview_fps" type="number" min="1" value="${Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12)}"/></label><label class="td-adv-preview-toggle"><input type="checkbox" data-widget="preview_suppress_default" ${node.widgets?.find(w => w.name === "preview_suppress_default")?.value === true ? "checked" : ""}/>屏蔽默认预览</label></details><details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
       <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
       <label>编解码器<select data-widget="video_codec">${options(codecs, videoCodec)}</select></label>
@@ -828,13 +942,34 @@ function renderAdvancedNode(node) {
     
   </div>`;
   const video = root.querySelector(".td-adv-video");
+  const player = root.querySelector(".td-adv-player");
+  const playButton = root.querySelector('[data-adv="play"]');
   const source = node.__tdPreviewUrl;
-  if (source) {
+  const syncPlaybackButton = () => {
+    if (!playButton) return;
+    const canPlay = !!source && !node.__tdLivePreviewActive;
+    playButton.disabled = !canPlay;
+    const playing = canPlay && !video.paused && !video.ended;
+    playButton.textContent = playing ? "⏸" : "▶";
+    playButton.setAttribute("aria-label", playing ? "暂停" : "播放");
+    player?.classList.toggle("is-playing", playing);
+  };
+  if (source && !node.__tdLivePreviewActive) {
+    video.hidden = false;
     video.src = source;
+    player?.classList.add("has-final-video");
     root.querySelector(".td-adv-placeholder").hidden = true;
-    root.querySelector('[data-adv="play"]').disabled = false;
-    video.addEventListener("loadedmetadata", () => { video.currentTime = Math.min(state.time, video.duration || 0); });
+    video.addEventListener("loadedmetadata", () => {
+      video.currentTime = Math.min(state.time, video.duration || 0);
+      syncPlaybackButton();
+    });
+  } else if (node.__tdLivePreviewActive) {
+    applyAdvancedLivePreview(node);
   }
+  video.addEventListener("play", syncPlaybackButton);
+  video.addEventListener("pause", syncPlaybackButton);
+  video.addEventListener("ended", syncPlaybackButton);
+  syncPlaybackButton();
   const scroller = root.querySelector(".td-adv-scroll");
   scroller.scrollLeft = previousScroll;
   const playhead = root.querySelector(".td-adv-playhead");
@@ -898,8 +1033,16 @@ function renderAdvancedNode(node) {
     }
   }));
   root.querySelector('[data-adv="follow"]').addEventListener("click", () => { state.manualScroll = false; follow(); });
-  root.querySelector('[data-adv="play"]').addEventListener("click", () => {
+  const toggleFinalPlayback = () => {
+    if (!source || node.__tdLivePreviewActive) return;
+    if (video.ended) video.currentTime = 0;
     if (video.paused) void video.play(); else video.pause();
+  };
+  playButton?.addEventListener("click", toggleFinalPlayback);
+  player?.addEventListener("click", event => {
+    if (node.__tdLivePreviewActive || !source) return;
+    if (event.button != null && event.button !== 0) return;
+    toggleFinalPlayback();
   });
   video.addEventListener("timeupdate", () => {
     state.time = video.currentTime;
@@ -948,6 +1091,7 @@ function renderAdvancedNode(node) {
 
     node.__tdRerunActiveClipId = state.selected;
     node.__tdLocalRunLock = true;
+    beginAdvancedLivePreview(node);
     const activity = ensureActivity(node);
     const record = activity[state.selected];
     if (record) {
@@ -1193,6 +1337,7 @@ function ensureEditorOverlay() {
       editorDirty = false;
 
       node.__tdLocalRunLock = true;
+      if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
       node.__tdRunActivity = blankActivity(node);
       pushActivity(node);
 
