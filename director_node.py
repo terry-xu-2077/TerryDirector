@@ -377,7 +377,13 @@ class TerryDirectorAdvanced(TerryDirector):
                 io.Int.Input("preview_frames", default=1, min=1, max=1024, socketless=True),
                 io.Int.Input("preview_fps", default=12, min=1, max=60, socketless=True),
                 io.Boolean.Input("preview_suppress_default", default=True, socketless=True),
+                io.String.Input("rerun_clip_id", default="", socketless=True),
+                io.Int.Input(
+                    "rerun_seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF,
+                    socketless=True,
+                ),
             ],
+            hidden=[io.Hidden.unique_id],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
             is_output_node=True,
             enable_expand=True,
@@ -392,6 +398,7 @@ class TerryDirectorAdvanced(TerryDirector):
         preview_enabled=True, preview_max_resolution=1024,
         preview_jpeg_quality=80, preview_frames=1, preview_fps=12,
         preview_suppress_default=True,
+        rerun_clip_id="", rerun_seed=0,
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
@@ -407,6 +414,19 @@ class TerryDirectorAdvanced(TerryDirector):
         folder = str(save_subfolder or "TerryDirector").strip().strip("/")
         if prefix == "TerryDirector" and folder:
             prefix = folder + "/TerryDirector"
+        cache_key = str(cls.hidden.unique_id)
+        rerun = None
+        if str(rerun_clip_id or "").strip():
+            rerun = {
+                "segment_id": str(rerun_clip_id).strip(),
+                "seed": int(rerun_seed),
+            }
+            print(
+                f"[TerryDirector Advanced] Local rerun: segment={rerun['segment_id']} "
+                f"seed={rerun['seed']}",
+                flush=True,
+            )
+
         expanded, director_output = build_timeline_graph(
             runtime, plan, seed,
             video_export={
@@ -414,6 +434,8 @@ class TerryDirectorAdvanced(TerryDirector):
                 "format": str(video_format or "auto"),
                 "codec": str(video_codec or "auto"),
             },
+            cache_key=cache_key,
+            rerun=rerun,
         )
         return io.NodeOutput(director_output, expand=expanded)
 
