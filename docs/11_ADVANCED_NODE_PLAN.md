@@ -68,3 +68,11 @@
 - 最终视频保存完成后，实时预览状态清空，同一个窗口切回最终视频。
 - 最终视频支持点击画面播放/暂停；左侧播放按钮根据 `play/pause/ended` 事件同步显示 ▶ / ⏸。
 - 这一轮尚需 ComfyUI 0.39.0 + KJNodes 实机验证。
+\n
+## 2026-10-08 · 工作流切换恢复与预览档位
+- Advanced 最终保存完成后在 `output/.terrydirector_cache/<node-id>/state.json` 持久化最新视频文件与活动片段 ID。
+- 节点重新挂载（包括切换到其他工作流后再切回来）时，从 `/terrydirector/api/advanced-state` 恢复最终视频、片段完成状态和局部重跑可用状态，不再依赖完成瞬间前端是否处于当前工作流。
+- “启用预览”关闭时隐藏整个“视频预览”折叠栏；开启后才显示 KJ Preview Override 参数。
+- 预览帧改为三档：`首帧 / 半数帧 / 所有帧`，默认 `半数帧`。H3 按每段实际时间 latent token 数映射到 KJ `preview_frames`。
+- 新增 `Tiny VAE` 选择，直接读取 `models/vae_approx`；若检测到 `taeh3.safetensors` 则作为新节点默认值，否则为 `none`。
+- KJ Preview Override 改为按采样片段单独包装 model，因此不同长度片段可以使用各自的首帧/半数/全帧预览采样数量。
