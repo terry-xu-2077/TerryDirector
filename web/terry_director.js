@@ -766,7 +766,7 @@ function renderAdvancedNode(node) {
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
     <button type="button" data-adv="rerun" disabled title="分段持久缓存接入后启用">↻ 重跑此片段（待接入）</button></div>
-    <details class="td-adv-export"><summary>文件保存 <small>待接入编码</small></summary>
+    <details class="td-adv-export"><summary>文件保存 <small>ComfyUI 原生编码</small></summary>
       <label>文件名前缀<input data-widget="filename_prefix" value="${escapeHtml(prefix)}"/></label>
       <label>格式<select data-widget="video_format">${options(formats, videoFormat)}</select></label>
       <label>编解码器<select data-widget="video_codec">${options(codecs, videoCodec)}</select></label>
