@@ -106,10 +106,10 @@ async function loadAdvancedCapabilities(node) {
     renderNode(node);
   } catch {
     node.__tdCapabilities = { loaded: true, multiFramePreview: false };
-    const modeWidget = node.widgets?.find(w => w.name === "preview_frame_mode");
-    if (modeWidget && modeWidget.value !== "first") {
-      modeWidget.value = "first";
-      modeWidget.callback?.("first");
+    const fpsWidget = node.widgets?.find(w => w.name === "preview_fps");
+    if (fpsWidget && Number(fpsWidget.value) !== 1) {
+      fpsWidget.value = 1;
+      fpsWidget.callback?.(1);
     }
     renderNode(node);
   } finally {
@@ -1377,7 +1377,7 @@ function mountNode(node) {
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_frame_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
     renderNode(node);
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
@@ -1397,7 +1397,7 @@ function mountNode(node) {
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_frames","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_frame_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
   }
 
   const root = document.createElement("div");
