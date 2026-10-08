@@ -361,9 +361,13 @@ class TerryDirectorAdvanced(TerryDirector):
                     tooltip="Advanced 保存子目录（相对于 ComfyUI output；保存功能待接入）。",
                 ),
                 io.String.Input(
-                    "filename_prefix", default="TerryDirector", socketless=True,
+                    "filename_prefix", default="video/TerryDirector", socketless=True,
                     tooltip="Advanced 文件前缀（保存功能待接入）。",
                 ),
+                io.Combo.Input("video_format", display_name="格式",
+                    options=["auto", "mp4", "mkv", "webm"], default="auto"),
+                io.Combo.Input("video_codec", display_name="编解码器",
+                    options=["auto", "h264", "av1"], default="auto"),
             ],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
             is_output_node=True,
@@ -374,7 +378,8 @@ class TerryDirectorAdvanced(TerryDirector):
     def execute(
         cls, director_config, seed, config_json,
         tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
-        save_subfolder="TerryDirector", filename_prefix="TerryDirector",
+        save_subfolder="TerryDirector", filename_prefix="video/TerryDirector",
+        video_format="auto", video_codec="auto",
     ):
         # Settings are stored for upcoming integrated media export.
         # No encoding or file-saving side effect is performed in this stage.
