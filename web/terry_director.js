@@ -16,7 +16,7 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
-const ADVANCED_PREVIEW_MAX_WIDTH = 520;
+const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -853,13 +853,13 @@ function advancedAspectRatio(node) {
   return width > 0 && height > 0 ? width / height : 16 / 9;
 }
 
-function advancedPlayerHeight(node, ratio = advancedAspectRatio(node)) {
-  const availableWidth = Math.max(220, (node?.size?.[0] || 520) - 36);
-  const boundedWidth = Math.min(availableWidth, ADVANCED_PREVIEW_MAX_WIDTH);
-  // Landscape keeps its natural ratio up to the normal/default preview size.
-  // Portrait remains square-bounded so it cannot make the node excessively tall.
-  const viewportRatio = ratio >= 1 ? ratio : 1;
-  return Math.max(180, Math.round(boundedWidth / viewportRatio));
+function advancedPlayerHeight(_node, ratio = advancedAspectRatio(_node)) {
+  // Important: never derive preview height from the current node width.
+  // Users may widen Advanced purely to expose more timeline. The media viewport
+  // keeps a stable baseline height and simply gains black side space.
+  const safeRatio = Number.isFinite(ratio) && ratio > 0 ? ratio : (16 / 9);
+  const viewportRatio = safeRatio >= 1 ? safeRatio : 1;
+  return Math.max(180, Math.round(ADVANCED_PREVIEW_BASE_WIDTH / viewportRatio));
 }
 
 function syncAdvancedAspect(node) {
