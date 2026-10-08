@@ -551,12 +551,36 @@ function finishPromptActivity(promptId, success, message = "") {
     }
     pushActivity(node);
   }
+  // execution_start suspends Advanced media before we know which output
+  // node will execute. Restore unaffected Advanced nodes when this prompt ends.
+  for (const node of app.graph?._nodes || []) {
+    if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
+    if (
+      node.__tdMediaSuspendedForPrompt === promptId ||
+      (promptId == null && node.__tdMediaSuspendedForPrompt)
+    ) {
+      node.__tdMediaSuspendedForPrompt = null;
+      if (!node.__tdPromptId && !node.__tdLocalRunLock) renderNode(node);
+    }
+  }
   return matched;
 }
 
 function bindExecutionActivity() {
   if (bindExecutionActivity.bound) return;
   bindExecutionActivity.bound = true;
+
+  api.addEventListener("execution_start", event => {
+    const promptId = event.detail?.prompt_id;
+    // A restored Advanced result may already have a <video> element holding
+    // browser/WDDM video surfaces before Comfy starts sampling. Release those
+    // surfaces at prompt start, before the first sampler progress event.
+    for (const node of app.graph?._nodes || []) {
+      if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
+      node.__tdMediaSuspendedForPrompt = promptId || true;
+      suspendAdvancedFinalVideo(node);
+    }
+  });
 
   api.addEventListener("progress_state", event => applyProgressState(event.detail));
 
