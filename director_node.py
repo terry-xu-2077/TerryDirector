@@ -340,7 +340,7 @@ class TerryDirectorAdvanced(TerryDirector):
             node_id="TerryDirectorAdvanced",
             display_name="TerryDirector Advanced",
             category="MiniMax H3/TerryDirector",
-            description="增强版导演节点：只读审片时间线与独立视频占位。视频保存及局部重跑将在后续接入。",
+            description="增强版导演节点：视频审片、原生保存、分段 LATENT 缓存与选中片段局部重跑。",
             inputs=[
                 DirectorConfigData.Input("director_config", display_name="导演配置"),
                 io.Int.Input(
