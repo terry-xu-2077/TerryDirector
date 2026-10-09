@@ -34,7 +34,7 @@ WEB_DIRECTORY = "./web"
 class TerryDirectorExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
-        return [
+        node_classes = [
             TerryDirectorSecondPassConfig,
             TerryDirectorSelfLiftSampler,
             TerryDirectorConfig,
@@ -53,6 +53,9 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorPackAdvancedOutput,
             TerryDirectorResampleReferenceVideo,
         ]
+        from .director_trace import install
+        install(__package__, node_classes)
+        return node_classes
 
 
 async def comfy_entrypoint() -> TerryDirectorExtension:
