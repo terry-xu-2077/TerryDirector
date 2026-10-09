@@ -518,11 +518,22 @@ class TerryDirectorAdvanced(TerryDirector):
             )
 
         # Restore the production live-preview path after the performance
-        # isolation run. 1 fps uses ComfyUI's built-in H3/TAESD preview;
-        # >1 fps uses KJ ModelPreviewOverride when that node is available.
+        # isolation run. 1 fps uses ComfyUI's built-in H3 preview; >1 fps uses
+        # KJ ModelPreviewOverride when that node is available.
         preview_override = None
         target_preview_fps = max(1, min(24, int(preview_fps)))
         preview_mode = "off"
+        core_preview = None
+
+        # Preview selection is process-global in ComfyUI. Reset it on every
+        # Advanced execution so a previous 1 fps run cannot leak previews into
+        # a later preview-off or KJ run.
+        try:
+            import latent_preview
+            latent_preview.set_preview_method("default")
+            core_preview = latent_preview
+        except Exception:
+            core_preview = None
 
         if bool(preview_enabled) and target_preview_fps > 1:
             try:
@@ -542,13 +553,15 @@ class TerryDirectorAdvanced(TerryDirector):
                 target_preview_fps = 1
 
         if bool(preview_enabled) and target_preview_fps == 1:
-            # ComfyUI defaults sampler previews to "none". Enable its built-in
-            # MiniMax H3 single-frame preview path for this expanded graph.
-            try:
-                import latent_preview
-                latent_preview.set_preview_method("taesd")
+            # ComfyUI defaults sampler previews to "none". Auto selects the
+            # built-in MiniMax H3 Latent2RGB preview in current ComfyUI builds.
+            # Forcing TAESD is unsafe here: the commonly installed flat 2D
+            # taeh3 checkpoint is a KJ TinyVAE and core expects the temporal
+            # decoder.* layout, which otherwise aborts before sampling starts.
+            if core_preview is not None:
+                core_preview.set_preview_method("auto")
                 preview_mode = "core-1fps"
-            except Exception:
+            else:
                 preview_mode = "core-1fps-unavailable"
 
         print(
