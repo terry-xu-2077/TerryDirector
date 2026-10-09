@@ -349,8 +349,7 @@ def build_timeline_graph(
     preview_override: dict[str, Any] | None = None,
     reuse_cached_segment_ids: set[str] | None = None,
     finish_state_mode: str = "complete",
-    diagnostic_label: str | None = None,
-    diagnostic_input_signature: str | None = None,
+    run_signature: str | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes.
 
@@ -366,7 +365,7 @@ def build_timeline_graph(
     segment_ids_json = json.dumps(segment_ids, ensure_ascii=False)
     segment_signatures_json = json.dumps(cache_signatures, ensure_ascii=False)
     run_signature = str(
-        diagnostic_input_signature
+        run_signature
         or hashlib.sha256(
             json.dumps(
                 {
