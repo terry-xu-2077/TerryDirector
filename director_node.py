@@ -11,6 +11,8 @@ import comfy.samplers
 from comfy_api.latest import io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
+from .director_selflift import ENGINE_VERSION, validate_schedule
+from .director_lift_model import model_names
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_h3 import build_timeline_graph
 from .director_internal import (
@@ -62,6 +64,7 @@ def _second_pass_signature(runtime) -> dict:
     high_model = second.get("high_res_model")
     return {
         "method": "selflift",
+        "engine": ENGINE_VERSION,
         "cfg": float(second.get("cfg", 1.0)),
         "transition_step": int(second.get("transition_step", 5)),
         "lowres_scale": float(second.get("lowres_scale", 0.5)),
@@ -81,7 +84,7 @@ def _second_pass_signature(runtime) -> dict:
         "tiling_tiles": int(second.get("tiling_tiles", 2)),
         "tiling_axis": str(second.get("tiling_axis", "auto")),
         "high_res_model": None if high_model is None else type(high_model).__name__,
-        "sampler_model_inputs": str(second.get("sampler_model_inputs", "current")),
+        "high_res_patches": str(getattr(high_model, "patches_uuid", "")),
         "sigmas": sigma_values,
     }
 
@@ -170,11 +173,8 @@ def _native_combo(options: list[str], default: str | None = None) -> dict:
 
 
 def _selflift_upscaler_options() -> list[str]:
-    try:
-        models = list(folder_paths.get_filename_list("latent_upscale_models"))
-    except Exception:
-        models = []
-    return ["none", *models]
+    # Own the model folder: installing another custom-node plugin is unnecessary.
+    return model_names()
 
 
 def _selflift_upscaler_default(options: list[str]) -> str:
@@ -248,16 +248,7 @@ def _prepare_second_pass_runtime(value, model):
             spacing=str(second["sigma_refine_spacing"]),
         )
 
-    transition_step = int(second["transition_step"])
-    nfe = max(0, int(sigmas.numel()) - 1)
-    if nfe < 2 or transition_step > nfe - 1:
-        raise ValueError(
-            f"SelfLift transition_step={transition_step} 与当前 {nfe} 步 Sigma 日程不兼容"
-        )
-    if float(sigmas[transition_step]) >= 1.0:
-        raise ValueError(
-            "SelfLift 高清阶段起始 Sigma 必须小于 1；请调整 transition_step 或采样步数"
-        )
+    validate_schedule(sigmas, int(second["transition_step"]))
     if float(second["rho"]) == 0.0 and str(second["upscaler_model"]) == "none":
         raise ValueError(
             "SelfLift 当前 rho=0 且未选择 latent upscaler，二者不能同时关闭"
@@ -330,7 +321,7 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
             category="MiniMax H3/TerryDirector",
             description=(
                 "SelfLift 二采参数。连接到 TerryDirector 配置后启用；"
-                "采样阶段直接调用已安装的 selflift-Avatar H3 Sampler。"
+                "由 TerryDirector 内部采样引擎执行，无需安装外部 SelfLift 节点。"
             ),
             inputs=[
                 io.Model.Input(
@@ -499,23 +490,6 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
         tiling_axis,
         high_res_model=None,
     ):
-        try:
-            import nodes as comfy_nodes
-            sampler_cls = comfy_nodes.NODE_CLASS_MAPPINGS["SelfLiftAvatarH3Sampler"]
-            input_types = sampler_cls.INPUT_TYPES()
-            required_inputs = set((input_types.get("required") or {}).keys())
-            if "low_res_model" in required_inputs:
-                sampler_model_inputs = "current"
-            elif "model" in required_inputs:
-                sampler_model_inputs = "legacy"
-            else:
-                raise RuntimeError
-        except Exception:
-            raise RuntimeError(
-                "TerryDirector SelfLift 需要安装并启用 slmonker/selflift-Avatar，"
-                "且必须包含兼容的 SelfLiftAvatarH3Sampler 节点。"
-            )
-
         packet = make_second_pass_config(
             high_res_model=high_res_model,
             cfg=cfg,
@@ -537,7 +511,6 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
             tiling_tiles=tiling_tiles,
             tiling_axis=tiling_axis,
         )
-        packet["sampler_model_inputs"] = sampler_model_inputs
         return io.NodeOutput(packet)
 
 
