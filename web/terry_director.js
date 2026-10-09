@@ -33,6 +33,7 @@ const cssHref = new URL("./terry_director.css", import.meta.url).href;
 // beforeQueued callbacks, seed controls and queue bookkeeping still run), then
 // repair the partial target at the lower api.queuePrompt boundary if needed.
 const tdPendingPartialRuns = [];
+let tdActiveExecutionPromptId = null;
 
 function removePendingPartialRun(request) {
   const index = tdPendingPartialRuns.indexOf(request);
@@ -572,6 +573,7 @@ function bindLoopSegmentActivity() {
     const detail = event.detail || {};
     const node = directorNodeFromId(detail.node_id);
     if (node?.comfyClass !== LOOP_NODE_CLASS) return;
+    if (tdActiveExecutionPromptId != null) ensurePromptRun(node, tdActiveExecutionPromptId);
     const activity = ensureActivity(node);
     const clip = activity[String(detail.clip_id)];
     if (!clip) return;
@@ -779,6 +781,7 @@ function bindExecutionActivity() {
 
   api.addEventListener("execution_start", event => {
     const promptId = event.detail?.prompt_id;
+    tdActiveExecutionPromptId = promptId ?? null;
     // A restored Advanced result may already have a <video> element holding
     // browser/WDDM video surfaces before Comfy starts sampling. Release those
     // surfaces at prompt start, before the first sampler progress event.
@@ -860,6 +863,8 @@ function bindExecutionActivity() {
   });
 
   api.addEventListener("execution_success", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(event.detail?.prompt_id, true);
     if (matched) {
       for (const node of app.graph?._nodes || []) {
@@ -868,6 +873,8 @@ function bindExecutionActivity() {
     }
   });
   api.addEventListener("execution_error", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
@@ -880,6 +887,8 @@ function bindExecutionActivity() {
     }
   });
   api.addEventListener("execution_interrupted", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
