@@ -20,11 +20,14 @@ from .director_internal import (
 from .director_core import (
     config_json,
     make_runtime_config,
+    make_second_pass_config,
     normalize_config,
     require_runtime_config,
+    require_second_pass_config,
 )
 
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
+SecondPassConfigData = io.Custom("TERRYDIRECTOR_SECOND_PASS_CONFIG")
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 AUTO_UPSCALER = "自动选择兼容模型"
 
@@ -41,6 +44,46 @@ def _preview_tiny_vae_default(options: list[str]) -> str:
         if str(value).replace("\\", "/").split("/")[-1].lower() == "taeh3.safetensors":
             return value
     return "none"
+
+
+def _second_pass_signature(runtime) -> dict:
+    second = runtime.get("params", {}).get("second_pass", {})
+    if not isinstance(second, dict) or second.get("method") != "selflift":
+        return {"method": "none"}
+
+    sigmas = second.get("sigmas")
+    try:
+        sigma_values = [
+            round(float(value), 8)
+            for value in sigmas.detach().cpu().flatten().tolist()
+        ]
+    except Exception:
+        sigma_values = []
+
+    high_model = second.get("high_res_model")
+    return {
+        "method": "selflift",
+        "cfg": float(second.get("cfg", 1.0)),
+        "transition_step": int(second.get("transition_step", 5)),
+        "lowres_scale": float(second.get("lowres_scale", 0.5)),
+        "rho": float(second.get("rho", 0.0)),
+        "w_min": float(second.get("w_min", 0.5)),
+        "w_max": float(second.get("w_max", 1.0)),
+        "upscaler_model": str(second.get("upscaler_model", "none")),
+        "sampling_steps": int(second.get("sampling_steps", 6)),
+        "sampling_denoise": float(second.get("sampling_denoise", 1.0)),
+        "sigma_refine_enabled": bool(second.get("sigma_refine_enabled", True)),
+        "sigma_refine_extra_steps": int(second.get("sigma_refine_extra_steps", 1)),
+        "sigma_refine_start": float(second.get("sigma_refine_start", 0.7)),
+        "sigma_refine_end": float(second.get("sigma_refine_end", 0.0)),
+        "sigma_refine_spacing": str(second.get("sigma_refine_spacing", "cosine")),
+        "highres_tiling": bool(second.get("highres_tiling", False)),
+        "tiling_mode": str(second.get("tiling_mode", "auto")),
+        "tiling_tiles": int(second.get("tiling_tiles", 2)),
+        "tiling_axis": str(second.get("tiling_axis", "auto")),
+        "high_res_model": None if high_model is None else type(high_model).__name__,
+        "sigmas": sigma_values,
+    }
 
 
 def _execution_signature(runtime, plan, seed) -> str:
@@ -80,6 +123,7 @@ def _execution_signature(runtime, plan, seed) -> str:
         "ref_image_size": runtime.get("params", {}).get("ref_image_size"),
         "sampler": type(runtime.get("sampler")).__name__,
         "sigmas": sigma_values,
+        "second_pass": _second_pass_signature(runtime),
         "segments": segments,
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -88,10 +132,18 @@ def _execution_signature(runtime, plan, seed) -> str:
 
 
 def _segment_cache_signatures(runtime, plan) -> list[str]:
+    second_raw = json.dumps(
+        _second_pass_signature(runtime),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    second_hash = hashlib.sha1(second_raw.encode("utf-8")).hexdigest()[:10]
     return [
         (
-            f"v1:{int(runtime['width'])}x{int(runtime['height'])}:"
-            f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}"
+            f"v2:{int(runtime['width'])}x{int(runtime['height'])}:"
+            f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}:"
+            f"sp={second_hash}"
         )
         for segment in plan.get("segments", [])
     ]
@@ -126,6 +178,105 @@ def _latent_upscaler_options() -> list[str]:
     return [AUTO_UPSCALER, *models]
 
 
+def _selflift_upscaler_options() -> list[str]:
+    try:
+        models = list(folder_paths.get_filename_list("latent_upscale_models"))
+    except Exception:
+        models = []
+    return ["none", *models]
+
+
+def _selflift_upscaler_default(options: list[str]) -> str:
+    target = "minimax_h3_latent_upscaler_3d_fp16.safetensors"
+    for value in options:
+        if str(value).replace("\\", "/").split("/")[-1].lower() == target:
+            return value
+    for value in options:
+        if value != "none" and "h3" in str(value).lower():
+            return value
+    return "none"
+
+
+def _refine_sigmas(
+    sigmas,
+    *,
+    extra_steps: int,
+    start_at_sigma: float,
+    end_at_sigma: float,
+    spacing: str,
+):
+    if int(extra_steps) <= 0:
+        return sigmas
+
+    sigmas_cpu = sigmas.detach().cpu()
+    index = -1
+    for idx, sigma in enumerate(sigmas_cpu):
+        if float(sigma) <= float(start_at_sigma):
+            index = idx
+            break
+    if index < 0 or index >= len(sigmas_cpu) - 1:
+        return sigmas
+
+    head = sigmas_cpu[:index]
+    start = float(sigmas_cpu[index])
+    end = max(float(end_at_sigma), float(sigmas_cpu[-1]))
+    count = len(sigmas_cpu) - index + int(extra_steps)
+    t = torch.linspace(0.0, 1.0, steps=count)
+
+    if spacing == "cosine":
+        factor = (1.0 - torch.cos(t * math.pi)) / 2.0
+    elif spacing == "exponential":
+        alpha = 3.0
+        factor = (torch.exp(t * alpha) - 1.0) / (math.exp(alpha) - 1.0)
+    else:
+        factor = t
+
+    tail = start + (end - start) * factor
+    if float(sigmas_cpu[-1]) == 0.0 and end > 0.0:
+        tail = torch.cat([tail, torch.tensor([0.0])])
+    return torch.cat([head, tail]).to(device=sigmas.device, dtype=sigmas.dtype)
+
+
+def _prepare_second_pass_runtime(value, model):
+    if value is None:
+        return None
+
+    second = dict(require_second_pass_config(value))
+    sigmas = _resolve_sigmas(
+        "simple",
+        model,
+        int(second["sampling_steps"]),
+        float(second["sampling_denoise"]),
+    )
+    if second["sigma_refine_enabled"]:
+        sigmas = _refine_sigmas(
+            sigmas,
+            extra_steps=int(second["sigma_refine_extra_steps"]),
+            start_at_sigma=float(second["sigma_refine_start"]),
+            end_at_sigma=float(second["sigma_refine_end"]),
+            spacing=str(second["sigma_refine_spacing"]),
+        )
+
+    transition_step = int(second["transition_step"])
+    nfe = max(0, int(sigmas.numel()) - 1)
+    if nfe < 2 or transition_step > nfe - 1:
+        raise ValueError(
+            f"SelfLift transition_step={transition_step} 与当前 {nfe} 步 Sigma 日程不兼容"
+        )
+    if float(sigmas[transition_step]) >= 1.0:
+        raise ValueError(
+            "SelfLift 高清阶段起始 Sigma 必须小于 1；请调整 transition_step 或采样步数"
+        )
+    if float(second["rho"]) == 0.0 and str(second["upscaler_model"]) == "none":
+        raise ValueError(
+            "SelfLift 当前 rho=0 且未选择 latent upscaler，二者不能同时关闭"
+        )
+
+    second["sampler"] = comfy.samplers.sampler_object("euler")
+    second["sigmas"] = sigmas
+    return second
+
+
 def _resolution(aspect_ratio: str, megapixels: float, multiple: int) -> tuple[int, int]:
     ratio = aspect_ratio if isinstance(aspect_ratio, AspectRatio) else AspectRatio(aspect_ratio)
     w_ratio, h_ratio = ASPECT_RATIOS[ratio]
@@ -157,6 +308,221 @@ def _resolve_sigmas(value, model, steps: int, denoise: float):
         total_steps,
     ).cpu()
     return sigmas[-(steps + 1):]
+
+
+class TerryDirectorSecondPassConfig(io.ComfyNode):
+    """SelfLift second-pass settings routed through TerryDirector Config."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        upscalers = _selflift_upscaler_options()
+        return io.Schema(
+            node_id="TerryDirectorSecondPassConfig",
+            display_name="TerryDirector 二采配置",
+            category="MiniMax H3/TerryDirector",
+            description=(
+                "SelfLift 二采参数。连接到 TerryDirector 配置后启用；"
+                "采样阶段直接调用已安装的 selflift-Avatar H3 Sampler。"
+            ),
+            inputs=[
+                io.Model.Input(
+                    "high_res_model",
+                    display_name="高清模型（可选）",
+                    optional=True,
+                    tooltip="不连接时，高清阶段继续使用导演配置里的主模型。",
+                ),
+                io.Float.Input(
+                    "cfg",
+                    display_name="CFG",
+                    default=1.0,
+                    min=0.0,
+                    max=100.0,
+                    step=0.1,
+                ),
+                io.Int.Input(
+                    "transition_step",
+                    display_name="低清阶段步数",
+                    default=5,
+                    min=1,
+                    max=10000,
+                    tooltip="前多少次去噪在低分辨率进行；成熟工作流默认 5。",
+                ),
+                io.Float.Input(
+                    "lowres_scale",
+                    display_name="低清比例",
+                    default=0.5,
+                    min=0.25,
+                    max=1.0,
+                    step=0.05,
+                ),
+                io.Combo.Input(
+                    "upscaler_model",
+                    display_name="Latent 放大模型",
+                    options=upscalers,
+                    default=_selflift_upscaler_default(upscalers),
+                ),
+                io.Float.Input(
+                    "rho",
+                    default=0.0,
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                ),
+                io.Float.Input(
+                    "w_min",
+                    default=0.5,
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                ),
+                io.Float.Input(
+                    "w_max",
+                    default=1.0,
+                    min=0.0,
+                    max=1.0,
+                    step=0.05,
+                ),
+                io.Int.Input(
+                    "sampling_steps",
+                    display_name="SelfLift 总步数",
+                    default=6,
+                    min=2,
+                    max=10000,
+                ),
+                io.Float.Input(
+                    "sampling_denoise",
+                    display_name="Denoise",
+                    default=1.0,
+                    min=0.01,
+                    max=1.0,
+                    step=0.01,
+                    advanced=True,
+                ),
+                io.Boolean.Input(
+                    "sigma_refine_enabled",
+                    display_name="H3 Sigma 精修",
+                    default=True,
+                ),
+                io.Int.Input(
+                    "sigma_refine_extra_steps",
+                    display_name="精修加步",
+                    default=1,
+                    min=0,
+                    max=15,
+                    advanced=True,
+                ),
+                io.Float.Input(
+                    "sigma_refine_start",
+                    display_name="精修起始 Sigma",
+                    default=0.7,
+                    min=0.0,
+                    max=20.0,
+                    step=0.01,
+                    advanced=True,
+                ),
+                io.Float.Input(
+                    "sigma_refine_end",
+                    display_name="精修结束 Sigma",
+                    default=0.0,
+                    min=0.0,
+                    max=5.0,
+                    step=0.01,
+                    advanced=True,
+                ),
+                io.Combo.Input(
+                    "sigma_refine_spacing",
+                    display_name="精修分布",
+                    options=["cosine", "linear", "exponential"],
+                    default="cosine",
+                    advanced=True,
+                ),
+                io.Boolean.Input(
+                    "highres_tiling",
+                    display_name="高清分块",
+                    default=False,
+                ),
+                io.Combo.Input(
+                    "tiling_mode",
+                    display_name="分块模式",
+                    options=["auto", "manual"],
+                    default="auto",
+                    advanced=True,
+                ),
+                io.Combo.Input(
+                    "tiling_tiles",
+                    display_name="手动块数",
+                    options=[2, 4, 6, 8],
+                    default=2,
+                    advanced=True,
+                ),
+                io.Combo.Input(
+                    "tiling_axis",
+                    display_name="分块方向",
+                    options=["auto", "width", "height"],
+                    default="auto",
+                    advanced=True,
+                ),
+            ],
+            outputs=[
+                SecondPassConfigData.Output(display_name="二采配置"),
+            ],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        cfg,
+        transition_step,
+        lowres_scale,
+        upscaler_model,
+        rho,
+        w_min,
+        w_max,
+        sampling_steps,
+        sampling_denoise,
+        sigma_refine_enabled,
+        sigma_refine_extra_steps,
+        sigma_refine_start,
+        sigma_refine_end,
+        sigma_refine_spacing,
+        highres_tiling,
+        tiling_mode,
+        tiling_tiles,
+        tiling_axis,
+        high_res_model=None,
+    ):
+        try:
+            import nodes as comfy_nodes
+            if "SelfLiftAvatarH3Sampler" not in comfy_nodes.NODE_CLASS_MAPPINGS:
+                raise RuntimeError
+        except Exception:
+            raise RuntimeError(
+                "TerryDirector SelfLift 需要安装并启用 slmonker/selflift-Avatar，"
+                "且必须包含 SelfLiftAvatarH3Sampler 节点。"
+            )
+
+        packet = make_second_pass_config(
+            high_res_model=high_res_model,
+            cfg=cfg,
+            transition_step=transition_step,
+            lowres_scale=lowres_scale,
+            rho=rho,
+            w_min=w_min,
+            w_max=w_max,
+            upscaler_model=upscaler_model,
+            sampling_steps=sampling_steps,
+            sampling_denoise=sampling_denoise,
+            sigma_refine_enabled=sigma_refine_enabled,
+            sigma_refine_extra_steps=sigma_refine_extra_steps,
+            sigma_refine_start=sigma_refine_start,
+            sigma_refine_end=sigma_refine_end,
+            sigma_refine_spacing=sigma_refine_spacing,
+            highres_tiling=highres_tiling,
+            tiling_mode=tiling_mode,
+            tiling_tiles=tiling_tiles,
+            tiling_axis=tiling_axis,
+        )
+        return io.NodeOutput(packet)
 
 
 class TerryDirectorConfig(io.ComfyNode):
@@ -245,31 +611,15 @@ class TerryDirectorConfig(io.ComfyNode):
                     options=["match", "max"],
                     default="match",
                 ),
-                io.Combo.Input(
-                    "second_pass_method",
-                    display_name="二采方案",
-                    options=["无", "SelfLift"],
-                    default="无",
-                    advanced=True,
+                SecondPassConfigData.Input(
+                    "second_pass_config",
+                    display_name="二采配置",
+                    optional=True,
+                    tooltip="连接 TerryDirector 二采配置后启用 SelfLift。",
                 ),
-                io.Combo.Input(
-                    "second_pass_model",
-                    display_name="SelfLift 放大模型",
-                    options=_latent_upscaler_options(),
-                    default=AUTO_UPSCALER,
-                    advanced=True,
-                ),
-                io.Float.Input(
-                    "second_pass_high_ratio",
-                    display_name="SelfLift 高清占比",
-                    default=0.25,
-                    min=0.0,
-                    max=1.0,
-                    step=0.01,
-                    display_mode=io.NumberDisplay.slider,
-                    tooltip="0.25 = 25%。实际高清步数由总步数 × 高清占比计算。",
-                    advanced=True,
-                ),
+
+
+
             ],
             outputs=[
                 DirectorConfigData.Output(display_name="导演配置"),
@@ -291,9 +641,7 @@ class TerryDirectorConfig(io.ComfyNode):
         sigmas_steps,
         sigmas_denoise,
         ref_image_size,
-        second_pass_method,
-        second_pass_model=AUTO_UPSCALER,
-        second_pass_high_ratio=0.25,
+        second_pass_config=None,
         resolution_preview=None,
     ):
         width, height = _resolution(aspect_ratio, megapixels, multiple)
@@ -305,8 +653,7 @@ class TerryDirectorConfig(io.ComfyNode):
             sigmas_denoise,
         )
 
-        method = "selflift" if second_pass_method == "SelfLift" else "none"
-        upscaler = "" if second_pass_model == AUTO_UPSCALER else str(second_pass_model or "")
+        second_pass = _prepare_second_pass_runtime(second_pass_config, model)
         packet = make_runtime_config(
             model=model,
             clip=clip,
@@ -317,9 +664,7 @@ class TerryDirectorConfig(io.ComfyNode):
             sampler=sampler,
             sigmas=sigmas,
             ref_image_size=ref_image_size,
-            second_pass_method=method,
-            second_pass_model=upscaler,
-            second_pass_high_ratio=second_pass_high_ratio,
+            second_pass=second_pass,
         )
         return io.NodeOutput(packet)
 
@@ -394,9 +739,6 @@ class TerryDirector(io.ComfyNode):
             tail_reference_prompt=tail_reference_prompt,
         )
         run_signature = _execution_signature(runtime, plan, seed)
-
-        if runtime["params"]["second_pass"]["method"] != "none":
-            raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
 
         expanded, director_output = build_timeline_graph(
             runtime,
@@ -511,8 +853,6 @@ class TerryDirectorAdvanced(TerryDirector):
                 if saved_seed is not None:
                     seed = int(saved_seed)
         run_signature = _execution_signature(runtime, plan, seed)
-        if runtime["params"]["second_pass"]["method"] != "none":
-            raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
         if video_format == "webm" and video_codec == "h264":
             raise ValueError("WebM 容器不支持 H.264，请选择 auto 或 av1")
 
