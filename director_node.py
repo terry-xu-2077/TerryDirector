@@ -132,13 +132,12 @@ def _execution_signature(runtime, plan, seed) -> str:
 
 
 def _segment_cache_signatures(runtime, plan) -> list[str]:
-    second_raw = json.dumps(
-        _second_pass_signature(runtime),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
+    second = runtime.get("params", {}).get("second_pass", {})
+    second_hash = (
+        str(second.get("cache_signature") or "selflift")
+        if isinstance(second, dict) and second.get("method") == "selflift"
+        else "none"
     )
-    second_hash = hashlib.sha1(second_raw.encode("utf-8")).hexdigest()[:10]
     return [
         (
             f"v2:{int(runtime['width'])}x{int(runtime['height'])}:"
@@ -274,6 +273,23 @@ def _prepare_second_pass_runtime(value, model):
 
     second["sampler"] = comfy.samplers.sampler_object("euler")
     second["sigmas"] = sigmas
+    signature_payload = {
+        key: value
+        for key, value in _second_pass_signature({"params": {"second_pass": second}}).items()
+        if key != "sigmas"
+    }
+    signature_payload["sigmas"] = [
+        round(float(value), 8)
+        for value in sigmas.detach().cpu().flatten().tolist()
+    ]
+    second["cache_signature"] = hashlib.sha1(
+        json.dumps(
+            signature_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()[:10]
     return second
 
 
