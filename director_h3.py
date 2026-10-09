@@ -618,6 +618,7 @@ def build_timeline_graph(
                     run_signature=run_signature,
                     segment_ids_json=segment_ids_json,
                     segment_signatures_json=segment_signatures_json,
+                    run_seed=int(seed),
                 ).out(0)
         else:
             if cache_key is None:
