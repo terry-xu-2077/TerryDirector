@@ -76,6 +76,7 @@ def _canonical_core_graph(graph: GraphBuilder) -> dict[str, Any]:
                 "_assemble",
                 "_segment_file",
                 "_segment_video_load",
+                "_segment_cache",
             )
         ):
             continue
@@ -536,6 +537,7 @@ def build_timeline_graph(
     seed: int,
     video_export: dict[str, str] | None = None,
     cache_key: str | None = None,
+    base_cache_key: str | None = None,
     rerun: dict[str, Any] | None = None,
     preview_override: dict[str, Any] | None = None,
     reuse_cached_segment_ids: set[str] | None = None,
@@ -552,6 +554,7 @@ def build_timeline_graph(
     graph = GraphBuilder()
     latents: list[Any] = []
     segment_videos: list[Any] = []
+    base_segment_caches: list[Any] = []
     segment_ids = [str(segment["id"]) for segment in plan["segments"]]
     cache_signatures = [_cache_signature(runtime, segment) for segment in plan["segments"]]
     segment_ids_json = json.dumps(segment_ids, ensure_ascii=False)
@@ -573,6 +576,7 @@ def build_timeline_graph(
     )
     reuse_cached = {str(value) for value in (reuse_cached_segment_ids or set())}
     streamed_advanced = video_export is not None
+    streamed_base = video_export is None and bool(str(base_cache_key or "").strip())
 
     previous_images = None
     previous_audio = None
@@ -676,21 +680,50 @@ def build_timeline_graph(
 
         latents.append(sampled)
 
-        if streamed_advanced:
-            next_segment = segments[position + 1] if position + 1 < len(segments) else None
-            next_needs_context = False
-            context_frames = 1
-            if next_segment is not None and should_sample_segment(str(next_segment["id"])):
-                next_kind = str(next_segment["continuity"]["kind"])
-                next_needs_context = next_kind not in {"independent", "gap"}
-                if next_kind == "overlap":
-                    context_frames = max(
-                        1, int(next_segment["continuity"]["frames"])
-                    )
+        next_segment = segments[position + 1] if position + 1 < len(segments) else None
+        next_needs_context = False
+        context_frames = 1
+        if next_segment is not None:
+            next_kind = str(next_segment["continuity"]["kind"])
+            next_needs_context = next_kind not in {"independent", "gap"}
+            if next_kind == "overlap":
+                context_frames = max(1, int(next_segment["continuity"]["frames"]))
 
+        if streamed_base:
+            cached = graph.node(
+                "TerryDirectorDecodeSegmentToCache",
+                f"{prefix_id}_segment_cache",
+                samples=sampled,
+                vae=runtime["vae"],
+                audio_vae=runtime["audio_vae"],
+                cache_key=str(base_cache_key),
+                run_signature=run_signature,
+                segment_id=segment_id,
+                signature=signature,
+                output_frames=int(segment["output_frames"]),
+                trim_head_frames=int(segment["assembly"]["trim_head_frames"]),
+                gap_frames=int(segment["assembly"]["gap_before_frames"]),
+                gap_after_frames=int(segment["assembly"]["gap_after_frames"]),
+                context_frames=int(context_frames),
+                fps=int(FPS),
+            )
+            base_segment_caches.append(cached.out(0))
+            previous_images = cached.out(1)
+            previous_audio = cached.out(2)
+            previous_is_compact = True
+            continue
+
+        if streamed_advanced:
+            # A cached Advanced prefix can reuse its encoded segment file unless
+            # the next sampled segment still needs tail/overlap context.
+            next_context_for_sampling = (
+                next_segment is not None
+                and should_sample_segment(str(next_segment["id"]))
+                and next_needs_context
+            )
             can_reuse_file = (
                 not should_sample
-                and not next_needs_context
+                and not next_context_for_sampling
                 and cache_key is not None
                 and advanced_segment_video_exists(
                     str(cache_key), segment_id, signature
@@ -734,7 +767,7 @@ def build_timeline_graph(
             segment_videos.append(segment_video)
             continue
 
-        # Base path: keep its merged IMAGE/AUDIO output contract unchanged.
+        # Legacy Base path retained for callers that do not request streamed Base.
         images, audio = _decode_segment(graph, runtime, segment, sampled, prefix_id)
 
         assembly_inputs: dict[str, Any] = {
@@ -765,6 +798,28 @@ def build_timeline_graph(
         diagnostic_label=diagnostic_label,
         diagnostic_input_signature=diagnostic_input_signature,
     )
+
+    if streamed_base:
+        materialized = graph.node(
+            "TerryDirectorMaterializeTimeline",
+            "td_base_materialize",
+            expected_frames=int(plan["total_frames"]),
+            **{
+                f"segments.segment_{index}": token
+                for index, token in enumerate(base_segment_caches)
+            },
+        )
+        packed_output = graph.node(
+            "TerryDirectorPackOutput",
+            "td_output_pack",
+            images=materialized.out(0),
+            audio=materialized.out(1),
+            **{
+                f"latents.latent_{index}": latent
+                for index, latent in enumerate(latents)
+            },
+        )
+        return graph.finalize(), packed_output.out(0)
 
     if not streamed_advanced:
         packed_output = graph.node(
