@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import copy
 import hashlib
 import json
 import folder_paths
@@ -10,6 +11,7 @@ from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_h3 import build_timeline_graph
+from .director_internal import load_advanced_checkpoint, reset_advanced_checkpoint
 from .director_core import (
     config_json,
     make_runtime_config,
@@ -89,6 +91,16 @@ def _log_execution_signature(label, runtime, plan, seed):
         flush=True,
     )
     return digest
+
+
+def _segment_cache_signatures(runtime, plan) -> list[str]:
+    return [
+        (
+            f"v1:{int(runtime['width'])}x{int(runtime['height'])}:"
+            f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}"
+        )
+        for segment in plan.get("segments", [])
+    ]
 
 
 def _require_director_output(value):
@@ -461,6 +473,9 @@ class TerryDirectorAdvanced(TerryDirector):
                     "rerun_seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF,
                     socketless=True,
                 ),
+                io.String.Input(
+                    "recovery_mode", default="", socketless=True,
+                ),
                 io.Combo.Input(
                     "preview_tiny_vae",
                     options=_preview_tiny_vae_options(),
@@ -484,6 +499,7 @@ class TerryDirectorAdvanced(TerryDirector):
         preview_jpeg_quality=80, preview_fps=12,
         preview_suppress_default=True,
         rerun_clip_id="", rerun_seed=0,
+        recovery_mode="",
         preview_tiny_vae="none",
     ):
         runtime = require_runtime_config(director_config)
@@ -516,6 +532,74 @@ class TerryDirectorAdvanced(TerryDirector):
                 f"seed={rerun['seed']}",
                 flush=True,
             )
+
+        recovery_mode = str(recovery_mode or "").strip().lower()
+        segment_ids = [str(segment["id"]) for segment in plan["segments"]]
+        segment_signatures = _segment_cache_signatures(runtime, plan)
+        reuse_cached_segment_ids: set[str] = set()
+        finish_state_mode = "complete"
+
+        if recovery_mode not in {"", "resume", "export_partial"}:
+            raise ValueError(f"TerryDirector Advanced 未知恢复模式: {recovery_mode}")
+
+        if rerun is not None and recovery_mode:
+            raise ValueError("TerryDirector Advanced 局部重跑与中断恢复不能同时执行")
+
+        if rerun is None and recovery_mode == "":
+            reset_advanced_checkpoint(
+                cache_key,
+                diagnostic_signature,
+                segment_ids,
+                segment_signatures,
+            )
+        elif recovery_mode in {"resume", "export_partial"}:
+            checkpoint = load_advanced_checkpoint(cache_key)
+            if not isinstance(checkpoint, dict):
+                raise RuntimeError("TerryDirector Advanced 没有可恢复的中断任务")
+            if str(checkpoint.get("run_signature")) != str(diagnostic_signature):
+                raise RuntimeError(
+                    "TerryDirector Advanced 当前时间线/生成参数已变化，无法复用中断缓存"
+                )
+            saved_ids = [str(value) for value in checkpoint.get("segment_ids", [])]
+            if saved_ids != segment_ids:
+                raise RuntimeError(
+                    "TerryDirector Advanced 当前片段结构已变化，无法复用中断缓存"
+                )
+            completed = {
+                str(value) for value in checkpoint.get("completed_segment_ids", [])
+            }
+            prefix_ids = []
+            for segment_id in segment_ids:
+                if segment_id not in completed:
+                    break
+                prefix_ids.append(segment_id)
+            if not prefix_ids:
+                raise RuntimeError("TerryDirector Advanced 中断任务尚无已完成片段")
+
+            if recovery_mode == "resume":
+                reuse_cached_segment_ids = set(prefix_ids)
+                print(
+                    f"[TerryDirector Advanced] Resume from checkpoint: "
+                    f"completed={len(prefix_ids)}/{len(segment_ids)}",
+                    flush=True,
+                )
+            else:
+                prefix_count = len(prefix_ids)
+                partial_plan = copy.deepcopy(plan)
+                partial_plan["segments"] = partial_plan["segments"][:prefix_count]
+                partial_plan["total_frames"] = int(
+                    partial_plan["segments"][-1]["end_frame"]
+                )
+                plan = partial_plan
+                reuse_cached_segment_ids = set(prefix_ids)
+                finish_state_mode = "partial"
+                prefix = prefix.rstrip("/") + "_partial"
+                preview_enabled = False
+                print(
+                    f"[TerryDirector Advanced] Export completed checkpoint: "
+                    f"segments={prefix_count}/{len(segment_ids)}",
+                    flush=True,
+                )
 
         # Restore the production live-preview path after the performance
         # isolation run. 1 fps uses ComfyUI's built-in H3 preview; >1 fps uses
@@ -581,6 +665,8 @@ class TerryDirectorAdvanced(TerryDirector):
             cache_key=cache_key,
             rerun=rerun,
             preview_override=preview_override,
+            reuse_cached_segment_ids=reuse_cached_segment_ids,
+            finish_state_mode=finish_state_mode,
             diagnostic_label="Advanced",
             diagnostic_input_signature=diagnostic_signature,
         )
