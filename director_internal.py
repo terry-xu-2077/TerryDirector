@@ -65,6 +65,119 @@ def _advanced_state_path(cache_key: str) -> str:
     return os.path.join(_advanced_cache_root(cache_key), "state.json")
 
 
+def _advanced_checkpoint_path(cache_key: str) -> str:
+    return os.path.join(_advanced_cache_root(cache_key), "checkpoint.json")
+
+
+def _write_json_atomic(path: str, payload: dict, prefix: str) -> None:
+    fd, temp_path = tempfile.mkstemp(prefix=prefix, suffix=".json", dir=os.path.dirname(path))
+    os.close(fd)
+    try:
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+def load_advanced_checkpoint(cache_key: str) -> dict | None:
+    path = _advanced_checkpoint_path(cache_key)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def reset_advanced_checkpoint(
+    cache_key: str,
+    run_signature: str,
+    segment_ids: list[str],
+    segment_signatures: list[str],
+) -> dict:
+    payload = {
+        "version": 1,
+        "status": "running",
+        "run_signature": str(run_signature),
+        "segment_ids": [str(value) for value in segment_ids],
+        "segment_signatures": [str(value) for value in segment_signatures],
+        "completed_segment_ids": [],
+        "started_at": time.time(),
+        "updated_at": time.time(),
+    }
+    _write_json_atomic(
+        _advanced_checkpoint_path(cache_key),
+        payload,
+        "td_checkpoint_",
+    )
+    return payload
+
+
+def mark_advanced_checkpoint_segment(
+    cache_key: str,
+    run_signature: str,
+    segment_id: str,
+    segment_ids: list[str],
+    segment_signatures: list[str],
+) -> dict:
+    payload = load_advanced_checkpoint(cache_key)
+    if (
+        not isinstance(payload, dict)
+        or str(payload.get("run_signature")) != str(run_signature)
+        or [str(value) for value in payload.get("segment_ids", [])]
+            != [str(value) for value in segment_ids]
+    ):
+        payload = reset_advanced_checkpoint(
+            cache_key,
+            run_signature,
+            segment_ids,
+            segment_signatures,
+        )
+
+    completed = [str(value) for value in payload.get("completed_segment_ids", [])]
+    sid = str(segment_id)
+    if sid not in completed:
+        completed.append(sid)
+    ordered = [str(value) for value in segment_ids]
+    completed_set = set(completed)
+    payload["completed_segment_ids"] = [
+        value for value in ordered if value in completed_set
+    ]
+    payload["status"] = "partial"
+    payload["updated_at"] = time.time()
+    _write_json_atomic(
+        _advanced_checkpoint_path(cache_key),
+        payload,
+        "td_checkpoint_",
+    )
+    return payload
+
+
+def finalize_advanced_checkpoint(
+    cache_key: str,
+    run_signature: str,
+    video: dict | None = None,
+) -> None:
+    payload = load_advanced_checkpoint(cache_key)
+    if not isinstance(payload, dict):
+        return
+    if str(payload.get("run_signature")) != str(run_signature):
+        return
+    payload["status"] = "complete"
+    payload["updated_at"] = time.time()
+    if video is not None:
+        payload["video"] = video
+    _write_json_atomic(
+        _advanced_checkpoint_path(cache_key),
+        payload,
+        "td_checkpoint_",
+    )
+
+
 def _cache_to_cpu(value):
     if isinstance(value, torch.Tensor):
         return value.detach().cpu()
@@ -129,6 +242,9 @@ class TerryDirectorCacheLatent(io.ComfyNode):
                 io.String.Input("cache_key"),
                 io.String.Input("segment_id"),
                 io.String.Input("signature"),
+                io.String.Input("run_signature"),
+                io.String.Input("segment_ids_json"),
+                io.String.Input("segment_signatures_json"),
             ],
             outputs=[io.Latent.Output()],
         )
@@ -140,12 +256,40 @@ class TerryDirectorCacheLatent(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, latent, cache_key, segment_id, signature) -> io.NodeOutput:
+    def execute(
+        cls,
+        latent,
+        cache_key,
+        segment_id,
+        signature,
+        run_signature,
+        segment_ids_json,
+        segment_signatures_json,
+    ) -> io.NodeOutput:
         path, copy_seconds, disk_seconds, size_mb = _save_advanced_cache_latent(
             latent, cache_key, segment_id, signature
         )
+        try:
+            segment_ids = json.loads(str(segment_ids_json or "[]"))
+            segment_signatures = json.loads(str(segment_signatures_json or "[]"))
+            if not isinstance(segment_ids, list):
+                segment_ids = []
+            if not isinstance(segment_signatures, list):
+                segment_signatures = []
+            mark_advanced_checkpoint_segment(
+                str(cache_key),
+                str(run_signature),
+                str(segment_id),
+                [str(value) for value in segment_ids],
+                [str(value) for value in segment_signatures],
+            )
+        except Exception as exc:
+            print(
+                f"[TerryDirector Advanced] Checkpoint manifest update failed: {exc}",
+                flush=True,
+            )
         print(
-            f"[TerryDirector Advanced][Perf] Cache {segment_id}: "
+            f"[TerryDirector Advanced][Perf] Checkpoint {segment_id}: "
             f"cpu={copy_seconds:.3f}s disk={disk_seconds:.3f}s "
             f"size={size_mb:.1f}MB path={path}",
             flush=True,
