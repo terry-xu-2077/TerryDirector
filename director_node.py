@@ -4,6 +4,7 @@ import math
 import copy
 import hashlib
 import json
+import uuid
 import folder_paths
 import comfy.samplers
 from comfy_api.latest import io
@@ -410,7 +411,10 @@ class TerryDirector(io.ComfyNode):
             runtime,
             plan,
             seed,
-            base_cache_key=f"base-{cls.hidden.unique_id}",
+            base_cache_key=(
+                f"base-{cls.hidden.unique_id}-"
+                f"{uuid.uuid4().hex}"
+            ),
             diagnostic_label="Base",
             diagnostic_input_signature=diagnostic_signature,
         )
