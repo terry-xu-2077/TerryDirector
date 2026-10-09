@@ -254,40 +254,18 @@ def _sample_segment(
             f"{prefix}_selflift_negative",
             conditioning=positive,
         )
-        inputs: dict[str, Any] = {
-            "positive": positive,
-            "negative": negative.out(0),
-            "vae": runtime["vae"],
-            "latent_image": latent,
-            "sampler": second["sampler"],
-            "sigmas": second["sigmas"],
-            "seed": max(0, min(0xFFFFFFFFFFFFFFFF, int(seed))),
-            "cfg": float(second["cfg"]),
-            "transition_step": int(second["transition_step"]),
-            "lowres_scale": float(second["lowres_scale"]),
-            "rho": float(second["rho"]),
-            "w_min": float(second["w_min"]),
-            "w_max": float(second["w_max"]),
-            "upscaler_model": str(second["upscaler_model"]),
-            "highres_tiling": bool(second["highres_tiling"]),
-            "tiling_mode": str(second["tiling_mode"]),
-            "tiling_tiles": int(second["tiling_tiles"]),
-            "tiling_axis": str(second["tiling_axis"]),
-        }
-
-        if str(second.get("sampler_model_inputs", "current")) == "legacy":
-            inputs["model"] = runtime["model"]
-            if second.get("high_res_model") is not None:
-                inputs["model_hires"] = second["high_res_model"]
-        else:
-            inputs["low_res_model"] = runtime["model"]
-            if second.get("high_res_model") is not None:
-                inputs["high_res_model"] = second["high_res_model"]
-
+        # MODEL must remain a top-level graph input: Advanced's preview override
+        # may be a graph link, which ComfyUI will not resolve inside a dict.
         return graph.node(
-            "SelfLiftAvatarH3Sampler",
+            "TerryDirectorSelfLiftSampler",
             f"{prefix}_selflift_sample",
-            **inputs,
+            model=runtime["model"],
+            vae=runtime["vae"],
+            settings=second,
+            positive=positive,
+            negative=negative.out(0),
+            latent_image=latent,
+            seed=max(0, min(0xFFFFFFFFFFFFFFFF, int(seed))),
         ).out(0)
 
     noise = graph.node(
