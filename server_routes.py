@@ -140,27 +140,54 @@ async def terrydirector_latent_upscalers(request: web.Request) -> web.Response:
     return web.json_response({"models": models})
 
 
+def _read_advanced_json(cache_dir: Path, name: str):
+    path = (cache_dir / name).resolve()
+    cache_root = (OUTPUT_ROOT / ".terrydirector_cache").resolve()
+    if not _within(cache_root, path) or not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _valid_output_video(value):
+    if not isinstance(value, dict) or not value.get("filename"):
+        return None
+    rel = Path(str(value.get("subfolder") or "")) / str(value.get("filename") or "")
+    candidate = (OUTPUT_ROOT / rel).resolve()
+    if not _within(OUTPUT_ROOT, candidate) or not candidate.is_file():
+        return None
+    return value
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/advanced-state")
 async def terrydirector_advanced_state(request: web.Request) -> web.Response:
     node_id = str(request.query.get("node_id") or "").strip()
     if not node_id:
-        return web.json_response({"state": None})
+        return web.json_response({"state": None, "checkpoint": None})
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", node_id)[:160]
-    path = (OUTPUT_ROOT / ".terrydirector_cache" / safe / "state.json").resolve()
+    cache_dir = (OUTPUT_ROOT / ".terrydirector_cache" / safe).resolve()
     cache_root = (OUTPUT_ROOT / ".terrydirector_cache").resolve()
-    if not _within(cache_root, path) or not path.is_file():
-        return web.json_response({"state": None})
-    try:
-        state = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return web.json_response({"state": None})
-    video = state.get("video") if isinstance(state, dict) else None
-    if isinstance(video, dict):
-        rel = Path(str(video.get("subfolder") or "")) / str(video.get("filename") or "")
-        candidate = (OUTPUT_ROOT / rel).resolve()
-        if not _within(OUTPUT_ROOT, candidate) or not candidate.is_file():
-            return web.json_response({"state": None})
-    return web.json_response({"state": state})
+    if not _within(cache_root, cache_dir):
+        return web.json_response({"state": None, "checkpoint": None})
+
+    state = _read_advanced_json(cache_dir, "state.json")
+    checkpoint = _read_advanced_json(cache_dir, "checkpoint.json")
+
+    if isinstance(state, dict):
+        video = _valid_output_video(state.get("video"))
+        if state.get("video") is not None and video is None:
+            state = None
+
+    if isinstance(checkpoint, dict):
+        partial_video = _valid_output_video(checkpoint.get("partial_video"))
+        if checkpoint.get("partial_video") is not None and partial_video is None:
+            checkpoint = dict(checkpoint)
+            checkpoint.pop("partial_video", None)
+
+    return web.json_response({"state": state, "checkpoint": checkpoint})
 
 
 @PromptServer.instance.routes.get("/terrydirector/api/capabilities")
