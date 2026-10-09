@@ -1,6 +1,6 @@
 # Advanced 真实队列 Payload 等价性与正式功能回归任务
 
-> 状态：待本地 Codex 执行  
+> 状态：已完成，结果见 [`15_ADVANCED_REAL_QUEUE_EQUIVALENCE_REPORT.md`](15_ADVANCED_REAL_QUEUE_EQUIVALENCE_REPORT.md)
 > 前置报告：[`13_ADVANCED_PERFORMANCE_DIAG_REPORT.md`](13_ADVANCED_PERFORMANCE_DIAG_REPORT.md)  
 > 当前代码基线：`78024d27bcb8eae0700ce01a4f622df7e3cae9f7`  
 > 当前目标：验证 **TerryDirector Advanced 的真实 UI 队列路径** 与本地脚本直接调用 ComfyUI `/prompt` API 的 payload 是否执行等价；同时完成 Advanced 正式实时预览路径恢复后的功能回归。
