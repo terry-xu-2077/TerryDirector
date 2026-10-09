@@ -224,20 +224,18 @@ def compile_timeline(
     if not isinstance(assets, list):
         raise ValueError("TerryDirector assets must be a list")
 
-    total_frames = max(int(clip["end"]) for clip in clips)
-    active_clips = [
-        (index, clip)
-        for index, clip in enumerate(clips)
-        if not clip.get("suspended", False)
-    ]
-    if not active_clips:
-        raise ValueError("TerryDirector timeline requires at least one active segment")
+    # Suspended clips are transparent to execution. They remain in the creative
+    # document/UI, but their own duration is removed from the generated timeline.
+    # Any gap/overlap relation around them is transferred to the next active clip,
+    # so an originally adjacent clip automatically continues from the previous
+    # active clip instead of producing black frames.
+    active_clips: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    previous_original_end = 0
+    previous_active_original: dict[str, Any] | None = None
+    previous_active_effective: dict[str, Any] | None = None
+    bridge_delta = 0
 
-    segments: list[dict[str, Any]] = []
-    previous: dict[str, Any] | None = None
-    assembled_frames = 0
-
-    for index, clip in active_clips:
+    for index, clip in enumerate(clips):
         if not isinstance(clip, dict):
             raise ValueError(f"TerryDirector segment {index + 1} must be an object")
 
@@ -245,11 +243,56 @@ def compile_timeline(
         end = int(clip["end"])
         if start < 0 or end <= start:
             raise ValueError(f"TerryDirector segment {index + 1} has an invalid frame range")
-        if previous is not None:
-            if start <= int(previous["start"]) or end <= int(previous["end"]):
-                raise ValueError("TerryDirector active segments must advance forward in timeline order")
 
-        output_frames = end - start
+        # Preserve only the spacing relation between neighboring source clips.
+        # Suspended clip durations themselves are deliberately not accumulated.
+        bridge_delta += start - previous_original_end
+        previous_original_end = end
+
+        if clip.get("suspended", False):
+            continue
+
+        if previous_active_original is not None:
+            if (
+                start <= int(previous_active_original["start"])
+                or end <= int(previous_active_original["end"])
+            ):
+                raise ValueError(
+                    "TerryDirector active segments must advance forward in timeline order"
+                )
+
+        duration = end - start
+        base_end = (
+            int(previous_active_effective["end"])
+            if previous_active_effective is not None
+            else 0
+        )
+        effective_start = base_end + bridge_delta
+        if previous_active_effective is None:
+            effective_start = max(0, effective_start)
+        effective_end = effective_start + duration
+
+        effective_clip = dict(clip)
+        effective_clip["start"] = effective_start
+        effective_clip["end"] = effective_end
+        active_clips.append((index, clip, effective_clip))
+
+        previous_active_original = clip
+        previous_active_effective = effective_clip
+        bridge_delta = 0
+
+    if not active_clips:
+        raise ValueError("TerryDirector timeline requires at least one active segment")
+
+    total_frames = int(active_clips[-1][2]["end"])
+    segments: list[dict[str, Any]] = []
+    previous: dict[str, Any] | None = None
+    assembled_frames = 0
+
+    for index, clip, effective_clip in active_clips:
+        start = int(effective_clip["start"])
+        end = int(effective_clip["end"])
+        output_frames = int(clip["end"]) - int(clip["start"])
         generated_frames = h3_align_frames(output_frames)
         if generated_frames > H3_MAX_FRAMES:
             raise ValueError(
@@ -258,7 +301,7 @@ def compile_timeline(
             )
         effective_prompt = _effective_prompt(document, clip)
         prompt, local_assets = _compile_assets(effective_prompt, assets)
-        continuity, gap_before, trim_head = _continuity(previous, clip)
+        continuity, gap_before, trim_head = _continuity(previous, effective_clip)
         if continuity["kind"] == "tail_reference":
             if len(local_assets["images"]) >= MAX_REFERENCE_IMAGES:
                 raise ValueError(
@@ -295,11 +338,10 @@ def compile_timeline(
         }
         segments.append(segment)
         assembled_frames += gap_before + output_frames - trim_head
-        previous = clip
+        previous = effective_clip
 
-    trailing_gap = max(0, total_frames - int(previous["end"]))
-    segments[-1]["assembly"]["gap_after_frames"] = trailing_gap
-    assembled_frames += trailing_gap
+    # Suspended clips after the last active segment are ignored completely.
+    # There is no synthetic trailing black-frame fill.
     if assembled_frames != total_frames:
         raise ValueError(
             f"TerryDirector compiled timeline length mismatch: {assembled_frames} != {total_frames}"
