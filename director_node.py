@@ -473,14 +473,16 @@ class TerryDirectorAdvanced(TerryDirector):
                     "rerun_seed", default=0, min=0, max=0xFFFFFFFFFFFFFFFF,
                     socketless=True,
                 ),
-                io.String.Input(
-                    "recovery_mode", default="", socketless=True,
-                ),
                 io.Combo.Input(
                     "preview_tiny_vae",
                     options=_preview_tiny_vae_options(),
                     default=_preview_tiny_vae_default(_preview_tiny_vae_options()),
                     socketless=True,
+                ),
+                # Recovery is appended after every previously released widget so
+                # old workflow widgets_values keep their original positions.
+                io.String.Input(
+                    "recovery_mode", default="", socketless=True,
                 ),
             ],
             hidden=[io.Hidden.unique_id],
