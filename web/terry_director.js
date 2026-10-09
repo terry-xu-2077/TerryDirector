@@ -565,6 +565,35 @@ function pushActivity(node, { fullRender = false } = {}) {
   );
 }
 
+function bindLoopSegmentActivity() {
+  if (api.__tdLoopSegmentActivityBound) return;
+  api.__tdLoopSegmentActivityBound = true;
+  api.addEventListener("terrydirector:loop-segment", event => {
+    const detail = event.detail || {};
+    const node = directorNodeFromId(detail.node_id);
+    if (node?.comfyClass !== LOOP_NODE_CLASS) return;
+    const activity = ensureActivity(node);
+    const clip = activity[String(detail.clip_id)];
+    if (!clip) return;
+    const now = performance.now();
+    if (detail.status === "running") {
+      Object.assign(clip, {
+        status: RUN_RUNNING, progress: 0, startedAt: now,
+        completedAt: null, elapsedSeconds: 0, error: "",
+      });
+    } else if (detail.status === "completed") {
+      Object.assign(clip, {
+        status: RUN_COMPLETED, progress: 1,
+        elapsedSeconds: clip.startedAt ? (now - clip.startedAt) / 1000 : 0,
+        completedAt: new Date().toISOString(), error: "",
+      });
+    } else {
+      return;
+    }
+    pushActivity(node);
+  });
+}
+
 function pushPreferences() {
   if (!frameReady || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
@@ -2509,6 +2538,7 @@ app.registerExtension({
     ensureEditorOverlay();
     bindDirectorPartialQueueGuard();
     bindExecutionActivity();
+    bindLoopSegmentActivity();
   },
   nodeCreated(node) {
     if (isDirector(node)) {
