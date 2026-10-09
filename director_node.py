@@ -80,6 +80,7 @@ def _second_pass_signature(runtime) -> dict:
         "tiling_tiles": int(second.get("tiling_tiles", 2)),
         "tiling_axis": str(second.get("tiling_axis", "auto")),
         "high_res_model": None if high_model is None else type(high_model).__name__,
+        "sampler_model_inputs": str(second.get("sampler_model_inputs", "current")),
         "sigmas": sigma_values,
     }
 
@@ -499,12 +500,19 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
     ):
         try:
             import nodes as comfy_nodes
-            if "SelfLiftAvatarH3Sampler" not in comfy_nodes.NODE_CLASS_MAPPINGS:
+            sampler_cls = comfy_nodes.NODE_CLASS_MAPPINGS["SelfLiftAvatarH3Sampler"]
+            input_types = sampler_cls.INPUT_TYPES()
+            required_inputs = set((input_types.get("required") or {}).keys())
+            if "low_res_model" in required_inputs:
+                sampler_model_inputs = "current"
+            elif "model" in required_inputs:
+                sampler_model_inputs = "legacy"
+            else:
                 raise RuntimeError
         except Exception:
             raise RuntimeError(
                 "TerryDirector SelfLift 需要安装并启用 slmonker/selflift-Avatar，"
-                "且必须包含 SelfLiftAvatarH3Sampler 节点。"
+                "且必须包含兼容的 SelfLiftAvatarH3Sampler 节点。"
             )
 
         packet = make_second_pass_config(
@@ -528,6 +536,7 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
             tiling_tiles=tiling_tiles,
             tiling_axis=tiling_axis,
         )
+        packet["sampler_model_inputs"] = sampler_model_inputs
         return io.NodeOutput(packet)
 
 
