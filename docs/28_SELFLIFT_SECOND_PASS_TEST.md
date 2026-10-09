@@ -1,175 +1,55 @@
-# SelfLift 二采实装 · 本地验收
+# 内置 SelfLift · 本地验收
 
-> 目标：验证新拓扑与 selflift-Avatar 的真实采样链。  
-> 不跑 50 秒长任务；先用短片段确认功能和质量。
+2026-10-10。此版覆盖此前要求安装 selflift-Avatar 的验收说明。
+实现与来源见 `30_SELFLIFT_INTERNAL.md`。不安装外部采样插件，不引入提示词增强或 DLSSNR。
 
-## 2026-10-10 接入检查
-
-本轮检查发现主分支已经有 SelfLift 接入，因此保留现有实现，不重复重写采样器。
-
-- `eaa2479`：修复 `director_node.py` 缺少模块级 `import torch`。原先默认开启 Sigma 精修时，`_refine_sigmas()` 会触发 `NameError`；其他函数内部的局部导入不能解决这个问题。
-- `fc52938`：新增 `tests/test_selflift_runtime.py`，共 16 项 CPU 隔离检查。覆盖默认日程、三种精修分布、精修关闭、参数校验、切换边界、部分配置的缓存签名变化、新版 SelfLift 输入传递及关闭二采时的原生采样路径。
-- 本轮使用从仓库读取的对应 helper 源码执行隔离检查，PyTorch `2.10.0+cpu`，16 项通过；移除模块级 torch 导入后能复现原错误，再恢复修复后通过。
-- 调度器和 GraphBuilder 使用测试替身。测试不启动完整 ComfyUI，不运行真实 H3 模型，不代表完整仓库测试、GPU 生成、前端、连续性画质或显存验收已经通过。下面 Case A–F 仍需本机验证。
-
-在完整仓库中复跑这组检查：
-
-```bash
-python -m unittest discover -s tests -p "test_selflift_runtime.py" -v
-```
-
-测试脚本读取仓库实际函数 AST 与生产文件自身的 torch 导入，不向被测函数注入 torch，以免掩盖缺失导入。
-
-## 节点拓扑
+## 结构与准备
 
 ```text
-TerryDirector 二采配置
-        ↓ 二采配置
-TerryDirector 配置
-        ↓ 导演配置
-TerryDirector / TerryDirector Advanced
+TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector / TerryDirector Advanced
 ```
 
-二采配置只接导演配置，不直接接导演时间线。时间线仍只接收一个导演配置包。
-不连接“二采配置”时，保持原生 TerryDirector 采样链不变。
+切换到 `feat/selflift-internal` 分支后重启 ComfyUI 后端并刷新页面，无需运行补丁安装脚本。
+二采节点仍使用原有参数布局。
+确认 `models/latent_upscale_models/` 中有自己的 H3 latent 放大权重并已在新节点中选中。
+普通模型、CLIP、音画 VAE 和分辨率仍在导演配置；Seed 仍在导演时间线。
 
-## 环境准备与参数归属
+## A · 不依赖外部插件
 
-确认已安装并启用 `slmonker/selflift-Avatar`，建议更新其 main 分支后重启 ComfyUI 后端并刷新前端。
-Latent 放大模型放在 `ComfyUI/models/latent_upscale_models/`，在二采配置中确认选中：
+在没有启用 selflift-Avatar 的测试实例中启动，不需要卸载它在其他工作流里的使用。
+确认能够创建二采配置、连接三级节点、看到放大模型列表、通过任务验证。
+展开图应出现 `TerryDirectorSelfLiftSampler`，不出现外部同名采样器。
+控制台应出现 `[TerryDirector SelfLift] engine=terrydirector-selflift-v1`。
 
-```text
-minimax_h3_latent_upscaler_3d_fp16.safetensors
-```
+## B · 普通采样回归
 
-如果菜单只有 `none`，先检查模型目录与文件；默认 `rho=0` 时本项目会拦截未选择放大模型的配置。
+不接二采配置，单段 4 秒、0.2MP，确认仍走 `SamplerCustomAdvanced` 并正常输出音画。
 
-分辨率、主模型、CLIP 与两种 VAE 仍归导演配置；Seed 仍归导演时间线。二采配置可额外接高清模型，不连接时复用导演配置的主模型。
+## C · SelfLift 单片段
 
-接入二采配置后，本轮 SelfLift 使用二采节点的基础步数与精修设置，以及固定 Euler / simple 日程；导演配置中的普通采样器、总步数与调度器不控制该 SelfLift 日程。不接二采时它们继续控制普通采样。
+连接二采配置。保持默认参数、高清分块关闭，先用 4 秒 / 0.2MP。
+确认控制台的低清/高清步数及分辨率，最终分辨率等于导演配置目标值。
+确认输出包含完整 H3 AV latent，音频不丢失、时长不改变，画面无异常。
+此步通过后再用自己的常用目标分辨率检查效果。
 
-SelfLift 是整段的“低清采样 → 潜空间提升 → 高清继续采样”路径，不是普通完整采样结束后再额外跑一遍采样。不会引入示例中的提示词增强、DLSSNR、DLSS 放大或补帧。
+## D · 多段衔接
 
-## 默认参数
+测试三个短片段，分别覆盖尾帧参考、尾帧续接及重叠 Guide。
+确认连续性输入仍连接、没有 Guide 空间尺寸报错、最终音画裁切/合并和总时长正常。
 
-新节点默认按用户提供的成熟 SelfLift 工作流：
+## E · Advanced
 
-- CFG = 1
-- 低清阶段步数 = 5
-- 低清比例 = 0.5
-- Latent 放大模型优先选择 `minimax_h3_latent_upscaler_3d_fp16.safetensors`
-- rho = 0
-- w_min = 0.5
-- w_max = 1
-- SelfLift 基础步数 = 6
-- Euler 固定
-- simple Sigma
-- H3 Sigma 精修 = 开
-- 精修加步 = 1
-- 起始 Sigma = 0.7
-- 结束 Sigma = 0
-- spacing = cosine
-- 高清分块 = 关
-- tiling = auto / 2 / auto
+检查短片段的无损缓存、最终输出、选中片段局部重跑、中断后恢复。
+新引擎签名与旧外部方案不同；不要期望直接恢复旧方案的中断缓存。
 
-SelfLift 采样直接调用已安装的 `SelfLiftAvatarH3Sampler`，不复制 selflift-Avatar 源码。
+## F · 可选高级路径
 
-## Case A：启动与节点结构
-
-重启 ComfyUI，确认：
-
-1. TerryDirector 无 import / registration 错误。
-2. 可以新建 `TerryDirector 二采配置`。
-3. `TerryDirector 配置` 中原来的“二采方案 / SelfLift 放大模型 / 高清占比”三个控件已经消失。
-4. `TerryDirector 配置` 出现“二采配置”输入。
-5. 新拓扑可以正常连接。
-
-如果本机 selflift-Avatar 使用新版接口，应识别 `low_res_model/high_res_model`；旧版 `model/model_hires` 也做了兼容。
-
-## Case B：不接二采配置的基线回归
-
-0.2MP、单片段 4 秒或现成短工作流。
-
-确认：
-
-- 原生 TerryDirector 正常完成；
-- expanded graph 仍走 `SamplerCustomAdvanced`；
-- 输出画面/音频正常。
-
-只需要跑一次，确认新节点没有影响旧链。
-
-## Case C：SelfLift 单片段
-
-连接：
-
-```text
-TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector
-```
-
-先保持新节点默认参数、高清分块关闭。
-
-确认：
-
-1. Prompt 可以通过验证，不出现 SelfLift 输入名错误或 `torch` 未定义错误。
-2. expanded graph 采样节点为 `SelfLiftAvatarH3Sampler`，不是原来的 `SamplerCustomAdvanced`。
-3. 控制台能看到 selflift-Avatar 的 low/high resolution 计划日志。
-4. 最终 IMAGE / AUDIO 正常。
-5. 画面分辨率是导演配置目标分辨率，不是低清阶段分辨率。
-6. 音频正常，不丢失、不截断。
-
-如果失败，保留完整 traceback，不改参数，直接修集成。
-
-## Case D：3 段连续性
-
-0.2MP，3 个短片段，使用当前已有 tail_reference / tail_continuation 测试时间线。
-
-确认：
-
-- 三段都走 SelfLift；
-- 上一段尾帧/重叠上下文仍能正常进入下一段；
-- 最终 Base 合并 IMAGE/AUDIO 正常；
-- 没有因为 SelfLift 改坏 suspended / gap / overlap 现有语义。
-
-## Case E：Advanced
-
-同样 0.2MP / 3 段 / preview off。
-
-确认：
-
-- SelfLift + Advanced 无损 segment cache 可以同时工作；
-- 最终仍只做一次视频/音频编码；
-- LATENT checkpoint 保留；
-- lossless pixel cache 完成后删除；
-- 局部重跑至少选 1 段执行一次，确认 SelfLift 设置已进入缓存签名，不误复用旧采样结果。
-
-## Case F：高清分块（最后再测）
-
-只有 A–E 全部通过后：
-
-- 开启“高清分块”
-- 先用 `auto`
-- 不改其他参数
-
-检查控制台中的实际 tiling plan 并确认能完成一次短片段。内部展开节点的原插件状态面板不作为本轮 UI 验收前提。
-
-不需要为了本轮测试手动尝试 2/4/6/8 全部组合。
+基础路径通过后，再分别测试高清分块、兼容的第二个高清模型、rho>0 的像素锚点。
+不要一次打开所有选项。auto 分块实际块数以控制台为准；内存估算不保证不 OOM。
+带 mask 的分块仅支持全视频生成、全音频保留，暂不支持 ControlNet 分块。
 
 ## 报告
 
-结果写入：
-
-```text
-docs/29_SELFLIFT_SECOND_PASS_REPORT.md
-```
-
-只记录：
-
-- Case A–F 通过/失败；
-- 实际识别到的 SelfLift API（current / legacy）；
-- 单片段与 3 段 Prompt total；
-- 是否成功使用目标 latent upscaler；
-- 画面/音频是否正常；
-- traceback（如有）；
-- 最终 commit hash。
-
-不要跑 50 秒任务，不做性能 A/B。
+在 `29_SELFLIFT_SECOND_PASS_REPORT.md` 记录实际测试结果，不预先填“通过”：
+实际代码版本、A–F 状态、模型和放大器名称、参数、分辨率、时长、完整报错、
+音画结果及观察到的显存/耗时。不必先跑长任务或大规模性能比较。

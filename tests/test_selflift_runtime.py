@@ -199,13 +199,13 @@ class SelfLiftRuntimeTests(unittest.TestCase):
         positive, latent = ["overlap_guide", 0], ["conditioning", 1]
         result = self.sample(graph, runtime, positive, latent, "segment_1", 1000)
         self.assertEqual([call[0] for call in graph.calls],
-                         ["ConditioningZeroOut", "SelfLiftAvatarH3Sampler"])
+                         ["ConditioningZeroOut", "TerryDirectorSelfLiftSampler"])
         call = graph.calls[-1]
         inputs = call[2]
         self.assertEqual(result, [call[1], 0])
-        self.assertIs(inputs["low_res_model"], self.model)
+        self.assertIs(inputs["model"], self.model)
         self.assertNotIn("high_res_model", inputs)
-        self.assertNotIn("model", inputs)
+        self.assertNotIn("low_res_model", inputs)
         self.assertNotIn("model_hires", inputs)
         self.assertIs(inputs["positive"], positive)
         self.assertIs(inputs["latent_image"], latent)

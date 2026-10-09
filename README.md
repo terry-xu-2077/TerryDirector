@@ -1,5 +1,26 @@
 # TerryDirector
 
+## 内置 SelfLift · 2026-10-10
+
+本分支 `feat/selflift-internal` 已直接纳入 TerryDirector 自有的 SelfLift 实现，
+不再依赖 `SelfLiftAvatarH3Sampler` 或 selflift-Avatar 插件，不需要运行补丁安装脚本。
+用户可见接线保持：**TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector / TerryDirector Advanced**。
+不接二采配置时仍走原生采样。模型、CLIP、VAE 和目标尺寸留在导演配置，Seed 留在时间线。
+H3 模型、VAE 与 latent upscaler 权重仍由用户提供。
+
+本节及 [内置 SelfLift 实现说明](docs/30_SELFLIFT_INTERNAL.md) 覆盖下方历史段落中
+“SelfLift 尚未接入”、旧二采方案控件和外部采样器依赖的描述；不改变既有时间线 UI、
+Guide、音画输出与 Advanced 缓存边界。实机测试见 [内置 SelfLift 验收](docs/28_SELFLIFT_SECOND_PASS_TEST.md)。
+
+在已有仓库目录获取测试分支：
+
+```bash
+git fetch origin
+git switch --track origin/feat/selflift-internal
+```
+
+重启 ComfyUI 后端并刷新页面。已通过 CPU 隔离检查，真实 GPU 生成和画质仍需本地验收。
+
 > 当前浮窗 UI / 时间线恢复基线：`408395e7620fe368775515ca515d04fae7a8daed`（Demo 06.11）。
 
 AI 视频镜头生成任务工作台。仓库同时保留 **HTML / CSS / JavaScript 静态交互 Demo**，并已加入第一版 **ComfyUI TerryDirector 主节点**；前端仍不做 React 拆分。
