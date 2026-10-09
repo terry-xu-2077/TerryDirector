@@ -416,11 +416,7 @@ class TerryDirector(io.ComfyNode):
 
 
 class TerryDirectorAdvanced(TerryDirector):
-    """Advanced director: shared sampling engine, dedicated review UI.
-
-    Preview encoding, durable segment reuse and file saving are introduced
-    separately. These settings are declared now without claiming to save media.
-    """
+    """Advanced director with lossless segment caching, review UI and final video export."""
 
     @classmethod
     def define_schema(cls) -> io.Schema:
@@ -446,11 +442,11 @@ class TerryDirectorAdvanced(TerryDirector):
                 ),
                 io.String.Input(
                     "save_subfolder", default="TerryDirector", socketless=True,
-                    tooltip="Advanced 保存子目录（相对于 ComfyUI output；保存功能待接入）。",
+                    tooltip="Advanced 最终视频保存子目录（相对于 ComfyUI output）。",
                 ),
                 io.String.Input(
                     "filename_prefix", default="video/TerryDirector", socketless=True,
-                    tooltip="Advanced 文件前缀（保存功能待接入）。",
+                    tooltip="Advanced 最终视频文件名前缀。",
                 ),
                 # Keep the original Advanced widget order stable for old workflows.
                 io.Combo.Input("video_format", display_name="格式",
