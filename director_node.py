@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import uuid
+import torch
 import folder_paths
 import comfy.samplers
 from comfy_api.latest import io
