@@ -4,7 +4,13 @@ from typing_extensions import override
 
 from comfy_api.latest import ComfyExtension, io
 
-from .director_node import TerryDirector, TerryDirectorAdvanced, TerryDirectorConfig, TerryDirectorOutput
+from .director_node import (
+    TerryDirector,
+    TerryDirectorAdvanced,
+    TerryDirectorConfig,
+    TerryDirectorSecondPassConfig,
+    TerryDirectorOutput,
+)
 from .director_internal import (
     TerryDirectorCacheLatent,
     TerryDirectorLoadCachedLatent,
@@ -27,6 +33,7 @@ class TerryDirectorExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [
+            TerryDirectorSecondPassConfig,
             TerryDirectorConfig,
             TerryDirector,
             TerryDirectorAdvanced,
