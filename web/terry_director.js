@@ -2447,8 +2447,6 @@ app.registerExtension({
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
     } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
-      queueMicrotask(() => mountOutputNode(node));
     }
   },
   loadedGraphNode(node) {
@@ -2456,6 +2454,8 @@ app.registerExtension({
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+      queueMicrotask(() => mountOutputNode(node));
     }
   },
 });
