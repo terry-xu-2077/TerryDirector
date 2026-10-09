@@ -3,6 +3,7 @@ import { api } from "/scripts/api.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
+const OUTPUT_NODE_CLASS = "TerryDirectorOutput";
 const isDirector = node => node?.comfyClass === NODE_CLASS || node?.comfyClass === ADVANCED_NODE_CLASS;
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
 const CONFIG_ADVANCED_WIDGETS = new Set([
@@ -19,6 +20,8 @@ const DIRECTOR_MIN_WIDTH = 460;
 const ADVANCED_NODE_MIN_HEIGHT = 620;
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 40;
+const OUTPUT_MEMORY_NOTICE_GIB = 4;
+const OUTPUT_MEMORY_HIGH_GIB = 8;
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -1071,6 +1074,7 @@ function writeConfig(node, config, render = true) {
   widget.callback?.(widget.value);
   markChanged(node);
   if (render) renderNode(node);
+  queueMicrotask(refreshAllOutputMemoryInfo);
 }
 
 function miniRulerHtml(totalFrames) {
@@ -1171,6 +1175,193 @@ function renderNode(node) {
   });
 }
 
+
+
+function linkedNodeForInput(node, inputName) {
+  const input = node?.inputs?.find(item => item.name === inputName);
+  const link = input?.link != null ? app.graph?.links?.[input.link] : null;
+  return link ? app.graph?.getNodeById?.(link.origin_id) : null;
+}
+
+function effectiveTimelineFrames(documentData) {
+  const clips = Array.isArray(documentData?.clips) ? documentData.clips : [];
+  let previousActiveOriginal = null;
+  let previousEffectiveEnd = 0;
+  let suspendedSinceActive = false;
+  let lastEffectiveEnd = 0;
+
+  for (const clip of clips) {
+    const start = Math.max(0, Number(clip?.start) || 0);
+    const end = Math.max(start + 1, Number(clip?.end) || start + 1);
+    if (clip?.suspended === true) {
+      suspendedSinceActive = true;
+      continue;
+    }
+
+    let effectiveStart;
+    if (!previousActiveOriginal) {
+      effectiveStart = suspendedSinceActive ? 0 : start;
+    } else if (suspendedSinceActive) {
+      effectiveStart = previousEffectiveEnd;
+    } else {
+      effectiveStart = previousEffectiveEnd + (start - Number(previousActiveOriginal.end || 0));
+    }
+
+    lastEffectiveEnd = effectiveStart + (end - start);
+    previousEffectiveEnd = lastEffectiveEnd;
+    previousActiveOriginal = clip;
+    suspendedSinceActive = false;
+  }
+
+  return Math.max(0, Math.round(lastEffectiveEnd));
+}
+
+function directorResolution(node) {
+  const configNode = linkedNodeForInput(node, "director_config");
+  if (configNode?.comfyClass !== CONFIG_NODE_CLASS) return null;
+
+  const ratioValue = String(
+    configNode.widgets?.find(widget => widget.name === "aspect_ratio")?.value ?? "16:9"
+  );
+  const match = ratioValue.match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+
+  const rw = Number(match[1]);
+  const rh = Number(match[2]);
+  const megapixels = Math.max(
+    0.01,
+    Number(configNode.widgets?.find(widget => widget.name === "megapixels")?.value ?? 1)
+  );
+  const multiple = Math.max(
+    1,
+    Number(configNode.widgets?.find(widget => widget.name === "multiple")?.value ?? 32)
+  );
+  if (!(rw > 0 && rh > 0)) return null;
+
+  const totalPixels = megapixels * 1024 * 1024;
+  const scale = Math.sqrt(totalPixels / (rw * rh));
+  const width = Math.max(multiple, Math.round(rw * scale / multiple) * multiple);
+  const height = Math.max(multiple, Math.round(rh * scale / multiple) * multiple);
+  return { width, height };
+}
+
+function outputMemoryEstimate(node) {
+  const director = linkedNodeForInput(node, "director_output");
+  if (!director || director.comfyClass !== NODE_CLASS) return null;
+
+  const config = readConfig(director);
+  const frames = effectiveTimelineFrames(config.document);
+  const resolution = directorResolution(director);
+  if (!resolution || frames < 1) return null;
+
+  const bytes = frames * resolution.width * resolution.height * 3 * 4;
+  const gib = bytes / (1024 ** 3);
+  if (gib < OUTPUT_MEMORY_NOTICE_GIB) return null;
+
+  return {
+    frames,
+    seconds: frames / FPS,
+    width: resolution.width,
+    height: resolution.height,
+    gib,
+    level: gib >= OUTPUT_MEMORY_HIGH_GIB ? "high" : "notice",
+  };
+}
+
+function renderOutputMemoryInfo(node) {
+  const root = node?.__tdOutputInfoRoot;
+  if (!root) return;
+  const estimate = outputMemoryEstimate(node);
+  const wasVisible = !root.hidden;
+
+  if (!estimate) {
+    root.hidden = true;
+    root.innerHTML = "";
+  } else {
+    const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
+    const memory = estimate.gib.toFixed(1);
+    root.hidden = false;
+    root.className = `td-output-memory-card is-${estimate.level}`;
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">${estimate.level === "high" ? "!" : "i"}</span>
+        <strong>合并整段画面预计占用 <b>${memory} GB</b> 内存</strong>
+      </div>
+      <div class="td-output-memory-meta">
+        ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}
+      </div>
+      <div class="td-output-memory-note">
+        ${estimate.level === "high"
+          ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
+          : "内存占用较高，后续图像节点可能继续增加内存占用。"}
+      </div>
+    `;
+  }
+
+  const isVisible = !root.hidden;
+  if (wasVisible !== isVisible) {
+    queueMicrotask(() => {
+      try {
+        const computed = node.computeSize?.();
+        if (Array.isArray(computed)) {
+          node.setSize?.([
+            Math.max(Number(node.size?.[0]) || 320, 320),
+            Math.max(Number(computed[1]) || 0, isVisible ? 205 : 120),
+          ]);
+        }
+      } catch {}
+      node.setDirtyCanvas?.(true, true);
+    });
+  } else {
+    node.setDirtyCanvas?.(true, true);
+  }
+}
+
+function refreshAllOutputMemoryInfo() {
+  for (const node of app.graph?._nodes || []) {
+    if (node?.comfyClass === OUTPUT_NODE_CLASS) renderOutputMemoryInfo(node);
+  }
+}
+
+function mountOutputNode(node) {
+  if (!node || node.comfyClass !== OUTPUT_NODE_CLASS) return;
+  ensureCss();
+
+  if (!node.__tdOutputInfoRoot) {
+    const root = document.createElement("div");
+    root.hidden = true;
+    root.className = "td-output-memory-card";
+    root.addEventListener("pointerdown", event => event.stopPropagation());
+
+    const widget = node.addDOMWidget(
+      "terrydirector_output_memory_info",
+      "terrydirector_output_memory_info",
+      root,
+      {
+        hideOnZoom: false,
+        getMinHeight: () => root.hidden ? 0 : 78,
+        getMaxHeight: () => root.hidden ? 0 : 96,
+        margin: 5,
+      }
+    );
+    widget.serialize = false;
+    widget.options.serialize = false;
+    node.__tdOutputInfoRoot = root;
+    node.__tdOutputInfoWidget = widget;
+  }
+
+  if (!node.__tdOutputConnectionBound) {
+    const previousConnectionsChange = node.onConnectionsChange;
+    node.onConnectionsChange = function(...args) {
+      const result = previousConnectionsChange?.apply(this, args);
+      queueMicrotask(() => renderOutputMemoryInfo(this));
+      return result;
+    };
+    node.__tdOutputConnectionBound = true;
+  }
+
+  renderOutputMemoryInfo(node);
+}
 
 
 // Advanced review is intentionally independent of the full editor timeline.
@@ -1929,9 +2120,22 @@ function applyConfigAdvancedVisibility(node) {
     ratio.callback = function(...args) {
       const result = original?.apply(this, args);
       queueMicrotask(() => syncLinkedAdvancedNodes(node));
+      queueMicrotask(refreshAllOutputMemoryInfo);
       return result;
     };
     ratio.__tdAdvancedAspectBound = true;
+  }
+
+  for (const name of ["megapixels", "multiple"]) {
+    const widget = node.widgets?.find(item => item.name === name);
+    if (!widget || widget.__tdOutputMemoryBound) continue;
+    const original = widget.callback;
+    widget.callback = function(...args) {
+      const result = original?.apply(this, args);
+      queueMicrotask(refreshAllOutputMemoryInfo);
+      return result;
+    };
+    widget.__tdOutputMemoryBound = true;
   }
 }
 
@@ -2241,6 +2445,10 @@ app.registerExtension({
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+      queueMicrotask(() => mountOutputNode(node));
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+      queueMicrotask(() => mountOutputNode(node));
     }
   },
   loadedGraphNode(node) {
