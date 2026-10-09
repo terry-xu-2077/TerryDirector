@@ -1085,3 +1085,19 @@
   color: rgba(181,175,188,.62);
   font-size: 9px;
 }
+
+
+.td-output-memory-card.is-idle,
+.td-output-memory-card.is-normal {
+  border-color: rgba(155,120,255,.18);
+  background:
+    linear-gradient(180deg, rgba(155,120,255,.045), rgba(155,120,255,.012)),
+    rgba(21,24,32,.94);
+}
+
+.td-output-memory-card.is-idle .td-output-memory-icon,
+.td-output-memory-card.is-normal .td-output-memory-icon {
+  border-color: rgba(155,120,255,.28);
+  color: #c9bbff;
+  background: rgba(155,120,255,.09);
+}
