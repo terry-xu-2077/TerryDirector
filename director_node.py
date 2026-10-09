@@ -509,6 +509,15 @@ class TerryDirectorAdvanced(TerryDirector):
         plan = compile_timeline(
             config["document"], tail_reference_prompt=tail_reference_prompt,
         )
+        cache_key = str(cls.hidden.unique_id)
+        recovery_mode = str(recovery_mode or "").strip().lower()
+        recovery_checkpoint = None
+        if recovery_mode in {"resume", "export_partial"}:
+            recovery_checkpoint = load_advanced_checkpoint(cache_key)
+            if isinstance(recovery_checkpoint, dict):
+                saved_seed = recovery_checkpoint.get("run_seed")
+                if saved_seed is not None:
+                    seed = int(saved_seed)
         diagnostic_signature = _log_execution_signature(
             "Advanced", runtime, plan, seed
         )
@@ -522,7 +531,6 @@ class TerryDirectorAdvanced(TerryDirector):
         if prefix == "TerryDirector" and folder:
             prefix = folder + "/TerryDirector"
 
-        cache_key = str(cls.hidden.unique_id)
         rerun = None
         if str(rerun_clip_id or "").strip():
             rerun = {
@@ -535,7 +543,6 @@ class TerryDirectorAdvanced(TerryDirector):
                 flush=True,
             )
 
-        recovery_mode = str(recovery_mode or "").strip().lower()
         segment_ids = [str(segment["id"]) for segment in plan["segments"]]
         segment_signatures = _segment_cache_signatures(runtime, plan)
         reuse_cached_segment_ids: set[str] = set()
@@ -553,9 +560,10 @@ class TerryDirectorAdvanced(TerryDirector):
                 diagnostic_signature,
                 segment_ids,
                 segment_signatures,
+                int(seed),
             )
         elif recovery_mode in {"resume", "export_partial"}:
-            checkpoint = load_advanced_checkpoint(cache_key)
+            checkpoint = recovery_checkpoint
             if not isinstance(checkpoint, dict):
                 raise RuntimeError("TerryDirector Advanced 没有可恢复的中断任务")
             if str(checkpoint.get("run_signature")) != str(diagnostic_signature):
