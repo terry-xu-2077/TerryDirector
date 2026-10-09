@@ -15,7 +15,7 @@
 
 > **TerryDirector 多片段时间线在最终 IMAGE/AUDIO assembly 过程中占用大量系统内存。**
 
-当前 0.5MP / 960×544 / 约 50 秒 / 9 段测试中，最终合并阶段达到：
+历史 0.5MP / 960×544 / 9 段长任务曾测得最终合并阶段：
 
 ```text
 frames=1194
@@ -25,7 +25,7 @@ system RAM≈98.3%
 RAM free≈1080 MB
 ```
 
-机器为 64GB RAM。
+机器为 64GB RAM。该数据只作为风险背景，不再要求重复跑 9 段长任务。
 
 这意味着即使历史 Advanced sampler 随机卡顿与此没有被证明存在直接因果关系，**assembly 本身已经是确定的生产风险**。
 
@@ -166,20 +166,24 @@ final images≈7.1GB
 
 先不要改算法。
 
-使用：
+使用统一快速基线：
 
 ```text
 0.5MP
 960×544
-9 段
+3 段
 preview off
 seed=9
 ```
+
+要求这 3 段就是实际时间线终点：**第 3 段结束后不要再保留 900+ 帧 trailing gap**。可以在浏览器内存或测试副本中临时裁掉后续 suspended 段，但不要保存/改写用户原工作流文件。
 
 分别跑：
 
 - Base；
 - Advanced。
+
+本任务所有算法 A/B 默认都只跑这 3 段。除非用户以后明确同意，不再跑 0.5MP / 9 段长任务。
 
 记录每个片段：
 
@@ -439,35 +443,25 @@ Advanced:
 
 # 12. 性能/内存验收基线
 
-当前 0.5MP / 1194 帧：
+历史 9 段长任务的 44.6GB RSS / 98.3% 系统 RAM 只作为风险背景，不作为本轮验收用例。
 
-```text
-final IMAGE logical size ≈ 7.1GB
-process RSS ≈ 44.6GB
-system RAM ≈ 98.3%
-```
-
-第一阶段现实目标：
-
-> 在不改变 Base/Advanced 输出语义、不改变画面/音频结果的前提下，把 process RSS 峰值显著降低。
-
-建议验收：
+本轮以**同一套 0.5MP / 3 段快速基线**做前后 A/B。因为最终帧数明显更少，验收改成相对指标：
 
 ### 最低合格
 
 ```text
-RSS peak < 30GB
-system RAM < 80%
+peak RSS 相比当前 3 段 baseline 至少下降 25%
+system RAM peak 至少下降 10 个百分点
 ```
 
 ### 理想目标
 
 ```text
-RSS peak < 20GB
-system RAM < 70%
+peak RSS 下降 35% 以上
+system RAM peak 保持在 70% 以下
 ```
 
-如果最终 merged IMAGE 仍为 float32 7.1GB，不能用不现实的 2～3GB RSS 目标。
+如果某个方案只降低运行时间、没有明显降低 RSS，不算完成本任务。
 
 ---
 
@@ -530,7 +524,7 @@ audio selected-range checksum
 6. 只选择一种最小风险方案落正式代码
 7. Base 回归
 8. Advanced 回归
-9. 9 段 0.5MP 内存验收
+9. 3 段 0.5MP 内存验收
 10. 写报告
 
 ---
@@ -545,7 +539,7 @@ docs/17_ASSEMBLY_MEMORY_OPTIMIZATION_REPORT.md
 
 至少包含：
 
-- 原始内存生命周期表；
+- 0.5MP / 3 段原始内存生命周期表；
 - clone A/B；
 - final-cat A/B；
 - preallocation A/B；
@@ -573,3 +567,25 @@ docs/17_ASSEMBLY_MEMORY_OPTIMIZATION_REPORT.md
 4. 不重新引入历史性能异常；
 5. 代码路径比现有逐段 cumulative cat 更可解释；
 6. 有完整量化报告支持采用该方案。
+
+
+---
+
+# 18. 用户最新约束：禁止再次跑 9 段长任务
+
+本任务从现在起遵守：
+
+```text
+0.5MP
+3 段
+preview off
+seed=9
+```
+
+所有 baseline、clone A/B、final-cat A/B、preallocation A/B、Base/Advanced 回归都只用 3 段。
+
+不要为了“最终压力测试”自行恢复 9 段。
+
+如果 3 段已经能清楚看到 RSS 差异，就直接以 3 段结果做方案选择和报告。
+
+只有在用户后续明确授权时，才允许额外跑更长任务。
