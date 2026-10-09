@@ -207,15 +207,66 @@ async function restoreAdvancedState(node) {
     if (!response?.ok) return;
     const payload = await response.json();
     const state = payload?.state;
-    const video = state?.video;
-    if (!video?.filename) return;
+    const checkpoint = payload?.checkpoint;
 
     const activeClips = (readConfig(node).document.clips || []).filter(clip => !clip.suspended);
     const currentIds = activeClips.map(clip => String(clip.id));
-    const savedIds = Array.isArray(state.segment_ids) ? state.segment_ids.map(String) : [];
-    const sameSegments = currentIds.length === savedIds.length &&
+    const savedIds = Array.isArray(state?.segment_ids) ? state.segment_ids.map(String) : [];
+    const checkpointIds = Array.isArray(checkpoint?.segment_ids)
+      ? checkpoint.segment_ids.map(String)
+      : [];
+    const sameFinalSegments = currentIds.length === savedIds.length &&
       currentIds.every((id, index) => id === savedIds[index]);
-    if (!sameSegments) return;
+    const sameCheckpointSegments = currentIds.length === checkpointIds.length &&
+      currentIds.every((id, index) => id === checkpointIds[index]);
+
+    const completedIds = Array.isArray(checkpoint?.completed_segment_ids)
+      ? checkpoint.completed_segment_ids.map(String)
+      : [];
+    const checkpointIsPartial =
+      sameCheckpointSegments &&
+      completedIds.length > 0 &&
+      checkpoint?.status !== "complete";
+
+    if (checkpointIsPartial) {
+      node.__tdPartialRecovery = {
+        completedIds,
+        total: currentIds.length,
+        updatedAt: Number(checkpoint?.updated_at || 0),
+      };
+      node.__tdRerunCacheReady = false;
+      node.__tdRunActivity = blankActivity(node);
+      const completedSet = new Set(completedIds);
+      const completedAt = checkpoint?.updated_at
+        ? new Date(Number(checkpoint.updated_at) * 1000).toISOString()
+        : new Date().toISOString();
+      for (const clip of activeClips) {
+        const record = node.__tdRunActivity[clip.id];
+        if (!record || !completedSet.has(String(clip.id))) continue;
+        record.status = RUN_COMPLETED;
+        record.progress = 1;
+        record.completedAt = completedAt;
+        record.error = "";
+      }
+      const partialVideo = checkpoint?.partial_video;
+      if (partialVideo?.filename) {
+        const params = new URLSearchParams({
+          filename: partialVideo.filename,
+          subfolder: partialVideo.subfolder || "",
+          type: partialVideo.type || "output",
+        });
+        node.__tdPreviewUrl = "/view?" + params.toString();
+      }
+      renderNode(node);
+      return;
+    }
+
+    node.__tdPartialRecovery = null;
+    const video = state?.video;
+    if (!video?.filename || !sameFinalSegments) {
+      renderNode(node);
+      return;
+    }
 
     const params = new URLSearchParams({
       filename: video.filename,
@@ -618,6 +669,14 @@ function finishPromptActivity(promptId, success, message = "") {
     node.__tdPromptId = null;
     node.__tdLocalRunLock = false;
     if (node.comfyClass === ADVANCED_NODE_CLASS) endAdvancedLivePreview(node);
+    if (node.comfyClass === ADVANCED_NODE_CLASS && node.__tdRecoveryAction) {
+      const recoveryWidget = node.widgets?.find(w => w.name === "recovery_mode");
+      if (recoveryWidget) {
+        recoveryWidget.value = "";
+        recoveryWidget.callback?.("");
+      }
+      node.__tdRecoveryAction = null;
+    }
     if (node.__tdRerunActiveClipId) {
       const widget = node.widgets?.find(w => w.name === "rerun_clip_id");
       if (widget) {
@@ -730,14 +789,24 @@ function bindExecutionActivity() {
   });
 
   api.addEventListener("execution_success", event => {
-    finishPromptActivity(event.detail?.prompt_id, true);
+    const matched = finishPromptActivity(event.detail?.prompt_id, true);
+    if (matched) {
+      for (const node of app.graph?._nodes || []) {
+        if (node?.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
+      }
+    }
   });
   api.addEventListener("execution_error", event => {
-    finishPromptActivity(
+    const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
       event.detail?.exception_message || "生成失败"
     );
+    if (matched) {
+      for (const node of app.graph?._nodes || []) {
+        if (node?.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
+      }
+    }
   });
   api.addEventListener("execution_interrupted", event => {
     const matched = finishPromptActivity(
@@ -747,6 +816,11 @@ function bindExecutionActivity() {
     );
     if (matched) {
       void api.freeMemory({ freeExecutionCache: true });
+      for (const node of app.graph?._nodes || []) {
+        if (node?.comfyClass === ADVANCED_NODE_CLASS) {
+          window.setTimeout(() => void restoreAdvancedState(node), 150);
+        }
+      }
     }
   });
 }
@@ -1393,6 +1467,11 @@ function renderAdvancedNode(node) {
   if (allSegmentsCompleted) node.__tdRerunCacheReady = true;
   const rerunHasCache = !!node.__tdRerunCacheReady;
   const rerunBusy = !!node.__tdPromptId || !!node.__tdLocalRunLock;
+  const partialRecovery = node.__tdPartialRecovery;
+  const recoveryCount = Array.isArray(partialRecovery?.completedIds)
+    ? partialRecovery.completedIds.length
+    : 0;
+  const hasPartialRecovery = recoveryCount > 0 && recoveryCount < Math.max(1, Number(partialRecovery?.total || clips.length));
   const rulerHtml = miniRulerHtml(totalFrames);
   const clipHtml = clips.map((clip, index) => {
     const left = Math.max(0, Math.min(100, Number(clip.start) / totalFrames * 100));
@@ -1456,6 +1535,11 @@ function renderAdvancedNode(node) {
       </div>
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
+      ${hasPartialRecovery ? `<div class="td-adv-rerun-tools td-adv-recovery-tools${rerunBusy ? " is-busy" : ""}">
+        <span>已保留 ${recoveryCount}/${Number(partialRecovery?.total || clips.length)} 段</span>
+        <button type="button" data-adv="resume-recovery" ${rerunBusy ? "disabled" : ""}>▶ 继续生成</button>
+        <button type="button" data-adv="export-recovery" ${rerunBusy ? "disabled" : ""}>导出已完成部分</button>
+      </div>` : ""}
       ${rerunHasCache ? `<div class="td-adv-rerun-tools${rerunBusy ? " is-busy" : ""}">
         <label class="td-adv-rerun-seed-label">重跑 Seed
           <span class="td-adv-rerun-seed-box">
@@ -1652,6 +1736,41 @@ function renderAdvancedNode(node) {
     state.rerunSeedCustom[state.selected] = value;
     rerunSeedInput.value = value;
   });
+  const startRecovery = mode => {
+    if (!hasPartialRecovery || rerunBusy || node.__tdPromptId || node.__tdLocalRunLock) return;
+    const recoveryWidget = node.widgets?.find(w => w.name === "recovery_mode");
+    if (!recoveryWidget) return;
+    recoveryWidget.value = mode;
+    recoveryWidget.callback?.(mode);
+    node.__tdRecoveryAction = mode;
+    node.__tdLocalRunLock = true;
+    if (mode === "resume") beginAdvancedLivePreview(node);
+    pushActivity(node);
+
+    void queueDirectorNode(node).then(queued => {
+      if (!queued && !node.__tdPromptId) {
+        node.__tdLocalRunLock = false;
+        node.__tdRecoveryAction = null;
+        recoveryWidget.value = "";
+        recoveryWidget.callback?.("");
+        pushActivity(node);
+      }
+    }).catch(() => {
+      node.__tdLocalRunLock = false;
+      node.__tdRecoveryAction = null;
+      recoveryWidget.value = "";
+      recoveryWidget.callback?.("");
+      pushActivity(node);
+    });
+  };
+
+  root.querySelector('[data-adv="resume-recovery"]')?.addEventListener("click", () => {
+    startRecovery("resume");
+  });
+  root.querySelector('[data-adv="export-recovery"]')?.addEventListener("click", () => {
+    startRecovery("export_partial");
+  });
+
   root.querySelector('[data-adv="rerun"]')?.addEventListener("click", buttonEvent => {
     if (!rerunHasCache || rerunBusy || buttonEvent.currentTarget.disabled || !state.selected || node.__tdPromptId || node.__tdLocalRunLock) return;
     const rawSeed = String(rerunSeedInput?.value ?? node.widgets?.find(w => w.name === "seed")?.value ?? 0).trim();
@@ -1853,7 +1972,7 @@ function mountNode(node) {
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
       hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","recovery_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
     renderNode(node);
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
@@ -1873,7 +1992,7 @@ function mountNode(node) {
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
     hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
+    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","recovery_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
   }
 
   const root = document.createElement("div");
