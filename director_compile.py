@@ -230,10 +230,9 @@ def compile_timeline(
     # so an originally adjacent clip automatically continues from the previous
     # active clip instead of producing black frames.
     active_clips: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
-    previous_original_end = 0
     previous_active_original: dict[str, Any] | None = None
     previous_active_effective: dict[str, Any] | None = None
-    bridge_delta = 0
+    suspended_since_active = False
 
     for index, clip in enumerate(clips):
         if not isinstance(clip, dict):
@@ -244,12 +243,8 @@ def compile_timeline(
         if start < 0 or end <= start:
             raise ValueError(f"TerryDirector segment {index + 1} has an invalid frame range")
 
-        # Preserve only the spacing relation between neighboring source clips.
-        # Suspended clip durations themselves are deliberately not accumulated.
-        bridge_delta += start - previous_original_end
-        previous_original_end = end
-
         if clip.get("suspended", False):
+            suspended_since_active = True
             continue
 
         if previous_active_original is not None:
@@ -262,16 +257,23 @@ def compile_timeline(
                 )
 
         duration = end - start
-        base_end = (
-            int(previous_active_effective["end"])
-            if previous_active_effective is not None
-            else 0
-        )
-        effective_start = base_end + bridge_delta
         if previous_active_effective is None:
-            effective_start = max(0, effective_start)
-        effective_end = effective_start + duration
+            # Leading suspended clips are completely transparent: the first
+            # effective clip begins at frame 0. Without a suspended predecessor,
+            # preserve an intentional leading gap.
+            effective_start = 0 if suspended_since_active else start
+        elif suspended_since_active:
+            # A suspended clip is removed from the execution chain entirely.
+            # The next valid clip is re-attached directly to the previous valid
+            # clip; its own transitionMode now applies to that active predecessor.
+            effective_start = int(previous_active_effective["end"])
+        else:
+            # No suspension between these two active clips: preserve the normal
+            # timeline relation, including intentional gaps or overlaps.
+            delta = start - int(previous_active_original["end"])
+            effective_start = int(previous_active_effective["end"]) + delta
 
+        effective_end = effective_start + duration
         effective_clip = dict(clip)
         effective_clip["start"] = effective_start
         effective_clip["end"] = effective_end
@@ -279,7 +281,7 @@ def compile_timeline(
 
         previous_active_original = clip
         previous_active_effective = effective_clip
-        bridge_delta = 0
+        suspended_since_active = False
 
     if not active_clips:
         raise ValueError("TerryDirector timeline requires at least one active segment")
