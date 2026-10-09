@@ -11,9 +11,6 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
   "sampler",
   "sigmas",
   "sigmas_denoise",
-  "second_pass_method",
-  "second_pass_model",
-  "second_pass_high_ratio",
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
@@ -2141,18 +2138,6 @@ function setNativeWidgetHidden(widget, hidden) {
   widget.syncLiveVisibilityOptions?.();
 }
 
-function syncSecondPassWidgets(node) {
-  const method = node.widgets?.find(widget => widget.name === "second_pass_method");
-  const model = node.widgets?.find(widget => widget.name === "second_pass_model");
-  const ratio = node.widgets?.find(widget => widget.name === "second_pass_high_ratio");
-  const showSelfLift = method?.value === "SelfLift";
-
-  setNativeWidgetHidden(model, !showSelfLift);
-  setNativeWidgetHidden(ratio, !showSelfLift);
-
-  node.setDirtyCanvas?.(true, true);
-  node.graph?.setDirtyCanvas?.(true, true);
-}
 
 function applyConfigAdvancedVisibility(node) {
   if (!node || node.comfyClass !== CONFIG_NODE_CLASS) return;
@@ -2167,17 +2152,6 @@ function applyConfigAdvancedVisibility(node) {
     widget.syncLiveVisibilityOptions?.();
   }
 
-  const method = node.widgets?.find(widget => widget.name === "second_pass_method");
-  if (method && !method.__tdSecondPassConditional) {
-    const originalCallback = method.callback;
-    method.callback = value => {
-      originalCallback?.(value);
-      queueMicrotask(() => syncSecondPassWidgets(node));
-    };
-    method.__tdSecondPassConditional = true;
-  }
-
-  syncSecondPassWidgets(node);
   const ratio = node.widgets?.find(widget => widget.name === "aspect_ratio");
   if (ratio && !ratio.__tdAdvancedAspectBound) {
     const original = ratio.callback;
