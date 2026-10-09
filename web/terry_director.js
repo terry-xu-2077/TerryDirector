@@ -240,6 +240,7 @@ async function restoreAdvancedState(node) {
           completedIds,
           total: currentIds.length,
           updatedAt: Number(checkpoint?.updated_at || 0),
+          runSeed: checkpoint?.run_seed,
         };
         const completedSet = new Set(completedIds);
         const completedAt = checkpoint?.updated_at
@@ -1749,6 +1750,14 @@ function renderAdvancedNode(node) {
     if (!hasPartialRecovery || rerunBusy || node.__tdPromptId || node.__tdLocalRunLock) return;
     const recoveryWidget = node.widgets?.find(w => w.name === "recovery_mode");
     if (!recoveryWidget) return;
+    const savedSeed = Number(partialRecovery?.runSeed);
+    if (Number.isFinite(savedSeed) && savedSeed >= 0) {
+      const seedWidget = node.widgets?.find(w => w.name === "seed");
+      if (seedWidget) {
+        seedWidget.value = savedSeed;
+        seedWidget.callback?.(savedSeed);
+      }
+    }
     recoveryWidget.value = mode;
     recoveryWidget.callback?.(mode);
     node.__tdRecoveryAction = mode;
