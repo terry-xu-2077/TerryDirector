@@ -25,7 +25,7 @@ sys.modules[PKG] = package
 maths = importlib.import_module(PKG + ".director_selflift_math")
 engine = importlib.import_module(PKG + ".director_selflift")
 up = importlib.import_module(PKG + ".director_selflift_upscaler")
-tiling = importlib.import_module(PKG + ".director_selflift_tiling")
+til ing = importlib.import_module(PKG + ".director_selflift_tiling")
 
 
 class AV:
@@ -418,15 +418,43 @@ class TileTests(unittest.TestCase):
 
 class NativeBoundaryTests(unittest.TestCase):
     def test_model_folder_registered_without_reference_plugin(self):
-        folders = types.ModuleType("folder_paths")
-        folders.folder_names_and_paths = {}
-        folders.models_dir = "/comfy/models"
-        def register(name, path): folders.folder_names_and_paths[name] = path
-        folders.add_model_folder_path = Mock(side_effect=register)
-        folders.get_filename_list = lambda name: ["b.safetensors", "a.safetensors", "b.safetensors"]
-        with patch.dict(sys.modules, {"folder_paths": folders}):
-            self.assertEqual(up.list_models(), ["a.safetensors", "b.safetensors"])
-        folders.add_model_folder_path.assert_called_once_with("latent_upscale_models", "/comfy/models/latent_upscale_models")
+        import ntpath
+        import os
+        import posixpath
+
+        # The native case follows the host OS. Explicit POSIX/Windows cases
+        # also catch separator regressions when the suite runs on Linux only.
+        cases = [
+            ("native", os.path, os.path.join(os.path.sep, "comfy", "models"),
+             os.path.join(os.path.sep, "comfy", "models", "latent_upscale_models")),
+            ("posix", posixpath, "/comfy/models", "/comfy/models/latent_upscale_models"),
+            ("windows_report", ntpath, "/comfy/models", r"/comfy/models\latent_upscale_models"),
+            ("windows_drive", ntpath, r"G:\AIGC\ComfyUI\models",
+             r"G:\AIGC\ComfyUI\models\latent_upscale_models"),
+            ("windows_unicode", ntpath, r"C:\工作流\Comfy UI\models",
+             r"C:\工作流\Comfy UI\models\latent_upscale_models"),
+            ("windows_unc", ntpath, r"\\server\share\ComfyUI\models",
+             r"\\server\share\ComfyUI\models\latent_upscale_models"),
+        ]
+        for name, path_module, models_dir, expected in cases:
+            with self.subTest(path_case=name):
+                folders = types.ModuleType("folder_paths")
+                folders.folder_names_and_paths = {}
+                folders.models_dir = models_dir
+
+                def register(folder, path):
+                    folders.folder_names_and_paths[folder] = path
+
+                folders.add_model_folder_path = Mock(side_effect=register)
+                folders.get_filename_list = lambda folder: ["b.safetensors", "a.safetensors", "b.safetensors"]
+                # Replace only this module's os reference, not process-global
+                # os.path or os.name; no real filesystem or plugin is needed.
+                with patch.dict(sys.modules, {"folder_paths": folders}), \
+                        patch.object(up, "os", types.SimpleNamespace(path=path_module)):
+                    self.assertEqual(up.list_models(), ["a.safetensors", "b.safetensors"])
+                    self.assertEqual(up.list_models(), ["a.safetensors", "b.safetensors"])
+                folders.add_model_folder_path.assert_called_once_with("latent_upscale_models", expected)
+                self.assertEqual(folders.folder_names_and_paths, {"latent_upscale_models": expected})
 
     def test_owned_upscaler_unload_does_not_touch_other_models(self):
         owned, other = object(), object()
