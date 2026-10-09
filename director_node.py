@@ -712,6 +712,13 @@ class TerryDirectorOutput(io.ComfyNode):
     @classmethod
     def execute(cls, director_output):
         packet = _require_director_output(director_output)
+        if packet.get("streamed_video") and (
+            packet.get("images") is None or packet.get("audio") is None
+        ):
+            raise RuntimeError(
+                "TerryDirector Advanced 使用分段文件化输出，不再物化整条 merged IMAGE/AUDIO。"
+                "请直接使用 Advanced 节点保存的视频；基础版 TerryDirector 仍提供 IMAGE/AUDIO 输出。"
+            )
         return io.NodeOutput(
             packet["segment_latents"],
             packet["images"],
