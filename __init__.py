@@ -11,6 +11,8 @@ from .director_node import (
     TerryDirectorSecondPassConfig,
     TerryDirectorOutput,
 )
+from .director_selflift_node import TerryDirectorSelfLiftSampler
+from .director_lift_model import register_model_folder
 from .director_internal import (
     TerryDirectorCacheLatent,
     TerryDirectorLoadCachedLatent,
@@ -26,6 +28,7 @@ from .director_internal import (
 )
 from . import server_routes as _server_routes  # noqa: F401 - register routes on import
 
+register_model_folder()
 WEB_DIRECTORY = "./web"
 
 
@@ -38,6 +41,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirector,
             TerryDirectorAdvanced,
             TerryDirectorOutput,
+            TerryDirectorSelfLiftSampler,
             TerryDirectorPackOutput,
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,
