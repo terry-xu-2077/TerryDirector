@@ -1265,40 +1265,77 @@ function directorResolution(node) {
 
 function outputMemoryEstimate(node) {
   const director = linkedNodeForInput(node, "director_output");
-  if (!director || director.comfyClass !== NODE_CLASS) return null;
+  if (!director || !isDirector(director)) {
+    return { state: "disconnected" };
+  }
+
+  if (director.comfyClass === ADVANCED_NODE_CLASS) {
+    return { state: "advanced" };
+  }
 
   const config = readConfig(director);
   const frames = effectiveTimelineFrames(config.document);
   const resolution = directorResolution(director);
-  if (!resolution || frames < 1) return null;
+  if (!resolution || frames < 1) {
+    return { state: "pending" };
+  }
 
   const bytes = frames * resolution.width * resolution.height * 3 * 4;
   const gib = bytes / (1024 ** 3);
-  if (gib < OUTPUT_MEMORY_NOTICE_GIB) return null;
 
   return {
+    state: "ready",
     frames,
     seconds: frames / FPS,
     width: resolution.width,
     height: resolution.height,
     gib,
-    level: gib >= OUTPUT_MEMORY_HIGH_GIB ? "high" : "notice",
+    level:
+      gib >= OUTPUT_MEMORY_HIGH_GIB
+        ? "high"
+        : gib >= OUTPUT_MEMORY_NOTICE_GIB
+          ? "notice"
+          : "normal",
   };
 }
 
 function renderOutputMemoryInfo(node) {
   const root = node?.__tdOutputInfoRoot;
   if (!root) return;
-  const estimate = outputMemoryEstimate(node);
-  const wasVisible = !root.hidden;
 
-  if (!estimate) {
-    root.hidden = true;
-    root.innerHTML = "";
+  const estimate = outputMemoryEstimate(node);
+  root.hidden = false;
+
+  if (estimate.state === "disconnected") {
+    root.className = "td-output-memory-card is-idle";
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">i</span>
+        <strong>合并画面内存</strong>
+      </div>
+      <div class="td-output-memory-note">连接 TerryDirector 后显示预计内存占用。</div>
+    `;
+  } else if (estimate.state === "advanced") {
+    root.className = "td-output-memory-card is-idle";
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">i</span>
+        <strong>Advanced 使用分段文件化输出</strong>
+      </div>
+      <div class="td-output-memory-note">不会在生成阶段保留整条合并画面。</div>
+    `;
+  } else if (estimate.state !== "ready") {
+    root.className = "td-output-memory-card is-idle";
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">i</span>
+        <strong>合并画面内存</strong>
+      </div>
+      <div class="td-output-memory-note">正在读取时间线与分辨率信息…</div>
+    `;
   } else {
     const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
     const memory = estimate.gib.toFixed(1);
-    root.hidden = false;
     root.className = `td-output-memory-card is-${estimate.level}`;
     root.innerHTML = `
       <div class="td-output-memory-title">
@@ -1311,28 +1348,25 @@ function renderOutputMemoryInfo(node) {
       <div class="td-output-memory-note">
         ${estimate.level === "high"
           ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
-          : "内存占用较高，后续图像节点可能继续增加内存占用。"}
+          : estimate.level === "notice"
+            ? "内存占用较高，后续图像节点可能继续增加内存占用。"
+            : "当前合并画面内存占用处于正常范围。"}
       </div>
     `;
   }
 
-  const isVisible = !root.hidden;
-  if (wasVisible !== isVisible) {
-    queueMicrotask(() => {
-      try {
-        const computed = node.computeSize?.();
-        if (Array.isArray(computed)) {
-          node.setSize?.([
-            Math.max(Number(node.size?.[0]) || 320, 320),
-            Math.max(Number(computed[1]) || 0, isVisible ? 205 : 120),
-          ]);
-        }
-      } catch {}
-      node.setDirtyCanvas?.(true, true);
-    });
-  } else {
+  queueMicrotask(() => {
+    try {
+      const computed = node.computeSize?.();
+      const width = Math.max(Number(node.size?.[0]) || 320, 320);
+      const height = Math.max(
+        Number(computed?.[1]) || 0,
+        estimate?.state === "ready" ? 205 : 185
+      );
+      node.setSize?.([width, height]);
+    } catch {}
     node.setDirtyCanvas?.(true, true);
-  }
+  });
 }
 
 function refreshAllOutputMemoryInfo() {
@@ -1347,9 +1381,16 @@ function mountOutputNode(node) {
 
   if (!node.__tdOutputInfoRoot) {
     const root = document.createElement("div");
-    root.hidden = true;
-    root.className = "td-output-memory-card";
+    root.className = "td-output-memory-card is-idle";
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">i</span>
+        <strong>合并画面内存</strong>
+      </div>
+      <div class="td-output-memory-note">正在读取连接信息…</div>
+    `;
     root.addEventListener("pointerdown", event => event.stopPropagation());
+    root.addEventListener("wheel", event => event.stopPropagation(), { passive: true });
 
     const widget = node.addDOMWidget(
       "terrydirector_output_memory_info",
@@ -1357,8 +1398,8 @@ function mountOutputNode(node) {
       root,
       {
         hideOnZoom: false,
-        getMinHeight: () => root.hidden ? 0 : 78,
-        getMaxHeight: () => root.hidden ? 0 : 96,
+        getMinHeight: () => 76,
+        getMaxHeight: () => 96,
         margin: 5,
       }
     );
@@ -1366,6 +1407,13 @@ function mountOutputNode(node) {
     widget.options.serialize = false;
     node.__tdOutputInfoRoot = root;
     node.__tdOutputInfoWidget = widget;
+
+    const width = Math.max(Number(node.size?.[0]) || 320, 320);
+    const computed = node.computeSize?.();
+    node.setSize?.([
+      width,
+      Math.max(Number(computed?.[1]) || 0, 185),
+    ]);
   }
 
   if (!node.__tdOutputConnectionBound) {
