@@ -7,7 +7,7 @@ import os
 
 import folder_paths
 
-from comfy_execution.graph_utils import GraphBuilder, is_link
+from comfy_execution.graph_utils import GraphBuilder
 
 from .director_core import FPS
 from .director_internal import (
@@ -15,205 +15,6 @@ from .director_internal import (
     advanced_lossless_segment_exists,
     prepare_base_run_cache,
 )
-
-
-def _graph_value_signature(value, prefix: str):
-    if is_link(value):
-        node_id, output_index = value
-        local_id = (
-            str(node_id)[len(prefix):]
-            if str(node_id).startswith(prefix)
-            else str(node_id)
-        )
-        return ["link", local_id, int(output_index)]
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, dict):
-        return {
-            str(key): _graph_value_signature(item, prefix)
-            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
-        }
-    if isinstance(value, (list, tuple)):
-        return [_graph_value_signature(item, prefix) for item in value]
-    if hasattr(value, "shape") and hasattr(value, "dtype"):
-        payload = {
-            "type": type(value).__name__,
-            "shape": [int(dim) for dim in getattr(value, "shape", ())],
-            "dtype": str(getattr(value, "dtype", "")),
-        }
-        try:
-            if int(value.numel()) <= 64:
-                payload["values"] = [
-                    round(float(item), 8)
-                    for item in value.detach().cpu().flatten().tolist()
-                ]
-        except Exception:
-            pass
-        return payload
-    return {
-        "type": f"{type(value).__module__}.{type(value).__qualname__}",
-    }
-
-
-def _canonical_core_graph(graph: GraphBuilder) -> dict[str, Any]:
-    core = {}
-    prefix = str(graph.prefix)
-    for node_id, node in graph.nodes.items():
-        local_id = (
-            str(node_id)[len(prefix):]
-            if str(node_id).startswith(prefix)
-            else str(node_id)
-        )
-        if not local_id.startswith("td_s"):
-            continue
-        # Diagnostics compare generation semantics, not Advanced post-sample
-        # persistence/streaming nodes. Those intentionally differ from Base.
-        if any(
-            token in local_id
-            for token in (
-                "_checkpoint",
-                "_cache_load",
-                "_decode_video",
-                "_decode_audio",
-                "_trim_video",
-                "_trim_audio",
-                "_assemble",
-                "_segment_file",
-                "_segment_video_load",
-                "_segment_cache",
-                "_lossless_cache",
-                "_lossless_context",
-            )
-        ):
-            continue
-        core[local_id] = {
-            "class_type": node.class_type,
-            "inputs": {
-                key: _graph_value_signature(value, prefix)
-                for key, value in sorted(node.inputs.items())
-            },
-        }
-    return core
-
-
-def _diagnostic_graph_path(input_signature: str) -> str:
-    root = os.path.join(
-        folder_paths.get_output_directory(),
-        ".terrydirector_diag",
-    )
-    os.makedirs(root, exist_ok=True)
-    safe = "".join(
-        char for char in str(input_signature)
-        if char.isalnum() or char in {"-", "_"}
-    )[:80]
-    return os.path.join(root, f"base_core_{safe}.json")
-
-
-def _short_diag(value: Any, limit: int = 220) -> str:
-    text = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    return text if len(text) <= limit else text[:limit] + "…"
-
-
-def _compare_core_graphs(base: dict[str, Any], advanced: dict[str, Any]) -> list[str]:
-    diffs: list[str] = []
-    for node_id in sorted(set(base) | set(advanced)):
-        left = base.get(node_id)
-        right = advanced.get(node_id)
-        if left is None:
-            diffs.append(f"{node_id}: only in Advanced")
-            continue
-        if right is None:
-            diffs.append(f"{node_id}: missing from Advanced")
-            continue
-        if left.get("class_type") != right.get("class_type"):
-            diffs.append(
-                f"{node_id}.class_type: Base={left.get('class_type')} "
-                f"Advanced={right.get('class_type')}"
-            )
-        left_inputs = left.get("inputs", {})
-        right_inputs = right.get("inputs", {})
-        for key in sorted(set(left_inputs) | set(right_inputs)):
-            lv = left_inputs.get(key, {"__missing__": True})
-            rv = right_inputs.get(key, {"__missing__": True})
-            if lv != rv:
-                diffs.append(
-                    f"{node_id}.{key}: Base={_short_diag(lv)} "
-                    f"Advanced={_short_diag(rv)}"
-                )
-    return diffs
-
-
-def _log_core_graph_signature(
-    graph: GraphBuilder,
-    diagnostic_label: str | None = None,
-    diagnostic_input_signature: str | None = None,
-):
-    core = _canonical_core_graph(graph)
-    raw = json.dumps(core, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-    label = f" {diagnostic_label}" if diagnostic_label else ""
-    print(
-        f"[TerryDirector][Diagnostic]{label} sampling_core_graph_signature={digest} "
-        f"nodes={len(core)}",
-        flush=True,
-    )
-
-    if not diagnostic_label or not diagnostic_input_signature:
-        return digest
-
-    path = _diagnostic_graph_path(diagnostic_input_signature)
-    if diagnostic_label == "Base":
-        payload = {
-            "input_signature": diagnostic_input_signature,
-            "core_graph_signature": digest,
-            "core": core,
-        }
-        temp_path = path + ".tmp"
-        with open(temp_path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
-        os.replace(temp_path, path)
-        print(
-            f"[TerryDirector][Diagnostic] Base core graph saved for comparison",
-            flush=True,
-        )
-    elif diagnostic_label == "Advanced":
-        if not os.path.isfile(path):
-            print(
-                "[TerryDirector][Diagnostic] No matching Base core graph snapshot; "
-                "run Base once with the same input_signature first",
-                flush=True,
-            )
-            return digest
-        try:
-            with open(path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-            base = payload.get("core", {})
-            diffs = _compare_core_graphs(base, core)
-            if not diffs:
-                print(
-                    "[TerryDirector][Diagnostic] Base vs Advanced core graph: EXACT MATCH",
-                    flush=True,
-                )
-            else:
-                print(
-                    f"[TerryDirector][Diagnostic] Base vs Advanced core graph: "
-                    f"{len(diffs)} difference(s)",
-                    flush=True,
-                )
-                for diff in diffs[:24]:
-                    print(f"[TerryDirector][Diagnostic] DIFF {diff}", flush=True)
-                if len(diffs) > 24:
-                    print(
-                        f"[TerryDirector][Diagnostic] DIFF ... "
-                        f"{len(diffs) - 24} more",
-                        flush=True,
-                    )
-        except Exception as exc:
-            print(
-                f"[TerryDirector][Diagnostic] Core graph comparison failed: {exc}",
-                flush=True,
-            )
-    return digest
 
 
 def _load_reference_inputs(
@@ -553,9 +354,8 @@ def build_timeline_graph(
 ) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes.
 
-    Base keeps the public merged IMAGE/AUDIO contract. Advanced (video_export
-    is not None) uses per-segment file-backed video so memory scales primarily
-    with one decoded segment instead of the entire timeline.
+    Base and Advanced share lossless per-segment decoding. Base performs one
+    final IMAGE/AUDIO merge; Advanced performs one final video/audio encode.
     """
     graph = GraphBuilder()
     latents: list[Any] = []
@@ -809,12 +609,6 @@ def build_timeline_graph(
         previous_images = images
         previous_audio = audio
         previous_is_compact = False
-
-    _log_core_graph_signature(
-        graph,
-        diagnostic_label=diagnostic_label,
-        diagnostic_input_signature=diagnostic_input_signature,
-    )
 
     if streamed_base:
         materialized = graph.node(
