@@ -87,12 +87,6 @@ def _execution_signature(runtime, plan, seed) -> str:
     return digest
 
 
-def _log_execution_signature(label, runtime, plan, seed):
-    # Kept as a stable cache/recovery identity. Production runs no longer emit
-    # the former graph-comparison diagnostic line.
-    return _execution_signature(runtime, plan, seed)
-
-
 def _segment_cache_signatures(runtime, plan) -> list[str]:
     return [
         (
@@ -399,9 +393,7 @@ class TerryDirector(io.ComfyNode):
             config["document"],
             tail_reference_prompt=tail_reference_prompt,
         )
-        diagnostic_signature = _log_execution_signature(
-            "Base", runtime, plan, seed
-        )
+        run_signature = _execution_signature(runtime, plan, seed)
 
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
@@ -414,8 +406,7 @@ class TerryDirector(io.ComfyNode):
                 f"base-{cls.hidden.unique_id}-"
                 f"{uuid.uuid4().hex}"
             ),
-            diagnostic_label="Base",
-            diagnostic_input_signature=diagnostic_signature,
+            run_signature=run_signature,
         )
         return io.NodeOutput(
             director_output,
@@ -523,9 +514,7 @@ class TerryDirectorAdvanced(TerryDirector):
                 saved_seed = recovery_checkpoint.get("run_seed")
                 if saved_seed is not None:
                     seed = int(saved_seed)
-        diagnostic_signature = _log_execution_signature(
-            "Advanced", runtime, plan, seed
-        )
+        run_signature = _execution_signature(runtime, plan, seed)
         if runtime["params"]["second_pass"]["method"] != "none":
             raise RuntimeError("TerryDirector SelfLift 执行将在基础采样链稳定后接入")
         if video_format == "webm" and video_codec == "h264":
@@ -565,13 +554,13 @@ class TerryDirectorAdvanced(TerryDirector):
         if recovery_mode == "":
             prepare_advanced_lossless_run_cache(
                 cache_key,
-                diagnostic_signature,
+                run_signature,
             )
 
         if rerun is None and recovery_mode == "":
             reset_advanced_checkpoint(
                 cache_key,
-                diagnostic_signature,
+                run_signature,
                 segment_ids,
                 segment_signatures,
                 int(seed),
@@ -580,7 +569,7 @@ class TerryDirectorAdvanced(TerryDirector):
             checkpoint = recovery_checkpoint
             if not isinstance(checkpoint, dict):
                 raise RuntimeError("TerryDirector Advanced 没有可恢复的中断任务")
-            if str(checkpoint.get("run_signature")) != str(diagnostic_signature):
+            if str(checkpoint.get("run_signature")) != str(run_signature):
                 raise RuntimeError(
                     "TerryDirector Advanced 当前时间线/生成参数已变化，无法复用中断缓存"
                 )
@@ -691,8 +680,7 @@ class TerryDirectorAdvanced(TerryDirector):
             preview_override=preview_override,
             reuse_cached_segment_ids=reuse_cached_segment_ids,
             finish_state_mode=finish_state_mode,
-            diagnostic_label="Advanced",
-            diagnostic_input_signature=diagnostic_signature,
+            run_signature=run_signature,
         )
         return io.NodeOutput(director_output, expand=expanded)
 
