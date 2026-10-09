@@ -7,6 +7,14 @@
 - Prompt ID：`65ca768f-651a-4959-a8bc-ee4a6af11f09`。ComfyUI history：`success`, `completed=true`；服务日志记载 00:41:07 左右完成（由 execution_start/success 时间戳计算）。
 - 视频：`G:\AIGC\ComfyUI_Codex\ComfyUI\output\video\TerryDirector_SelfLift_MLP_Retest_00001_.mp4`，13413321 bytes。输出 metadata：`1920×1088`, `24.0 fps`, `288` 帧，时长 `12.0 s`。**画面与声音未实际听看，待人工确认。**
 
+## 人工画面验收补充（2026-10-10）
+
+用户在本次复测后确认：**“画面质量没问题”。画面质量人工验收通过。**
+
+上节“画面与声音未实际听看，待人工确认”保留为 Codex 自动验收时的原始记录；其中画面质量状态由本节更新。用户本次未单独确认声音，声音质量仍待人工确认。底层 MLP 钩子未捕获、缓存清理未单独记录等证据边界不因本次画面确认而改变。
+
+本次通过范围为上述 Prompt 的三段、1920×1088 原尺寸成片，不扩大为任意时长或配置下均不会 OOM。保留本轮成功配置作为已验证基线：原 MODEL 链末端接 `MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)`，Self-Lift 参数不变，`highres_tiling=false`。原工作流仍未写回；本次补充只更新报告，不改变运行代码、不追加生成任务、不合并 `main`。
+
 ## 首次失败请求与节点核对
 
 - 首次失败真实 payload：`G:\AIGC\ComfyUI_Codex\ComfyUI\output\.terrydirector_diag\selflift_minimal_request.json`（SHA-256 `747e8cc98da80e824609dcdf1d5b6ba199f02ca6319eaf878450b02cd9b292de`）；对应 history 中 Prompt ID `586cc7d4-d68f-4a83-9e38-63991c07fb63`，错误为 `torch.OutOfMemoryError`，发生于首次高清采样。首次 payload 的实际模型链是 `333 UNET → 332 LoRA → 312 PathchSageAttentionKJ → 304 TerryDirectorConfig.model`，不存在 `MiniMaxChunkFeedForward`，也没有单独 `high_res_model` 输入。因此确认缺失后，只在临时验收请求副本中添加一个 FFN 节点。
