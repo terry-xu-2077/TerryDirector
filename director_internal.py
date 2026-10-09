@@ -98,6 +98,7 @@ def reset_advanced_checkpoint(
     run_signature: str,
     segment_ids: list[str],
     segment_signatures: list[str],
+    run_seed: int | None = None,
 ) -> dict:
     payload = {
         "version": 1,
@@ -105,6 +106,7 @@ def reset_advanced_checkpoint(
         "run_signature": str(run_signature),
         "segment_ids": [str(value) for value in segment_ids],
         "segment_signatures": [str(value) for value in segment_signatures],
+        "run_seed": None if run_seed is None else int(run_seed),
         "completed_segment_ids": [],
         "started_at": time.time(),
         "updated_at": time.time(),
@@ -123,6 +125,7 @@ def mark_advanced_checkpoint_segment(
     segment_id: str,
     segment_ids: list[str],
     segment_signatures: list[str],
+    run_seed: int | None = None,
 ) -> dict:
     payload = load_advanced_checkpoint(cache_key)
     if (
@@ -136,6 +139,7 @@ def mark_advanced_checkpoint_segment(
             run_signature,
             segment_ids,
             segment_signatures,
+            run_seed,
         )
 
     completed = [str(value) for value in payload.get("completed_segment_ids", [])]
@@ -265,6 +269,7 @@ class TerryDirectorCacheLatent(io.ComfyNode):
                 io.String.Input("run_signature"),
                 io.String.Input("segment_ids_json"),
                 io.String.Input("segment_signatures_json"),
+                io.Int.Input("run_seed", min=0, max=0xFFFFFFFFFFFFFFFF),
             ],
             outputs=[io.Latent.Output()],
         )
@@ -285,6 +290,7 @@ class TerryDirectorCacheLatent(io.ComfyNode):
         run_signature,
         segment_ids_json,
         segment_signatures_json,
+        run_seed,
     ) -> io.NodeOutput:
         path, copy_seconds, disk_seconds, size_mb = _save_advanced_cache_latent(
             latent, cache_key, segment_id, signature
@@ -302,6 +308,7 @@ class TerryDirectorCacheLatent(io.ComfyNode):
                 str(segment_id),
                 [str(value) for value in segment_ids],
                 [str(value) for value in segment_signatures],
+                int(run_seed),
             )
         except Exception as exc:
             print(
