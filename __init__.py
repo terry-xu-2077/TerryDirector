@@ -11,6 +11,14 @@ from .director_node import (
     TerryDirectorSecondPassConfig,
     TerryDirectorOutput,
 )
+from .director_loop import (
+    TerryDirectorLooper,
+    TerryDirectorLoopMedia,
+    TerryDirectorLoopGuide,
+    TerryDirectorLoopCache,
+    TerryDirectorLoopEnd,
+    TerryDirectorLoopMerge,
+)
 from .director_internal import (
     TerryDirectorCacheLatent,
     TerryDirectorLoadCachedLatent,
@@ -38,6 +46,12 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirector,
             TerryDirectorAdvanced,
             TerryDirectorOutput,
+            TerryDirectorLooper,
+            TerryDirectorLoopMedia,
+            TerryDirectorLoopGuide,
+            TerryDirectorLoopCache,
+            TerryDirectorLoopEnd,
+            TerryDirectorLoopMerge,
             TerryDirectorPackOutput,
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,
