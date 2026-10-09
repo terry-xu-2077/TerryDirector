@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import os
 import re
@@ -103,6 +104,40 @@ def _advanced_segment_video_path(cache_key: str, segment_id: str, signature: str
 
 def advanced_segment_video_exists(cache_key: str, segment_id: str, signature: str) -> bool:
     return os.path.isfile(_advanced_segment_video_path(cache_key, segment_id, signature))
+
+
+def _base_cache_root(cache_key: str, run_signature: str) -> str:
+    safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "base"))[:120]
+    safe_run = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(run_signature or "run"))[:80]
+    root = os.path.join(
+        folder_paths.get_temp_directory(),
+        "terrydirector_base",
+        safe_key,
+        safe_run,
+    )
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def _base_segment_cache_path(
+    cache_key: str,
+    run_signature: str,
+    segment_id: str,
+    signature: str,
+) -> str:
+    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:100]
+    signature_hash = __import__("hashlib").sha256(
+        str(signature).encode("utf-8")
+    ).hexdigest()[:12]
+    return os.path.join(
+        _base_cache_root(cache_key, run_signature),
+        f"{safe_segment}_{signature_hash}.pt",
+    )
+
+
+def _torch_dtype_from_name(value: str):
+    name = str(value or "float32").split(".")[-1]
+    return getattr(torch, name, torch.float32)
 
 
 def _advanced_state_path(cache_key: str) -> str:
@@ -366,6 +401,339 @@ class TerryDirectorCacheLatent(io.ComfyNode):
             flush=True,
         )
         return io.NodeOutput(latent)
+
+
+class TerryDirectorDecodeSegmentToCache(io.ComfyNode):
+    """Losslessly cache one Base segment while returning only compact continuity context."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorDecodeSegmentToCache",
+            display_name="TerryDirector Decode Segment To Cache (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Latent.Input("samples"),
+                io.Vae.Input("vae"),
+                io.Vae.Input("audio_vae"),
+                io.String.Input("cache_key"),
+                io.String.Input("run_signature"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+                io.Int.Input("output_frames", min=1),
+                io.Int.Input("trim_head_frames", min=0),
+                io.Int.Input("gap_frames", min=0),
+                io.Int.Input("gap_after_frames", min=0),
+                io.Int.Input("context_frames", min=1),
+                io.Int.Input("fps", min=1),
+            ],
+            outputs=[
+                io.String.Output(display_name="segment cache"),
+                io.Image.Output(display_name="continuity images"),
+                io.Audio.Output(display_name="continuity audio"),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        return float("NaN")
+
+    @classmethod
+    def execute(
+        cls,
+        samples,
+        vae,
+        audio_vae,
+        cache_key,
+        run_signature,
+        segment_id,
+        signature,
+        output_frames,
+        trim_head_frames,
+        gap_frames,
+        gap_after_frames,
+        context_frames,
+        fps,
+    ) -> io.NodeOutput:
+        started = time.perf_counter()
+        output_frames = int(output_frames)
+        trim = int(trim_head_frames)
+        gap = int(gap_frames)
+        gap_after = int(gap_after_frames)
+        fps = int(fps)
+        context_frames = max(1, int(context_frames))
+        if fps < 1 or output_frames < 1:
+            raise ValueError("TerryDirector Base segment has invalid duration")
+
+        latent = samples["samples"]
+        video_latent = latent.unbind()[0] if getattr(latent, "is_nested", False) else latent
+        images = vae.decode(video_latent)
+        if len(images.shape) == 5:
+            images = images.reshape(
+                -1, images.shape[-3], images.shape[-2], images.shape[-1]
+            )
+        images = images[:output_frames]
+
+        audio = _decode_h3_audio(audio_vae, samples)
+        waveform = audio["waveform"]
+        sample_rate = int(audio["sample_rate"])
+        output_samples = round((output_frames / fps) * sample_rate)
+        waveform = waveform[..., :output_samples]
+
+        # Continuity always reads from the unassembled segment, matching the
+        # original Base path. Keep only the tail needed by the next active clip.
+        context_count = min(context_frames, int(images.shape[0]))
+        context_images = images[-context_count:].clone()
+        context_samples = max(1, round((context_count / fps) * sample_rate))
+        context_waveform = waveform[..., -context_samples:].clone()
+        continuity_audio = {
+            "waveform": context_waveform,
+            "sample_rate": sample_rate,
+        }
+
+        if trim < 0 or trim >= int(images.shape[0]):
+            if trim:
+                raise ValueError("TerryDirector Base overlap trim exceeds segment frame count")
+            trim = 0
+        trim_samples = round((trim / fps) * sample_rate)
+        current_images = images[trim:]
+        current_waveform = waveform[..., trim_samples:]
+
+        if gap:
+            black = current_images.new_zeros(
+                (gap, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+            )
+            current_images = torch.cat((black, current_images), dim=0)
+            silence = current_waveform.new_zeros(
+                (*current_waveform.shape[:-1], round((gap / fps) * sample_rate))
+            )
+            current_waveform = torch.cat((silence, current_waveform), dim=-1)
+
+        if gap_after:
+            black = current_images.new_zeros(
+                (gap_after, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+            )
+            current_images = torch.cat((current_images, black), dim=0)
+            silence = current_waveform.new_zeros(
+                (*current_waveform.shape[:-1], round((gap_after / fps) * sample_rate))
+            )
+            current_waveform = torch.cat((current_waveform, silence), dim=-1)
+
+        cached_images = current_images.detach().cpu().contiguous()
+        cached_waveform = current_waveform.detach().cpu().contiguous()
+        path = _base_segment_cache_path(
+            str(cache_key),
+            str(run_signature),
+            str(segment_id),
+            str(signature),
+        )
+        fd, temp_path = tempfile.mkstemp(
+            prefix="td_base_segment_",
+            suffix=".pt",
+            dir=os.path.dirname(path),
+        )
+        os.close(fd)
+        payload = {
+            "version": 1,
+            "images": cached_images,
+            "audio": {
+                "waveform": cached_waveform,
+                "sample_rate": sample_rate,
+            },
+        }
+        try:
+            torch.save(payload, temp_path)
+            os.replace(temp_path, path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        descriptor = {
+            "path": path,
+            "segment_id": str(segment_id),
+            "frames": int(cached_images.shape[0]),
+            "height": int(cached_images.shape[1]),
+            "width": int(cached_images.shape[2]),
+            "channels": int(cached_images.shape[3]),
+            "image_dtype": str(cached_images.dtype),
+            "audio_shape": [int(value) for value in cached_waveform.shape],
+            "audio_dtype": str(cached_waveform.dtype),
+            "sample_rate": sample_rate,
+        }
+
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        print(
+            f"[TerryDirector Base][Stream] Segment {segment_id}: "
+            f"frames={descriptor['frames']} cache={size_mb:.1f}MB "
+            f"time={time.perf_counter() - started:.3f}s",
+            flush=True,
+        )
+        return io.NodeOutput(
+            json.dumps(descriptor, ensure_ascii=False),
+            context_images,
+            continuity_audio,
+        )
+
+
+class TerryDirectorMaterializeTimeline(io.ComfyNode):
+    """Materialize Base IMAGE/AUDIO once, after all segments have finished."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        template = io.Autogrow.TemplatePrefix(
+            io.String.Input("segment"),
+            prefix="segment_",
+            min=1,
+            max=64,
+        )
+        return io.Schema(
+            node_id="TerryDirectorMaterializeTimeline",
+            display_name="TerryDirector Materialize Timeline (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Autogrow.Input("segments", template=template),
+                io.Int.Input("expected_frames", min=1),
+            ],
+            outputs=[
+                io.Image.Output(display_name="合并画面"),
+                io.Audio.Output(display_name="合并音频"),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        return float("NaN")
+
+    @classmethod
+    def execute(cls, segments, expected_frames) -> io.NodeOutput:
+        started = time.perf_counter()
+        descriptors = []
+        for value in segments.values():
+            try:
+                descriptor = json.loads(str(value))
+            except Exception as exc:
+                raise RuntimeError("TerryDirector Base 分段缓存描述无效") from exc
+            if not isinstance(descriptor, dict) or not descriptor.get("path"):
+                raise RuntimeError("TerryDirector Base 分段缓存描述缺少文件路径")
+            if not os.path.isfile(str(descriptor["path"])):
+                raise RuntimeError(
+                    f"TerryDirector Base 找不到分段缓存: {descriptor['path']}"
+                )
+            descriptors.append(descriptor)
+
+        if not descriptors:
+            raise RuntimeError("TerryDirector Base 没有可合并的分段缓存")
+
+        # Sampling/decoding is complete at this point. Free loaded model weights
+        # and CUDA allocator cache before creating the long merged CPU tensors.
+        gc.collect()
+        try:
+            import comfy.model_management as model_management
+            model_management.unload_all_models()
+            model_management.soft_empty_cache()
+        except Exception as exc:
+            print(
+                f"[TerryDirector Base] Model release before final merge skipped: {exc}",
+                flush=True,
+            )
+        gc.collect()
+
+        first = descriptors[0]
+        total_frames = sum(int(item["frames"]) for item in descriptors)
+        expected_frames = int(expected_frames)
+        if total_frames != expected_frames:
+            raise RuntimeError(
+                f"TerryDirector Base 合并画面帧数不匹配: "
+                f"{total_frames} != {expected_frames}"
+            )
+
+        height = int(first["height"])
+        width = int(first["width"])
+        channels = int(first["channels"])
+        image_dtype = _torch_dtype_from_name(first.get("image_dtype", "torch.float32"))
+        sample_rate = int(first["sample_rate"])
+        audio_shape = [int(value) for value in first.get("audio_shape", [])]
+        if len(audio_shape) < 3:
+            raise RuntimeError("TerryDirector Base 分段音频形状无效")
+        audio_batch = audio_shape[0]
+        audio_channels = audio_shape[1]
+        audio_dtype = _torch_dtype_from_name(first.get("audio_dtype", "torch.float32"))
+        total_audio_samples = sum(
+            int(item.get("audio_shape", [0, 0, 0])[-1])
+            for item in descriptors
+        )
+
+        final_images = torch.empty(
+            (total_frames, height, width, channels),
+            dtype=image_dtype,
+            device="cpu",
+        )
+        final_waveform = torch.empty(
+            (audio_batch, audio_channels, total_audio_samples),
+            dtype=audio_dtype,
+            device="cpu",
+        )
+
+        image_offset = 0
+        audio_offset = 0
+        for descriptor in descriptors:
+            if (
+                int(descriptor["height"]) != height
+                or int(descriptor["width"]) != width
+                or int(descriptor["channels"]) != channels
+            ):
+                raise RuntimeError("TerryDirector Base 分段画面尺寸不一致")
+            if int(descriptor["sample_rate"]) != sample_rate:
+                raise RuntimeError("TerryDirector Base 分段音频采样率不一致")
+            shape = [int(value) for value in descriptor.get("audio_shape", [])]
+            if len(shape) < 3 or shape[0] != audio_batch or shape[1] != audio_channels:
+                raise RuntimeError("TerryDirector Base 分段音频声道布局不一致")
+
+            payload = torch.load(
+                str(descriptor["path"]),
+                map_location="cpu",
+                weights_only=False,
+            )
+            images = payload.get("images") if isinstance(payload, dict) else None
+            audio = payload.get("audio") if isinstance(payload, dict) else None
+            waveform = audio.get("waveform") if isinstance(audio, dict) else None
+            if not isinstance(images, torch.Tensor) or not isinstance(waveform, torch.Tensor):
+                raise RuntimeError("TerryDirector Base 分段缓存内容无效")
+
+            frame_count = int(images.shape[0])
+            sample_count = int(waveform.shape[-1])
+            final_images[image_offset:image_offset + frame_count].copy_(images)
+            final_waveform[..., audio_offset:audio_offset + sample_count].copy_(waveform)
+            image_offset += frame_count
+            audio_offset += sample_count
+
+            del payload, images, audio, waveform
+
+        gc.collect()
+        try:
+            import psutil
+            rss = psutil.Process().memory_info().rss / (1024 * 1024)
+            vm = psutil.virtual_memory()
+            memory_text = (
+                f" rss={rss:.0f}MB ram={vm.percent:.1f}% "
+                f"ram_free={vm.available / (1024 * 1024):.0f}MB"
+            )
+        except Exception:
+            memory_text = ""
+
+        print(
+            f"[TerryDirector Base][Stream] Final merge: "
+            f"frames={total_frames} "
+            f"images={final_images.numel() * final_images.element_size() / (1024 * 1024):.1f}MB "
+            f"time={time.perf_counter() - started:.3f}s{memory_text}",
+            flush=True,
+        )
+        return io.NodeOutput(
+            final_images,
+            {"waveform": final_waveform, "sample_rate": sample_rate},
+        )
 
 
 def _decode_h3_audio(audio_vae, samples):
