@@ -9,8 +9,12 @@ from .director_internal import (
     TerryDirectorAdvancedFinish,
     TerryDirectorCacheLatent,
     TerryDirectorLoadCachedLatent,
+    TerryDirectorDecodeSegmentToFile,
+    TerryDirectorLoadSegmentVideo,
+    TerryDirectorConcatSegmentVideos,
     TerryDirectorAssembleMedia,
     TerryDirectorPackOutput,
+    TerryDirectorPackAdvancedOutput,
     TerryDirectorResampleReferenceVideo,
 )
 from . import server_routes as _server_routes  # noqa: F401 - register routes on import
@@ -30,7 +34,11 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorAdvancedFinish,
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,
+            TerryDirectorDecodeSegmentToFile,
+            TerryDirectorLoadSegmentVideo,
+            TerryDirectorConcatSegmentVideos,
             TerryDirectorAssembleMedia,
+            TerryDirectorPackAdvancedOutput,
             TerryDirectorResampleReferenceVideo,
         ]
 
