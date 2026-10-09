@@ -374,34 +374,20 @@ def _cache_to_cpu(value):
 
 def _save_advanced_cache_latent(latent, cache_key, segment_id, signature):
     path = _advanced_cache_path(cache_key, segment_id)
-
-    copy_started = time.perf_counter()
-    cpu_latent = _cache_to_cpu(latent)
-    copy_seconds = time.perf_counter() - copy_started
-
     payload = {
         "version": 1,
         "signature": str(signature),
-        "latent": cpu_latent,
+        "latent": _cache_to_cpu(latent),
     }
     fd, temp_path = tempfile.mkstemp(prefix="td_", suffix=".pt", dir=os.path.dirname(path))
     os.close(fd)
-
-    disk_started = time.perf_counter()
     try:
         torch.save(payload, temp_path)
         os.replace(temp_path, path)
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-    disk_seconds = time.perf_counter() - disk_started
-
-    try:
-        size_mb = os.path.getsize(path) / (1024 * 1024)
-    except OSError:
-        size_mb = 0.0
-
-    return path, copy_seconds, disk_seconds, size_mb
+    return path
 
 
 class TerryDirectorCacheLatent(io.ComfyNode):
@@ -445,7 +431,7 @@ class TerryDirectorCacheLatent(io.ComfyNode):
         segment_signatures_json,
         run_seed,
     ) -> io.NodeOutput:
-        path, copy_seconds, disk_seconds, size_mb = _save_advanced_cache_latent(
+        _save_advanced_cache_latent(
             latent, cache_key, segment_id, signature
         )
         try:
