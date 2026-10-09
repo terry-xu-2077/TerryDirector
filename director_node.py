@@ -29,8 +29,6 @@ from .director_core import (
 DirectorConfigData = io.Custom("TERRYDIRECTOR_CONFIG")
 SecondPassConfigData = io.Custom("TERRYDIRECTOR_SECOND_PASS_CONFIG")
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
-AUTO_UPSCALER = "自动选择兼容模型"
-
 def _preview_tiny_vae_options() -> list[str]:
     try:
         values = list(folder_paths.get_filename_list("vae_approx"))
@@ -167,14 +165,6 @@ def _native_combo(options: list[str], default: str | None = None) -> dict:
         "options": values,
         "default": default if default in values else values[0],
     }
-
-
-def _latent_upscaler_options() -> list[str]:
-    try:
-        models = list(folder_paths.get_filename_list("latent_upscale_models"))
-    except Exception:
-        models = []
-    return [AUTO_UPSCALER, *models]
 
 
 def _selflift_upscaler_options() -> list[str]:
@@ -400,7 +390,7 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
                 ),
                 io.Int.Input(
                     "sampling_steps",
-                    display_name="SelfLift 总步数",
+                    display_name="SelfLift 基础步数",
                     default=6,
                     min=2,
                     max=10000,
