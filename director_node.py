@@ -12,7 +12,11 @@ from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_h3 import build_timeline_graph
-from .director_internal import load_advanced_checkpoint, reset_advanced_checkpoint
+from .director_internal import (
+    load_advanced_checkpoint,
+    prepare_advanced_lossless_run_cache,
+    reset_advanced_checkpoint,
+)
 from .director_core import (
     config_json,
     make_runtime_config,
@@ -559,6 +563,15 @@ class TerryDirectorAdvanced(TerryDirector):
 
         if rerun is not None and recovery_mode:
             raise ValueError("TerryDirector Advanced 局部重跑与中断恢复不能同时执行")
+
+        # Fresh full runs and local reruns start from a clean temporary
+        # lossless pixel cache. Interrupted resume/partial-export must retain
+        # the existing cache files.
+        if recovery_mode == "":
+            prepare_advanced_lossless_run_cache(
+                cache_key,
+                diagnostic_signature,
+            )
 
         if rerun is None and recovery_mode == "":
             reset_advanced_checkpoint(
