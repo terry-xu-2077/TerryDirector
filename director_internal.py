@@ -178,6 +178,26 @@ def finalize_advanced_checkpoint(
     )
 
 
+def update_advanced_checkpoint_partial_video(
+    cache_key: str,
+    run_signature: str,
+    video: dict,
+) -> None:
+    payload = load_advanced_checkpoint(cache_key)
+    if not isinstance(payload, dict):
+        return
+    if str(payload.get("run_signature")) != str(run_signature):
+        return
+    payload["status"] = "partial"
+    payload["updated_at"] = time.time()
+    payload["partial_video"] = video
+    _write_json_atomic(
+        _advanced_checkpoint_path(cache_key),
+        payload,
+        "td_checkpoint_",
+    )
+
+
 def _cache_to_cpu(value):
     if isinstance(value, torch.Tensor):
         return value.detach().cpu()
@@ -366,6 +386,8 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
                 io.String.Input("segment_ids_json"),
                 io.String.Input("segment_signatures_json"),
                 io.String.Input("cache_only_segment_id"),
+                io.String.Input("run_signature"),
+                io.String.Input("state_mode"),
             ],
             hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
             outputs=[DirectorOutputData.Output(display_name="导演输出")],
@@ -375,7 +397,7 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
     def execute(
         cls, director_output, video, filename_prefix, format, codec,
         cache_key, segment_ids_json, segment_signatures_json,
-        cache_only_segment_id,
+        cache_only_segment_id, run_signature, state_mode,
     ) -> io.NodeOutput:
         if video is None:
             raise RuntimeError("TerryDirector Advanced 视频创建失败，未保存")
@@ -396,6 +418,7 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
             segment_signatures = []
 
         cache_enabled = bool(str(cache_key or "").strip())
+        state_mode = str(state_mode or "complete").strip().lower()
         if cache_enabled:
             packet_latents = (
                 director_output.get("segment_latents", [])
@@ -406,48 +429,9 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
                 raise RuntimeError(
                     "TerryDirector Advanced 缓存清单与分段 LATENT 数量不一致"
                 )
-
-            cache_only = str(cache_only_segment_id or "").strip()
-            if cache_only:
-                cache_indices = [
-                    index for index, segment_id in enumerate(segment_ids)
-                    if str(segment_id) == cache_only
-                ]
-                if not cache_indices:
-                    raise RuntimeError(
-                        f"TerryDirector Advanced 找不到要更新缓存的片段: {cache_only}"
-                    )
-                cache_mode = f"rerun:{cache_only}"
-            else:
-                cache_indices = list(range(len(segment_ids)))
-                cache_mode = "full"
-
-            cache_started = time.perf_counter()
             print(
-                f"[TerryDirector Advanced][Perf] Cache batch start: "
-                f"mode={cache_mode} segments={len(cache_indices)}",
-                flush=True,
-            )
-            cache_bytes = 0
-            for index in cache_indices:
-                segment_id = str(segment_ids[index])
-                path, copy_seconds, disk_seconds, size_mb = _save_advanced_cache_latent(
-                    packet_latents[index],
-                    str(cache_key),
-                    segment_id,
-                    str(segment_signatures[index]),
-                )
-                cache_bytes += int(size_mb * 1024 * 1024)
-                print(
-                    f"[TerryDirector Advanced][Perf] Cache {segment_id}: "
-                    f"cpu={copy_seconds:.3f}s disk={disk_seconds:.3f}s "
-                    f"size={size_mb:.1f}MB",
-                    flush=True,
-                )
-            cache_total = time.perf_counter() - cache_started
-            print(
-                f"[TerryDirector Advanced][Perf] Cache batch complete: "
-                f"{cache_total:.3f}s total={cache_bytes / (1024 * 1024):.1f}MB",
+                f"[TerryDirector Advanced][Perf] Segment checkpoints already persisted: "
+                f"segments={len(segment_ids)} mode={state_mode}",
                 flush=True,
             )
         else:
@@ -498,26 +482,35 @@ class TerryDirectorAdvancedFinish(io.ComfyNode):
             flush=True,
         )
         if cache_enabled:
-            state = {
-                "version": 1,
-                "saved_at": time.time(),
-                "video": {
-                    "filename": file,
-                    "subfolder": subfolder,
-                    "type": io.FolderType.output.value,
-                },
-                "segment_ids": [str(value) for value in segment_ids],
+            video_state = {
+                "filename": file,
+                "subfolder": subfolder,
+                "type": io.FolderType.output.value,
             }
-            state_path = _advanced_state_path(str(cache_key))
-            fd, temp_state = tempfile.mkstemp(prefix="td_state_", suffix=".json", dir=os.path.dirname(state_path))
-            os.close(fd)
-            try:
-                with open(temp_state, "w", encoding="utf-8") as handle:
-                    json.dump(state, handle, ensure_ascii=False)
-                os.replace(temp_state, state_path)
-            finally:
-                if os.path.exists(temp_state):
-                    os.remove(temp_state)
+            if state_mode == "partial":
+                update_advanced_checkpoint_partial_video(
+                    str(cache_key),
+                    str(run_signature),
+                    video_state,
+                )
+            else:
+                state = {
+                    "version": 2,
+                    "saved_at": time.time(),
+                    "video": video_state,
+                    "segment_ids": [str(value) for value in segment_ids],
+                    "run_signature": str(run_signature),
+                }
+                _write_json_atomic(
+                    _advanced_state_path(str(cache_key)),
+                    state,
+                    "td_state_",
+                )
+                finalize_advanced_checkpoint(
+                    str(cache_key),
+                    str(run_signature),
+                    video_state,
+                )
 
         print(
             f"[TerryDirector Advanced][Perf] Terminal total: "
