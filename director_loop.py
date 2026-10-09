@@ -34,6 +34,24 @@ def _one(value):
     return value[0] if isinstance(value, list) else value
 
 
+def _notify(loop_id, segment_id, state):
+    # Only report real execution boundaries; never synthesize sampler percentage.
+    try:
+        from server import PromptServer
+        server = PromptServer.instance
+        if server is not None:
+            server.send_sync(
+                "terrydirector:loop-segment",
+                {
+                    "node_id": str(loop_id),
+                    "clip_id": str(segment_id),
+                    "status": state,
+                },
+            )
+    except Exception:
+        pass
+
+
 def _load_image(asset):
     source = asset.get("source") or {}
     if source.get("type") != "comfy-input":
@@ -178,6 +196,7 @@ class TerryDirectorLoopMedia(io.ComfyNode):
                 "循环媒体当前版本支持图片参考；视频/音频资产适配尚未实现，"
                 "请先使用图片参考工作流测试。"
             )
+        _notify(segment["_loop"]["loop_id"], segment["id"], "running")
         images = [_load_image(a) for a in assets["images"]]
         kind = segment["continuity"]["kind"]
         if kind == "tail_reference":
@@ -312,6 +331,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
             context_frames=int(loop["context_frames"]),
             fps=24,
         )
+        _notify(loop["loop_id"], segment["id"], "completed")
         return io.NodeOutput(
             result[0], {"images": result[1], "audio": result[2]}
         )
