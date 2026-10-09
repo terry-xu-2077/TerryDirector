@@ -223,40 +223,49 @@ async function restoreAdvancedState(node) {
     const completedIds = Array.isArray(checkpoint?.completed_segment_ids)
       ? checkpoint.completed_segment_ids.map(String)
       : [];
-    const checkpointIsPartial =
+    const checkpointIsActive =
       sameCheckpointSegments &&
-      completedIds.length > 0 &&
+      checkpoint &&
       checkpoint?.status !== "complete";
 
-    if (checkpointIsPartial) {
-      node.__tdPartialRecovery = {
-        completedIds,
-        total: currentIds.length,
-        updatedAt: Number(checkpoint?.updated_at || 0),
-      };
+    if (checkpointIsActive) {
+      // A newly started/interrupted run supersedes any older final video for
+      // the same node, even if the user cancelled before the first checkpoint.
+      node.__tdPreviewUrl = null;
       node.__tdRerunCacheReady = false;
       node.__tdRunActivity = blankActivity(node);
-      const completedSet = new Set(completedIds);
-      const completedAt = checkpoint?.updated_at
-        ? new Date(Number(checkpoint.updated_at) * 1000).toISOString()
-        : new Date().toISOString();
-      for (const clip of activeClips) {
-        const record = node.__tdRunActivity[clip.id];
-        if (!record || !completedSet.has(String(clip.id))) continue;
-        record.status = RUN_COMPLETED;
-        record.progress = 1;
-        record.completedAt = completedAt;
-        record.error = "";
+
+      if (completedIds.length > 0) {
+        node.__tdPartialRecovery = {
+          completedIds,
+          total: currentIds.length,
+          updatedAt: Number(checkpoint?.updated_at || 0),
+        };
+        const completedSet = new Set(completedIds);
+        const completedAt = checkpoint?.updated_at
+          ? new Date(Number(checkpoint.updated_at) * 1000).toISOString()
+          : new Date().toISOString();
+        for (const clip of activeClips) {
+          const record = node.__tdRunActivity[clip.id];
+          if (!record || !completedSet.has(String(clip.id))) continue;
+          record.status = RUN_COMPLETED;
+          record.progress = 1;
+          record.completedAt = completedAt;
+          record.error = "";
+        }
+        const partialVideo = checkpoint?.partial_video;
+        if (partialVideo?.filename) {
+          const params = new URLSearchParams({
+            filename: partialVideo.filename,
+            subfolder: partialVideo.subfolder || "",
+            type: partialVideo.type || "output",
+          });
+          node.__tdPreviewUrl = "/view?" + params.toString();
+        }
+      } else {
+        node.__tdPartialRecovery = null;
       }
-      const partialVideo = checkpoint?.partial_video;
-      if (partialVideo?.filename) {
-        const params = new URLSearchParams({
-          filename: partialVideo.filename,
-          subfolder: partialVideo.subfolder || "",
-          type: partialVideo.type || "output",
-        });
-        node.__tdPreviewUrl = "/view?" + params.toString();
-      }
+
       renderNode(node);
       return;
     }
