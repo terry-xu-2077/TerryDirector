@@ -255,7 +255,6 @@ def _sample_segment(
             conditioning=positive,
         )
         inputs: dict[str, Any] = {
-            "low_res_model": runtime["model"],
             "positive": positive,
             "negative": negative.out(0),
             "vae": runtime["vae"],
@@ -275,8 +274,15 @@ def _sample_segment(
             "tiling_tiles": int(second["tiling_tiles"]),
             "tiling_axis": str(second["tiling_axis"]),
         }
-        if second.get("high_res_model") is not None:
-            inputs["high_res_model"] = second["high_res_model"]
+
+        if str(second.get("sampler_model_inputs", "current")) == "legacy":
+            inputs["model"] = runtime["model"]
+            if second.get("high_res_model") is not None:
+                inputs["model_hires"] = second["high_res_model"]
+        else:
+            inputs["low_res_model"] = runtime["model"]
+            if second.get("high_res_model") is not None:
+                inputs["high_res_model"] = second["high_res_model"]
 
         return graph.node(
             "SelfLiftAvatarH3Sampler",
