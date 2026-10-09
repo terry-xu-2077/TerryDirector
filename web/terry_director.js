@@ -25,6 +25,83 @@ const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上
 const TRANSITION_MODES = new Set(["tail_reference", "tail_continuation", "independent"]);
 const cssHref = new URL("./terry_director.css", import.meta.url).href;
 
+// TerryDirector must be able to run exactly one director node even when another
+// extension monkey-patches app.queuePrompt and accidentally drops its third
+// partial-execution argument. Keep the normal ComfyUI app.queuePrompt path (so
+// beforeQueued callbacks, seed controls and queue bookkeeping still run), then
+// repair the partial target at the lower api.queuePrompt boundary if needed.
+const tdPendingPartialRuns = [];
+
+function removePendingPartialRun(request) {
+  const index = tdPendingPartialRuns.indexOf(request);
+  if (index >= 0) tdPendingPartialRuns.splice(index, 1);
+}
+
+function prunePendingPartialRuns() {
+  const now = Date.now();
+  for (let index = tdPendingPartialRuns.length - 1; index >= 0; index -= 1) {
+    if ((tdPendingPartialRuns[index]?.expiresAt || 0) <= now) {
+      tdPendingPartialRuns.splice(index, 1);
+    }
+  }
+}
+
+function bindDirectorPartialQueueGuard() {
+  if (api.__tdPartialQueueGuardBound) return;
+  const originalQueuePrompt = api.queuePrompt.bind(api);
+
+  api.queuePrompt = async function(number, data, options) {
+    prunePendingPartialRuns();
+    const output = data?.output || {};
+
+    const requestIndex = tdPendingPartialRuns.findIndex(request =>
+      request?.nodeId &&
+      Object.prototype.hasOwnProperty.call(output, request.nodeId)
+    );
+
+    if (requestIndex >= 0) {
+      const [request] = tdPendingPartialRuns.splice(requestIndex, 1);
+      const existingTargets = Array.isArray(options?.partialExecutionTargets)
+        ? options.partialExecutionTargets.map(String)
+        : [];
+      const intact =
+        existingTargets.length === 1 &&
+        existingTargets[0] === request.nodeId;
+
+      if (!intact) {
+        console.warn(
+          `[TerryDirector] Restored partial execution target ${request.nodeId}; ` +
+          "an upstream app.queuePrompt wrapper dropped or changed it."
+        );
+      }
+
+      return originalQueuePrompt(number, data, {
+        ...(options || {}),
+        partialExecutionTargets: [request.nodeId],
+      });
+    }
+
+    return originalQueuePrompt(number, data, options);
+  };
+
+  api.__tdPartialQueueGuardBound = true;
+}
+
+function queueDirectorNode(node) {
+  const request = {
+    nodeId: String(node.id),
+    // Keep queued-behind-current-run requests alive, but do not let a failed
+    // submission affect unrelated prompts indefinitely.
+    expiresAt: Date.now() + 30 * 60 * 1000,
+  };
+  tdPendingPartialRuns.push(request);
+
+  return app.queuePrompt(0, 1, [request.nodeId]).catch(error => {
+    removePendingPartialRun(request);
+    throw error;
+  });
+}
+
 function normalizeTransitionMode(value, fallback = "tail_reference") {
   return TRANSITION_MODES.has(value) ? value : fallback;
 }
@@ -1605,7 +1682,7 @@ function renderAdvancedNode(node) {
     }
     pushActivity(node);
 
-    void app.queuePrompt(0, 1, [String(node.id)]).then(queued => {
+    void queueDirectorNode(node).then(queued => {
       if (!queued && !node.__tdPromptId) {
         node.__tdLocalRunLock = false;
         node.__tdRerunActiveClipId = null;
@@ -1912,7 +1989,7 @@ function ensureEditorOverlay() {
       node.__tdRunActivity = blankActivity(node);
       pushActivity(node);
 
-      void app.queuePrompt(0, 1, [String(node.id)]).then(queued => {
+      void queueDirectorNode(node).then(queued => {
         if (!queued && !node.__tdPromptId) {
           node.__tdLocalRunLock = false;
           pushActivity(node);
@@ -2019,6 +2096,7 @@ app.registerExtension({
   async setup() {
     ensureCss();
     ensureEditorOverlay();
+    bindDirectorPartialQueueGuard();
     bindExecutionActivity();
   },
   nodeCreated(node) {
