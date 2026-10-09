@@ -62,6 +62,23 @@ def _canonical_core_graph(graph: GraphBuilder) -> dict[str, Any]:
         )
         if not local_id.startswith("td_s"):
             continue
+        # Diagnostics compare generation semantics, not Advanced post-sample
+        # persistence/streaming nodes. Those intentionally differ from Base.
+        if any(
+            token in local_id
+            for token in (
+                "_checkpoint",
+                "_cache_load",
+                "_decode_video",
+                "_decode_audio",
+                "_trim_video",
+                "_trim_audio",
+                "_assemble",
+                "_segment_file",
+                "_segment_video_load",
+            )
+        ):
+            continue
         core[local_id] = {
             "class_type": node.class_type,
             "inputs": {
@@ -129,7 +146,7 @@ def _log_core_graph_signature(
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
     label = f" {diagnostic_label}" if diagnostic_label else ""
     print(
-        f"[TerryDirector][Diagnostic]{label} core_graph_signature={digest} "
+        f"[TerryDirector][Diagnostic]{label} sampling_core_graph_signature={digest} "
         f"nodes={len(core)}",
         flush=True,
     )
