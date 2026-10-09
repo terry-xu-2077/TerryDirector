@@ -126,6 +126,13 @@ class TerryDirectorLooper(StartLoop):
                     default=DEFAULT_TAIL_REFERENCE_PROMPT, multiline=True,
                     dynamic_prompts=False, socketless=True,
                 ),
+                # Native StartLoop needs a real first carried value; otherwise its
+                # OUTPUT_IS_LIST context port can emit an empty list and skip
+                # the first iteration's consumers.
+                io.String.Input(
+                    "initial_iteration_value", default="{}",
+                    socketless=True,
+                ),
             ],
             outputs=[
                 io.Int.Output("iteration_index", display_name="循环序号"),
@@ -143,7 +150,7 @@ class TerryDirectorLooper(StartLoop):
         )
 
     @classmethod
-    def execute(cls, seed, config_json, tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT):
+    def execute(cls, seed, config_json, tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT, initial_iteration_value="{}"):
         loop_id = _one(cls.hidden.unique_id)
         items = _plan_items(
             _one(config_json), _one(seed), _one(tail_reference_prompt), loop_id
