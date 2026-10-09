@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
- torch.set_num_threads(1)
+torch.set_num_threads(1)
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "_terry_selflift_test"
 package = ModuleType(PACKAGE)
@@ -36,7 +36,7 @@ def module(name):
 
 engine = module("director_selflift")
 lift = module("director_lift_model")
-til ing = module("director_selflift_tiling")
+tiling = module("director_selflift_tiling")
 
 
 class Nested:
