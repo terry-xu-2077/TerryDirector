@@ -88,14 +88,9 @@ def _execution_signature(runtime, plan, seed) -> str:
 
 
 def _log_execution_signature(label, runtime, plan, seed):
-    digest = _execution_signature(runtime, plan, seed)
-    print(
-        f"[TerryDirector][Diagnostic] {label} input_signature={digest} "
-        f"size={int(runtime.get('width', 0))}x{int(runtime.get('height', 0))} "
-        f"segments={len(plan.get('segments', []))} seed={int(seed)}",
-        flush=True,
-    )
-    return digest
+    # Kept as a stable cache/recovery identity. Production runs no longer emit
+    # the former graph-comparison diagnostic line.
+    return _execution_signature(runtime, plan, seed)
 
 
 def _segment_cache_signatures(runtime, plan) -> list[str]:
@@ -677,11 +672,11 @@ class TerryDirectorAdvanced(TerryDirector):
             else:
                 preview_mode = "core-1fps-unavailable"
 
-        print(
-            "[TerryDirector Advanced][Diagnostic] Running video/save + terminal batch cache "
-            f"preview={preview_mode}",
-            flush=True,
-        )
+        if preview_mode != "off":
+            print(
+                f"[TerryDirector Advanced] Preview: {preview_mode}",
+                flush=True,
+            )
         expanded, director_output = build_timeline_graph(
             runtime,
             plan,
