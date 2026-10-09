@@ -5,12 +5,14 @@ import os
 import re
 import tempfile
 import time
+from fractions import Fraction
 
 import folder_paths
 import torch
 
 from comfy.cli_args import args
-from comfy_api.latest import io, ui, Types
+from comfy_api.latest import io, ui, Types, InputImpl
+from comfy_extras.nodes_audio import vae_decode_audio
 
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 
@@ -48,6 +50,35 @@ class TerryDirectorPackOutput(io.ComfyNode):
         })
 
 
+class TerryDirectorPackAdvancedOutput(io.ComfyNode):
+    """Advanced packet that deliberately avoids materializing merged IMAGE/AUDIO."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        template = io.Autogrow.TemplatePrefix(
+            io.Latent.Input("latent"),
+            prefix="latent_",
+            min=1,
+            max=64,
+        )
+        return io.Schema(
+            node_id="TerryDirectorPackAdvancedOutput",
+            display_name="TerryDirector Pack Advanced Output (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[io.Autogrow.Input("latents", template=template)],
+            outputs=[DirectorOutputData.Output(display_name="导演输出")],
+        )
+
+    @classmethod
+    def execute(cls, latents) -> io.NodeOutput:
+        return io.NodeOutput({
+            "segment_latents": list(latents.values()),
+            "images": None,
+            "audio": None,
+            "streamed_video": True,
+        })
+
 
 def _advanced_cache_root(cache_key: str) -> str:
     safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "default"))[:160]
@@ -59,6 +90,20 @@ def _advanced_cache_root(cache_key: str) -> str:
 def _advanced_cache_path(cache_key: str, segment_id: str) -> str:
     safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:160]
     return os.path.join(_advanced_cache_root(cache_key), f"{safe_segment}.pt")
+
+
+def _advanced_segment_video_path(cache_key: str, segment_id: str, signature: str) -> str:
+    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:120]
+    signature_hash = __import__("hashlib").sha256(
+        str(signature).encode("utf-8")
+    ).hexdigest()[:12]
+    root = os.path.join(_advanced_cache_root(cache_key), "segments")
+    os.makedirs(root, exist_ok=True)
+    return os.path.join(root, f"{safe_segment}_{signature_hash}.mkv")
+
+
+def advanced_segment_video_exists(cache_key: str, segment_id: str, signature: str) -> bool:
+    return os.path.isfile(_advanced_segment_video_path(cache_key, segment_id, signature))
 
 
 def _advanced_state_path(cache_key: str) -> str:
@@ -322,6 +367,252 @@ class TerryDirectorCacheLatent(io.ComfyNode):
             flush=True,
         )
         return io.NodeOutput(latent)
+
+
+class TerryDirectorDecodeSegmentToFile(io.ComfyNode):
+    """Decode one H3 segment, encode it to a persistent file, and keep only tiny continuity context in RAM."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorDecodeSegmentToFile",
+            display_name="TerryDirector Decode Segment To File (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Latent.Input("samples"),
+                io.Vae.Input("vae"),
+                io.Vae.Input("audio_vae"),
+                io.String.Input("cache_key"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+                io.Int.Input("output_frames", min=1),
+                io.Int.Input("trim_head_frames", min=0),
+                io.Int.Input("gap_frames", min=0),
+                io.Int.Input("gap_after_frames", min=0),
+                io.Int.Input("context_frames", min=1),
+                io.Int.Input("fps", min=1),
+                io.String.Input("codec"),
+            ],
+            outputs=[
+                io.Video.Output(),
+                io.Image.Output(display_name="continuity images"),
+                io.Audio.Output(display_name="continuity audio"),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        # Encoding is a durable side effect used by interruption recovery.
+        return float("NaN")
+
+    @classmethod
+    def execute(
+        cls,
+        samples,
+        vae,
+        audio_vae,
+        cache_key,
+        segment_id,
+        signature,
+        output_frames,
+        trim_head_frames,
+        gap_frames,
+        gap_after_frames,
+        context_frames,
+        fps,
+        codec,
+    ) -> io.NodeOutput:
+        started = time.perf_counter()
+        output_frames = int(output_frames)
+        trim = int(trim_head_frames)
+        gap = int(gap_frames)
+        gap_after = int(gap_after_frames)
+        fps = int(fps)
+        context_frames = max(1, int(context_frames))
+        if fps < 1 or output_frames < 1:
+            raise ValueError("TerryDirector streamed segment has invalid duration")
+
+        latent = samples["samples"]
+        video_latent = latent.unbind()[0] if getattr(latent, "is_nested", False) else latent
+        images = vae.decode(video_latent)
+        if len(images.shape) == 5:
+            images = images.reshape(
+                -1, images.shape[-3], images.shape[-2], images.shape[-1]
+            )
+        images = images[:output_frames]
+
+        audio = vae_decode_audio(audio_vae, samples)
+        waveform = audio["waveform"]
+        sample_rate = int(audio["sample_rate"])
+        output_samples = round((output_frames / fps) * sample_rate)
+        waveform = waveform[..., :output_samples]
+
+        context_count = min(context_frames, int(images.shape[0]))
+        context_images = images[-context_count:].clone()
+        context_samples = max(1, round((context_count / fps) * sample_rate))
+        context_waveform = waveform[..., -context_samples:].clone()
+        continuity_audio = {
+            "waveform": context_waveform,
+            "sample_rate": sample_rate,
+        }
+
+        if trim < 0 or trim >= int(images.shape[0]):
+            if trim:
+                raise ValueError("TerryDirector streamed overlap trim exceeds segment frame count")
+            trim = 0
+        trim_samples = round((trim / fps) * sample_rate)
+        current_images = images[trim:]
+        current_waveform = waveform[..., trim_samples:]
+
+        if gap:
+            black = current_images.new_zeros(
+                (gap, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+            )
+            current_images = torch.cat((black, current_images), dim=0)
+            silence = current_waveform.new_zeros(
+                (*current_waveform.shape[:-1], round((gap / fps) * sample_rate))
+            )
+            current_waveform = torch.cat((silence, current_waveform), dim=-1)
+
+        if gap_after:
+            black = current_images.new_zeros(
+                (gap_after, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+            )
+            current_images = torch.cat((current_images, black), dim=0)
+            silence = current_waveform.new_zeros(
+                (*current_waveform.shape[:-1], round((gap_after / fps) * sample_rate))
+            )
+            current_waveform = torch.cat((current_waveform, silence), dim=-1)
+
+        segment_audio = {
+            "waveform": current_waveform,
+            "sample_rate": sample_rate,
+        }
+        video = InputImpl.VideoFromComponents(
+            Types.VideoComponents(
+                images=current_images,
+                audio=segment_audio,
+                frame_rate=Fraction(fps),
+            )
+        )
+
+        resolved_codec = str(codec or "h264").lower()
+        if resolved_codec not in {"h264", "av1"}:
+            resolved_codec = "h264"
+        path = _advanced_segment_video_path(
+            str(cache_key), str(segment_id), str(signature)
+        )
+        fd, temp_path = tempfile.mkstemp(
+            prefix="td_segment_", suffix=".mkv", dir=os.path.dirname(path)
+        )
+        os.close(fd)
+        try:
+            video.save_to(
+                temp_path,
+                format=Types.VideoContainer.MKV,
+                codec=Types.VideoCodec(resolved_codec),
+            )
+            os.replace(temp_path, path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        rss_text = ""
+        try:
+            import psutil
+            rss = psutil.Process().memory_info().rss / (1024 * 1024)
+            rss_text = f" rss={rss:.0f}MB"
+        except Exception:
+            pass
+        print(
+            f"[TerryDirector Advanced][Stream] Segment {segment_id}: "
+            f"frames={int(current_images.shape[0])} file={size_mb:.1f}MB "
+            f"time={time.perf_counter() - started:.3f}s{rss_text}",
+            flush=True,
+        )
+        return io.NodeOutput(
+            InputImpl.VideoFromFile(path),
+            context_images,
+            continuity_audio,
+        )
+
+
+class TerryDirectorLoadSegmentVideo(io.ComfyNode):
+    """Load a previously encoded Advanced segment without materializing its frames."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorLoadSegmentVideo",
+            display_name="TerryDirector Load Segment Video (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.String.Input("cache_key"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+            ],
+            outputs=[io.Video.Output()],
+        )
+
+    @classmethod
+    def fingerprint_inputs(cls, cache_key, segment_id, signature, **kwargs):
+        path = _advanced_segment_video_path(cache_key, segment_id, signature)
+        try:
+            stat = os.stat(path)
+            return f"{stat.st_mtime_ns}:{stat.st_size}:{signature}"
+        except OSError:
+            return float("NaN")
+
+    @classmethod
+    def execute(cls, cache_key, segment_id, signature) -> io.NodeOutput:
+        path = _advanced_segment_video_path(cache_key, segment_id, signature)
+        if not os.path.isfile(path):
+            raise RuntimeError(
+                f"TerryDirector Advanced 找不到片段 {segment_id} 的文件缓存"
+            )
+        return io.NodeOutput(InputImpl.VideoFromFile(path))
+
+
+class TerryDirectorConcatSegmentVideos(io.ComfyNode):
+    """Create a streaming/file-backed video list from encoded segment files."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        template = io.Autogrow.TemplatePrefix(
+            io.Video.Input("video"),
+            prefix="video_",
+            min=1,
+            max=64,
+        )
+        return io.Schema(
+            node_id="TerryDirectorConcatSegmentVideos",
+            display_name="TerryDirector Concat Segment Videos (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Autogrow.Input("videos", template=template),
+                io.String.Input("codec"),
+            ],
+            outputs=[io.Video.Output()],
+        )
+
+    @classmethod
+    def execute(cls, videos, codec) -> io.NodeOutput:
+        values = list(videos.values())
+        if not values:
+            raise RuntimeError("TerryDirector Advanced 没有可拼接的视频片段")
+        resolved_codec = str(codec or "h264").lower()
+        if resolved_codec not in {"h264", "av1"}:
+            resolved_codec = "h264"
+        return io.NodeOutput(
+            InputImpl.VideoFromList(
+                values,
+                codec=Types.VideoCodec(resolved_codec),
+            )
+        )
 
 
 class TerryDirectorLoadCachedLatent(io.ComfyNode):
