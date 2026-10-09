@@ -10,7 +10,7 @@ import folder_paths
 from comfy_execution.graph_utils import GraphBuilder, is_link
 
 from .director_core import FPS
-from .director_internal import advanced_segment_video_exists
+from .director_internal import advanced_segment_video_exists, prepare_base_run_cache
 
 
 def _graph_value_signature(value, prefix: str):
@@ -577,6 +577,8 @@ def build_timeline_graph(
     reuse_cached = {str(value) for value in (reuse_cached_segment_ids or set())}
     streamed_advanced = video_export is not None
     streamed_base = video_export is None and bool(str(base_cache_key or "").strip())
+    if streamed_base:
+        prepare_base_run_cache(str(base_cache_key), run_signature)
 
     previous_images = None
     previous_audio = None
