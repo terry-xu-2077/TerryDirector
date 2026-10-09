@@ -10,7 +10,11 @@ import folder_paths
 from comfy_execution.graph_utils import GraphBuilder, is_link
 
 from .director_core import FPS
-from .director_internal import advanced_segment_video_exists, prepare_base_run_cache
+from .director_internal import (
+    advanced_lossless_segment_descriptor,
+    advanced_lossless_segment_exists,
+    prepare_base_run_cache,
+)
 
 
 def _graph_value_signature(value, prefix: str):
@@ -77,6 +81,8 @@ def _canonical_core_graph(graph: GraphBuilder) -> dict[str, Any]:
                 "_segment_file",
                 "_segment_video_load",
                 "_segment_cache",
+                "_lossless_cache",
+                "_lossless_context",
             )
         ):
             continue
@@ -553,7 +559,7 @@ def build_timeline_graph(
     """
     graph = GraphBuilder()
     latents: list[Any] = []
-    segment_videos: list[Any] = []
+    advanced_segment_caches: list[Any] = []
     base_segment_caches: list[Any] = []
     segment_ids = [str(segment["id"]) for segment in plan["segments"]]
     cache_signatures = [_cache_signature(runtime, segment) for segment in plan["segments"]]
@@ -597,15 +603,6 @@ def build_timeline_graph(
         if rerun_segment_id is not None:
             return str(segment_id) == rerun_segment_id
         return str(segment_id) not in reuse_cached
-
-    segment_codec = "h264"
-    if streamed_advanced:
-        requested_format = str(video_export.get("format") or "auto").lower()
-        requested_codec = str(video_export.get("codec") or "auto").lower()
-        if requested_codec == "av1" or (
-            requested_codec == "auto" and requested_format == "webm"
-        ):
-            segment_codec = "av1"
 
     segments = list(plan["segments"])
     for position, segment in enumerate(segments):
@@ -716,57 +713,75 @@ def build_timeline_graph(
             continue
 
         if streamed_advanced:
-            # A cached Advanced prefix can reuse its encoded segment file unless
-            # the next sampled segment still needs tail/overlap context.
-            next_context_for_sampling = (
-                next_segment is not None
-                and should_sample_segment(str(next_segment["id"]))
-                and next_needs_context
-            )
-            can_reuse_file = (
-                not should_sample
-                and not next_context_for_sampling
-                and cache_key is not None
-                and advanced_segment_video_exists(
-                    str(cache_key), segment_id, signature
+            # Advanced now keeps decoded media lossless until the final encode.
+            # Existing interrupted-run caches can be reused directly. If a
+            # cache is missing, rebuild only that segment from its LATENT.
+            cache_exists = (
+                cache_key is not None
+                and advanced_lossless_segment_exists(
+                    str(cache_key),
+                    run_signature,
+                    segment_id,
+                    signature,
                 )
             )
 
-            if can_reuse_file:
-                segment_video = graph.node(
-                    "TerryDirectorLoadSegmentVideo",
-                    f"{prefix_id}_segment_video_load",
-                    cache_key=str(cache_key),
-                    segment_id=segment_id,
-                    signature=signature,
-                ).out(0)
-                previous_images = None
-                previous_audio = None
-                previous_is_compact = True
-            else:
-                streamed = graph.node(
-                    "TerryDirectorDecodeSegmentToFile",
-                    f"{prefix_id}_segment_file",
-                    samples=sampled,
-                    vae=runtime["vae"],
-                    audio_vae=runtime["audio_vae"],
-                    cache_key=str(cache_key or "default"),
-                    segment_id=segment_id,
-                    signature=signature,
-                    output_frames=int(segment["output_frames"]),
-                    trim_head_frames=int(segment["assembly"]["trim_head_frames"]),
-                    gap_frames=int(segment["assembly"]["gap_before_frames"]),
-                    gap_after_frames=int(segment["assembly"]["gap_after_frames"]),
-                    context_frames=int(context_frames),
-                    fps=int(FPS),
-                    codec=segment_codec,
+            if not should_sample and cache_exists:
+                descriptor = advanced_lossless_segment_descriptor(
+                    str(cache_key),
+                    run_signature,
+                    segment_id,
+                    signature,
                 )
-                segment_video = streamed.out(0)
-                previous_images = streamed.out(1)
-                previous_audio = streamed.out(2)
-                previous_is_compact = True
+                advanced_segment_caches.append(descriptor)
 
-            segment_videos.append(segment_video)
+                # Only materialize the cached segment's tail when the next
+                # sampled segment actually needs continuity.
+                next_context_for_sampling = (
+                    next_segment is not None
+                    and should_sample_segment(str(next_segment["id"]))
+                    and next_needs_context
+                )
+                if next_context_for_sampling:
+                    context = graph.node(
+                        "TerryDirectorLoadAdvancedSegmentContext",
+                        f"{prefix_id}_lossless_context",
+                        cache_key=str(cache_key),
+                        run_signature=run_signature,
+                        segment_id=segment_id,
+                        signature=signature,
+                        context_frames=int(context_frames),
+                        fps=int(FPS),
+                    )
+                    previous_images = context.out(0)
+                    previous_audio = context.out(1)
+                else:
+                    previous_images = None
+                    previous_audio = None
+                previous_is_compact = True
+                continue
+
+            cached = graph.node(
+                "TerryDirectorDecodeAdvancedSegmentToCache",
+                f"{prefix_id}_lossless_cache",
+                samples=sampled,
+                vae=runtime["vae"],
+                audio_vae=runtime["audio_vae"],
+                cache_key=str(cache_key or "default"),
+                run_signature=run_signature,
+                segment_id=segment_id,
+                signature=signature,
+                output_frames=int(segment["output_frames"]),
+                trim_head_frames=int(segment["assembly"]["trim_head_frames"]),
+                gap_frames=int(segment["assembly"]["gap_before_frames"]),
+                gap_after_frames=int(segment["assembly"]["gap_after_frames"]),
+                context_frames=int(context_frames),
+                fps=int(FPS),
+            )
+            advanced_segment_caches.append(cached.out(0))
+            previous_images = cached.out(1)
+            previous_audio = cached.out(2)
+            previous_is_compact = True
             continue
 
         # Legacy Base path retained for callers that do not request streamed Base.
@@ -844,28 +859,22 @@ def build_timeline_graph(
             for index, latent in enumerate(latents)
         },
     )
-    concatenated = graph.node(
-        "TerryDirectorConcatSegmentVideos",
-        "td_advanced_concat_video",
-        codec=segment_codec,
-        **{
-            f"videos.video_{index}": video
-            for index, video in enumerate(segment_videos)
-        },
-    )
     final = graph.node(
-        "TerryDirectorAdvancedFinish",
+        "TerryDirectorAdvancedLosslessFinish",
         "td_advanced_finish",
         director_output=packed_output.out(0),
-        video=concatenated.out(0),
+        fps=int(FPS),
         filename_prefix=video_export["filename_prefix"],
         format=video_export["format"],
         codec=video_export["codec"],
         cache_key=str(cache_key or ""),
         segment_ids_json=segment_ids_json,
         segment_signatures_json=segment_signatures_json,
-        cache_only_segment_id=str(rerun_segment_id or ""),
         run_signature=run_signature,
         state_mode=str(finish_state_mode or "complete"),
+        **{
+            f"segments.segment_{index}": descriptor
+            for index, descriptor in enumerate(advanced_segment_caches)
+        },
     )
     return graph.finalize(), final.out(0)
