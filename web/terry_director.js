@@ -1178,9 +1178,27 @@ function renderNode(node) {
 
 
 function linkedNodeForInput(node, inputName) {
-  const input = node?.inputs?.find(item => item.name === inputName);
-  const link = input?.link != null ? app.graph?.links?.[input.link] : null;
-  return link ? app.graph?.getNodeById?.(link.origin_id) : null;
+  if (!node) return null;
+  const graph = node.graph || app.rootGraph || app.graph;
+  const inputIndex = node.inputs?.findIndex(item => item.name === inputName) ?? -1;
+  if (inputIndex < 0 || !graph) return null;
+
+  // ComfyUI frontend 1.53+ stores graph.links as a Map. Prefer the node/graph
+  // accessors so this also works with the newer ECS-backed link store and
+  // subgraphs; keep a small compatibility fallback for older frontends.
+  let link = node.getInputLink?.(inputIndex) || null;
+  if (!link) {
+    const linkId = node.inputs?.[inputIndex]?.link;
+    if (linkId != null) {
+      link =
+        graph.getLink?.(linkId) ||
+        graph.links?.get?.(linkId) ||
+        graph.links?.[linkId] ||
+        null;
+    }
+  }
+
+  return link ? graph.getNodeById?.(link.origin_id) || null : null;
 }
 
 function effectiveTimelineFrames(documentData) {
@@ -1367,9 +1385,7 @@ function mountOutputNode(node) {
 // Advanced review is intentionally independent of the full editor timeline.
 // Persist UI selection in memory, never in the creative document.
 function advancedAspectRatio(node) {
-  const input = node.inputs?.find(item => item.name === "director_config");
-  const link = input?.link != null ? app.graph?.links?.[input.link] : null;
-  const configNode = link ? app.graph?.getNodeById?.(link.origin_id) : null;
+  const configNode = linkedNodeForInput(node, "director_config");
   if (configNode?.comfyClass !== CONFIG_NODE_CLASS) return 16 / 9;
   const value = String(configNode.widgets?.find(widget => widget.name === "aspect_ratio")?.value ?? "");
   const match = value.match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/);
