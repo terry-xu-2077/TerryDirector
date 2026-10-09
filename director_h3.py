@@ -247,6 +247,43 @@ def _sample_segment(
     prefix: str,
     seed: int,
 ) -> Any:
+    second = runtime.get("params", {}).get("second_pass", {})
+    if isinstance(second, dict) and second.get("method") == "selflift":
+        negative = graph.node(
+            "ConditioningZeroOut",
+            f"{prefix}_selflift_negative",
+            conditioning=positive,
+        )
+        inputs: dict[str, Any] = {
+            "low_res_model": runtime["model"],
+            "positive": positive,
+            "negative": negative.out(0),
+            "vae": runtime["vae"],
+            "latent_image": latent,
+            "sampler": second["sampler"],
+            "sigmas": second["sigmas"],
+            "seed": max(0, min(0xFFFFFFFFFFFFFFFF, int(seed))),
+            "cfg": float(second["cfg"]),
+            "transition_step": int(second["transition_step"]),
+            "lowres_scale": float(second["lowres_scale"]),
+            "rho": float(second["rho"]),
+            "w_min": float(second["w_min"]),
+            "w_max": float(second["w_max"]),
+            "upscaler_model": str(second["upscaler_model"]),
+            "highres_tiling": bool(second["highres_tiling"]),
+            "tiling_mode": str(second["tiling_mode"]),
+            "tiling_tiles": int(second["tiling_tiles"]),
+            "tiling_axis": str(second["tiling_axis"]),
+        }
+        if second.get("high_res_model") is not None:
+            inputs["high_res_model"] = second["high_res_model"]
+
+        return graph.node(
+            "SelfLiftAvatarH3Sampler",
+            f"{prefix}_selflift_sample",
+            **inputs,
+        ).out(0)
+
     noise = graph.node(
         "RandomNoise",
         f"{prefix}_noise",
@@ -308,9 +345,16 @@ def _decode_segment(
 
 
 def _cache_signature(runtime: dict[str, Any], segment: dict[str, Any]) -> str:
+    second = runtime.get("params", {}).get("second_pass", {})
+    second_signature = (
+        str(second.get("cache_signature") or "selflift")
+        if isinstance(second, dict) and second.get("method") == "selflift"
+        else "none"
+    )
     return (
-        f"v1:{int(runtime['width'])}x{int(runtime['height'])}:"
-        f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}"
+        f"v2:{int(runtime['width'])}x{int(runtime['height'])}:"
+        f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}:"
+        f"sp={second_signature}"
     )
 
 
