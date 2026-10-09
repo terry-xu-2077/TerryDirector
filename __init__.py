@@ -6,7 +6,6 @@ from comfy_api.latest import ComfyExtension, io
 
 from .director_node import TerryDirector, TerryDirectorAdvanced, TerryDirectorConfig, TerryDirectorOutput
 from .director_internal import (
-    TerryDirectorAdvancedFinish,
     TerryDirectorCacheLatent,
     TerryDirectorLoadCachedLatent,
     TerryDirectorDecodeSegmentToCache,
@@ -14,9 +13,6 @@ from .director_internal import (
     TerryDirectorDecodeAdvancedSegmentToCache,
     TerryDirectorLoadAdvancedSegmentContext,
     TerryDirectorAdvancedLosslessFinish,
-    TerryDirectorDecodeSegmentToFile,
-    TerryDirectorLoadSegmentVideo,
-    TerryDirectorConcatSegmentVideos,
     TerryDirectorAssembleMedia,
     TerryDirectorPackOutput,
     TerryDirectorPackAdvancedOutput,
@@ -36,7 +32,6 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorAdvanced,
             TerryDirectorOutput,
             TerryDirectorPackOutput,
-            TerryDirectorAdvancedFinish,
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,
             TerryDirectorDecodeSegmentToCache,
@@ -44,9 +39,6 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorDecodeAdvancedSegmentToCache,
             TerryDirectorLoadAdvancedSegmentContext,
             TerryDirectorAdvancedLosslessFinish,
-            TerryDirectorDecodeSegmentToFile,
-            TerryDirectorLoadSegmentVideo,
-            TerryDirectorConcatSegmentVideos,
             TerryDirectorAssembleMedia,
             TerryDirectorPackAdvancedOutput,
             TerryDirectorResampleReferenceVideo,
