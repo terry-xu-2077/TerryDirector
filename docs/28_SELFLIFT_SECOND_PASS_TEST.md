@@ -3,6 +3,23 @@
 > 目标：验证新拓扑与 selflift-Avatar 的真实采样链。  
 > 不跑 50 秒长任务；先用短片段确认功能和质量。
 
+## 2026-10-10 接入检查
+
+本轮检查发现主分支已经有 SelfLift 接入，因此保留现有实现，不重复重写采样器。
+
+- `eaa2479`：修复 `director_node.py` 缺少模块级 `import torch`。原先默认开启 Sigma 精修时，`_refine_sigmas()` 会触发 `NameError`；其他函数内部的局部导入不能解决这个问题。
+- `fc52938`：新增 `tests/test_selflift_runtime.py`，共 16 项 CPU 隔离检查。覆盖默认日程、三种精修分布、精修关闭、参数校验、切换边界、部分配置的缓存签名变化、新版 SelfLift 输入传递及关闭二采时的原生采样路径。
+- 本轮使用从仓库读取的对应 helper 源码执行隔离检查，PyTorch `2.10.0+cpu`，16 项通过；移除模块级 torch 导入后能复现原错误，再恢复修复后通过。
+- 调度器和 GraphBuilder 使用测试替身。测试不启动完整 ComfyUI，不运行真实 H3 模型，不代表完整仓库测试、GPU 生成、前端、连续性画质或显存验收已经通过。下面 Case A–F 仍需本机验证。
+
+在完整仓库中复跑这组检查：
+
+```bash
+python -m unittest discover -s tests -p "test_selflift_runtime.py" -v
+```
+
+测试脚本读取仓库实际函数 AST 与生产文件自身的 torch 导入，不向被测函数注入 torch，以免掩盖缺失导入。
+
 ## 节点拓扑
 
 ```text
@@ -13,7 +30,25 @@ TerryDirector 配置
 TerryDirector / TerryDirector Advanced
 ```
 
+二采配置只接导演配置，不直接接导演时间线。时间线仍只接收一个导演配置包。
 不连接“二采配置”时，保持原生 TerryDirector 采样链不变。
+
+## 环境准备与参数归属
+
+确认已安装并启用 `slmonker/selflift-Avatar`，建议更新其 main 分支后重启 ComfyUI 后端并刷新前端。
+Latent 放大模型放在 `ComfyUI/models/latent_upscale_models/`，在二采配置中确认选中：
+
+```text
+minimax_h3_latent_upscaler_3d_fp16.safetensors
+```
+
+如果菜单只有 `none`，先检查模型目录与文件；默认 `rho=0` 时本项目会拦截未选择放大模型的配置。
+
+分辨率、主模型、CLIP 与两种 VAE 仍归导演配置；Seed 仍归导演时间线。二采配置可额外接高清模型，不连接时复用导演配置的主模型。
+
+接入二采配置后，本轮 SelfLift 使用二采节点的基础步数与精修设置，以及固定 Euler / simple 日程；导演配置中的普通采样器、总步数与调度器不控制该 SelfLift 日程。不接二采时它们继续控制普通采样。
+
+SelfLift 是整段的“低清采样 → 潜空间提升 → 高清继续采样”路径，不是普通完整采样结束后再额外跑一遍采样。不会引入示例中的提示词增强、DLSSNR、DLSS 放大或补帧。
 
 ## 默认参数
 
@@ -75,7 +110,7 @@ TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector
 
 确认：
 
-1. Prompt 可以通过验证，不出现 SelfLift 输入名错误。
+1. Prompt 可以通过验证，不出现 SelfLift 输入名错误或 `torch` 未定义错误。
 2. expanded graph 采样节点为 `SelfLiftAvatarH3Sampler`，不是原来的 `SamplerCustomAdvanced`。
 3. 控制台能看到 selflift-Avatar 的 low/high resolution 计划日志。
 4. 最终 IMAGE / AUDIO 正常。
@@ -115,7 +150,7 @@ TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector
 - 先用 `auto`
 - 不改其他参数
 
-确认 selflift-Avatar 能显示实际 tiling plan 并完成一次短片段。
+检查控制台中的实际 tiling plan 并确认能完成一次短片段。内部展开节点的原插件状态面板不作为本轮 UI 验收前提。
 
 不需要为了本轮测试手动尝试 2/4/6/8 全部组合。
 
