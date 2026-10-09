@@ -12,7 +12,6 @@ import torch
 
 from comfy.cli_args import args
 from comfy_api.latest import io, ui, Types, InputImpl
-from comfy_extras.nodes_audio import vae_decode_audio
 
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 
@@ -369,6 +368,25 @@ class TerryDirectorCacheLatent(io.ComfyNode):
         return io.NodeOutput(latent)
 
 
+def _decode_h3_audio(audio_vae, samples):
+    latent = samples["samples"]
+    if getattr(latent, "is_nested", False):
+        latent = latent.unbind()[-1]
+    audio = audio_vae.decode(latent).movedim(-1, 1)
+    std = torch.std(audio, dim=[1, 2], keepdim=True) * 5.0
+    std[std < 1.0] = 1.0
+    audio /= std
+    sample_rate = samples.get(
+        "sample_rate",
+        getattr(
+            audio_vae,
+            "audio_sample_rate_output",
+            getattr(audio_vae, "audio_sample_rate", 44100),
+        ),
+    )
+    return {"waveform": audio, "sample_rate": sample_rate}
+
+
 class TerryDirectorDecodeSegmentToFile(io.ComfyNode):
     """Decode one H3 segment, encode it to a persistent file, and keep only tiny continuity context in RAM."""
 
@@ -442,7 +460,7 @@ class TerryDirectorDecodeSegmentToFile(io.ComfyNode):
             )
         images = images[:output_frames]
 
-        audio = vae_decode_audio(audio_vae, samples)
+        audio = _decode_h3_audio(audio_vae, samples)
         waveform = audio["waveform"]
         sample_rate = int(audio["sample_rate"])
         output_samples = round((output_frames / fps) * sample_rate)
