@@ -518,13 +518,34 @@ def build_timeline_graph(
     cache_key: str | None = None,
     rerun: dict[str, Any] | None = None,
     preview_override: dict[str, Any] | None = None,
+    reuse_cached_segment_ids: set[str] | None = None,
+    finish_state_mode: str = "complete",
     diagnostic_label: str | None = None,
     diagnostic_input_signature: str | None = None,
 ) -> tuple[dict[str, Any], Any]:
     """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
     graph = GraphBuilder()
     latents: list[Any] = []
-    cache_signatures: list[str] = []
+    segment_ids = [str(segment["id"]) for segment in plan["segments"]]
+    cache_signatures = [_cache_signature(runtime, segment) for segment in plan["segments"]]
+    segment_ids_json = json.dumps(segment_ids, ensure_ascii=False)
+    segment_signatures_json = json.dumps(cache_signatures, ensure_ascii=False)
+    run_signature = str(
+        diagnostic_input_signature
+        or hashlib.sha256(
+            json.dumps(
+                {
+                    "seed": int(seed),
+                    "segments": segment_ids,
+                    "signatures": cache_signatures,
+                    "width": int(runtime["width"]),
+                    "height": int(runtime["height"]),
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+    )
+    reuse_cached = {str(value) for value in (reuse_cached_segment_ids or set())}
     previous_images = None
     previous_audio = None
     merged_images = None
@@ -540,8 +561,11 @@ def build_timeline_graph(
     for segment in plan["segments"]:
         prefix = f"td_s{segment['index'] + 1}"
         segment_id = str(segment["id"])
-        signature = _cache_signature(runtime, segment)
-        should_sample = rerun_segment_id is None or segment_id == rerun_segment_id
+        signature = cache_signatures[len(latents)]
+        if rerun_segment_id is not None:
+            should_sample = segment_id == rerun_segment_id
+        else:
+            should_sample = segment_id not in reuse_cached
 
         if should_sample:
             positive, latent = _condition_segment(
@@ -583,9 +607,21 @@ def build_timeline_graph(
             sampled = _sample_segment(
                 graph, segment_runtime, positive, latent, prefix, segment_seed
             )
+            if cache_key is not None:
+                sampled = graph.node(
+                    "TerryDirectorCacheLatent",
+                    f"{prefix}_checkpoint",
+                    latent=sampled,
+                    cache_key=str(cache_key),
+                    segment_id=segment_id,
+                    signature=signature,
+                    run_signature=run_signature,
+                    segment_ids_json=segment_ids_json,
+                    segment_signatures_json=segment_signatures_json,
+                ).out(0)
         else:
             if cache_key is None:
-                raise RuntimeError("TerryDirector Advanced 局部重跑缺少缓存标识")
+                raise RuntimeError("TerryDirector Advanced 复用片段缺少缓存标识")
             sampled = graph.node(
                 "TerryDirectorLoadCachedLatent",
                 f"{prefix}_cache_load",
@@ -618,7 +654,6 @@ def build_timeline_graph(
         previous_images = images
         previous_audio = audio
         latents.append(sampled)
-        cache_signatures.append(signature)
 
     _log_core_graph_signature(
         graph,
@@ -651,15 +686,11 @@ def build_timeline_graph(
             format=video_export["format"],
             codec=video_export["codec"],
             cache_key=str(cache_key or ""),
-            segment_ids_json=__import__("json").dumps(
-                [str(segment["id"]) for segment in plan["segments"]],
-                ensure_ascii=False,
-            ),
-            segment_signatures_json=__import__("json").dumps(
-                cache_signatures,
-                ensure_ascii=False,
-            ),
+            segment_ids_json=segment_ids_json,
+            segment_signatures_json=segment_signatures_json,
             cache_only_segment_id=str(rerun_segment_id or ""),
+            run_signature=run_signature,
+            state_mode=str(finish_state_mode or "complete"),
         )
         output = final.out(0)
     return graph.finalize(), output
