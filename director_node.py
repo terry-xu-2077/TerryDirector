@@ -370,6 +370,7 @@ class TerryDirector(io.ComfyNode):
                     tooltip="User-level tail-reference prompt template. Synced from ComfyUI Settings.",
                 ),
             ],
+            hidden=[io.Hidden.unique_id],
             outputs=[
                 DirectorOutputData.Output(display_name="导演输出"),
             ],
@@ -409,6 +410,7 @@ class TerryDirector(io.ComfyNode):
             runtime,
             plan,
             seed,
+            base_cache_key=f"base-{cls.hidden.unique_id}",
             diagnostic_label="Base",
             diagnostic_input_signature=diagnostic_signature,
         )
