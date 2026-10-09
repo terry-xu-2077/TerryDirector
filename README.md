@@ -1,5 +1,14 @@
 # TerryDirector
 
+## Native H3 时间线循环器（测试分支）
+
+新增一套独立的循环节点：TerryDirector 循环开始 / 循环媒体 / 循环承接 / 循环缓存 / 循环结束 / 循环合并。
+
+时间线编辑器和迷你时间线复用原有 UI；两端调用 ComfyUI 0.39.0 内置循环执行机制。中间 H3 ReferenceToVideo、BasicGuider、RandomNoise、KSamplerSelect、BasicScheduler、SamplerCustomAdvanced 均为 ComfyUI 官方节点；采样结果继续复用已有 Base 无损分段缓存和最终释放模型合并逻辑。
+
+本版本示例针对用户原始 7 张图片参考及 9 镜头时间线（默认前三段启用）。详细拓扑、当前限制、测试步骤见 [原生 H3 循环器说明](docs/29_NATIVE_H3_TIMELINE_LOOP.md)。这一版还需在用户 ComfyUI 0.39.0 + RTX 3090 上真实测试；原 Base / Advanced 不受替换。
+
+
 > 当前浮窗 UI / 时间线恢复基线：`408395e7620fe368775515ca515d04fae7a8daed`（Demo 06.11）。
 
 AI 视频镜头生成任务工作台。仓库同时保留 **HTML / CSS / JavaScript 静态交互 Demo**，并已加入第一版 **ComfyUI TerryDirector 主节点**；前端仍不做 React 拆分。
