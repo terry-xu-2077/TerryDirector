@@ -10,6 +10,7 @@ import folder_paths
 from comfy_execution.graph_utils import GraphBuilder, is_link
 
 from .director_core import FPS
+from .director_internal import advanced_segment_video_exists
 
 
 def _graph_value_signature(value, prefix: str):
@@ -252,6 +253,7 @@ def _condition_segment(
     segment: dict[str, Any],
     prefix: str,
     previous_images: Any = None,
+    compact_previous: bool = False,
 ) -> tuple[Any, Any]:
     references = _load_reference_inputs(graph, segment, prefix)
     prompt = segment["prompt"]
@@ -262,7 +264,7 @@ def _condition_segment(
         tail = _image_slice(
             graph,
             previous_images,
-            continuity["source_frame"],
+            0 if compact_previous else continuity["source_frame"],
             1,
             f"{prefix}_tail_reference",
         )
@@ -329,6 +331,7 @@ def _apply_continuity(
     previous_images: Any,
     previous_audio: Any,
     prefix: str,
+    compact_previous: bool = False,
 ) -> Any:
     continuity = segment["continuity"]
     kind = continuity["kind"]
@@ -342,7 +345,7 @@ def _apply_continuity(
         tail = _image_slice(
             graph,
             previous_images,
-            continuity["source_frame"],
+            0 if compact_previous else continuity["source_frame"],
             1,
             f"{prefix}_tail_frame",
         )
@@ -359,7 +362,7 @@ def _apply_continuity(
     if kind != "overlap":
         raise ValueError(f"Unsupported TerryDirector continuity kind: {kind!r}")
 
-    source_start = int(continuity["source_start_frame"])
+    source_start = 0 if compact_previous else int(continuity["source_start_frame"])
     overlap_frames = int(continuity["frames"])
     guide_frames = int(continuity["video_guide_frames"])
 
@@ -523,9 +526,15 @@ def build_timeline_graph(
     diagnostic_label: str | None = None,
     diagnostic_input_signature: str | None = None,
 ) -> tuple[dict[str, Any], Any]:
-    """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes."""
+    """Expand a compiled TerryDirector timeline into native ComfyUI H3 nodes.
+
+    Base keeps the public merged IMAGE/AUDIO contract. Advanced (video_export
+    is not None) uses per-segment file-backed video so memory scales primarily
+    with one decoded segment instead of the entire timeline.
+    """
     graph = GraphBuilder()
     latents: list[Any] = []
+    segment_videos: list[Any] = []
     segment_ids = [str(segment["id"]) for segment in plan["segments"]]
     cache_signatures = [_cache_signature(runtime, segment) for segment in plan["segments"]]
     segment_ids_json = json.dumps(segment_ids, ensure_ascii=False)
@@ -546,8 +555,11 @@ def build_timeline_graph(
         ).hexdigest()[:16]
     )
     reuse_cached = {str(value) for value in (reuse_cached_segment_ids or set())}
+    streamed_advanced = video_export is not None
+
     previous_images = None
     previous_audio = None
+    previous_is_compact = False
     merged_images = None
     merged_audio = None
 
@@ -558,22 +570,35 @@ def build_timeline_graph(
     ):
         raise ValueError(f"TerryDirector Advanced 找不到要重跑的片段: {rerun_segment_id}")
 
-    for segment in plan["segments"]:
-        prefix = f"td_s{segment['index'] + 1}"
-        segment_id = str(segment["id"])
-        signature = cache_signatures[len(latents)]
+    def should_sample_segment(segment_id: str) -> bool:
         if rerun_segment_id is not None:
-            should_sample = segment_id == rerun_segment_id
-        else:
-            should_sample = segment_id not in reuse_cached
+            return str(segment_id) == rerun_segment_id
+        return str(segment_id) not in reuse_cached
+
+    segment_codec = "h264"
+    if streamed_advanced:
+        requested_format = str(video_export.get("format") or "auto").lower()
+        requested_codec = str(video_export.get("codec") or "auto").lower()
+        if requested_codec == "av1" or (
+            requested_codec == "auto" and requested_format == "webm"
+        ):
+            segment_codec = "av1"
+
+    segments = list(plan["segments"])
+    for position, segment in enumerate(segments):
+        prefix_id = f"td_s{segment['index'] + 1}"
+        segment_id = str(segment["id"])
+        signature = cache_signatures[position]
+        should_sample = should_sample_segment(segment_id)
 
         if should_sample:
             positive, latent = _condition_segment(
                 graph,
                 runtime,
                 segment,
-                prefix,
+                prefix_id,
                 previous_images,
+                compact_previous=previous_is_compact,
             )
             positive = _apply_continuity(
                 graph,
@@ -583,14 +608,15 @@ def build_timeline_graph(
                 latent,
                 previous_images,
                 previous_audio,
-                prefix,
+                prefix_id,
+                compact_previous=previous_is_compact,
             )
             segment_seed = rerun_seed if rerun_segment_id is not None else int(seed)
             segment_runtime = runtime
             if preview_override is not None:
                 preview_model = graph.node(
                     "ModelPreviewOverrideKJ",
-                    f"{prefix}_preview_override",
+                    f"{prefix_id}_preview_override",
                     model=runtime["model"],
                     max_resolution=int(preview_override["max_resolution"]),
                     jpeg_quality=int(preview_override["jpeg_quality"]),
@@ -605,12 +631,12 @@ def build_timeline_graph(
                 segment_runtime = dict(runtime)
                 segment_runtime["model"] = preview_model.out(0)
             sampled = _sample_segment(
-                graph, segment_runtime, positive, latent, prefix, segment_seed
+                graph, segment_runtime, positive, latent, prefix_id, segment_seed
             )
             if cache_key is not None:
                 sampled = graph.node(
                     "TerryDirectorCacheLatent",
-                    f"{prefix}_checkpoint",
+                    f"{prefix_id}_checkpoint",
                     latent=sampled,
                     cache_key=str(cache_key),
                     segment_id=segment_id,
@@ -625,13 +651,74 @@ def build_timeline_graph(
                 raise RuntimeError("TerryDirector Advanced 复用片段缺少缓存标识")
             sampled = graph.node(
                 "TerryDirectorLoadCachedLatent",
-                f"{prefix}_cache_load",
+                f"{prefix_id}_cache_load",
                 cache_key=cache_key,
                 segment_id=segment_id,
                 signature=signature,
             ).out(0)
 
-        images, audio = _decode_segment(graph, runtime, segment, sampled, prefix)
+        latents.append(sampled)
+
+        if streamed_advanced:
+            next_segment = segments[position + 1] if position + 1 < len(segments) else None
+            next_needs_context = False
+            context_frames = 1
+            if next_segment is not None and should_sample_segment(str(next_segment["id"])):
+                next_kind = str(next_segment["continuity"]["kind"])
+                next_needs_context = next_kind not in {"independent", "gap"}
+                if next_kind == "overlap":
+                    context_frames = max(
+                        1, int(next_segment["continuity"]["frames"])
+                    )
+
+            can_reuse_file = (
+                not should_sample
+                and not next_needs_context
+                and cache_key is not None
+                and advanced_segment_video_exists(
+                    str(cache_key), segment_id, signature
+                )
+            )
+
+            if can_reuse_file:
+                segment_video = graph.node(
+                    "TerryDirectorLoadSegmentVideo",
+                    f"{prefix_id}_segment_video_load",
+                    cache_key=str(cache_key),
+                    segment_id=segment_id,
+                    signature=signature,
+                ).out(0)
+                previous_images = None
+                previous_audio = None
+                previous_is_compact = True
+            else:
+                streamed = graph.node(
+                    "TerryDirectorDecodeSegmentToFile",
+                    f"{prefix_id}_segment_file",
+                    samples=sampled,
+                    vae=runtime["vae"],
+                    audio_vae=runtime["audio_vae"],
+                    cache_key=str(cache_key or "default"),
+                    segment_id=segment_id,
+                    signature=signature,
+                    output_frames=int(segment["output_frames"]),
+                    trim_head_frames=int(segment["assembly"]["trim_head_frames"]),
+                    gap_frames=int(segment["assembly"]["gap_before_frames"]),
+                    gap_after_frames=int(segment["assembly"]["gap_after_frames"]),
+                    context_frames=int(context_frames),
+                    fps=int(FPS),
+                    codec=segment_codec,
+                )
+                segment_video = streamed.out(0)
+                previous_images = streamed.out(1)
+                previous_audio = streamed.out(2)
+                previous_is_compact = True
+
+            segment_videos.append(segment_video)
+            continue
+
+        # Base path: keep its merged IMAGE/AUDIO output contract unchanged.
+        images, audio = _decode_segment(graph, runtime, segment, sampled, prefix_id)
 
         assembly_inputs: dict[str, Any] = {
             "images": images,
@@ -647,14 +734,14 @@ def build_timeline_graph(
 
         assembled = graph.node(
             "TerryDirectorAssembleMedia",
-            f"{prefix}_assemble",
+            f"{prefix_id}_assemble",
             **assembly_inputs,
         )
         merged_images = assembled.out(0)
         merged_audio = assembled.out(1)
         previous_images = images
         previous_audio = audio
-        latents.append(sampled)
+        previous_is_compact = False
 
     _log_core_graph_signature(
         graph,
@@ -662,36 +749,49 @@ def build_timeline_graph(
         diagnostic_input_signature=diagnostic_input_signature,
     )
 
+    if not streamed_advanced:
+        packed_output = graph.node(
+            "TerryDirectorPackOutput",
+            "td_output_pack",
+            images=merged_images,
+            audio=merged_audio,
+            **{
+                f"latents.latent_{index}": latent
+                for index, latent in enumerate(latents)
+            },
+        )
+        return graph.finalize(), packed_output.out(0)
+
     packed_output = graph.node(
-        "TerryDirectorPackOutput",
-        "td_output_pack",
-        images=merged_images,
-        audio=merged_audio,
-        **{f"latents.latent_{index}": latent for index, latent in enumerate(latents)},
+        "TerryDirectorPackAdvancedOutput",
+        "td_advanced_output_pack",
+        **{
+            f"latents.latent_{index}": latent
+            for index, latent in enumerate(latents)
+        },
     )
-    output = packed_output.out(0)
-    if video_export is not None:
-        # Reuse ComfyUI core video nodes rather than maintain a second encoder.
-        created = graph.node(
-            "CreateVideo", "td_advanced_create_video",
-            images=merged_images, audio=merged_audio, fps=float(FPS),
-        )
-        # Run native SaveVideo.execute INSIDE the terminal dependency.
-        # A standalone SaveVideo output node in an expanded graph could be
-        # pruned or its UI event could be hidden from the parent.
-        final = graph.node(
-            "TerryDirectorAdvancedFinish", "td_advanced_finish",
-            director_output=output,
-            video=created.out(0),
-            filename_prefix=video_export["filename_prefix"],
-            format=video_export["format"],
-            codec=video_export["codec"],
-            cache_key=str(cache_key or ""),
-            segment_ids_json=segment_ids_json,
-            segment_signatures_json=segment_signatures_json,
-            cache_only_segment_id=str(rerun_segment_id or ""),
-            run_signature=run_signature,
-            state_mode=str(finish_state_mode or "complete"),
-        )
-        output = final.out(0)
-    return graph.finalize(), output
+    concatenated = graph.node(
+        "TerryDirectorConcatSegmentVideos",
+        "td_advanced_concat_video",
+        codec=segment_codec,
+        **{
+            f"videos.video_{index}": video
+            for index, video in enumerate(segment_videos)
+        },
+    )
+    final = graph.node(
+        "TerryDirectorAdvancedFinish",
+        "td_advanced_finish",
+        director_output=packed_output.out(0),
+        video=concatenated.out(0),
+        filename_prefix=video_export["filename_prefix"],
+        format=video_export["format"],
+        codec=video_export["codec"],
+        cache_key=str(cache_key or ""),
+        segment_ids_json=segment_ids_json,
+        segment_signatures_json=segment_signatures_json,
+        cache_only_segment_id=str(rerun_segment_id or ""),
+        run_signature=run_signature,
+        state_mode=str(finish_state_mode or "complete"),
+    )
+    return graph.finalize(), final.out(0)
