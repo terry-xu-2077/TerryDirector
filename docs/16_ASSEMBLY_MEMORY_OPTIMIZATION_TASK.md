@@ -1,6 +1,6 @@
 # TerryDirector Assembly 内存优化任务
 
-> 状态：待执行  
+> 状态：停止继续微优化；已由 `20_ADVANCED_STREAMED_VIDEO_ARCHITECTURE.md` 的分段文件化方案取代  
 > 建议执行者：本地 Codex  
 > 当前代码基线：`24a3afc607d2005d6ff9ab17fd2864f97610b591`  
 > 性能诊断背景：
