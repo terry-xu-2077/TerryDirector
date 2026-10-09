@@ -25,7 +25,7 @@ sys.modules[PKG] = package
 maths = importlib.import_module(PKG + ".director_selflift_math")
 engine = importlib.import_module(PKG + ".director_selflift")
 up = importlib.import_module(PKG + ".director_selflift_upscaler")
-til ing = importlib.import_module(PKG + ".director_selflift_tiling")
+tiling = importlib.import_module(PKG + ".director_selflift_tiling")
 
 
 class AV:
