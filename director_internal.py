@@ -7,6 +7,7 @@ import re
 import shutil
 import tempfile
 import time
+import av
 from fractions import Fraction
 
 import folder_paths
@@ -14,6 +15,12 @@ import torch
 
 from comfy.cli_args import args
 from comfy_api.latest import io, ui, Types, InputImpl
+from comfy_api.latest._input_impl.video_types import (
+    VIDEO_ENCODERS,
+    BT709_NCL,
+    video_encoder_options,
+    set_video_color_properties,
+)
 
 DirectorOutputData = io.Custom("TERRYDIRECTOR_OUTPUT")
 
@@ -105,6 +112,74 @@ def _advanced_segment_video_path(cache_key: str, segment_id: str, signature: str
 
 def advanced_segment_video_exists(cache_key: str, segment_id: str, signature: str) -> bool:
     return os.path.isfile(_advanced_segment_video_path(cache_key, segment_id, signature))
+
+
+def _advanced_lossless_root(cache_key: str, run_signature: str) -> str:
+    safe_run = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(run_signature or "run"))[:80]
+    root = os.path.join(
+        _advanced_cache_root(cache_key),
+        "lossless",
+        safe_run,
+    )
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def _advanced_lossless_segment_path(
+    cache_key: str,
+    run_signature: str,
+    segment_id: str,
+    signature: str,
+) -> str:
+    safe_segment = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(segment_id or "segment"))[:100]
+    signature_hash = __import__("hashlib").sha256(
+        str(signature).encode("utf-8")
+    ).hexdigest()[:12]
+    return os.path.join(
+        _advanced_lossless_root(cache_key, run_signature),
+        f"{safe_segment}_{signature_hash}.pt",
+    )
+
+
+def advanced_lossless_segment_exists(
+    cache_key: str,
+    run_signature: str,
+    segment_id: str,
+    signature: str,
+) -> bool:
+    return os.path.isfile(
+        _advanced_lossless_segment_path(
+            cache_key, run_signature, segment_id, signature
+        )
+    )
+
+
+def advanced_lossless_segment_descriptor(
+    cache_key: str,
+    run_signature: str,
+    segment_id: str,
+    signature: str,
+) -> str:
+    return json.dumps(
+        {
+            "path": _advanced_lossless_segment_path(
+                cache_key, run_signature, segment_id, signature
+            ),
+            "segment_id": str(segment_id),
+        },
+        ensure_ascii=False,
+    )
+
+
+def prepare_advanced_lossless_run_cache(cache_key: str, run_signature: str) -> str:
+    root = os.path.join(_advanced_cache_root(cache_key), "lossless")
+    if os.path.isdir(root):
+        shutil.rmtree(root, ignore_errors=True)
+    # Remove obsolete lossy segment-video caches created by earlier builds.
+    legacy = os.path.join(_advanced_cache_root(cache_key), "segments")
+    if os.path.isdir(legacy):
+        shutil.rmtree(legacy, ignore_errors=True)
+    return _advanced_lossless_root(cache_key, run_signature)
 
 
 def _base_cache_root(cache_key: str, run_signature: str) -> str:
@@ -780,6 +855,537 @@ def _decode_h3_audio(audio_vae, samples):
         ),
     )
     return {"waveform": audio, "sample_rate": sample_rate}
+
+
+class TerryDirectorDecodeAdvancedSegmentToCache(io.ComfyNode):
+    """Losslessly cache one Advanced segment and return only compact continuity context."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorDecodeAdvancedSegmentToCache",
+            display_name="TerryDirector Decode Advanced Segment To Cache (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.Latent.Input("samples"),
+                io.Vae.Input("vae"),
+                io.Vae.Input("audio_vae"),
+                io.String.Input("cache_key"),
+                io.String.Input("run_signature"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+                io.Int.Input("output_frames", min=1),
+                io.Int.Input("trim_head_frames", min=0),
+                io.Int.Input("gap_frames", min=0),
+                io.Int.Input("gap_after_frames", min=0),
+                io.Int.Input("context_frames", min=1),
+                io.Int.Input("fps", min=1),
+            ],
+            outputs=[
+                io.String.Output(display_name="segment cache"),
+                io.Image.Output(display_name="continuity images"),
+                io.Audio.Output(display_name="continuity audio"),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        # Persistent media cache is required for interruption recovery.
+        return float("NaN")
+
+    @classmethod
+    def execute(
+        cls,
+        samples,
+        vae,
+        audio_vae,
+        cache_key,
+        run_signature,
+        segment_id,
+        signature,
+        output_frames,
+        trim_head_frames,
+        gap_frames,
+        gap_after_frames,
+        context_frames,
+        fps,
+    ) -> io.NodeOutput:
+        started = time.perf_counter()
+        output_frames = int(output_frames)
+        trim = int(trim_head_frames)
+        gap = int(gap_frames)
+        gap_after = int(gap_after_frames)
+        fps = int(fps)
+        context_frames = max(1, int(context_frames))
+
+        latent = samples["samples"]
+        video_latent = latent.unbind()[0] if getattr(latent, "is_nested", False) else latent
+        images = vae.decode(video_latent)
+        if len(images.shape) == 5:
+            images = images.reshape(
+                -1, images.shape[-3], images.shape[-2], images.shape[-1]
+            )
+        images = images[:output_frames]
+
+        audio = _decode_h3_audio(audio_vae, samples)
+        waveform = audio["waveform"]
+        sample_rate = int(audio["sample_rate"])
+        waveform = waveform[..., :round((output_frames / fps) * sample_rate)]
+
+        context_count = min(context_frames, int(images.shape[0]))
+        context_images = images[-context_count:].clone()
+        context_samples = max(1, round((context_count / fps) * sample_rate))
+        continuity_audio = {
+            "waveform": waveform[..., -context_samples:].clone(),
+            "sample_rate": sample_rate,
+        }
+
+        if trim < 0 or trim >= int(images.shape[0]):
+            if trim:
+                raise ValueError("TerryDirector Advanced overlap trim exceeds segment frame count")
+            trim = 0
+        current_images = images[trim:]
+        current_waveform = waveform[..., round((trim / fps) * sample_rate):]
+
+        if gap:
+            current_images = torch.cat((
+                current_images.new_zeros(
+                    (gap, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+                ),
+                current_images,
+            ), dim=0)
+            current_waveform = torch.cat((
+                current_waveform.new_zeros(
+                    (*current_waveform.shape[:-1], round((gap / fps) * sample_rate))
+                ),
+                current_waveform,
+            ), dim=-1)
+
+        if gap_after:
+            current_images = torch.cat((
+                current_images,
+                current_images.new_zeros(
+                    (gap_after, current_images.shape[1], current_images.shape[2], current_images.shape[3])
+                ),
+            ), dim=0)
+            current_waveform = torch.cat((
+                current_waveform,
+                current_waveform.new_zeros(
+                    (*current_waveform.shape[:-1], round((gap_after / fps) * sample_rate))
+                ),
+            ), dim=-1)
+
+        cached_images = current_images.detach().cpu().contiguous()
+        cached_waveform = current_waveform.detach().cpu().contiguous()
+        path = _advanced_lossless_segment_path(
+            str(cache_key),
+            str(run_signature),
+            str(segment_id),
+            str(signature),
+        )
+        fd, temp_path = tempfile.mkstemp(
+            prefix="td_adv_lossless_",
+            suffix=".pt",
+            dir=os.path.dirname(path),
+        )
+        os.close(fd)
+        try:
+            torch.save(
+                {
+                    "version": 1,
+                    "images": cached_images,
+                    "audio": {
+                        "waveform": cached_waveform,
+                        "sample_rate": sample_rate,
+                    },
+                },
+                temp_path,
+            )
+            os.replace(temp_path, path)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+        descriptor = json.dumps(
+            {"path": path, "segment_id": str(segment_id)},
+            ensure_ascii=False,
+        )
+        size_mb = os.path.getsize(path) / (1024 * 1024)
+        print(
+            f"[TerryDirector Advanced][Lossless] Segment {segment_id}: "
+            f"frames={int(cached_images.shape[0])} cache={size_mb:.1f}MB "
+            f"time={time.perf_counter() - started:.3f}s",
+            flush=True,
+        )
+        return io.NodeOutput(descriptor, context_images, continuity_audio)
+
+
+class TerryDirectorLoadAdvancedSegmentContext(io.ComfyNode):
+    """Read only the tail context needed by the next sampled segment."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        return io.Schema(
+            node_id="TerryDirectorLoadAdvancedSegmentContext",
+            display_name="TerryDirector Load Advanced Segment Context (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.String.Input("cache_key"),
+                io.String.Input("run_signature"),
+                io.String.Input("segment_id"),
+                io.String.Input("signature"),
+                io.Int.Input("context_frames", min=1),
+                io.Int.Input("fps", min=1),
+            ],
+            outputs=[
+                io.Image.Output(),
+                io.Audio.Output(),
+            ],
+        )
+
+    @classmethod
+    def fingerprint_inputs(
+        cls, cache_key, run_signature, segment_id, signature, **kwargs
+    ):
+        path = _advanced_lossless_segment_path(
+            cache_key, run_signature, segment_id, signature
+        )
+        try:
+            stat = os.stat(path)
+            return f"{stat.st_mtime_ns}:{stat.st_size}:{signature}"
+        except OSError:
+            return float("NaN")
+
+    @classmethod
+    def execute(
+        cls,
+        cache_key,
+        run_signature,
+        segment_id,
+        signature,
+        context_frames,
+        fps,
+    ) -> io.NodeOutput:
+        path = _advanced_lossless_segment_path(
+            cache_key, run_signature, segment_id, signature
+        )
+        if not os.path.isfile(path):
+            raise RuntimeError(
+                f"TerryDirector Advanced 找不到片段 {segment_id} 的无损媒体缓存"
+            )
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        images = payload.get("images") if isinstance(payload, dict) else None
+        audio = payload.get("audio") if isinstance(payload, dict) else None
+        waveform = audio.get("waveform") if isinstance(audio, dict) else None
+        sample_rate = int(audio.get("sample_rate", 0)) if isinstance(audio, dict) else 0
+        if not isinstance(images, torch.Tensor) or not isinstance(waveform, torch.Tensor) or sample_rate < 1:
+            raise RuntimeError(
+                f"TerryDirector Advanced 片段 {segment_id} 的无损媒体缓存无效"
+            )
+        count = min(max(1, int(context_frames)), int(images.shape[0]))
+        samples = max(1, round((count / max(1, int(fps))) * sample_rate))
+        return io.NodeOutput(
+            images[-count:].clone(),
+            {
+                "waveform": waveform[..., -samples:].clone(),
+                "sample_rate": sample_rate,
+            },
+        )
+
+
+class TerryDirectorAdvancedLosslessFinish(io.ComfyNode):
+    """Encode Advanced exactly once from lossless segment tensors without full-timeline IMAGE materialization."""
+
+    @classmethod
+    def define_schema(cls) -> io.Schema:
+        segment_template = io.Autogrow.TemplatePrefix(
+            io.String.Input("segment"),
+            prefix="segment_",
+            min=1,
+            max=64,
+        )
+        return io.Schema(
+            node_id="TerryDirectorAdvancedLosslessFinish",
+            display_name="TerryDirector Advanced Lossless Finish (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                DirectorOutputData.Input("director_output"),
+                io.Autogrow.Input("segments", template=segment_template),
+                io.Int.Input("fps", min=1),
+                io.String.Input("filename_prefix"),
+                io.String.Input("format"),
+                io.String.Input("codec"),
+                io.String.Input("cache_key"),
+                io.String.Input("segment_ids_json"),
+                io.String.Input("segment_signatures_json"),
+                io.String.Input("run_signature"),
+                io.String.Input("state_mode"),
+            ],
+            hidden=[io.Hidden.prompt, io.Hidden.extra_pnginfo],
+            outputs=[DirectorOutputData.Output(display_name="导演输出")],
+        )
+
+    @classmethod
+    def execute(
+        cls,
+        director_output,
+        segments,
+        fps,
+        filename_prefix,
+        format,
+        codec,
+        cache_key,
+        segment_ids_json,
+        segment_signatures_json,
+        run_signature,
+        state_mode,
+    ) -> io.NodeOutput:
+        terminal_started = time.perf_counter()
+        fps = max(1, int(fps))
+        state_mode = str(state_mode or "complete").strip().lower()
+
+        descriptors = []
+        for value in segments.values():
+            try:
+                descriptor = json.loads(str(value))
+            except Exception as exc:
+                raise RuntimeError(
+                    "TerryDirector Advanced 无损分段描述无效"
+                ) from exc
+            path = str(descriptor.get("path") or "")
+            if not path or not os.path.isfile(path):
+                raise RuntimeError(
+                    f"TerryDirector Advanced 找不到无损分段缓存: {path}"
+                )
+            descriptors.append(descriptor)
+        if not descriptors:
+            raise RuntimeError("TerryDirector Advanced 没有可编码的无损分段")
+
+        # Read one segment only to establish stream geometry/audio layout.
+        first_payload = torch.load(
+            str(descriptors[0]["path"]),
+            map_location="cpu",
+            weights_only=False,
+        )
+        first_images = first_payload.get("images")
+        first_audio = first_payload.get("audio")
+        first_waveform = first_audio.get("waveform") if isinstance(first_audio, dict) else None
+        if not isinstance(first_images, torch.Tensor) or not isinstance(first_waveform, torch.Tensor):
+            raise RuntimeError("TerryDirector Advanced 首段无损缓存无效")
+        width = int(first_images.shape[2])
+        height = int(first_images.shape[1])
+        source_audio_rate = int(first_audio["sample_rate"])
+        audio_channels = int(first_waveform.shape[1])
+        layout = {1: "mono", 2: "stereo", 6: "5.1"}.get(audio_channels, "stereo")
+
+        format_name = str(format or "auto").lower()
+        codec_name = str(codec or "auto").lower()
+        if format_name == "auto":
+            format_name = "webm" if codec_name == "av1" else "mp4"
+        if codec_name == "auto":
+            codec_name = "av1" if format_name == "webm" else "h264"
+        if format_name == "webm" and codec_name != "av1":
+            raise ValueError("WebM 容器不支持 H.264，请选择 auto 或 av1")
+
+        format_enum = Types.VideoContainer(format_name)
+        codec_enum = Types.VideoCodec(codec_name)
+        extension = Types.VideoContainer.get_extension(format_enum)
+        full_output_folder, filename, counter, subfolder, _ = folder_paths.get_save_image_path(
+            str(filename_prefix),
+            folder_paths.get_output_directory(),
+            width,
+            height,
+        )
+        file = f"{filename}_{counter:05}_.{extension}"
+        output_path = os.path.join(full_output_folder, file)
+
+        container_format = {
+            "mp4": "mp4",
+            "mkv": "matroska",
+            "webm": "webm",
+        }[format_name]
+        open_kwargs = {"mode": "w", "format": container_format}
+        if format_name == "mp4":
+            open_kwargs["options"] = {"movflags": "use_metadata_tags+faststart"}
+
+        output = av.open(output_path, **open_kwargs)
+        try:
+            metadata = {}
+            if not args.disable_metadata:
+                if cls.hidden.extra_pnginfo is not None:
+                    metadata.update(cls.hidden.extra_pnginfo)
+                if cls.hidden.prompt is not None:
+                    metadata["prompt"] = cls.hidden.prompt
+            for key, value in metadata.items():
+                output.metadata[key] = value if isinstance(value, str) else json.dumps(value)
+
+            video_stream = output.add_stream(VIDEO_ENCODERS[codec_enum], rate=Fraction(fps))
+            video_stream.width = width
+            video_stream.height = height
+            video_stream.pix_fmt = "yuv420p"
+            video_stream.options = video_encoder_options(codec_enum, None)
+            set_video_color_properties(video_stream.codec_context, "sRGB")
+
+            target_audio_rate = 48000 if format_name == "webm" else source_audio_rate
+            audio_stream = output.add_stream(
+                "libopus" if format_name == "webm" else "aac",
+                rate=target_audio_rate,
+                layout=layout,
+            )
+            audio_resampler = (
+                av.audio.resampler.AudioResampler(
+                    format="fltp",
+                    layout=layout,
+                    rate=target_audio_rate,
+                )
+                if target_audio_rate != source_audio_rate
+                else None
+            )
+
+            audio_parts = []
+            total_frames = 0
+            for index, descriptor in enumerate(descriptors):
+                payload = (
+                    first_payload
+                    if index == 0
+                    else torch.load(
+                        str(descriptor["path"]),
+                        map_location="cpu",
+                        weights_only=False,
+                    )
+                )
+                images = payload.get("images")
+                audio = payload.get("audio")
+                waveform = audio.get("waveform") if isinstance(audio, dict) else None
+                if (
+                    not isinstance(images, torch.Tensor)
+                    or not isinstance(waveform, torch.Tensor)
+                    or int(audio.get("sample_rate", 0)) != source_audio_rate
+                    or int(images.shape[1]) != height
+                    or int(images.shape[2]) != width
+                ):
+                    raise RuntimeError(
+                        f"TerryDirector Advanced 分段 {index + 1} 的无损缓存不兼容"
+                    )
+
+                for tensor_frame in images:
+                    image = (
+                        (tensor_frame * 255)
+                        .clamp(0, 255)
+                        .byte()
+                        .cpu()
+                        .numpy()
+                    )
+                    frame = av.VideoFrame.from_ndarray(image, format="rgb24")
+                    frame = frame.reformat(format="yuv420p", dst_colorspace=BT709_NCL)
+                    set_video_color_properties(frame, "sRGB")
+                    for packet in video_stream.encode(frame):
+                        output.mux(packet)
+                total_frames += int(images.shape[0])
+                audio_parts.append(waveform)
+                if index != 0:
+                    del payload
+                del images, audio, waveform
+
+            for packet in video_stream.encode(None):
+                output.mux(packet)
+
+            waveform = torch.cat(audio_parts, dim=-1)
+            target_source_samples = round((total_frames / fps) * source_audio_rate)
+            waveform = waveform[..., :target_source_samples]
+            audio_frame = av.AudioFrame.from_ndarray(
+                waveform[0].float().cpu().contiguous().numpy(),
+                format="fltp",
+                layout=layout,
+            )
+            audio_frame.sample_rate = source_audio_rate
+            audio_frame.pts = 0
+            frames = (
+                [audio_frame]
+                if audio_resampler is None
+                else audio_resampler.resample(audio_frame)
+            )
+            for frame in frames:
+                for packet in audio_stream.encode(frame):
+                    output.mux(packet)
+            if audio_resampler is not None:
+                for frame in audio_resampler.resample(None):
+                    for packet in audio_stream.encode(frame):
+                        output.mux(packet)
+            for packet in audio_stream.encode(None):
+                output.mux(packet)
+        except BaseException:
+            output.close()
+            if os.path.isfile(output_path):
+                os.remove(output_path)
+            raise
+        else:
+            output.close()
+
+        del first_payload, first_images, first_audio, first_waveform
+        try:
+            del audio_parts, waveform
+        except Exception:
+            pass
+        gc.collect()
+
+        try:
+            segment_ids = json.loads(str(segment_ids_json or "[]"))
+            if not isinstance(segment_ids, list):
+                segment_ids = []
+        except Exception:
+            segment_ids = []
+
+        video_state = {
+            "filename": file,
+            "subfolder": subfolder,
+            "type": io.FolderType.output.value,
+        }
+        if str(cache_key or "").strip():
+            if state_mode == "partial":
+                update_advanced_checkpoint_partial_video(
+                    str(cache_key),
+                    str(run_signature),
+                    video_state,
+                )
+            else:
+                state = {
+                    "version": 3,
+                    "saved_at": time.time(),
+                    "video": video_state,
+                    "segment_ids": [str(value) for value in segment_ids],
+                    "run_signature": str(run_signature),
+                    "lossless_segment_pipeline": True,
+                }
+                _write_json_atomic(
+                    _advanced_state_path(str(cache_key)),
+                    state,
+                    "td_state_",
+                )
+                finalize_advanced_checkpoint(
+                    str(cache_key),
+                    str(run_signature),
+                    video_state,
+                )
+                # Full result is now safely encoded. Keep durable LATENT
+                # checkpoints for local reruns, but remove the multi-GB
+                # temporary lossless pixel cache.
+                lossless_root = os.path.dirname(str(descriptors[0]["path"]))
+                shutil.rmtree(lossless_root, ignore_errors=True)
+
+        print(
+            f"[TerryDirector Advanced][Lossless] Final encode: "
+            f"frames={total_frames} time={time.perf_counter() - terminal_started:.3f}s "
+            f"path={output_path}",
+            flush=True,
+        )
+        return io.NodeOutput(
+            director_output,
+            ui={"video": [ui.SavedResult(file, subfolder, io.FolderType.output)]},
+        )
 
 
 class TerryDirectorDecodeSegmentToFile(io.ComfyNode):
