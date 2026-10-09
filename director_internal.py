@@ -4,6 +4,7 @@ import gc
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 from fractions import Fraction
@@ -117,6 +118,18 @@ def _base_cache_root(cache_key: str, run_signature: str) -> str:
     )
     os.makedirs(root, exist_ok=True)
     return root
+
+
+def prepare_base_run_cache(cache_key: str, run_signature: str) -> str:
+    safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "base"))[:120]
+    node_root = os.path.join(
+        folder_paths.get_temp_directory(),
+        "terrydirector_base",
+        safe_key,
+    )
+    if os.path.isdir(node_root):
+        shutil.rmtree(node_root, ignore_errors=True)
+    return _base_cache_root(cache_key, run_signature)
 
 
 def _base_segment_cache_path(
@@ -730,6 +743,20 @@ class TerryDirectorMaterializeTimeline(io.ComfyNode):
             f"time={time.perf_counter() - started:.3f}s{memory_text}",
             flush=True,
         )
+
+        # The merged tensors now own the complete result. Base has no resume
+        # semantics, so its large lossless segment caches can be removed
+        # immediately after a successful final merge.
+        try:
+            run_roots = {
+                os.path.dirname(str(item["path"]))
+                for item in descriptors
+            }
+            for run_root in run_roots:
+                shutil.rmtree(run_root, ignore_errors=True)
+        except Exception:
+            pass
+
         return io.NodeOutput(
             final_images,
             {"waveform": final_waveform, "sample_rate": sample_rate},
