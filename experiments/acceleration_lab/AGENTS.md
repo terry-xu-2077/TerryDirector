@@ -26,3 +26,19 @@ Do not discard user edits or weaken checks to pass. Do not enable the old global
 TerryDirector diagnostic switches for these independent graphs. Run no dependency
 upgrades, production service changes, automatic retries or main merge. Do not
 promote a working lab result to a production default without user approval.
+
+## Accepted cu130 environment and targeted dependency repair (2026-10-10)
+
+The user approved cu130 as the retained environment baseline and then explicitly
+requested repair of NumPy and related dependency conflicts. Read
+`ENVIRONMENT_BASELINE.md` and `REPAIR_CU130_DEPENDENCIES.md` before environment work.
+Keep the exact six GPU core pins in `environment/cu130-core.constraints.txt`;
+cu128 is archived rollback history, not the active default. Do not activate Sol,
+change attention or sampling defaults, or promote lab nodes as part of this decision.
+
+Only the targeted repair task overrides the no-dependency-change / no-service-restart
+rules above: it permits an idle-only, backed-up cu130 dependency transaction and
+restoration of the original service. No generation, no core upgrade, no source edits,
+no automatic cu128 rollback and no changes to archived reports. Candidate pins are
+not accepted pins until actual environment and plugin checks pass. Frozen production
+source and the existing independent-test boundary remain unchanged.

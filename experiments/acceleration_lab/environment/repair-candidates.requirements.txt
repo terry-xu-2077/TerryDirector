@@ -1,0 +1,8 @@
+# CANDIDATES, NOT YET LOCALLY VALIDATED. See REPAIR_CU130_DEPENDENCIES.md.
+# Confirm the real pip-check output, installed METADATA and reverse dependencies.
+numpy==2.3.2
+kornia==0.8.2
+# Only if a real Pydantic conflict is confirmed, add BOTH to a private approved file:
+# pydantic==2.11.10
+# pydantic-core==2.33.2
+# Current official Mixpanel metadata does not establish a Pydantic requirement.
