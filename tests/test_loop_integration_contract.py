@@ -40,6 +40,12 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
         self.assertIn("TerryDirectorLoopFrame", text)
+        self.assertIn('LoopContextData = io.Custom("TERRYDIRECTOR_LOOP_CONTEXT")', text)
+        self.assertIn('SegmentData = io.Custom("TERRYDIRECTOR_SEGMENT_DATA")', text)
+        self.assertIn('LoopContextData.Output("loop_context", display_name="循环上下文")', text)
+        self.assertIn('LoopContextData.Input("loop_context", display_name="循环上下文")', text)
+        self.assertIn('SegmentData.Output(display_name="片段数据")', text)
+        self.assertIn('SegmentData.Input("segment_data", display_name="片段数据")', text)
         # End's body links are intentionally optional in its schema because
         # LoopStart removes them when installing the native external block.
         end_section = text.split("class TerryDirectorLoopEnd(io.ComfyNode):", 1)[1]

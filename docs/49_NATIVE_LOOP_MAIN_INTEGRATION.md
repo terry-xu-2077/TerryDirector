@@ -2,7 +2,7 @@
 
 ## 双边界简化（2026-10-10）
 
-用户确认：循环开始只显示「片段数据」一个输出，不再显示循环序号/首段/末段或上一片段上下文；循环媒体改名「TerryDirector 循环信息」，其唯一输入叫「片段数据」；循环承接改名「TerryDirector 循环条件」，端口中文化，输入「片段数据」；删除用户可见的循环缓存/合并节点，将无损逐段缓存、context carry 与最终一次性合并纳入「TerryDirector 循环结束」。
+用户确认最终数据层级：循环开始只显示「循环上下文」一个输出（TERRYDIRECTOR_LOOP_CONTEXT）；循环信息节点接收循环上下文，拆解为 Prompt、H3帧数、Seed、图片，并输出另一种类型的「片段数据」（TERRYDIRECTOR_SEGMENT_DATA）；循环条件与循环结束接收片段数据。前者是完整轮次信封，后者是提取的当前片段扁平参数，保留必要的前一段连续性上下文。两者 ComfyUI 类型及运行时 _type 标记均不同，不能混接。取消用户可见的循环缓存/合并节点，由循环结束内部执行无损缓存、context carry 与最终可选合并。
 
 结束节点接收 H3采样结果 / 视频VAE / 音频VAE / 片段数据，直接输出合并画面/合并音频；「合并输出」默认开启，关闭时只保存 .pt。内部 LoopFrame、LoopCache 在 ComfyUI dev-only 分类注册，不作为用户手工接线节点。完整结构以 [29 文档](29_NATIVE_H3_TIMELINE_LOOP.md) 为准；旧三节点工作流不再适用，测试须使用新版 JSON。
 
@@ -32,7 +32,7 @@
 
 ## 3. 新循环器第一轮范围
 
-- LoopStart / LoopEnd 复用 ComfyUI 0.39.0 的 StartLoop / EndLoop 正式实现，普通 MiniMaxH3ReferenceToVideo、AddGuide、SamplerCustomAdvanced 等在循环体中。
+- LoopStart 继承 ComfyUI 0.39.0 StartLoop，LoopEnd 以自有边界节点接入原生 LoopIteration / LoopProgress / LoopResult 与 external block，普通 MiniMaxH3ReferenceToVideo、AddGuide、SamplerCustomAdvanced 等在循环体中。
 - 当前独立媒体节点只实现图片素材。引用视频/音频时明确抛错；待下一轮适配。
 - 每段产物复用已验收的 Base `TerryDirectorDecodeSegmentToCache` 无损写盘、上下文剪取；可选 `TerryDirectorMaterializeTimeline` 生成最终 IMAGE/AUDIO，下游 CreateVideo / SaveVideo 编码。
 - 不移植 Advanced 局部重跑、断点恢复和 Advanced 单次流式最终编码；旧 Advanced 自身功能仍保留。

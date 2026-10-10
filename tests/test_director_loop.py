@@ -22,11 +22,19 @@ class FakeNodeOutput:
 
 def load_functions(*names, context=None):
     parsed = ast.parse(SOURCE.read_text(encoding="utf-8"))
-    wanted = [item for item in parsed.body if getattr(item, "name", None) in names]
-    if len(wanted) != len(names):
-        raise AssertionError(f"Missing declarations: {names}")
+    # The two production packet validators are used by several target classes.
+    targets = set(names) | {"_require_loop_context", "_require_segment_data"}
+    wanted = [item for item in parsed.body if getattr(item, "name", None) in targets]
+    found = {getattr(item, "name", None) for item in wanted}
+    if not set(names).issubset(found):
+        raise AssertionError(f"Missing declarations: {set(names) - found}")
     io = types.SimpleNamespace(ComfyNode=object, NodeOutput=FakeNodeOutput)
-    env = {"io": io, "uuid": uuid, **(context or {})}
+    env = {
+        "io": io, "uuid": uuid,
+        "LOOP_CONTEXT_KIND": "terrydirector.loop_context",
+        "SEGMENT_DATA_KIND": "terrydirector.segment_data",
+        **(context or {}),
+    }
     code = compile(ast.fix_missing_locations(ast.Module(body=wanted, type_ignores=[])), str(SOURCE), "exec")
     exec(code, env)
     return env
@@ -49,6 +57,10 @@ class DirectorLoopTests(unittest.TestCase):
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
         self.assertIn('TerryDirectorDecodeSegmentToCache.execute(', text)
+        self.assertIn('io.Custom("TERRYDIRECTOR_LOOP_CONTEXT")', text)
+        self.assertIn('io.Custom("TERRYDIRECTOR_SEGMENT_DATA")', text)
+        self.assertIn('LoopContextData.Input("loop_context"', text)
+        self.assertIn('SegmentData.Output(display_name="片段数据")', text)
 
     def test_compiled_items_keep_next_overlap_only(self):
         calls = []
@@ -90,10 +102,19 @@ class DirectorLoopTests(unittest.TestCase):
             "_loop": {"seed": 9, "loop_id": "22"},
         }
         tail = torch.ones((1, 4, 4, 3))
-        out = ns["TerryDirectorLoopInfo"].execute({"segment": segment, "previous_context": {"images": tail}}).args
+        context = {
+            "_type": "terrydirector.loop_context",
+            "current_segment": segment,
+            "previous_context": {"images": tail},
+        }
+        out = ns["TerryDirectorLoopInfo"].execute(context).args
         self.assertEqual(seen, ["four", "one"])
         self.assertEqual(out[:3], ("picture prompt", 107, 9))
         self.assertEqual(len(out), 13)
+        self.assertEqual(out[3]["_type"], "terrydirector.segment_data")
+        self.assertEqual(out[3]["h3_frames"], 107)
+        self.assertIs(out[3]["previous_context"]["images"], tail)
+        self.assertNotIn("current_segment", out[3])
         self.assertTrue(torch.equal(out[6], tail))
         self.assertTrue(all(img is None for img in out[7:]))
 
@@ -103,11 +124,31 @@ class DirectorLoopTests(unittest.TestCase):
         cls = ns["TerryDirectorLoopFrame"]
         segment = {"id": "clip-1", "_loop": {"seed": 1}}
         first = cls.execute(segment, "{}")[0]
-        self.assertEqual(first["segment"], segment)
+        self.assertEqual(first["current_segment"], segment)
+        self.assertEqual(first["_type"], "terrydirector.loop_context")
         self.assertEqual(first["previous_context"], {})
         last = {"images": "tail"}
         later = cls.execute(segment, last)[0]
         self.assertIs(later["previous_context"], last)
+
+    def test_distinct_packet_types_reject_cross_connection(self):
+        validators = load_functions("_require_loop_context", "_require_segment_data")
+        context = {
+            "_type": "terrydirector.loop_context",
+            "current_segment": {"_loop": {"seed": 9}},
+            "previous_context": {},
+        }
+        segment_data = {
+            "_type": "terrydirector.segment_data",
+            "h3_frames": 96,
+            "previous_context": {},
+        }
+        self.assertEqual(validators["_require_loop_context"](context)[0]["_loop"]["seed"], 9)
+        self.assertIs(validators["_require_segment_data"](segment_data), segment_data)
+        with self.assertRaisesRegex(ValueError, "片段数据"):
+            validators["_require_segment_data"](context)
+        with self.assertRaisesRegex(ValueError, "循环上下文"):
+            validators["_require_loop_context"](segment_data)
 
     def test_native_graph_repeats_hidden_cache_and_carries_context(self):
         class Node:
@@ -141,7 +182,7 @@ class DirectorLoopTests(unittest.TestCase):
                 self.nodes = {
                     "start": {"class_type": "TerryDirectorLooper", "inputs": {}},
                     "info": {"class_type": "TerryDirectorLoopInfo",
-                             "inputs": {"segment_data": ["start", 0]}},
+                             "inputs": {"loop_context": ["start", 0]}},
                     "sampler": {"class_type": "FakeSampler",
                                 "inputs": {"segment_data": ["info", 3]}},
                     "end": {"class_type": "TerryDirectorLoopEnd",
@@ -164,8 +205,8 @@ class DirectorLoopTests(unittest.TestCase):
             DynPrompt(), "start", {"info", "sampler"}, "end",
             [{"id": "a"}, {"id": "b"}], "{}",
         )
-        self.assertEqual(graph["0_info"]["inputs"]["segment_data"], ["frame_0", 0])
-        self.assertEqual(graph["1_info"]["inputs"]["segment_data"], ["frame_1", 0])
+        self.assertEqual(graph["0_info"]["inputs"]["loop_context"], ["frame_0", 0])
+        self.assertEqual(graph["1_info"]["inputs"]["loop_context"], ["frame_1", 0])
         self.assertEqual(graph["0_sampler"]["inputs"]["segment_data"], ["0_info", 3])
         self.assertEqual(graph["cache_0"]["inputs"]["samples"], ["0_sampler", 0])
         self.assertEqual(graph["cache_1"]["inputs"]["samples"], ["1_sampler", 0])
@@ -217,12 +258,14 @@ class DirectorLoopTests(unittest.TestCase):
         ns = load_functions("TerryDirectorLoopCondition", context={"MiniMaxH3AddGuide": Guide})
         cls = ns["TerryDirectorLoopCondition"]
         independent = cls.execute("original", "latent", "vae", "audio_vae",
-                                  {"segment": {"continuity": {"kind": "independent"}}, "previous_context": {}})
+                                  {"_type": "terrydirector.segment_data",
+                                   "continuity": {"kind": "independent"}, "previous_context": {}})
         self.assertEqual(independent[0], "original")
         self.assertEqual(len(calls), 0)
         ctx = {"images": torch.ones((1, 4, 4, 3)), "audio": {"waveform": None}}
         guided = cls.execute("original", "latent", "vae", "audio_vae",
-                             {"segment": {"continuity": {"kind": "tail_frame"}}, "previous_context": ctx})
+                             {"_type": "terrydirector.segment_data",
+                              "continuity": {"kind": "tail_frame"}, "previous_context": ctx})
         self.assertEqual(guided[0], ["guided"])
         self.assertEqual(calls[-1]["frame_idx"], 0)
 
@@ -245,7 +288,10 @@ class DirectorLoopTests(unittest.TestCase):
                 "signature": "test", "context_frames": 12, "loop_id": "22",
             },
         }
-        out = ns["TerryDirectorLoopCache"].execute("samples", "vae", "audio", {"segment": segment, "previous_context": {}})
+        out = ns["TerryDirectorLoopCache"].execute(
+            "samples", "vae", "audio",
+            {**segment, "_type": "terrydirector.segment_data", "previous_context": {}},
+        )
         self.assertEqual(out[0], "descriptor")
         self.assertEqual(out[1], {"images": "tail", "audio": "audio"})
         self.assertEqual(calls[0]["output_frames"], 96)

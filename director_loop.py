@@ -28,6 +28,30 @@ from .director_internal import (
 
 CATEGORY = "MiniMax H3/TerryDirector/循环"
 IMAGE_SLOTS = 9
+LOOP_CONTEXT_KIND = "terrydirector.loop_context"
+SEGMENT_DATA_KIND = "terrydirector.segment_data"
+LoopContextData = io.Custom("TERRYDIRECTOR_LOOP_CONTEXT")
+SegmentData = io.Custom("TERRYDIRECTOR_SEGMENT_DATA")
+
+
+def _require_loop_context(value):
+    """The timeline's full per-iteration envelope, not the extracted segment."""
+    if not isinstance(value, dict) or value.get("_type") != LOOP_CONTEXT_KIND:
+        raise ValueError("循环信息需要「循环上下文」输入，请连接循环开始节点")
+    segment = value.get("current_segment")
+    if not isinstance(segment, dict) or not isinstance(segment.get("_loop"), dict):
+        raise ValueError("循环上下文缺少当前片段")
+    previous = value.get("previous_context")
+    if not isinstance(previous, dict):
+        raise ValueError("循环上下文的上一片段状态无效")
+    return segment, previous
+
+
+def _require_segment_data(value):
+    """Generation-facing data extracted from a LoopContext by LoopInfo."""
+    if not isinstance(value, dict) or value.get("_type") != SEGMENT_DATA_KIND:
+        raise ValueError("需要「片段数据」，请连接「TerryDirector 循环信息」的片段数据输出")
+    return value
 
 
 def _one(value):
@@ -114,7 +138,7 @@ class TerryDirectorLoopFrame(io.ComfyNode):
                 io.AnyType.Input("segment"),
                 io.AnyType.Input("previous_context"),
             ],
-            outputs=[io.AnyType.Output(display_name="片段数据")],
+            outputs=[LoopContextData.Output(display_name="循环上下文")],
         )
 
     @classmethod
@@ -124,7 +148,9 @@ class TerryDirectorLoopFrame(io.ComfyNode):
         # The very first context is a JSON-widget literal, not an IMAGE packet.
         previous = previous_context if isinstance(previous_context, dict) else {}
         return io.NodeOutput({
-            "segment": segment,
+            "_type": LOOP_CONTEXT_KIND,
+            "version": 1,
+            "current_segment": segment,
             "previous_context": previous,
         })
 
@@ -185,7 +211,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
                 return value
             if value[0] == opener_id:
                 if int(value[1]) != 0:
-                    raise ValueError("循环开始只暴露一个片段数据输出")
+                    raise ValueError("循环开始只暴露一个循环上下文输出")
                 return frame.out(0)
             if value[0] in copies:
                 return copies[value[0]].out(value[1])
@@ -250,7 +276,7 @@ class TerryDirectorLooper(StartLoop):
             loop_boundary="start",
             is_input_list=True,
             enable_expand=True,
-            description="按时间线逐段执行官方 H3 节点；片段数据已包含上一段上下文。",
+            description="按时间线逐段执行外部 H3 工作流；循环上下文包含当前片段与上一轮状态，由循环信息节点提取片段数据。",
             inputs=[
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
@@ -267,7 +293,7 @@ class TerryDirectorLooper(StartLoop):
                 ),
             ],
             outputs=[
-                io.AnyType.Output("segment_data", display_name="片段数据"),
+                LoopContextData.Output("loop_context", display_name="循环上下文"),
             ],
             hidden=[
                 io.Hidden.dynprompt, io.Hidden.execution_list, io.Hidden.unique_id,
@@ -322,13 +348,13 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             category=CATEGORY,
             description="当前片段 Prompt / 时长 / 参考图自动映射到官方 H3 Reference to Video。",
             inputs=[
-                io.AnyType.Input("segment_data", display_name="片段数据"),
+                LoopContextData.Input("loop_context", display_name="循环上下文"),
             ],
             outputs=[
                 io.String.Output(display_name="提示词"),
                 io.Int.Output(display_name="H3帧数"),
                 io.Int.Output(display_name="Seed"),
-                io.AnyType.Output(display_name="片段数据"),
+                SegmentData.Output(display_name="片段数据"),
                 *[
                     io.Image.Output(display_name=f"image_{index}")
                     for index in range(IMAGE_SLOTS)
@@ -337,11 +363,8 @@ class TerryDirectorLoopInfo(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, segment_data):
-        if not isinstance(segment_data, dict):
-            raise ValueError("循环信息未收到有效片段数据")
-        segment = segment_data["segment"]
-        previous_context = segment_data["previous_context"]
+    def execute(cls, loop_context):
+        segment, previous_context = _require_loop_context(loop_context)
         assets = segment["assets"]
         if assets.get("videos") or assets.get("audios"):
             raise ValueError(
@@ -362,6 +385,14 @@ class TerryDirectorLoopInfo(io.ComfyNode):
         if len(images) > IMAGE_SLOTS:
             raise ValueError("官方 H3 最多接受 9 张参考图片")
         images.extend([None] * (IMAGE_SLOTS - len(images)))
+        # A flat generation packet, distinct from the complete loop envelope.
+        # Downstream conditioning and cache nodes accept only this type.
+        segment_data = {
+            **segment,
+            "_type": SEGMENT_DATA_KIND,
+            "version": 1,
+            "previous_context": previous_context,
+        }
         return io.NodeOutput(
             segment["prompt"],
             int(segment["h3_frames"]),
@@ -385,15 +416,15 @@ class TerryDirectorLoopCondition(io.ComfyNode):
                 io.Latent.Input("latent", display_name="潜变量"),
                 io.Vae.Input("vae", display_name="视频VAE"),
                 io.Vae.Input("audio_vae", display_name="音频VAE"),
-                io.AnyType.Input("segment_data", display_name="片段数据"),
+                SegmentData.Input("segment_data", display_name="片段数据"),
             ],
             outputs=[io.Conditioning.Output(display_name="正向条件")],
         )
 
     @classmethod
     def execute(cls, positive, latent, vae, audio_vae, segment_data):
-        segment = segment_data["segment"]
-        previous_context = segment_data["previous_context"]
+        segment = _require_segment_data(segment_data)
+        previous_context = segment["previous_context"]
         continuity = segment["continuity"]
         kind = continuity["kind"]
         if kind in ("independent", "gap", "tail_reference"):
@@ -454,7 +485,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
                 io.Latent.Input("samples", display_name="H3采样结果"),
                 io.Vae.Input("vae", display_name="视频VAE"),
                 io.Vae.Input("audio_vae", display_name="音频VAE"),
-                io.AnyType.Input("segment_data", display_name="片段数据"),
+                SegmentData.Input("segment_data", display_name="片段数据"),
             ],
             outputs=[
                 io.String.Output(display_name="分段缓存"),
@@ -468,7 +499,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
 
     @classmethod
     def execute(cls, samples, vae, audio_vae, segment_data):
-        segment = segment_data["segment"]
+        segment = _require_segment_data(segment_data)
         loop = segment["_loop"]
         assembly = segment["assembly"]
         result = TerryDirectorDecodeSegmentToCache.execute(
@@ -513,7 +544,7 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                 io.Latent.Input("samples", display_name="H3采样结果", optional=True),
                 io.Vae.Input("vae", display_name="视频VAE", optional=True),
                 io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
-                io.AnyType.Input("segment_data", display_name="片段数据", optional=True),
+                SegmentData.Input("segment_data", display_name="片段数据", optional=True),
                 io.Boolean.Input(
                     "merge_output", display_name="合并输出",
                     default=True, socketless=True,
