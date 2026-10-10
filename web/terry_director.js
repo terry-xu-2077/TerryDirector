@@ -4,7 +4,9 @@ import { api } from "/scripts/api.js";
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
 const OUTPUT_NODE_CLASS = "TerryDirectorOutput";
-const isDirector = node => node?.comfyClass === NODE_CLASS || node?.comfyClass === ADVANCED_NODE_CLASS;
+const LOOP_NODE_CLASS = "TerryDirectorLooper";
+const LOOP_END_NODE_CLASS = "TerryDirectorLoopEnd";
+const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
 const CONFIG_ADVANCED_WIDGETS = new Set([
   "multiple",
@@ -31,6 +33,7 @@ const cssHref = new URL("./terry_director.css", import.meta.url).href;
 // beforeQueued callbacks, seed controls and queue bookkeeping still run), then
 // repair the partial target at the lower api.queuePrompt boundary if needed.
 const tdPendingPartialRuns = [];
+let tdActiveExecutionPromptId = null;
 
 function removePendingPartialRun(request) {
   const index = tdPendingPartialRuns.indexOf(request);
@@ -87,9 +90,66 @@ function bindDirectorPartialQueueGuard() {
   api.__tdPartialQueueGuardBound = true;
 }
 
+function loopExecutionTarget(node) {
+  if (node?.comfyClass !== LOOP_NODE_CLASS) return String(node.id);
+  const graph = node.graph || app.graph;
+  const visited = new Set();
+  const queue = [node];
+  const ends = [];
+  while (queue.length) {
+    const cursor = queue.shift();
+    if (!cursor || visited.has(cursor.id)) continue;
+    visited.add(cursor.id);
+    if (cursor.comfyClass === LOOP_END_NODE_CLASS) {
+      ends.push(String(cursor.id));
+      continue;
+    }
+    for (const output of cursor.outputs || []) {
+      for (const linkId of output.links || []) {
+        const link = graph?.links?.[linkId];
+        if (!link) continue;
+        const next = graph?.getNodeById?.(link.target_id) ||
+          graph?._nodes?.find(n => n.id === link.target_id);
+        if (next && !visited.has(next.id)) queue.push(next);
+      }
+    }
+  }
+  if (ends.length !== 1) {
+    throw new Error("TerryDirector 循环需要恰好一个已连线的「循环结束」节点");
+  }
+  // If the loop has exactly one downstream video save, include the final
+  // merge/encode in the partial-queue target. Otherwise run the loop boundary
+  // alone and leave downstream processing to the normal ComfyUI queue.
+  const endNode = graph?.getNodeById?.(Number(ends[0])) ||
+    graph?._nodes?.find(item => String(item.id) === ends[0]);
+  const downstreamSeen = new Set();
+  const pending = [endNode];
+  const saves = new Set();
+  while (pending.length) {
+    const current = pending.shift();
+    if (!current || downstreamSeen.has(current.id)) continue;
+    downstreamSeen.add(current.id);
+    if (current.comfyClass === "SaveVideo") {
+      saves.add(String(current.id));
+      continue;
+    }
+    if (current.comfyClass === LOOP_NODE_CLASS) continue;
+    for (const output of current.outputs || []) {
+      for (const linkId of output.links || []) {
+        const link = graph?.links?.[linkId];
+        if (!link) continue;
+        const next = graph?.getNodeById?.(link.target_id) ||
+          graph?._nodes?.find(item => item.id === link.target_id);
+        if (next && !downstreamSeen.has(next.id)) pending.push(next);
+      }
+    }
+  }
+  return saves.size === 1 ? [...saves][0] : ends[0];
+}
+
 function queueDirectorNode(node) {
   const request = {
-    nodeId: String(node.id),
+    nodeId: loopExecutionTarget(node),
     // Keep queued-behind-current-run requests alive, but do not let a failed
     // submission affect unrelated prompts indefinitely.
     expiresAt: Date.now() + 30 * 60 * 1000,
@@ -533,6 +593,36 @@ function pushActivity(node, { fullRender = false } = {}) {
   );
 }
 
+function bindLoopSegmentActivity() {
+  if (api.__tdLoopSegmentActivityBound) return;
+  api.__tdLoopSegmentActivityBound = true;
+  api.addEventListener("terrydirector:loop-segment", event => {
+    const detail = event.detail || {};
+    const node = directorNodeFromId(detail.node_id);
+    if (node?.comfyClass !== LOOP_NODE_CLASS) return;
+    if (tdActiveExecutionPromptId != null) ensurePromptRun(node, tdActiveExecutionPromptId);
+    const activity = ensureActivity(node);
+    const clip = activity[String(detail.clip_id)];
+    if (!clip) return;
+    const now = performance.now();
+    if (detail.status === "running") {
+      Object.assign(clip, {
+        status: RUN_RUNNING, progress: 0, startedAt: now,
+        completedAt: null, elapsedSeconds: 0, error: "",
+      });
+    } else if (detail.status === "completed") {
+      Object.assign(clip, {
+        status: RUN_COMPLETED, progress: 1,
+        elapsedSeconds: clip.startedAt ? (now - clip.startedAt) / 1000 : 0,
+        completedAt: new Date().toISOString(), error: "",
+      });
+    } else {
+      return;
+    }
+    pushActivity(node);
+  });
+}
+
 function pushPreferences() {
   if (!frameReady || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
@@ -718,6 +808,7 @@ function bindExecutionActivity() {
 
   api.addEventListener("execution_start", event => {
     const promptId = event.detail?.prompt_id;
+    tdActiveExecutionPromptId = promptId ?? null;
     // A restored Advanced result may already have a <video> element holding
     // browser/WDDM video surfaces before Comfy starts sampling. Release those
     // surfaces at prompt start, before the first sampler progress event.
@@ -799,6 +890,8 @@ function bindExecutionActivity() {
   });
 
   api.addEventListener("execution_success", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(event.detail?.prompt_id, true);
     if (matched) {
       for (const node of app.graph?._nodes || []) {
@@ -807,6 +900,8 @@ function bindExecutionActivity() {
     }
   });
   api.addEventListener("execution_error", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
@@ -819,6 +914,8 @@ function bindExecutionActivity() {
     }
   });
   api.addEventListener("execution_interrupted", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
@@ -2227,6 +2324,7 @@ function mountNode(node) {
     }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
+    if (node.comfyClass === LOOP_NODE_CLASS) hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
@@ -2247,6 +2345,7 @@ function mountNode(node) {
   if (!backing) return;
   hideBackingWidget(backing);
   hideBackingWidget(tailReferencePromptWidget(node));
+  if (node.comfyClass === LOOP_NODE_CLASS) hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
@@ -2477,6 +2576,7 @@ app.registerExtension({
     ensureEditorOverlay();
     bindDirectorPartialQueueGuard();
     bindExecutionActivity();
+    bindLoopSegmentActivity();
   },
   nodeCreated(node) {
     if (isDirector(node)) {
