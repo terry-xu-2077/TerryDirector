@@ -56,7 +56,8 @@ TerryDirector 循环结束 (H3采样结果 / 视频VAE / 音频VAE / 片段数�
 - 内部使用 ComfyUI LoopIteration、LoopProgress、LoopResult 及 execution_list external block，最终结束节点由此放行；
 - 「循环结束」固定完成合并，不再提供「合并输出」开关；所有片段生成并缓存后调用已有 TerryDirectorMaterializeTimeline，释放生成模型后预分配最终 IMAGE/AUDIO，逐段读取并一次性合并，仍由下游官方 CreateVideo / SaveVideo 负责编码。
 - 输出与原「TerryDirector 输出」一致：**分段潜变量（LATENT 原生列表） / 合并画面（IMAGE） / 合并音频（AUDIO）**。只有第一路分段潜变量连接下游时，内部才逐段将原始 H3 AV latent 无损缓存成 CPU .pt 侧车文件；最终统一读取。没有连接时不产生额外 latent 缓存，避免破坏已验收的低内存生成路径。
-- 复用原「TerryDirector 输出」的**合并画面内存**信息框及 CSS，不单独复制一套 UI。循环结束从「循环信息 → 循环开始」追踪时间线有效帧数，从生成链内的官方 MiniMaxH3ReferenceToVideo 读取未连线的 width/height，按 float32 RGB 合并画面估算占用；外部连入的分辨率或多套不同 H3 条件来源无法静态确认时明确提示而不猜测。
+- 复用原「TerryDirector 输出」的**合并画面内存**信息框及 CSS，不单独复制一套 UI。循环结束从「循环信息 → 循环开始」追踪时间线有效帧数；从采样链内 MiniMaxH3ReferenceToVideo 读取宽高。即使宽高被外部连线覆盖，也沿着连接反向读取官方 ResolutionSelector 的宽高输出索引及「宽高比 / 百万像素 / 倍数」，完全按官方 0.39.0 计算规则（MP×1024²、Python round 半偶舍入）重算真实设置。支持官方 PrimitiveInt/PrimitiveFloat 固定数值和普通 Reroute；不使用已失效的 H3 控件数值。按 float32 RGB 计算最终 IMAGE 画面的理论内存（不含模型、VAE、其它内存开销）。
+- 只有遇到真正动态/无法追溯的上游参数、多个不同 H3 条件来源时才不显示内存数字；卡片改为 **「循环输出概况」**，仍显示有效片段数、总帧数、时长与 24fps，明确说明当前分辨率无法静态确认。随着分辨率选择器或其固定数值节点的控件/连线变化，内存卡片自动刷新。
 
 ## 当前边界
 

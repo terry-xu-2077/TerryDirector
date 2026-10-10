@@ -80,6 +80,11 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn('const isLoopEnd = node.comfyClass === LOOP_END_NODE_CLASS', text)
         self.assertIn('node?.comfyClass === LOOP_END_NODE_CLASS', text)
         self.assertIn('bindLoopMemorySource(node)', text)
+        self.assertIn('function linkedOutputForInput(node, inputName)', text)
+        self.assertIn('readH3Resolution(h3, linkedOutputForInput)', text)
+        self.assertIn('node.comfyClass === "ResolutionSelector"', text)
+        self.assertIn('const activeClips = (documentData.clips || []).filter(clip => !clip.suspended).length', text)
+        self.assertIn('循环输出概况', text)
         self.assertIn("TerryDirectorAdvanced", text)
 
     def test_old_sample_execution_not_replaced(self):

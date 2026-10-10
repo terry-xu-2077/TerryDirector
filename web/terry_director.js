@@ -15,6 +15,8 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   LOOP_NODE_CLASS, LOOP_INFO_NODE_CLASS, H3_CONDITION_NODE_CLASS,
   "TerryDirectorLoopCondition", "BasicGuider", "SamplerCustomAdvanced",
   "KSampler", "KSamplerAdvanced",
+  "ResolutionSelector", "PrimitiveInt", "PrimitiveFloat",
+  "PrimitiveString", "Reroute",
 ]);
 const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
@@ -1339,15 +1341,14 @@ function renderNode(node) {
 
 
 
-function linkedNodeForInput(node, inputName) {
+function linkedOutputForInput(node, inputName) {
   if (!node) return null;
   const graph = node.graph || app.rootGraph || app.graph;
   const inputIndex = node.inputs?.findIndex(item => item.name === inputName) ?? -1;
   if (inputIndex < 0 || !graph) return null;
 
   // ComfyUI frontend 1.53+ stores graph.links as a Map. Prefer the node/graph
-  // accessors so this also works with the newer ECS-backed link store and
-  // subgraphs; keep a small compatibility fallback for older frontends.
+  // accessors so this also works with ECS-backed links and older frontends.
   let link = node.getInputLink?.(inputIndex) || null;
   if (!link) {
     const linkId = node.inputs?.[inputIndex]?.link;
@@ -1359,8 +1360,16 @@ function linkedNodeForInput(node, inputName) {
         null;
     }
   }
+  if (!link) return null;
+  const upstreamNode = graph.getNodeById?.(link.origin_id);
+  const outputIndex = Number(link.origin_slot);
+  return upstreamNode && Number.isSafeInteger(outputIndex) && outputIndex >= 0
+    ? { node: upstreamNode, outputIndex }
+    : null;
+}
 
-  return link ? graph.getNodeById?.(link.origin_id) || null : null;
+function linkedNodeForInput(node, inputName) {
+  return linkedOutputForInput(node, inputName)?.node || null;
 }
 
 function effectiveTimelineFrames(documentData) {
@@ -1445,20 +1454,29 @@ function mergeFrameMemoryEstimate(frames, resolution) {
 }
 
 function loopEndMemoryEstimate(node) {
-  // The loop is NOT connected to a TerryDirector Config. Its resolution
-  // belongs to the official H3 conditioning node in the sampler subgraph.
+  // H3.width/height may be overridden by the official ResolutionSelector.
+  // Trace their actual linked outputs before using stale H3 widget values.
   const { looper, h3 } = findLoopMemorySources(node, linkedNodeForInput);
   if (!looper) return { state: "disconnected" };
-  const frames = effectiveTimelineFrames(readConfig(looper).document);
-  if (frames < 1) return { state: "pending" };
-  const resolution = readH3Resolution(h3);
-  if (!resolution) {
-    return {
-      state: "pending",
-      hint: "请检查官方 H3 节点的宽高；外部连入的分辨率暂不能静态估算。",
-    };
-  }
-  return mergeFrameMemoryEstimate(frames, resolution);
+  const documentData = readConfig(looper).document;
+  const frames = effectiveTimelineFrames(documentData);
+  const activeClips = (documentData.clips || []).filter(clip => !clip.suspended).length;
+  const summary = {
+    state: "summary",
+    frames,
+    seconds: frames / FPS,
+    activeClips,
+    hint: frames > 0
+      ? "分辨率来自动态或暂不支持的上游计算；请以生成时的实际尺寸为准。"
+      : "当前没有启用的片段。",
+  };
+  if (frames < 1) return summary;
+  const resolution = readH3Resolution(h3, linkedOutputForInput);
+  if (!resolution) return summary;
+  return {
+    ...mergeFrameMemoryEstimate(frames, resolution),
+    source: resolution.source,
+  };
 }
 
 function outputMemoryEstimate(node) {
@@ -1509,6 +1527,19 @@ function renderOutputMemoryInfo(node) {
       </div>
       <div class="td-output-memory-note">不会在生成阶段保留整条合并画面。</div>
     `;
+  } else if (isLoopEnd && estimate.state === "summary") {
+    const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
+    root.className = "td-output-memory-card is-idle";
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">i</span>
+        <strong>循环输出概况</strong>
+      </div>
+      <div class="td-output-memory-meta">
+        ${estimate.activeClips} 个启用片段 · ${estimate.frames} 帧 · ${seconds}s · 24 fps
+      </div>
+      <div class="td-output-memory-note">${estimate.hint}</div>
+    `;
   } else if (estimate.state !== "ready") {
     root.className = "td-output-memory-card is-idle";
     root.innerHTML = `
@@ -1528,7 +1559,7 @@ function renderOutputMemoryInfo(node) {
         <strong>合并整段画面预计占用 <b>${memory} GB</b> 内存</strong>
       </div>
       <div class="td-output-memory-meta">
-        ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}
+        ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}${isLoopEnd && estimate.source === "upstream" ? " · 上游分辨率" : ""}
       </div>
       <div class="td-output-memory-note">
         ${estimate.level === "high"
@@ -1624,18 +1655,23 @@ function mountOutputNode(node) {
  */
 function bindLoopMemorySource(node) {
   if (!node || !LOOP_MEMORY_SOURCE_CLASSES.has(node.comfyClass)) return;
-  if (node.comfyClass === H3_CONDITION_NODE_CLASS) {
-    for (const name of ["width", "height"]) {
-      const widget = node.widgets?.find(item => item.name === name);
-      if (!widget || widget.__tdMemoryRefreshBound) continue;
-      const originalCallback = widget.callback;
-      widget.callback = function(...args) {
-        const result = originalCallback?.apply(this, args);
-        queueMicrotask(refreshAllOutputMemoryInfo);
-        return result;
-      };
-      widget.__tdMemoryRefreshBound = true;
-    }
+  const watchedWidgets = node.comfyClass === H3_CONDITION_NODE_CLASS
+    ? ["width", "height"]
+    : node.comfyClass === "ResolutionSelector"
+      ? ["aspect_ratio", "megapixels", "multiple"]
+      : ["PrimitiveInt", "PrimitiveFloat", "PrimitiveString"].includes(node.comfyClass)
+        ? ["value"]
+        : [];
+  for (const name of watchedWidgets) {
+    const widget = node.widgets?.find(item => item.name === name);
+    if (!widget || widget.__tdMemoryRefreshBound) continue;
+    const originalCallback = widget.callback;
+    widget.callback = function(...args) {
+      const result = originalCallback?.apply(this, args);
+      queueMicrotask(refreshAllOutputMemoryInfo);
+      return result;
+    };
+    widget.__tdMemoryRefreshBound = true;
   }
   if (node.__tdLoopMemoryLinkBound) return;
   const originalConnectionCallback = node.onConnectionsChange;
