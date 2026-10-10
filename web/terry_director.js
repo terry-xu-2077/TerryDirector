@@ -2,12 +2,20 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
+import { findLoopMemorySources, readH3Resolution } from "./td_loop_memory.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
 const OUTPUT_NODE_CLASS = "TerryDirectorOutput";
 const LOOP_NODE_CLASS = "TerryDirectorLooper";
 const LOOP_END_NODE_CLASS = "TerryDirectorLoopEnd";
+const LOOP_INFO_NODE_CLASS = "TerryDirectorLoopInfo";
+const H3_CONDITION_NODE_CLASS = "MiniMaxH3ReferenceToVideo";
+const LOOP_MEMORY_SOURCE_CLASSES = new Set([
+  LOOP_NODE_CLASS, LOOP_INFO_NODE_CLASS, H3_CONDITION_NODE_CLASS,
+  "TerryDirectorLoopCondition", "BasicGuider", "SamplerCustomAdvanced",
+  "KSampler", "KSamplerAdvanced",
+]);
 const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
 const CONFIG_ADVANCED_WIDGETS = new Set([
@@ -1417,6 +1425,42 @@ function directorResolution(node) {
   return { width, height };
 }
 
+function mergeFrameMemoryEstimate(frames, resolution) {
+  const { width, height } = resolution;
+  const gib = frames * width * height * 3 * 4 / (1024 ** 3);
+  return {
+    state: "ready",
+    frames,
+    seconds: frames / FPS,
+    width,
+    height,
+    gib,
+    level:
+      gib >= OUTPUT_MEMORY_HIGH_GIB
+        ? "high"
+        : gib >= OUTPUT_MEMORY_NOTICE_GIB
+          ? "notice"
+          : "normal",
+  };
+}
+
+function loopEndMemoryEstimate(node) {
+  // The loop is NOT connected to a TerryDirector Config. Its resolution
+  // belongs to the official H3 conditioning node in the sampler subgraph.
+  const { looper, h3 } = findLoopMemorySources(node, linkedNodeForInput);
+  if (!looper) return { state: "disconnected" };
+  const frames = effectiveTimelineFrames(readConfig(looper).document);
+  if (frames < 1) return { state: "pending" };
+  const resolution = readH3Resolution(h3);
+  if (!resolution) {
+    return {
+      state: "pending",
+      hint: "请检查官方 H3 节点的宽高；外部连入的分辨率暂不能静态估算。",
+    };
+  }
+  return mergeFrameMemoryEstimate(frames, resolution);
+}
+
 function outputMemoryEstimate(node) {
   const director = linkedNodeForInput(node, "director_output");
   if (!director || !isDirector(director)) {
@@ -1434,30 +1478,15 @@ function outputMemoryEstimate(node) {
     return { state: "pending" };
   }
 
-  const bytes = frames * resolution.width * resolution.height * 3 * 4;
-  const gib = bytes / (1024 ** 3);
-
-  return {
-    state: "ready",
-    frames,
-    seconds: frames / FPS,
-    width: resolution.width,
-    height: resolution.height,
-    gib,
-    level:
-      gib >= OUTPUT_MEMORY_HIGH_GIB
-        ? "high"
-        : gib >= OUTPUT_MEMORY_NOTICE_GIB
-          ? "notice"
-          : "normal",
-  };
+  return mergeFrameMemoryEstimate(frames, resolution);
 }
 
 function renderOutputMemoryInfo(node) {
   const root = node?.__tdOutputInfoRoot;
   if (!root) return;
 
-  const estimate = outputMemoryEstimate(node);
+  const isLoopEnd = node.comfyClass === LOOP_END_NODE_CLASS;
+  const estimate = isLoopEnd ? loopEndMemoryEstimate(node) : outputMemoryEstimate(node);
   root.hidden = false;
 
   if (estimate.state === "disconnected") {
@@ -1467,7 +1496,9 @@ function renderOutputMemoryInfo(node) {
         <span class="td-output-memory-icon">i</span>
         <strong>合并画面内存</strong>
       </div>
-      <div class="td-output-memory-note">连接 TerryDirector 后显示预计内存占用。</div>
+      <div class="td-output-memory-note">${isLoopEnd
+        ? "连接循环信息与官方 H3 工作流后显示预计内存占用。"
+        : "连接 TerryDirector 后显示预计内存占用。"}</div>
     `;
   } else if (estimate.state === "advanced") {
     root.className = "td-output-memory-card is-idle";
@@ -1485,7 +1516,7 @@ function renderOutputMemoryInfo(node) {
         <span class="td-output-memory-icon">i</span>
         <strong>合并画面内存</strong>
       </div>
-      <div class="td-output-memory-note">正在读取时间线与分辨率信息…</div>
+      <div class="td-output-memory-note">${estimate.hint || "正在读取时间线与分辨率信息…"}</div>
     `;
   } else {
     const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
@@ -1525,12 +1556,14 @@ function renderOutputMemoryInfo(node) {
 
 function refreshAllOutputMemoryInfo() {
   for (const node of app.graph?._nodes || []) {
-    if (node?.comfyClass === OUTPUT_NODE_CLASS) renderOutputMemoryInfo(node);
+    if (node?.comfyClass === OUTPUT_NODE_CLASS ||
+        node?.comfyClass === LOOP_END_NODE_CLASS) renderOutputMemoryInfo(node);
   }
 }
 
 function mountOutputNode(node) {
-  if (!node || node.comfyClass !== OUTPUT_NODE_CLASS) return;
+  if (!node || (node.comfyClass !== OUTPUT_NODE_CLASS &&
+                node.comfyClass !== LOOP_END_NODE_CLASS)) return;
   ensureCss();
 
   if (!node.__tdOutputInfoRoot) {
@@ -1583,6 +1616,36 @@ function mountOutputNode(node) {
   renderOutputMemoryInfo(node);
 }
 
+
+/**
+ * The old Output estimates resolution from TerryDirector Config. LoopEnd
+ * estimates it from the official H3 ReferenceToVideo node, so changes to its
+ * width/height widgets must refresh the same shared memory notice.
+ */
+function bindLoopMemorySource(node) {
+  if (!node || !LOOP_MEMORY_SOURCE_CLASSES.has(node.comfyClass)) return;
+  if (node.comfyClass === H3_CONDITION_NODE_CLASS) {
+    for (const name of ["width", "height"]) {
+      const widget = node.widgets?.find(item => item.name === name);
+      if (!widget || widget.__tdMemoryRefreshBound) continue;
+      const originalCallback = widget.callback;
+      widget.callback = function(...args) {
+        const result = originalCallback?.apply(this, args);
+        queueMicrotask(refreshAllOutputMemoryInfo);
+        return result;
+      };
+      widget.__tdMemoryRefreshBound = true;
+    }
+  }
+  if (node.__tdLoopMemoryLinkBound) return;
+  const originalConnectionCallback = node.onConnectionsChange;
+  node.onConnectionsChange = function(...args) {
+    const result = originalConnectionCallback?.apply(this, args);
+    queueMicrotask(refreshAllOutputMemoryInfo);
+    return result;
+  };
+  node.__tdLoopMemoryLinkBound = true;
+}
 
 // Advanced review is intentionally independent of the full editor timeline.
 // Persist UI selection in memory, never in the creative document.
@@ -2642,20 +2705,24 @@ app.registerExtension({
     bindLoopSegmentActivity();
   },
   nodeCreated(node) {
+    queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
+               node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
     }
   },
   loadedGraphNode(node) {
+    queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
+               node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
     }
   },

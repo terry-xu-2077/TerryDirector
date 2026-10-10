@@ -7,6 +7,8 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import uuid
 
 import folder_paths
@@ -23,6 +25,7 @@ from .director_core import config_json, normalize_config
 from .director_internal import (
     TerryDirectorDecodeSegmentToCache,
     TerryDirectorMaterializeTimeline,
+    _cache_to_cpu,
     prepare_base_run_cache,
 )
 
@@ -155,6 +158,42 @@ class TerryDirectorLoopFrame(io.ComfyNode):
         })
 
 
+def _wants_segment_latents(dynprompt, close_id):
+    """Keep H3 LATENT only when End's list output is wired to a consumer.
+
+    A disconnected output must not accumulate sampled video/audio tensors
+    across segments. Reading the original graph before dynamic expansion
+    also works when the final SaveVideo uses only IMAGE/AUDIO.
+    """
+    for node in (getattr(dynprompt, "original_prompt", None) or {}).values():
+        for value in node.get("inputs", {}).values():
+            if is_link(value) and str(value[0]) == str(close_id) and int(value[1]) == 0:
+                return True
+    return False
+
+
+def _save_segment_latent(samples, descriptor):
+    """Persist the full AV LATENT beside its existing lossless Base segment.
+
+    The parent Base run directory is already cleaned by MaterializeTimeline
+    after the final merge. No latent tensor survives in the GPU-side loop
+    accumulation; only the lightweight sidecar path is carried.
+    """
+    path = str(descriptor["path"]) + ".latent.pt"
+    root = os.path.dirname(path)
+    fd, temp_path = tempfile.mkstemp(
+        prefix="td_loop_latent_", suffix=".pt", dir=root
+    )
+    os.close(fd)
+    try:
+        torch.save(_cache_to_cpu(samples), temp_path)
+        os.replace(temp_path, path)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+    return path
+
+
 def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_value):
     """Adapt ComfyUI's native List loop expansion without exposing internal wires.
 
@@ -171,6 +210,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
         if not is_link(end_inputs.get(name)):
             raise ValueError(f"循环结束必须连接 {name}")
 
+    store_latents = _wants_segment_latents(dynprompt, close_id)
     copied_loop_metadata = {}
     carry = initial_value
     previous_dependencies = []
@@ -231,6 +271,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
         # adapter automatically inside the dynamic graph, once per segment.
         cache = graph.node(
             "TerryDirectorLoopCache", f"cache_{position}",
+            store_latents=store_latents,
             **{name: copied_link(end_inputs[name]) for name in required},
         )
         cache.set_override_display_id(close_id)
@@ -486,6 +527,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
                 io.Vae.Input("vae", display_name="视频VAE"),
                 io.Vae.Input("audio_vae", display_name="音频VAE"),
                 SegmentData.Input("segment_data", display_name="片段数据"),
+                io.Boolean.Input("store_latents", default=False, socketless=True),
             ],
             outputs=[
                 io.String.Output(display_name="分段缓存"),
@@ -498,7 +540,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, samples, vae, audio_vae, segment_data):
+    def execute(cls, samples, vae, audio_vae, segment_data, store_latents=False):
         segment = _require_segment_data(segment_data)
         loop = segment["_loop"]
         assembly = segment["assembly"]
@@ -517,15 +559,19 @@ class TerryDirectorLoopCache(io.ComfyNode):
             context_frames=int(loop["context_frames"]),
             fps=24,
         )
+        descriptor = json.loads(result[0])
+        if bool(store_latents):
+            descriptor["latent_path"] = _save_segment_latent(samples, descriptor)
         _notify(loop["loop_id"], segment["id"], "completed")
         return io.NodeOutput(
-            result[0], {"images": result[1], "audio": result[2]}
+            json.dumps(descriptor, ensure_ascii=False),
+            {"images": result[1], "audio": result[2]},
         )
 
 
 
 class TerryDirectorLoopEnd(io.ComfyNode):
-    """One public loop boundary: lossless cache, carry and final merge are private."""
+    """One visible boundary, automatic lossless cache + final IMAGE/AUDIO merge."""
 
     @classmethod
     def define_schema(cls):
@@ -537,21 +583,17 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             is_input_list=True,
             is_output_node=True,
             description=(
-                "每段自动无损缓存并向下一轮传递上下文；全部完成后"
-                "可选合并为 IMAGE / AUDIO。"
+                "自动缓存每段并传递连续性上下文；全部完成后无损合并画面/音频。"
+                "分段潜变量仅在输出连接下游时保留，避免无用的内存累计。"
             ),
             inputs=[
                 io.Latent.Input("samples", display_name="H3采样结果", optional=True),
                 io.Vae.Input("vae", display_name="视频VAE", optional=True),
                 io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据", optional=True),
-                io.Boolean.Input(
-                    "merge_output", display_name="合并输出",
-                    default=True, socketless=True,
-                    tooltip="默认合并为画面和音频；关闭时只保留无损 .pt 缓存。",
-                ),
             ],
             outputs=[
+                io.Latent.Output(display_name="分段潜变量", is_output_list=True),
                 io.Image.Output(display_name="合并画面"),
                 io.Audio.Output(display_name="合并音频"),
             ],
@@ -563,31 +605,35 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, merge_output=True, **kwargs):
-        # The native LoopResult releases this external block after all segment
-        # caches are ready; the actual loop-body sockets were removed by Start.
+    def execute(cls, **kwargs):
+        # LoopResult releases this external block after all iterations have
+        # written lossless segments. The user-facing H3/VAE connections were
+        # removed by LoopStart when it installed the dynamic loop body.
         results = cls.hidden.execution_list.get_external_block_result(
             _one(cls.hidden.unique_id)
         )
         descriptors = [item for group in results for item in group]
         if not descriptors:
             raise ValueError("循环结束没有收到任何已完成片段")
-        if not bool(_one(merge_output)):
-            print(
-                f"[TerryDirector Loop] {len(descriptors)} 段无损缓存已保存，"
-                "跳过最终合并。",
-                flush=True,
-            )
-            return io.NodeOutput(None, None)
 
-        total = 0
+        segment_latents = []
+        expected_frames = 0
         for raw in descriptors:
             info = json.loads(str(raw))
-            total += int(info["frames"])
-        return TerryDirectorMaterializeTimeline.execute(
+            expected_frames += int(info["frames"])
+            latent_path = info.get("latent_path")
+            if latent_path:
+                # These paths are written by our internal lossless cache, not
+                # supplied through untrusted workflow input widgets.
+                segment_latents.append(
+                    torch.load(str(latent_path), map_location="cpu", weights_only=False)
+                )
+
+        merged = TerryDirectorMaterializeTimeline.execute(
             segments={
                 f"segment_{index}": raw
                 for index, raw in enumerate(descriptors)
             },
-            expected_frames=total,
+            expected_frames=expected_frames,
         )
+        return io.NodeOutput(segment_latents, merged[0], merged[1])

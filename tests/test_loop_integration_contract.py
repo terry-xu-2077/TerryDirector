@@ -37,6 +37,11 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertNotIn("TerryDirectorLoopGuide", klasses)
         self.assertIn("TerryDirectorDecodeSegmentToCache.execute", text)
         self.assertIn("TerryDirectorMaterializeTimeline.execute", text)
+        self.assertIn('io.Latent.Output(display_name="分段潜变量", is_output_list=True)', text)
+        self.assertIn("store_latents=store_latents", text)
+        self.assertIn("_wants_segment_latents(dynprompt, close_id)", text)
+        self.assertIn("_save_segment_latent(samples, descriptor)", text)
+        self.assertNotIn('"merge_output"', text)
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
         self.assertIn("TerryDirectorLoopFrame", text)
@@ -70,6 +75,11 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn('Math.min(0.99, sample.fraction)', text)
         self.assertIn('samplingSteps', text)
         self.assertIn("isDirector(node)", text)
+        self.assertIn('findLoopMemorySources(node, linkedNodeForInput)', text)
+        self.assertIn('readH3Resolution(h3)', text)
+        self.assertIn('const isLoopEnd = node.comfyClass === LOOP_END_NODE_CLASS', text)
+        self.assertIn('node?.comfyClass === LOOP_END_NODE_CLASS', text)
+        self.assertIn('bindLoopMemorySource(node)', text)
         self.assertIn("TerryDirectorAdvanced", text)
 
     def test_old_sample_execution_not_replaced(self):

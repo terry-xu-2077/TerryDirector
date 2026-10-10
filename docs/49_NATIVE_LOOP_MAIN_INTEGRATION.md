@@ -4,7 +4,7 @@
 
 用户确认最终数据层级：循环开始只显示「循环上下文」一个输出（TERRYDIRECTOR_LOOP_CONTEXT）；循环信息节点接收循环上下文，拆解为 Prompt、H3帧数、Seed、图片，并输出另一种类型的「片段数据」（TERRYDIRECTOR_SEGMENT_DATA）；循环条件与循环结束接收片段数据。前者是完整轮次信封，后者是提取的当前片段扁平参数，保留必要的前一段连续性上下文。两者 ComfyUI 类型及运行时 _type 标记均不同，不能混接。取消用户可见的循环缓存/合并节点，由循环结束内部执行无损缓存、context carry 与最终可选合并。
 
-结束节点接收 H3采样结果 / 视频VAE / 音频VAE / 片段数据，直接输出合并画面/合并音频；「合并输出」默认开启，关闭时只保存 .pt。内部 LoopFrame、LoopCache 在 ComfyUI dev-only 分类注册，不作为用户手工接线节点。完整结构以 [29 文档](29_NATIVE_H3_TIMELINE_LOOP.md) 为准；旧三节点工作流不再适用，测试须使用新版 JSON。
+结束节点接收 H3采样结果 / 视频VAE / 音频VAE / 片段数据，固定执行最终无损合并，不保留「合并输出」开关，输出分段潜变量（LATENT 列表）/ 合并画面（IMAGE）/ 合并音频（AUDIO）；分段潜变量仅在被下游使用时独立落盘，避免无意义的内存累计。与 TerryDirector 输出共用同一个「合并画面内存」嵌入卡片及估算/警告样式。内部 LoopFrame、LoopCache 在 ComfyUI dev-only 分类注册，不作为用户手工接线节点。完整结构以 [29 文档](29_NATIVE_H3_TIMELINE_LOOP.md) 为准；旧三节点工作流不再适用，测试须使用新版 JSON。
 
 
 状态：整合候选（等待本地短流程 GPU 验收）；不改变已经通过的 Self-Lift / Base / Advanced 运行路径。

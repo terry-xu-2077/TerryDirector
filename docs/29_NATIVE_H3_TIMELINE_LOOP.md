@@ -20,8 +20,10 @@ TerryDirector 循环条件 (正向条件 / 潜变量 / 两种 VAE / 片段数据
 BasicGuider + SamplerCustomAdvanced（官方）
   ↓ H3采样结果
 TerryDirector 循环结束 (H3采样结果 / 视频VAE / 音频VAE / 片段数据)
+  ├─ 分段潜变量（LATENT 列表，可选连接）
   ├─ 合并画面 ─┐
   └─ 合并音频 ─┴─→ CreateVideo → SaveVideo（官方）
+  └─ 内嵌「合并画面内存」预计占用框
 
 循环缓存、上一段上下文回传与无损最终合并全都在循环结束的动态内部图里，不再需要可见的缓存/合并节点，也不需要画回环线。
 
@@ -52,8 +54,9 @@ TerryDirector 循环结束 (H3采样结果 / 视频VAE / 音频VAE / 片段数�
 - 循环信息将其转成片段数据，保留官方 H3 图片参考索引与尾帧参考语义；
 - 每轮由 TerryDirectorLoopCache 自动调用现有 TerryDirectorDecodeSegmentToCache，将生成帧与原始音频无损写入 .pt，只回传下一轮必需的紧凑上下文；
 - 内部使用 ComfyUI LoopIteration、LoopProgress、LoopResult 及 execution_list external block，最终结束节点由此放行；
-- 「合并输出」默认开启，所有片段完成后使用 TerryDirectorMaterializeTimeline 释放模型、分段载入并一次性合并 IMAGE / AUDIO；用户可自行在下游 CreateVideo / SaveVideo 封装。
-- 关闭「合并输出」时保留当次 .pt 缓存，不产生合并媒体；下一次运行当前循环实例前按已有 Base 规则清理缓存。
+- 「循环结束」固定完成合并，不再提供「合并输出」开关；所有片段生成并缓存后调用已有 TerryDirectorMaterializeTimeline，释放生成模型后预分配最终 IMAGE/AUDIO，逐段读取并一次性合并，仍由下游官方 CreateVideo / SaveVideo 负责编码。
+- 输出与原「TerryDirector 输出」一致：**分段潜变量（LATENT 原生列表） / 合并画面（IMAGE） / 合并音频（AUDIO）**。只有第一路分段潜变量连接下游时，内部才逐段将原始 H3 AV latent 无损缓存成 CPU .pt 侧车文件；最终统一读取。没有连接时不产生额外 latent 缓存，避免破坏已验收的低内存生成路径。
+- 复用原「TerryDirector 输出」的**合并画面内存**信息框及 CSS，不单独复制一套 UI。循环结束从「循环信息 → 循环开始」追踪时间线有效帧数，从生成链内的官方 MiniMaxH3ReferenceToVideo 读取未连线的 width/height，按 float32 RGB 合并画面估算占用；外部连入的分辨率或多套不同 H3 条件来源无法静态确认时明确提示而不猜测。
 
 ## 当前边界
 

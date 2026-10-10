@@ -57,6 +57,9 @@ class DirectorLoopTests(unittest.TestCase):
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
         self.assertIn('TerryDirectorDecodeSegmentToCache.execute(', text)
+        self.assertIn('io.Latent.Output(display_name="分段潜变量", is_output_list=True)', text)
+        self.assertNotIn('"merge_output"', text)
+        self.assertIn('store_latents=store_latents', text)
         self.assertIn('io.Custom("TERRYDIRECTOR_LOOP_CONTEXT")', text)
         self.assertIn('io.Custom("TERRYDIRECTOR_SEGMENT_DATA")', text)
         self.assertIn('LoopContextData.Input("loop_context"', text)
@@ -191,7 +194,6 @@ class DirectorLoopTests(unittest.TestCase):
                                 "vae": ["external_video_vae", 0],
                                 "audio_vae": ["external_audio_vae", 0],
                                 "segment_data": ["info", 3],
-                                "merge_output": True,
                             }},
                 }
             def get_node(self, key):
@@ -214,7 +216,24 @@ class DirectorLoopTests(unittest.TestCase):
         self.assertEqual(graph["result"]["inputs"]["output0"], ["cache_0", 0])
         self.assertEqual(graph["result"]["inputs"]["output1"], ["cache_1", 0])
 
-    def test_fused_end_materializes_once_or_retains_cache(self):
+    def test_latency_sidecar_is_only_requested_with_a_latent_consumer(self):
+        def check(original):
+            node = types.SimpleNamespace(original_prompt=original)
+            return load_functions("_wants_segment_latents", context={
+                "is_link": lambda value: isinstance(value, list) and len(value) == 2,
+            })["_wants_segment_latents"](node, "end")
+        self.assertFalse(check({
+            "save_video": {"inputs": {"video": ["create_video", 0]}},
+            "create_video": {"inputs": {
+                "images": ["end", 1], "audio": ["end", 2],
+            }},
+        }))
+        self.assertTrue(check({
+            "latent_consumer": {"inputs": {"latent": ["end", 0]}},
+            "create_video": {"inputs": {"images": ["end", 1]}},
+        }))
+
+    def test_fused_end_always_materializes_and_optional_latents(self):
         descriptions = [
             json.dumps({"frames": 96, "path": "/virtual/1"}),
             json.dumps({"frames": 72, "path": "/virtual/2"}),
@@ -229,22 +248,35 @@ class DirectorLoopTests(unittest.TestCase):
             def execute(cls, **kwargs):
                 cls.calls.append(kwargs)
                 return FakeNodeOutput("IMAGE", "AUDIO")
+        latent_loads = []
+        def latent_loader(path, map_location, weights_only):
+            latent_loads.append((path, map_location, weights_only))
+            return {"samples": path}
         ns = load_functions("TerryDirectorLoopEnd", context={
             "_one": lambda v: v[0] if isinstance(v, list) else v,
             "json": json,
+            "torch": types.SimpleNamespace(load=latent_loader),
             "TerryDirectorMaterializeTimeline": Materialize,
         })
         cls = ns["TerryDirectorLoopEnd"]
         cls.hidden = types.SimpleNamespace(
             unique_id=["end"], execution_list=Block()
         )
-        out = cls.execute(merge_output=[True])
-        self.assertEqual(out.args, ("IMAGE", "AUDIO"))
+        out = cls.execute()
+        self.assertEqual(out.args, ([], "IMAGE", "AUDIO"))
         self.assertEqual(Materialize.calls[0]["expected_frames"], 168)
         self.assertEqual(len(Materialize.calls[0]["segments"]), 2)
-        out = cls.execute(merge_output=[False])
-        self.assertEqual(out.args, (None, None))
-        self.assertEqual(len(Materialize.calls), 1)
+        self.assertFalse(latent_loads)
+
+        with_latent = json.dumps({
+            "frames": 96, "path": "/virtual/1", "latent_path": "/virtual/1.latent.pt"
+        })
+        descriptions[0] = with_latent
+        out = cls.execute()
+        self.assertEqual(out.args[0], [{"samples": "/virtual/1.latent.pt"}])
+        self.assertEqual(out.args[1:], ("IMAGE", "AUDIO"))
+        self.assertEqual(latent_loads, [("/virtual/1.latent.pt", "cpu", False)])
+        self.assertEqual(len(Materialize.calls), 2)
 
     def test_guide_independent_or_tail(self):
         import torch
@@ -275,10 +307,13 @@ class DirectorLoopTests(unittest.TestCase):
             @classmethod
             def execute(cls, **kwargs):
                 calls.append(kwargs)
-                return FakeNodeOutput("descriptor", "tail", "audio")
+                return FakeNodeOutput(json.dumps({"path": "/cache/images.pt", "frames": 96}), "tail", "audio")
+        latent_writes = []
         ns = load_functions("TerryDirectorLoopCache", context={
             "TerryDirectorDecodeSegmentToCache": BaseCache,
             "_notify": lambda *args: None,
+            "_save_segment_latent": lambda samples, descriptor: latent_writes.append(samples) or "/cache/latent.pt",
+            "json": json,
         })
         segment = {
             "id": "one", "output_frames": 96,
@@ -292,8 +327,16 @@ class DirectorLoopTests(unittest.TestCase):
             "samples", "vae", "audio",
             {**segment, "_type": "terrydirector.segment_data", "previous_context": {}},
         )
-        self.assertEqual(out[0], "descriptor")
+        self.assertEqual(json.loads(out[0])["path"], "/cache/images.pt")
         self.assertEqual(out[1], {"images": "tail", "audio": "audio"})
+        self.assertEqual(latent_writes, [])
+        with_latent = ns["TerryDirectorLoopCache"].execute(
+            "samples", "vae", "audio",
+            {**segment, "_type": "terrydirector.segment_data", "previous_context": {}},
+            store_latents=True,
+        )
+        self.assertEqual(json.loads(with_latent[0])["latent_path"], "/cache/latent.pt")
+        self.assertEqual(latent_writes, ["samples"])
         self.assertEqual(calls[0]["output_frames"], 96)
         self.assertEqual(calls[0]["context_frames"], 12)
 
