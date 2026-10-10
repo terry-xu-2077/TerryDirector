@@ -64,6 +64,11 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn('current.comfyClass === "SaveVideo"', text)
         self.assertIn("saves.size === 1", text)
         self.assertIn("bindLoopSegmentActivity()", text)
+        self.assertIn('collectLoopSamplerProgress(detail, app.graph)', text)
+        self.assertIn('applyLoopSamplerProgress(event.detail)', text)
+        self.assertIn('activeLoopClip(readConfig(node).document.clips, sample.iteration)', text)
+        self.assertIn('Math.min(0.99, sample.fraction)', text)
+        self.assertIn('samplingSteps', text)
         self.assertIn("isDirector(node)", text)
         self.assertIn("TerryDirectorAdvanced", text)
 

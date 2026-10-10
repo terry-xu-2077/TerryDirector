@@ -57,6 +57,8 @@ TerryDirector 循环结束 (H3采样结果 / 视频VAE / 音频VAE / 片段数�
 
 ## 当前边界
 
+- 循环开始的实时进度会通过 ComfyUI 原生 `progress_state` 中的 `real_node_id`、循环展开节点的 zero-based iteration 后缀、`display_node_id` 和真实 `value/max` 映射回已启用片段；跳过挂起片段、排除其他导演实例及非采样节点。
+- 时间线内显示采样 `N/M` 实际步数和进度条；最多显示 99% 的片段进度，直至现有无损缓存完成事件才标记真正的片段 100%，以区分采样结束与整段完成。正常 ComfyUI Base / Advanced 原进度映射不变。
 - 当前「循环信息」只支持图片作为参考素材，遇到视频/音频资产引用明确报错；还没有做这些资产的外部适配。
 - 这套循环器不自动接入导演二采配置，外部官方 H3 节点组可由用户自由更换；已验收的内置 SelfLift 仍独立保留在原 Base / Advanced。
 - 当前没有迁入 Advanced 的断点恢复、分段重跑、LATENT checkpoint 或一次性流式最终编码。

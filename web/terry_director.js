@@ -1,6 +1,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
+import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
@@ -609,6 +610,7 @@ function bindLoopSegmentActivity() {
     if (detail.status === "running") {
       Object.assign(clip, {
         status: RUN_RUNNING, progress: 0, startedAt: now,
+        samplingStep: null, samplingSteps: null,
         completedAt: null, elapsedSeconds: 0, error: "",
       });
     } else if (detail.status === "completed") {
@@ -744,6 +746,56 @@ function applyProgressState(detail) {
   }
 }
 
+/**
+ * Native H3 sampler nodes have their own visible node IDs, not the "td_sN_*"
+ * expanded node IDs used by Base/Advanced. Link their real progress_state
+ * value/max back to the enclosing Looper and zero-based active segment.
+ */
+function applyLoopSamplerProgress(detail) {
+  const promptId = detail?.prompt_id;
+  // A late event from an older prompt must never reset an already completed
+  // segment or re-lock a different director instance.
+  if (promptId == null || tdActiveExecutionPromptId == null ||
+      String(promptId) !== String(tdActiveExecutionPromptId)) return;
+
+  const changes = new Set();
+  for (const sample of collectLoopSamplerProgress(detail, app.graph)) {
+    const node = directorNodeFromId(sample.loopId);
+    if (node?.comfyClass !== LOOP_NODE_CLASS) continue;
+    if (node.__tdPromptId != null && String(node.__tdPromptId) !== String(promptId)) continue;
+
+    const clip = activeLoopClip(readConfig(node).document.clips, sample.iteration);
+    if (!clip) continue;
+    ensurePromptRun(node, promptId);
+    const record = ensureActivity(node)[clip.id];
+    if (!record || record.status === RUN_COMPLETED || record.status === RUN_ERROR) continue;
+
+    const now = performance.now();
+    const startedAt = record.startedAt || now;
+    // Sampling at N/N is not yet a finished segment: VAE decode and the
+    // lossless .pt cache still have to complete. Only the cache event sets 100%.
+    const progress = Math.min(0.99, sample.fraction);
+    if (record.status === RUN_RUNNING &&
+        record.progress === progress &&
+        record.samplingStep === sample.step &&
+        record.samplingSteps === sample.totalSteps) continue;
+
+    Object.assign(record, {
+      status: RUN_RUNNING,
+      progress,
+      samplingStep: sample.step,
+      samplingSteps: sample.totalSteps,
+      startedAt,
+      elapsedSeconds: (now - startedAt) / 1000,
+      completedAt: null,
+      error: "",
+    });
+    changes.add(node);
+  }
+
+  for (const node of changes) pushActivity(node);
+}
+
 function finishPromptActivity(promptId, success, message = "") {
   let matched = false;
   for (const node of app.graph?._nodes || []) {
@@ -820,7 +872,10 @@ function bindExecutionActivity() {
     }
   });
 
-  api.addEventListener("progress_state", event => applyProgressState(event.detail));
+  api.addEventListener("progress_state", event => {
+    applyProgressState(event.detail);
+    applyLoopSamplerProgress(event.detail);
+  });
 
   api.addEventListener("execution_cached", event => {
     const promptId = event.detail?.prompt_id;
@@ -1215,10 +1270,14 @@ function timelineHtml(documentData, activity = {}) {
       const suspended = clip.suspended ? " is-suspended" : "";
       const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
       const duration = timeText(Math.max(0, durationFrames));
+      const samplingSteps = Number(record.samplingSteps);
+      const samplingInfo = running && samplingSteps > 0
+        ? ` · 采样 ${Number(record.samplingStep) || 0}/${samplingSteps}`
+        : "";
       const statusText = visualCompleted
         ? "已完成"
         : running
-          ? (percent > 0 ? `生成中 ${percent}%` : "准备中")
+          ? (samplingInfo ? `生成中 ${percent}%${samplingInfo}` : (percent > 0 ? `生成中 ${percent}%` : "准备中"))
           : failed
             ? "生成失败"
             : "";
