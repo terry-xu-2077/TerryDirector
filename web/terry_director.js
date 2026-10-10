@@ -1,5 +1,6 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
@@ -2238,6 +2239,9 @@ function setNativeWidgetHidden(widget, hidden) {
 
 function applyConfigAdvancedVisibility(node) {
   if (!node || node.comfyClass !== CONFIG_NODE_CLASS) return;
+
+  // Native widget disabled state reflects the active second-pass connection.
+  bindSecondPassTakeover(node);
 
   for (const widget of node.widgets || []) {
     if (!CONFIG_ADVANCED_WIDGETS.has(widget.name)) continue;
