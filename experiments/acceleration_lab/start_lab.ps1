@@ -1,4 +1,4 @@
-param([int]$Port = 8190)
+param([int]$Port = 8190, [string]$RunName = '')
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSEdition -ne 'Core' -or $PSVersionTable.PSVersion.Major -ne 7) {
@@ -13,7 +13,13 @@ chcp.com 65001 > $null
 $Lab = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo = (Resolve-Path -LiteralPath (Join-Path $Lab '..\..')).Path
 $Comfy = (Resolve-Path -LiteralPath (Join-Path $Repo '..\..')).Path
-$Root = Join-Path $Lab 'local\runtime'
+if ($RunName -and $RunName -notmatch '^[A-Za-z0-9_-]+$') { throw 'Invalid run name' }
+$Root = if ($RunName) { Join-Path $Lab "local\runs\$RunName\runtime" } else { Join-Path $Lab 'local\runtime' }
+$LogRoot = if ($RunName) { Join-Path $Lab "local\runs\$RunName" } else { Join-Path $Lab 'local' }
+New-Item -ItemType Directory -Path $LogRoot -Force | Out-Null
+foreach ($name in @('lab_stdout.log','lab_stderr.log','lab_pid.txt')) {
+    if (Test-Path -LiteralPath (Join-Path $LogRoot $name)) { throw "Run artifact exists: $name" }
+}
 $Nodes = Join-Path $Root 'custom_nodes'
 foreach ($name in @('input','output','temp','user','custom_nodes')) {
     New-Item -ItemType Directory -Path (Join-Path $Root $name) -Force | Out-Null
@@ -52,7 +58,7 @@ $arguments = @(
     '--use-sage-attention', '--disable-auto-launch', '--disable-manager-ui'
 )
 $process = Start-Process -FilePath $Python -ArgumentList $arguments -WorkingDirectory $Comfy -PassThru -WindowStyle Hidden `
-    -RedirectStandardOutput (Join-Path $Lab 'local\lab_stdout.log') `
-    -RedirectStandardError (Join-Path $Lab 'local\lab_stderr.log')
-$process.Id | Set-Content -LiteralPath (Join-Path $Lab 'local\lab_pid.txt') -Encoding utf8
+    -RedirectStandardOutput (Join-Path $LogRoot 'lab_stdout.log') `
+    -RedirectStandardError (Join-Path $LogRoot 'lab_stderr.log')
+$process.Id | Set-Content -LiteralPath (Join-Path $LogRoot 'lab_pid.txt') -Encoding utf8
 Write-Output "Lab PID $($process.Id), port $Port, root $Root"
