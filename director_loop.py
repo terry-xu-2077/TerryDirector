@@ -14,7 +14,8 @@ import numpy as np
 import torch
 from PIL import Image, ImageOps
 from comfy_api.latest import io
-from comfy_extras.nodes_loop import StartLoop, EndLoop
+from comfy_execution.graph_utils import GraphBuilder, is_link
+from comfy_extras.nodes_loop import StartLoop
 from comfy_extras.nodes_minimax_h3 import MiniMaxH3AddGuide
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
@@ -98,8 +99,146 @@ def _plan_items(config_data, seed, tail_reference_prompt, loop_id):
     return items
 
 
+
+class TerryDirectorLoopFrame(io.ComfyNode):
+    """Hidden adapter: combine the current item and carried context into one port."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="TerryDirectorLoopFrame",
+            display_name="TerryDirector Loop Frame (Internal)",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            inputs=[
+                io.AnyType.Input("segment"),
+                io.AnyType.Input("previous_context"),
+            ],
+            outputs=[io.AnyType.Output(display_name="片段数据")],
+        )
+
+    @classmethod
+    def execute(cls, segment, previous_context=None):
+        if not isinstance(segment, dict) or "_loop" not in segment:
+            raise ValueError("循环开始未产生有效的当前片段")
+        # The very first context is a JSON-widget literal, not an IMAGE packet.
+        previous = previous_context if isinstance(previous_context, dict) else {}
+        return io.NodeOutput({
+            "segment": segment,
+            "previous_context": previous,
+        })
+
+
+def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_value):
+    """Adapt ComfyUI's native List loop expansion without exposing internal wires.
+
+    Per iteration: LoopIteration -> private LoopFrame -> user H3 graph
+    -> private lossless LoopCache. The descriptor is accumulated and the compact
+    context feeds the next LoopIteration. Native LoopProgress and LoopResult
+    coordinate the original End boundary through the execution_list block.
+    """
+    graph = GraphBuilder()
+    end = dynprompt.get_node(close_id)
+    end_inputs = end["inputs"]
+    required = ("samples", "vae", "audio_vae", "segment_data")
+    for name in required:
+        if not is_link(end_inputs.get(name)):
+            raise ValueError(f"循环结束必须连接 {name}")
+
+    copied_loop_metadata = {}
+    carry = initial_value
+    previous_dependencies = []
+    previous_progress = None
+    result_inputs = {"close_id": close_id}
+
+    for position, item in enumerate(items):
+        iteration = graph.node(
+            "LoopIteration", f"iteration_{position}",
+            iteration_index=position,
+            is_first=position == 0,
+            is_last=position == len(items) - 1,
+            list_item=item,
+            current_iteration_value=carry,
+            reuse_cache=False,
+            **{
+                f"dependency{index}": dep
+                for index, dep in enumerate(previous_dependencies)
+            },
+        )
+        iteration.set_override_display_id(opener_id)
+        frame = graph.node(
+            "TerryDirectorLoopFrame", f"frame_{position}",
+            segment=iteration.out(3),
+            previous_context=iteration.out(4),
+        )
+        frame.set_override_display_id(opener_id)
+
+        copies = {}
+        for node_id in sorted(body):
+            original = dynprompt.get_node(node_id)
+            copy = graph.node(original["class_type"], f"{position}_{node_id}")
+            copy.set_override_display_id(node_id)
+            copies[node_id] = copy
+
+        def copied_link(value):
+            if not is_link(value):
+                return value
+            if value[0] == opener_id:
+                if int(value[1]) != 0:
+                    raise ValueError("循环开始只暴露一个片段数据输出")
+                return frame.out(0)
+            if value[0] in copies:
+                return copies[value[0]].out(value[1])
+            return value
+
+        for node_id, copy in copies.items():
+            original = dynprompt.get_node(node_id)
+            for name, value in original.get("inputs", {}).items():
+                copy.set_input(name, copied_link(value))
+            if "_loop_end" in original:
+                copied_loop_metadata[copy.id] = {
+                    "_loop_body": [copies[n].id for n in original["_loop_body"]],
+                    "_loop_end": copies[original["_loop_end"]].id,
+                }
+
+        # The user-facing End node is not cloned. Add the existing Base cache
+        # adapter automatically inside the dynamic graph, once per segment.
+        cache = graph.node(
+            "TerryDirectorLoopCache", f"cache_{position}",
+            **{name: copied_link(end_inputs[name]) for name in required},
+        )
+        cache.set_override_display_id(close_id)
+        descriptor, carry = cache.out(0), cache.out(1)
+        result_inputs[f"output{position}"] = descriptor
+        previous_dependencies = [descriptor, carry]
+
+        progress_args = {
+            "start_id": opener_id,
+            "position": position + 1,
+            "total": len(items),
+            "dependency0": descriptor,
+            "dependency1": carry,
+        }
+        if previous_progress is not None:
+            progress_args["previous_progress"] = previous_progress
+        progress = graph.node("LoopProgress", f"progress_{position}", **progress_args)
+        previous_progress = progress.out(0)
+
+    if previous_progress is not None:
+        result_inputs["progress"] = previous_progress
+    result_inputs.update({
+        f"dependency{index}": dep
+        for index, dep in enumerate(previous_dependencies)
+    })
+    graph.node("LoopResult", "result", **result_inputs)
+    expanded = graph.finalize()
+    for node_id, metadata in copied_loop_metadata.items():
+        expanded[node_id].update(metadata)
+    return expanded
+
+
 class TerryDirectorLooper(StartLoop):
-    """The existing TerryDirector document drives native StartLoop List mode."""
+    """The same TerryDirector document now enters the loop through ONE port."""
 
     @classmethod
     def define_schema(cls):
@@ -111,7 +250,7 @@ class TerryDirectorLooper(StartLoop):
             loop_boundary="start",
             is_input_list=True,
             enable_expand=True,
-            description="复用导演时间线；每个未挂起片段循环执行一次外部原生 H3 节点组。",
+            description="按时间线逐段执行官方 H3 节点；片段数据已包含上一段上下文。",
             inputs=[
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
@@ -126,23 +265,9 @@ class TerryDirectorLooper(StartLoop):
                     default=DEFAULT_TAIL_REFERENCE_PROMPT, multiline=True,
                     dynamic_prompts=False, socketless=True,
                 ),
-                # Native StartLoop needs a real first carried value; otherwise its
-                # OUTPUT_IS_LIST context port can emit an empty list and skip
-                # the first iteration's consumers.
-                io.String.Input(
-                    "initial_iteration_value", default="{}",
-                    socketless=True,
-                ),
             ],
             outputs=[
-                io.Int.Output("iteration_index", display_name="循环序号"),
-                io.Boolean.Output("is_first", display_name="首段"),
-                io.Boolean.Output("is_last", display_name="末段"),
-                io.AnyType.Output("list_item", display_name="当前片段"),
-                io.AnyType.Output(
-                    "current_iteration_value",
-                    display_name="上一片段上下文", is_output_list=True,
-                ),
+                io.AnyType.Output("segment_data", display_name="片段数据"),
             ],
             hidden=[
                 io.Hidden.dynprompt, io.Hidden.execution_list, io.Hidden.unique_id,
@@ -150,36 +275,54 @@ class TerryDirectorLooper(StartLoop):
         )
 
     @classmethod
-    def execute(cls, seed, config_json, tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT, initial_iteration_value="{}"):
-        loop_id = _one(cls.hidden.unique_id)
+    def execute(cls, seed, config_json,
+                tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT):
+        loop_id = str(_one(cls.hidden.unique_id))
         items = _plan_items(
             _one(config_json), _one(seed), _one(tail_reference_prompt), loop_id
         )
-        return super().execute(
-            mode={"mode": ["List"], "list": items}, cache_iterations=False
+        dynprompt = cls.hidden.dynprompt
+        execution_list = cls.hidden.execution_list
+        loop = dynprompt.get_node(loop_id)
+        body = set(loop["_loop_body"])
+        end_id = loop["_loop_end"]
+        expanded = _expand_director_loop(
+            dynprompt, loop_id, body, end_id, items, "{}"
         )
+        end = dynprompt.get_node(end_id)
+        remaining_inputs = end["inputs"].copy()
+        for key in ("samples", "vae", "audio_vae", "segment_data"):
+            remaining_inputs.pop(key, None)
+        execution_list.add_node(end_id)
+        execution_list.add_external_block(end_id)
+        execution_list.inhibit_nodes(body)
+        dynprompt.override_node(
+            end_id,
+            {"class_type": end["class_type"], "inputs": remaining_inputs},
+        )
+        from server import PromptServer
+        PromptServer.instance.send_progress_text(
+            f"Iteration 0 / {len(items)}", loop_id
+        )
+        return io.NodeOutput(None, expand=expanded)
 
     @classmethod
     def fingerprint_inputs(cls, **kwargs):
-        # Each queue must recompile the timeline and rerun all active segments.
         return float("NaN")
 
 
-class TerryDirectorLoopMedia(io.ComfyNode):
+class TerryDirectorLoopInfo(io.ComfyNode):
     """Expose per-segment parameters and stable H3 reference-image sockets."""
 
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="TerryDirectorLoopMedia",
-            display_name="TerryDirector 循环媒体",
+            node_id="TerryDirectorLoopInfo",
+            display_name="TerryDirector 循环信息",
             category=CATEGORY,
             description="当前片段 Prompt / 时长 / 参考图自动映射到官方 H3 Reference to Video。",
             inputs=[
-                io.AnyType.Input("segment", display_name="当前片段"),
-                io.AnyType.Input(
-                    "previous_context", display_name="上一片段上下文",
-                ),
+                io.AnyType.Input("segment_data", display_name="片段数据"),
             ],
             outputs=[
                 io.String.Output(display_name="提示词"),
@@ -194,9 +337,11 @@ class TerryDirectorLoopMedia(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, segment, previous_context):
-        if not isinstance(segment, dict):
-            raise ValueError("循环媒体未收到有效片段数据")
+    def execute(cls, segment_data):
+        if not isinstance(segment_data, dict):
+            raise ValueError("循环信息未收到有效片段数据")
+        segment = segment_data["segment"]
+        previous_context = segment_data["previous_context"]
         assets = segment["assets"]
         if assets.get("videos") or assets.get("audios"):
             raise ValueError(
@@ -221,33 +366,34 @@ class TerryDirectorLoopMedia(io.ComfyNode):
             segment["prompt"],
             int(segment["h3_frames"]),
             int(segment["_loop"]["seed"]),
-            segment,
+            segment_data,
             *images,
         )
 
 
-class TerryDirectorLoopGuide(io.ComfyNode):
+class TerryDirectorLoopCondition(io.ComfyNode):
     """Conditionally apply official MiniMaxH3AddGuide to real prior context."""
 
     @classmethod
     def define_schema(cls):
         return io.Schema(
-            node_id="TerryDirectorLoopGuide",
-            display_name="TerryDirector 循环承接",
+            node_id="TerryDirectorLoopCondition",
+            display_name="TerryDirector 循环条件",
             category=CATEGORY,
             inputs=[
-                io.Conditioning.Input("positive"),
-                io.Latent.Input("latent"),
-                io.Vae.Input("vae"),
-                io.Vae.Input("audio_vae"),
-                io.AnyType.Input("segment"),
-                io.AnyType.Input("previous_context"),
+                io.Conditioning.Input("positive", display_name="正向条件"),
+                io.Latent.Input("latent", display_name="潜变量"),
+                io.Vae.Input("vae", display_name="视频VAE"),
+                io.Vae.Input("audio_vae", display_name="音频VAE"),
+                io.AnyType.Input("segment_data", display_name="片段数据"),
             ],
-            outputs=[io.Conditioning.Output(display_name="承接后正向条件")],
+            outputs=[io.Conditioning.Output(display_name="正向条件")],
         )
 
     @classmethod
-    def execute(cls, positive, latent, vae, audio_vae, segment, previous_context):
+    def execute(cls, positive, latent, vae, audio_vae, segment_data):
+        segment = segment_data["segment"]
+        previous_context = segment_data["previous_context"]
         continuity = segment["continuity"]
         kind = continuity["kind"]
         if kind in ("independent", "gap", "tail_reference"):
@@ -301,13 +447,14 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return io.Schema(
             node_id="TerryDirectorLoopCache",
             display_name="TerryDirector 循环缓存",
-            category=CATEGORY,
-            description="逐段无损 .pt 落盘，只传递需要的尾帧/重叠上下文。",
+            category="MiniMax H3/TerryDirector/Internal",
+            is_dev_only=True,
+            description="内部无损分段缓存与紧凑连续性上下文。",
             inputs=[
                 io.Latent.Input("samples", display_name="H3采样结果"),
                 io.Vae.Input("vae", display_name="视频VAE"),
                 io.Vae.Input("audio_vae", display_name="音频VAE"),
-                io.AnyType.Input("segment", display_name="片段数据"),
+                io.AnyType.Input("segment_data", display_name="片段数据"),
             ],
             outputs=[
                 io.String.Output(display_name="分段缓存"),
@@ -320,7 +467,8 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, samples, vae, audio_vae, segment):
+    def execute(cls, samples, vae, audio_vae, segment_data):
+        segment = segment_data["segment"]
         loop = segment["_loop"]
         assembly = segment["assembly"]
         result = TerryDirectorDecodeSegmentToCache.execute(
@@ -344,8 +492,9 @@ class TerryDirectorLoopCache(io.ComfyNode):
         )
 
 
-class TerryDirectorLoopEnd(EndLoop):
-    """Native EndLoop returns every lossless cache descriptor, in timeline order."""
+
+class TerryDirectorLoopEnd(io.ComfyNode):
+    """One public loop boundary: lossless cache, carry and final merge are private."""
 
     @classmethod
     def define_schema(cls):
@@ -356,38 +505,26 @@ class TerryDirectorLoopEnd(EndLoop):
             loop_boundary="end",
             is_input_list=True,
             is_output_node=True,
-            description="收集所有片段缓存；要输出合并音画可接 TerryDirector 循环合并。",
+            description=(
+                "每段自动无损缓存并向下一轮传递上下文；全部完成后"
+                "可选合并为 IMAGE / AUDIO。"
+            ),
             inputs=[
-                io.String.Input("output_value", display_name="分段缓存"),
-                io.AnyType.Input(
-                    "next_iteration_value", display_name="下一片段上下文",
+                io.Latent.Input("samples", display_name="H3采样结果"),
+                io.Vae.Input("vae", display_name="视频VAE"),
+                io.Vae.Input("audio_vae", display_name="音频VAE"),
+                io.AnyType.Input("segment_data", display_name="片段数据"),
+                io.Boolean.Input(
+                    "merge_output", display_name="合并输出",
+                    default=True, socketless=True,
+                    tooltip="默认合并为画面和音频；关闭时只保留无损 .pt 缓存。",
                 ),
-                io.Boolean.Input("accumulate", default=True, socketless=True),
-            ],
-            outputs=[
-                io.String.Output("outputs", is_output_list=True, display_name="分段缓存列表"),
-            ],
-            hidden=[io.Hidden.execution_list, io.Hidden.unique_id],
-        )
-
-
-class TerryDirectorLoopMerge(io.ComfyNode):
-    """Optional, fully lossless end-of-run materialization using existing Base code."""
-
-    @classmethod
-    def define_schema(cls):
-        return io.Schema(
-            node_id="TerryDirectorLoopMerge",
-            display_name="TerryDirector 循环合并",
-            category=CATEGORY,
-            is_input_list=True,
-            inputs=[
-                io.String.Input("segments", display_name="分段缓存列表"),
             ],
             outputs=[
                 io.Image.Output(display_name="合并画面"),
                 io.Audio.Output(display_name="合并音频"),
             ],
+            hidden=[io.Hidden.execution_list, io.Hidden.unique_id],
         )
 
     @classmethod
@@ -395,12 +532,31 @@ class TerryDirectorLoopMerge(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, segments):
-        values = [json.loads(x) for x in segments]
-        if not values:
-            raise ValueError("循环合并没有收到任何有效分段")
-        count = sum(int(item["frames"]) for item in values)
+    def execute(cls, merge_output=True, **kwargs):
+        # The native LoopResult releases this external block after all segment
+        # caches are ready; the actual loop-body sockets were removed by Start.
+        results = cls.hidden.execution_list.get_external_block_result(
+            _one(cls.hidden.unique_id)
+        )
+        descriptors = [item for group in results for item in group]
+        if not descriptors:
+            raise ValueError("循环结束没有收到任何已完成片段")
+        if not bool(_one(merge_output)):
+            print(
+                f"[TerryDirector Loop] {len(descriptors)} 段无损缓存已保存，"
+                "跳过最终合并。",
+                flush=True,
+            )
+            return io.NodeOutput(None, None)
+
+        total = 0
+        for raw in descriptors:
+            info = json.loads(str(raw))
+            total += int(info["frames"])
         return TerryDirectorMaterializeTimeline.execute(
-            segments={f"segment_{i}": raw for i, raw in enumerate(segments)},
-            expected_frames=count,
+            segments={
+                f"segment_{index}": raw
+                for index, raw in enumerate(descriptors)
+            },
+            expected_frames=total,
         )

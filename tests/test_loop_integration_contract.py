@@ -17,9 +17,9 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn("TerryDirectorSecondPassConfig", text)
         self.assertIn("from .director_trace import install", text)
         names = [
-            "TerryDirectorLooper", "TerryDirectorLoopMedia",
-            "TerryDirectorLoopGuide", "TerryDirectorLoopCache",
-            "TerryDirectorLoopEnd", "TerryDirectorLoopMerge",
+            "TerryDirectorLooper", "TerryDirectorLoopInfo",
+            "TerryDirectorLoopCondition", "TerryDirectorLoopFrame",
+            "TerryDirectorLoopCache", "TerryDirectorLoopEnd",
         ]
         for name in names:
             with self.subTest(node=name):
@@ -31,10 +31,15 @@ class LoopIntegrationContractTest(unittest.TestCase):
         root = ast.parse(text)
         klasses = {n.name: n for n in root.body if isinstance(n, ast.ClassDef)}
         self.assertEqual(klasses["TerryDirectorLooper"].bases[0].id, "StartLoop")
-        self.assertEqual(klasses["TerryDirectorLoopEnd"].bases[0].id, "EndLoop")
+        self.assertEqual(klasses["TerryDirectorLoopEnd"].bases[0].attr, "ComfyNode")
+        self.assertNotIn("TerryDirectorLoopMerge", klasses)
+        self.assertNotIn("TerryDirectorLoopMedia", klasses)
+        self.assertNotIn("TerryDirectorLoopGuide", klasses)
         self.assertIn("TerryDirectorDecodeSegmentToCache.execute", text)
         self.assertIn("TerryDirectorMaterializeTimeline.execute", text)
-        self.assertIn('"initial_iteration_value"', text)
+        self.assertIn('loop_boundary="start"', text)
+        self.assertIn('loop_boundary="end"', text)
+        self.assertIn("TerryDirectorLoopFrame", text)
         self.assertIn("prepare_base_run_cache(", text)
         self.assertNotIn("from .director_selflift", text)
 

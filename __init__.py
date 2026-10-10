@@ -15,11 +15,11 @@ from .director_node import (
 )
 from .director_loop import (
     TerryDirectorLooper,
-    TerryDirectorLoopMedia,
-    TerryDirectorLoopGuide,
+    TerryDirectorLoopInfo,
+    TerryDirectorLoopCondition,
     TerryDirectorLoopCache,
     TerryDirectorLoopEnd,
-    TerryDirectorLoopMerge,
+    TerryDirectorLoopFrame,
 )
 from .director_internal import (
     TerryDirectorCacheLatent,
@@ -50,11 +50,11 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorAdvanced,
             TerryDirectorOutput,
             TerryDirectorLooper,
-            TerryDirectorLoopMedia,
-            TerryDirectorLoopGuide,
+            TerryDirectorLoopInfo,
+            TerryDirectorLoopCondition,
             TerryDirectorLoopCache,
             TerryDirectorLoopEnd,
-            TerryDirectorLoopMerge,
+            TerryDirectorLoopFrame,
             TerryDirectorPackOutput,
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,

@@ -38,8 +38,16 @@ class DirectorLoopTests(unittest.TestCase):
         module = ast.parse(text)
         classes = {decl.name: decl for decl in module.body if isinstance(decl, ast.ClassDef)}
         self.assertEqual(classes["TerryDirectorLooper"].bases[0].id, "StartLoop")
-        self.assertEqual(classes["TerryDirectorLoopEnd"].bases[0].id, "EndLoop")
-        self.assertIn('"initial_iteration_value"', text)
+        self.assertEqual(classes["TerryDirectorLoopEnd"].bases[0].attr, "ComfyNode")
+        self.assertIn("TerryDirectorLoopFrame", classes)
+        self.assertIn("TerryDirectorLoopInfo", classes)
+        self.assertIn("TerryDirectorLoopCondition", classes)
+        self.assertNotIn("TerryDirectorLoopMerge", classes)
+        self.assertNotIn("TerryDirectorLoopMedia", classes)
+        self.assertNotIn("TerryDirectorLoopGuide", classes)
+        self.assertIn('TerryDirectorLoopFrame', text)
+        self.assertIn('loop_boundary="start"', text)
+        self.assertIn('loop_boundary="end"', text)
         self.assertIn('TerryDirectorDecodeSegmentToCache.execute(', text)
 
     def test_compiled_items_keep_next_overlap_only(self):
@@ -71,7 +79,7 @@ class DirectorLoopTests(unittest.TestCase):
         def load_image(item):
             seen.append(item["id"])
             return torch.zeros((1, 4, 4, 3))
-        ns = load_functions("TerryDirectorLoopMedia", context={
+        ns = load_functions("TerryDirectorLoopInfo", context={
             "_load_image": load_image, "_notify": lambda *args: None,
             "IMAGE_SLOTS": 9,
         })
@@ -82,12 +90,120 @@ class DirectorLoopTests(unittest.TestCase):
             "_loop": {"seed": 9, "loop_id": "22"},
         }
         tail = torch.ones((1, 4, 4, 3))
-        out = ns["TerryDirectorLoopMedia"].execute(segment, {"images": tail}).args
+        out = ns["TerryDirectorLoopInfo"].execute({"segment": segment, "previous_context": {"images": tail}}).args
         self.assertEqual(seen, ["four", "one"])
         self.assertEqual(out[:3], ("picture prompt", 107, 9))
         self.assertEqual(len(out), 13)
         self.assertTrue(torch.equal(out[6], tail))
         self.assertTrue(all(img is None for img in out[7:]))
+
+
+    def test_one_port_frame_keeps_current_segment_and_carried_context(self):
+        ns = load_functions("TerryDirectorLoopFrame")
+        cls = ns["TerryDirectorLoopFrame"]
+        segment = {"id": "clip-1", "_loop": {"seed": 1}}
+        first = cls.execute(segment, "{}")[0]
+        self.assertEqual(first["segment"], segment)
+        self.assertEqual(first["previous_context"], {})
+        last = {"images": "tail"}
+        later = cls.execute(segment, last)[0]
+        self.assertIs(later["previous_context"], last)
+
+    def test_native_graph_repeats_hidden_cache_and_carries_context(self):
+        class Node:
+            def __init__(self, cls, name, inputs):
+                self.cls = cls
+                self.id = name
+                self.inputs = inputs
+            def out(self, index):
+                return [self.id, index]
+            def set_override_display_id(self, _value):
+                pass
+            def set_input(self, name, value):
+                self.inputs[name] = value
+
+        class Builder:
+            def __init__(self):
+                self.nodes = {}
+            def node(self, cls, name, **kwargs):
+                assert name not in self.nodes, name
+                node = Node(cls, name, kwargs)
+                self.nodes[name] = node
+                return node
+            def finalize(self):
+                return {
+                    key: {"class_type": node.cls, "inputs": dict(node.inputs)}
+                    for key, node in self.nodes.items()
+                }
+
+        class DynPrompt:
+            def __init__(self):
+                self.nodes = {
+                    "start": {"class_type": "TerryDirectorLooper", "inputs": {}},
+                    "info": {"class_type": "TerryDirectorLoopInfo",
+                             "inputs": {"segment_data": ["start", 0]}},
+                    "sampler": {"class_type": "FakeSampler",
+                                "inputs": {"segment_data": ["info", 3]}},
+                    "end": {"class_type": "TerryDirectorLoopEnd",
+                            "inputs": {
+                                "samples": ["sampler", 0],
+                                "vae": ["external_video_vae", 0],
+                                "audio_vae": ["external_audio_vae", 0],
+                                "segment_data": ["info", 3],
+                                "merge_output": True,
+                            }},
+                }
+            def get_node(self, key):
+                return self.nodes[key]
+
+        ns = load_functions("_expand_director_loop", context={
+            "GraphBuilder": Builder,
+            "is_link": lambda v: isinstance(v, list) and len(v) == 2,
+        })
+        graph = ns["_expand_director_loop"](
+            DynPrompt(), "start", {"info", "sampler"}, "end",
+            [{"id": "a"}, {"id": "b"}], "{}",
+        )
+        self.assertEqual(graph["0_info"]["inputs"]["segment_data"], ["frame_0", 0])
+        self.assertEqual(graph["1_info"]["inputs"]["segment_data"], ["frame_1", 0])
+        self.assertEqual(graph["0_sampler"]["inputs"]["segment_data"], ["0_info", 3])
+        self.assertEqual(graph["cache_0"]["inputs"]["samples"], ["0_sampler", 0])
+        self.assertEqual(graph["cache_1"]["inputs"]["samples"], ["1_sampler", 0])
+        self.assertEqual(graph["iteration_1"]["inputs"]["current_iteration_value"], ["cache_0", 1])
+        self.assertEqual(graph["result"]["inputs"]["output0"], ["cache_0", 0])
+        self.assertEqual(graph["result"]["inputs"]["output1"], ["cache_1", 0])
+
+    def test_fused_end_materializes_once_or_retains_cache(self):
+        descriptions = [
+            json.dumps({"frames": 96, "path": "/virtual/1"}),
+            json.dumps({"frames": 72, "path": "/virtual/2"}),
+        ]
+        class Block:
+            def get_external_block_result(self, node_id):
+                assert node_id == "end"
+                return [[descriptions[0]], [descriptions[1]]]
+        class Materialize:
+            calls = []
+            @classmethod
+            def execute(cls, **kwargs):
+                cls.calls.append(kwargs)
+                return FakeNodeOutput("IMAGE", "AUDIO")
+        ns = load_functions("TerryDirectorLoopEnd", context={
+            "_one": lambda v: v[0] if isinstance(v, list) else v,
+            "json": json,
+            "TerryDirectorMaterializeTimeline": Materialize,
+        })
+        cls = ns["TerryDirectorLoopEnd"]
+        cls.hidden = types.SimpleNamespace(
+            unique_id=["end"], execution_list=Block()
+        )
+        out = cls.execute(merge_output=[True])
+        self.assertEqual(out.args, ("IMAGE", "AUDIO"))
+        self.assertEqual(Materialize.calls[0]["expected_frames"], 168)
+        self.assertEqual(len(Materialize.calls[0]["segments"]), 2)
+        out = cls.execute(merge_output=[False])
+        self.assertEqual(out.args, (None, None))
+        self.assertEqual(len(Materialize.calls), 1)
 
     def test_guide_independent_or_tail(self):
         import torch
@@ -98,15 +214,15 @@ class DirectorLoopTests(unittest.TestCase):
             def execute(cls, **kwargs):
                 calls.append(kwargs)
                 return FakeNodeOutput(["guided"])
-        ns = load_functions("TerryDirectorLoopGuide", context={"MiniMaxH3AddGuide": Guide})
-        cls = ns["TerryDirectorLoopGuide"]
+        ns = load_functions("TerryDirectorLoopCondition", context={"MiniMaxH3AddGuide": Guide})
+        cls = ns["TerryDirectorLoopCondition"]
         independent = cls.execute("original", "latent", "vae", "audio_vae",
-                                  {"continuity": {"kind": "independent"}}, "{}")
+                                  {"segment": {"continuity": {"kind": "independent"}}, "previous_context": {}})
         self.assertEqual(independent[0], "original")
         self.assertEqual(len(calls), 0)
         ctx = {"images": torch.ones((1, 4, 4, 3)), "audio": {"waveform": None}}
         guided = cls.execute("original", "latent", "vae", "audio_vae",
-                             {"continuity": {"kind": "tail_frame"}}, ctx)
+                             {"segment": {"continuity": {"kind": "tail_frame"}}, "previous_context": ctx})
         self.assertEqual(guided[0], ["guided"])
         self.assertEqual(calls[-1]["frame_idx"], 0)
 
@@ -129,7 +245,7 @@ class DirectorLoopTests(unittest.TestCase):
                 "signature": "test", "context_frames": 12, "loop_id": "22",
             },
         }
-        out = ns["TerryDirectorLoopCache"].execute("samples", "vae", "audio", segment)
+        out = ns["TerryDirectorLoopCache"].execute("samples", "vae", "audio", {"segment": segment, "previous_context": {}})
         self.assertEqual(out[0], "descriptor")
         self.assertEqual(out[1], {"images": "tail", "audio": "audio"})
         self.assertEqual(calls[0]["output_frames"], 96)

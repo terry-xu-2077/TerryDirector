@@ -1,5 +1,12 @@
 # 内置 Self-Lift 主分支与原生 H3 循环器整合验收
 
+## 双边界简化（2026-10-10）
+
+用户确认：循环开始只显示「片段数据」一个输出，不再显示循环序号/首段/末段或上一片段上下文；循环媒体改名「TerryDirector 循环信息」，其唯一输入叫「片段数据」；循环承接改名「TerryDirector 循环条件」，端口中文化，输入「片段数据」；删除用户可见的循环缓存/合并节点，将无损逐段缓存、context carry 与最终一次性合并纳入「TerryDirector 循环结束」。
+
+结束节点接收 H3采样结果 / 视频VAE / 音频VAE / 片段数据，直接输出合并画面/合并音频；「合并输出」默认开启，关闭时只保存 .pt。内部 LoopFrame、LoopCache 在 ComfyUI dev-only 分类注册，不作为用户手工接线节点。完整结构以 [29 文档](29_NATIVE_H3_TIMELINE_LOOP.md) 为准；旧三节点工作流不再适用，测试须使用新版 JSON。
+
+
 状态：整合候选（等待本地短流程 GPU 验收）；不改变已经通过的 Self-Lift / Base / Advanced 运行路径。
 基线：`main@dd67aa0fe9b37af2b13897dee9e7e2beb67bfb36`。
 源分支：`feat/timeline-loop-native-h3@8f2ba299c1f8cd2b4e90629b2de9b16a45c9c29b`。
