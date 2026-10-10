@@ -1,0 +1,266 @@
+{
+  "schema": "selflift_attention_backend_audit_v1",
+  "audit_commit": "60c483a3e9a665eb35d174e9676fe5509f50906e",
+  "generation_submitted": false,
+  "submission_count": 0,
+  "source_prompt_id": "13cb6203-424c-43ec-bc39-bb3bfb50eb3b",
+  "request_sha256": "36edcdc2b61bfd6d96d0fe415ebd7630b663b7a017e82563a3b211e309691ebf",
+  "history_sha256": "2b08ccd26f38eb2a22a0e889b2eae02a90b2f7e66fc234f91145f88c0701171c",
+  "log_sha256": {
+    "selflift_lowvram_clip1_comfy_stdout.log": "224c58878d3be93542717af780ed44a8e27584f673ba3025b450ac281eae423b",
+    "selflift_lowvram_clip1_comfy_stderr.log": "ff434a637f1f2c337832217fae24f392ef92d98c9c4a85e1023fc31d713836f1"
+  },
+  "historical_status": "success",
+  "environment": {
+    "python": "3.12.13",
+    "packages": {
+      "torch": "2.11.0+cu128",
+      "sageattention": "2.2.0+cu130torch2.10.0andhigher.post5",
+      "comfy-kitchen": "0.2.37",
+      "triton-windows": "3.7.1.post27"
+    },
+    "comfyui_git_head": "b26625f23a888367b92153b28d93e159e83e677b",
+    "comfyui_logged_version": "0.39.0",
+    "kjnodes_git_head": "3f20054214fec9f9234fd3841ae6f1e4287948f6",
+    "device": "NVIDIA GeForce RTX 3090",
+    "compute_capability": "8.6",
+    "source_file_sha256": {
+      "kj_sage": {
+        "relative_file": "custom_nodes/comfyui-kjnodes/nodes/model_optimization_nodes.py",
+        "sha256": "5317c12100a1701425a07b00bd9af6277d45101a37d82d0a3a9d75945011e51e"
+      },
+      "kj_lowvram": {
+        "relative_file": "custom_nodes/comfyui-kjnodes/nodes/minimax_nodes.py",
+        "sha256": "c371576b1bb31a2f518bdb4ceda43cb10b20338f0c9d68f99ed1be76ce06478f"
+      },
+      "comfy_attention": {
+        "relative_file": "comfy/ldm/modules/attention.py",
+        "sha256": "0daaf02f21578bbb4d913002a4a2c1a7610c3a585d7ebfe8d2a9025822c054f0"
+      },
+      "comfy_patcher": {
+        "relative_file": "comfy/model_patcher.py",
+        "sha256": "fc43f038835aeded2e64a0490f9d37795fb9d3c9490d9210ba11f1201aec4fd8"
+      },
+      "comfy_h3": {
+        "relative_file": "comfy/ldm/minimax/model.py",
+        "sha256": "4d3b28b1026a0b90ae67c28d42d7aab141f78216e407ba9cfa74a93558c57070"
+      },
+      "comfy_backend_node": {
+        "relative_file": "comfy_extras/nodes_model_advanced.py",
+        "sha256": "8308f07f95938c2156136553ffd1e81b13e71aa6955c71f48c64404bdf91fe1c"
+      },
+      "terry_selflift": {
+        "relative_file": "custom_nodes/TerryDirector/director_selflift.py",
+        "sha256": "8d45fdfb41db0fa3f72f1d02ee99c0c1209dd3f339286ab075ad74e88f76830f"
+      },
+      "sage_init": {
+        "relative_file": ".venv/Lib/site-packages/sageattention/__init__.py",
+        "sha256": "9b178247cd22cc2c00114f445ee711c229745193ecda98d397a051e6f889326a"
+      },
+      "sage_core": {
+        "relative_file": ".venv/Lib/site-packages/sageattention/core.py",
+        "sha256": "630ff7f7566ccc8da2c765f5276f6ac1c82534a7bb204d3c0d8f9652af6de598"
+      },
+      "sage_sm80": {
+        "relative_file": ".venv/Lib/site-packages/sageattention/sm80_compile.py",
+        "sha256": "eaf60a8242c194c1d900e5ac2656bd8955386f06d91a9579ed4260a0c6779097"
+      },
+      "kitchen_init": {
+        "relative_file": ".venv/Lib/site-packages/comfy_kitchen/__init__.py",
+        "sha256": "a6cc073c46db51f1ff055065daa809ab217d642adfc8b0f552be049bbe18b4a3"
+      },
+      "kitchen_attention": {
+        "relative_file": ".venv/Lib/site-packages/comfy_kitchen/sage_attention.py",
+        "sha256": "565bab9b3ab7ce81a06f761812f7a775a465cebf20fecf15c9fd39590b6338b8"
+      },
+      "kitchen_cuda": {
+        "relative_file": ".venv/Lib/site-packages/comfy_kitchen/backends/cuda/__init__.py",
+        "sha256": "27ef9c1063a3dcdee6e05928e07588ed82f076b64c07c131d987d065ab4c50ac"
+      }
+    }
+  },
+  "model_chain": {
+    "node_ids": {
+      "unet": "333",
+      "lora": "332",
+      "sage": "312",
+      "lowvram": "220",
+      "ffn": "219",
+      "director_config": "304",
+      "second_pass": "930010",
+      "advanced": "9600328"
+    },
+    "sage_mode": "auto",
+    "allow_compile": false,
+    "head_chunks": 4,
+    "ffn_chunks": 2,
+    "ffn_seq_threshold": 4096,
+    "independent_high_res_model_connected": false
+  },
+  "candidate_dispatch": {
+    "current_request": "KJ PathchSageAttentionKJ(auto) -> sageattention.sageattn -> sm86 sageattn_qk_int8_pv_fp16_cuda if installed source matches historical process, qkv inputs valid and no other later override; LowVRAM divides heads into up to 4 groups.",
+    "attachment_saved_choice": "ModelAttentionBackend(comfy kitchen attention) -> registry comfy_kitchen_int8 -> attention_comfy_kitchen_int8 -> comfy_kitchen.int8_attention -> CUDA extension if registered and runtime inputs valid; otherwise explicit PyTorch fallback at node selection, or low_precision_attention=false with FP32.",
+    "observed_leaf": "NOT_OBSERVED"
+  },
+  "claims": [
+    {
+      "id": "actual_request_model_chain",
+      "conclusion": "Report 40 request routes UNET -> LoRA -> KJ Sage auto -> LowVRAM(4) -> FFN(2/4096) -> DirectorConfig; no independent high_res_model.",
+      "evidence": [
+        {
+          "level": "request",
+          "relative_file": "output/.terrydirector_diag/selflift_lowvram_attention_clip1_request.json",
+          "lines": "L1; prompt node keys 333,332,312,220,219,304,930010,9600328",
+          "excerpt": "sage_attention=auto; allow_compile=false; head_chunks=4; chunks=2; seq_threshold=4096"
+        }
+      ]
+    },
+    {
+      "id": "sage_auto_export",
+      "conclusion": "KJ get_sage_func(auto) imports sageattention.sageattn, exported from local core.py; allow_compile=false wraps torch.compiler.disable, not Sage disable.",
+      "evidence": [
+        {
+          "level": "source_inference",
+          "relative_file": "custom_nodes/comfyui-kjnodes/nodes/model_optimization_nodes.py",
+          "lines": "28-33,57-60,123-135",
+          "excerpt": "from sageattention import sageattn; optimized_attention_override=attention_override_sage"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": ".venv/Lib/site-packages/sageattention/__init__.py",
+          "lines": "1",
+          "excerpt": "from .core import sageattn"
+        }
+      ]
+    },
+    {
+      "id": "sage_sm86_dispatch",
+      "conclusion": "With local installed source and sm86 device, sageattn candidate is sageattn_qk_int8_pv_fp16_cuda, pv_accum_dtype=fp32; leaf defaults qk_quant_gran=per_thread, smooth_k=true, smooth_v=false.",
+      "evidence": [
+        {
+          "level": "runtime_observed",
+          "relative_file": "output/.terrydirector_diag/selflift_lowvram_clip1_comfy_stderr.log",
+          "lines": "41,44",
+          "excerpt": "Device: cuda:0 NVIDIA GeForce RTX 3090; Using sage attention"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": ".venv/Lib/site-packages/sageattention/core.py",
+          "lines": "62-71,93-101,157-161,436-448,527-545,549-590",
+          "excerpt": "sm86 -> sageattn_qk_int8_pv_fp16_cuda(... pv_accum_dtype=\"fp32\")"
+        }
+      ]
+    },
+    {
+      "id": "sage_kwargs_loss",
+      "conclusion": "KJ passes attn_mask (None on LowVRAM path) to sageattn; local dispatcher accepts **kwargs but does not forward them to sm86 leaf. Thus mask/smooth_k cannot be assumed effective through auto; leaf smooth_k defaults true.",
+      "evidence": [
+        {
+          "level": "source_inference",
+          "relative_file": "custom_nodes/comfyui-kjnodes/nodes/model_optimization_nodes.py",
+          "lines": "61-90",
+          "excerpt": "sage_func(... attn_mask=mask, is_causal=False, tensor_layout=tensor_layout)"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": ".venv/Lib/site-packages/sageattention/core.py",
+          "lines": "93-101,157-161,436-448",
+          "excerpt": "**kwargs accepted; sm86 call omits **kwargs and attn_mask"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": "custom_nodes/comfyui-kjnodes/nodes/minimax_nodes.py",
+          "lines": "121-131",
+          "excerpt": "optimized_attention(... mask=None, skip_reshape=True, transformer_options=...)"
+        }
+      ]
+    },
+    {
+      "id": "override_priority",
+      "conclusion": "Comfy wrap_attn uses transformer_options.optimized_attention_override before checkpoint preferred_attention and global backend; LowVRAM adds head_chunks and forward patches; FFN patches MLP forward separately.",
+      "evidence": [
+        {
+          "level": "source_inference",
+          "relative_file": "comfy/ldm/modules/attention.py",
+          "lines": "206-244",
+          "excerpt": "optimized_attention_override before preferred_attention"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": "custom_nodes/comfyui-kjnodes/nodes/minimax_nodes.py",
+          "lines": "173-203",
+          "excerpt": "minimax_head_chunks and attn/block object patches"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": "comfy/ldm/minimax/model.py",
+          "lines": "174-200,292-298,755-770",
+          "excerpt": "transformer_options passed into H3 blocks and attention"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": "comfy/model_patcher.py",
+          "lines": "431-455",
+          "excerpt": "clone copies object_patches and deep-copies model_options"
+        }
+      ]
+    },
+    {
+      "id": "kitchen_candidate",
+      "conclusion": "Original attachment saved Kitchen label; local ModelAttentionBackend maps it to comfy_kitchen_int8 and sets model override if registered, otherwise warns and chooses PyTorch. Current read-only menu includes Kitchen, not evidence of historical Kitchen kernel execution.",
+      "evidence": [
+        {
+          "level": "reference_record",
+          "relative_file": "custom_nodes/TerryDirector/docs/41_SELFLIFT_ATTENTION_BACKEND_AUDIT.md",
+          "lines": "16-21",
+          "excerpt": "attachment node 148 saved comfy kitchen attention; actual report40 request uses Sage auto"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": "comfy_extras/nodes_model_advanced.py",
+          "lines": "374-413",
+          "excerpt": "comfy kitchen attention -> comfy_kitchen_int8; unavailable -> PyTorch warning"
+        },
+        {
+          "level": "source_inference",
+          "relative_file": "comfy/ldm/modules/attention.py",
+          "lines": "944-951",
+          "excerpt": "Kitchen function registered when availability check passes"
+        },
+        {
+          "level": "runtime_observed",
+          "relative_file": "current /object_info/ModelAttentionBackend",
+          "lines": "attention options",
+          "excerpt": "pytorch attention; comfy kitchen attention"
+        }
+      ]
+    },
+    {
+      "id": "history_observation_limit",
+      "conclusion": "Historical run directly records KJ auto configuration, model loading, 208 attached patches, 5+1 completion and success; no leaf/kernel call identity or head-group count.",
+      "evidence": [
+        {
+          "level": "runtime_observed",
+          "relative_file": "output/.terrydirector_diag/selflift_lowvram_clip1_comfy_stderr.log",
+          "lines": "240,251-253,272,279,284",
+          "excerpt": "Using sage attention mode: auto; 208 patches attached; completed low=5 high=1"
+        },
+        {
+          "level": "runtime_observed",
+          "relative_file": "output/.terrydirector_diag/selflift_lowvram_attention_clip1_history.json",
+          "lines": "status.messages",
+          "excerpt": "execution_start; execution_success; success"
+        }
+      ]
+    }
+  ],
+  "unknowns": [
+    "Exact sageattention package version/hash loaded by historical PID 32720 was not logged.",
+    "Historical q/k/v dtype, head_dim, strides, sequence lengths and effective per-call transformer_options were not recorded.",
+    "No per-call Sage leaf, Kitchen attention kernel, head-group, or fallback trace exists in the supplied logs.",
+    "Original attachment bytes were not found locally; saved fields are taken from docs/41 reference and not rehashed in this audit.",
+    "Current Kitchen menu/registration does not prove the attachment was ever executed or all shapes pass validation."
+  ],
+  "recommendation": "If continuing, first design one fixed-request sampling-operator attribution capture in a later, separately authorized run; do not switch backends from this audit alone.",
+  "redaction": "All evidence paths are relative to ComfyUI root or repository; no prompts, source asset paths, or weights copied."
+}
