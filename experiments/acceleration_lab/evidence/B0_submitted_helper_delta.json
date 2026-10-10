@@ -1,0 +1,20 @@
+{
+  "schema": "acceleration_lab_submitted_helper_delta_v1",
+  "source": "lab_nodes.py",
+  "direction": "Apply these three reverse edits to the committed post-fix file to reconstruct the B0-submitted version.",
+  "edits": [
+    {
+      "post_fix": "from . import av_store\nfrom . import frozen\n",
+      "submitted": "from . import av_store\n"
+    },
+    {
+      "post_fix": "        _refine_sigmas = frozen.refine_sigmas()\n",
+      "submitted": "        from TerryDirector.director_node import _refine_sigmas\n"
+    },
+    {
+      "post_fix": "        ComfyBackend, sample_selflift = frozen.selflift_core()\n",
+      "submitted": "        from TerryDirector.director_selflift import ComfyBackend, sample_selflift\n"
+    }
+  ],
+  "reconstructed_submitted_sha256": "a15a85a45109478979112103e83fb45c3e3fd418bc8d5dbf49b272a1953d9191"
+}

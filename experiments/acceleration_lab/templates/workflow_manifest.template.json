@@ -1,0 +1,13 @@
+{
+  "schema": "terry_accel_lab_sanitized_manifest_template_v1",
+  "runnable": false,
+  "source_request_sha256": "fa15bd5cc127969374d565f2caad664dd9bdc0c41e800c5f59521544328e5a64",
+  "private_fields_omitted": ["final_prompt", "global_prompt", "clip_prompt", "asset_paths", "absolute_model_paths"],
+  "variants": {
+    "B0": "Kitchen + LowVRAM(4) + FFN(2/4096), 4-second Self-Lift",
+    "B1": "B0 plus native Sol-Attn preset only",
+    "V0": "B0 full AV latent, current video VAE decode only",
+    "V1": "Same B0 full AV latent, official INT8 video VAE decode only"
+  },
+  "note": "Run build_workflows.py against the private verified request to create four executable UI/API pairs under local/workflows."
+}
