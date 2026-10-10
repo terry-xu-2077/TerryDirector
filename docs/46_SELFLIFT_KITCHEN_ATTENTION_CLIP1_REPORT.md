@@ -66,3 +66,13 @@
 - 请求/白名单差异/提交响应/history/阶段汇总：`G:\AIGC\ComfyUI_Codex\ComfyUI\output\.terrydirector_diag\selflift_kitchen_attention_clip1_{request,request_diff,submit_response,history,stage_summary}.json`（实际五个文件名分别见脱敏 JSON）。
 - 真实阶段 trace：`G:\AIGC\ComfyUI_Codex\output\.terrydirector_trace\trace-28780-c37e269ecd37419bb24c4c53db96ce1d.jsonl`。轻量观测原始数据：`G:\AIGC\ComfyUI_Codex\output\.terrydirector_backend_verify\kitchen-28780.jsonl`。实际服务 stdout/stderr：`G:\AIGC\ComfyUI_Codex\ComfyUI\output\.terrydirector_diag\selflift_kitchen_clip1_comfy_stdout.log`、`selflift_kitchen_clip1_comfy_stderr.log`。stderr L254/L270显示 H3 的208个补丁，L282显示任务完成；启动时其它自定义节点的 traceback 与本任务成功状态分开保留。
 - 轻量源码 `tools/selflift_kitchen_backend_verify.py` 由 `director_trace.py` 默认关闭的入口安装；`TERRYDIRECTOR_TRACE=1` 且 `TERRYDIRECTOR_BACKEND_VERIFY=1` 才启用。窗口结束即撤销真实别名包装，异常时保留原异常。结束后队列空闲，已用原参数恢复服务 PID 37276，诊断与阶段 trace 开关均关闭；`/queue` 为空，TerryDirector 正常导入。
+
+## 人工画面验收补充（2026-10-10）
+
+用户已观看本报告对应的 `TerryDirector_SelfLift_Kitchen_Clip1_00001_.mp4`，明确确认：**“我看了，画质挺好的，质量上无问题”。该 Kitchen 单段成片的画面质量人工验收通过。**
+
+上文及配套 JSON 中的“待人工确认”保留为 Codex 自动检查时的原始记录；画面质量的当前结论由本节补充更新。本次确认针对成片画面整体，不补造逐项运动/闪烁测量；用户未单独确认声音内容及声画同步，这两项不随画面结论自动改为通过。
+
+保留本轮成功配置作为后续单段性能优化的已验证基线：原 ref2va INT8 模型与 ref2v LoRA → `ModelAttentionBackend(comfy kitchen attention)` → `MiniMaxLowVRAMAttention(head_chunks=4)` → `MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)` → 导演配置；1920×1088 原尺寸不裁剪，原提示词、七项资产、Seed 与 Self-Lift 参数均不变。
+
+本次画面确认不改变一次历史速度对照的证据范围：采样耗时减少 15.53%、整任务减少 12.47% 仍仅对应上述单段测试，不代表三段或任意时长已验收，也不代表速度问题已全部解决。本次只追加本节，不改采样代码或默认后端、不写回原正式工作流、不追加生成、不合并 `main`。
