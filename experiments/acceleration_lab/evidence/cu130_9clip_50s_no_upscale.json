@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "experiment": "cu130_9clip_50s_no_upscale",
+  "task": {
+    "branch": "feat/selflift-internal",
+    "head": "7890a1cdb957aa1fc3d23ab93b6825669761baf4",
+    "contains_requested_commit": "7890a1c",
+    "stable_source_commit": "d1cf6110d222c210a677d6075e6f2c11560db3c4",
+    "main_merged": false
+  },
+  "workflow": {
+    "source": "report25 matching TerryDirector UI workflow; API payload reconstructed because original payload was not saved",
+    "original_sha256": "CB8C153CEC3141F839E365EDC49BC223779DF46A0EF055E5629668B14FF87FD7",
+    "private_copy_sha256": "DA4617B150FBDCE0D242224EB1091539F24375536178FCDCC3E90877A81D1357",
+    "only_workflow_difference": "megapixels 0.2 to 0.5",
+    "prompt_sha256": "F694358C1A2026577477259C4D04A90572CFABD4746103FBA7AC417A02729ABA",
+    "advanced_config_sha256": "6560D7C833470497BA383F81A7948366FE9F435EE14BE2515541AAEFAD15CFE3",
+    "assets_count": 7,
+    "asset_sha256": [
+      "353CD43C10431AEFB9B12DB035156B24FD90783DA1036C3F210B7749A0979A27",
+      "12462DC2AA2F96EBACBA043EB402FD5B5A1DEA7706626FE1676FF65A560FC2D6",
+      "D7F9954A139F020B5F8F7AAABC5A33F1DE1FECFC8103D4942F00A9EDFC6B528A",
+      "0A12CD63729D57FA38E2FE359962C8D449A53FAFB2DB5D83C6C32EA3DC0DA0FF",
+      "B2657E277D29C4928ED115F6AB35216AE89902A91797F905F3C0A0EEB214BCBA",
+      "678C19A7AA9B1D975C6E77135260186CF020F753D079C75ECA4720ED39666AD2",
+      "9416EF4F0B63902D0D6738C26EE0AA457FACFED2F0F4072BB8ADBAD4C5DC7BB5"
+    ],
+    "segments": [
+      {"id":"clip-1","start":0,"end":96,"frames":96,"transition":"tail_continuation","checkpoint_bytes":6314501,"lossless_cache_mb":574.7,"lossless_log_seconds":8.981},
+      {"id":"clip-2","start":96,"end":168,"frames":72,"transition":"tail_reference","checkpoint_bytes":4341765,"lossless_cache_mb":431.0,"lossless_log_seconds":6.386},
+      {"id":"clip-3","start":168,"end":288,"frames":120,"transition":"tail_reference","checkpoint_bytes":7301125,"lossless_cache_mb":718.4,"lossless_log_seconds":10.039},
+      {"id":"clip-4","start":288,"end":432,"frames":144,"transition":"tail_reference","checkpoint_bytes":9273861,"lossless_cache_mb":862.1,"lossless_log_seconds":12.418},
+      {"id":"clip-5","start":432,"end":600,"frames":168,"transition":"tail_reference","checkpoint_bytes":10260485,"lossless_cache_mb":1005.8,"lossless_log_seconds":13.771},
+      {"id":"clip-6","start":600,"end":768,"frames":168,"transition":"tail_reference","checkpoint_bytes":10260485,"lossless_cache_mb":1005.8,"lossless_log_seconds":13.789},
+      {"id":"clip-7","start":768,"end":912,"frames":144,"transition":"tail_reference","checkpoint_bytes":9273861,"lossless_cache_mb":862.1,"lossless_log_seconds":12.492},
+      {"id":"clip-8","start":912,"end":1056,"frames":144,"transition":"tail_reference","checkpoint_bytes":9273861,"lossless_cache_mb":862.1,"lossless_log_seconds":12.483},
+      {"id":"clip-9","start":1056,"end":1200,"frames":144,"transition":"tail_reference","checkpoint_bytes":9273861,"lossless_cache_mb":862.1,"lossless_log_seconds":12.486}
+    ]
+  },
+  "request": {
+    "prompt_id": "25572e77-ff47-4d02-aa27-f4412150b67d",
+    "client_id": "20cf31c1-41d9-4af5-81fb-97d67893fcac",
+    "request_sha256": "9A2EAB6242C4B223D47F1BEAAED2109F35DE8E993227908C3CBE66E4B11372DE",
+    "submission_count": 1,
+    "queue_number": 0,
+    "node_errors": {},
+    "active_api_nodes": [
+      "UNETLoader",
+      "LoraLoaderModelOnly",
+      "PathchSageAttentionKJ",
+      "CLIPLoader",
+      "VAELoader",
+      "VAELoader",
+      "TerryDirectorConfig",
+      "TerryDirectorAdvanced"
+    ],
+    "resolution": {"megapixels":0.5,"aspect_ratio":"16:9","multiple":32,"width":960,"height":544},
+    "fps": 24,
+    "frames": 1200,
+    "duration_seconds": 50.0,
+    "seed": 9,
+    "preview": false,
+    "sampler": "res_multistep",
+    "scheduler": "simple",
+    "steps": 4,
+    "denoise": 1.0,
+    "attention": "Sage auto",
+    "second_pass": false,
+    "upscale": false,
+    "sol_in_model_chain": false
+  },
+  "environment": {
+    "python": "3.12.13",
+    "pytorch": "2.11.0+cu130",
+    "torch_cuda_runtime": "13.0",
+    "comfyui_version": "0.39.0",
+    "comfyui_commit": "b26625f23a888367b92153b28d93e159e83e677b",
+    "kjnodes_commit": "3f20054214fec9f9234fd3841ae6f1e4287948f6",
+    "comfy_kitchen_version": "0.2.37",
+    "sageattention_version": "2.2.0+cu130torch2.10.0andhigher.post5",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "driver": "591.74",
+    "experimental_port": 8190,
+    "formal_port_restarted": false
+  },
+  "execution": {
+    "status": "success",
+    "completed": true,
+    "execution_start_unix_ms": 1791621459590,
+    "execution_success_unix_ms": 1791622565926,
+    "duration_seconds": 1106.336,
+    "final_encode_seconds": 21.284,
+    "stdout_prompt_executed": "00:18:26"
+  },
+  "comparison": {
+    "report25_prompt_total_seconds": 2012.94,
+    "report25_history_timestamp_delta_seconds": 2011.11,
+    "report25_timestamp_delta_difference_seconds": 1.83,
+    "new_prompt_seconds": 1106.336,
+    "reduced_seconds": 906.604,
+    "reduction_percent": 45.038799,
+    "speed_multiplier": 1.819465,
+    "report25_final_encode_seconds": 20.949,
+    "new_final_encode_seconds": 21.284,
+    "sol_gain_included": false
+  },
+  "output": {
+    "relative_path": "video/TerryDirector_00001_.mp4",
+    "bytes": 23882424,
+    "sha256": "BA56CCFA089EF2CD0B4D8E1B93D185A7DBFB3C35AFA316B4A2B3CB57BEA7302F",
+    "video_codec": "H.264 High",
+    "audio_codec": "AAC-LC",
+    "audio_sample_rate_hz": 32000,
+    "audio_channels": 2,
+    "full_audio_video_decode_exit_code": 0,
+    "history_metadata": {"width":960,"height":544,"fps":24.0,"frame_count":1200,"duration_seconds":50.0},
+    "checkpoint_count": 9,
+    "checkpoint_total_bytes": 75573805,
+    "lossless_pixel_cache_cleaned": true,
+    "visual_audio_human_review": "pending"
+  },
+  "monitoring": {
+    "sampling_interval_seconds": 10,
+    "comfyui_pid": 20772,
+    "rss_peak_bytes_sampled": 11618287616,
+    "rss_peak_mib_sampled": 11080.1,
+    "system_ram_peak_used_percent_sampled": 52.92,
+    "gpu_memory_peak_mib_sampled": 23826,
+    "gpu_memory_total_mib": 24576,
+    "gpu_utilization_peak_percent_sampled": 100,
+    "runtime_files_peak_bytes_sampled": 7608649878,
+    "rss_gpu_monitor_start_delay_seconds": 79,
+    "ram_monitor_start_delay_seconds": 134,
+    "note": "Sampled peaks only; initial interval is not covered. Runtime file total includes cache and output artifacts."
+  },
+  "review": {
+    "visual_quality": "pending_manual_confirmation",
+    "eight_clip_boundaries": "pending_manual_confirmation",
+    "audio_content_and_sync": "pending_manual_confirmation",
+    "listened_or_watched_by_operator": false
+  }
+}
