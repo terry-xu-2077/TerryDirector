@@ -40,6 +40,13 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
         self.assertIn("TerryDirectorLoopFrame", text)
+        # End's body links are intentionally optional in its schema because
+        # LoopStart removes them when installing the native external block.
+        end_section = text.split("class TerryDirectorLoopEnd(io.ComfyNode):", 1)[1]
+        for name in ("samples", "vae", "audio_vae", "segment_data"):
+            with self.subTest(end_optional=name):
+                self.assertIn('Input("' + name + '"', end_section)
+        self.assertGreaterEqual(end_section.count("optional=True"), 4)
         self.assertIn("prepare_base_run_cache(", text)
         self.assertNotIn("from .director_selflift", text)
 

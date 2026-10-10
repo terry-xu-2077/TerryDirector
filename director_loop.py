@@ -510,10 +510,10 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                 "可选合并为 IMAGE / AUDIO。"
             ),
             inputs=[
-                io.Latent.Input("samples", display_name="H3采样结果"),
-                io.Vae.Input("vae", display_name="视频VAE"),
-                io.Vae.Input("audio_vae", display_name="音频VAE"),
-                io.AnyType.Input("segment_data", display_name="片段数据"),
+                io.Latent.Input("samples", display_name="H3采样结果", optional=True),
+                io.Vae.Input("vae", display_name="视频VAE", optional=True),
+                io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
+                io.AnyType.Input("segment_data", display_name="片段数据", optional=True),
                 io.Boolean.Input(
                     "merge_output", display_name="合并输出",
                     default=True, socketless=True,
