@@ -1,0 +1,111 @@
+{
+  "schema": "terry_acceleration_lab_plan_v1",
+  "status": "awaiting_local_workflow_build_and_gpu_test",
+  "branch": "feat/selflift-internal",
+  "frozen_production_commit": "0c82cd7bfb2de963304479eda86e02513e106da0",
+  "allowed_changed_paths": [
+    "experiments/acceleration_lab/**",
+    "docs/47_ACCELERATION_LAB_TEST.md"
+  ],
+  "source_request": {
+    "report": "docs/46_SELFLIFT_KITCHEN_ATTENTION_CLIP1_REPORT.md",
+    "filename": "selflift_kitchen_attention_clip1_request.json",
+    "sha256": "fa15bd5cc127969374d565f2caad664dd9bdc0c41e800c5f59521544328e5a64"
+  },
+  "fixed": {
+    "width": 1920,
+    "height": 1088,
+    "spatial_crop": false,
+    "fps": 24,
+    "output_frames": 96,
+    "historical_h3_frames": 107,
+    "seed": 1000,
+    "asset_count": 7,
+    "cfg": 1.0,
+    "transition_step": 5,
+    "lowres_scale": 0.5,
+    "sampler": "euler",
+    "scheduler": "simple",
+    "steps": 6,
+    "denoise": 1.0,
+    "sigma_refine": {
+      "enabled": true,
+      "extra_steps": 1,
+      "start": 0.7,
+      "end": 0.0,
+      "spacing": "cosine"
+    },
+    "rho": 0.0,
+    "w_min": 0.5,
+    "w_max": 1.0,
+    "highres_tiling": false,
+    "independent_high_res_model": false,
+    "dense_attention": "comfy kitchen attention",
+    "lowvram_head_chunks": 4,
+    "ffn_chunks": 2,
+    "ffn_seq_threshold": 4096
+  },
+  "variants": [
+    {
+      "id": "B0",
+      "kind": "standalone_dense",
+      "max_generation_submissions": 1,
+      "output_ui_file": "Lab_B0_Dense_Clip1.json"
+    },
+    {
+      "id": "B1",
+      "kind": "standalone_sol_attn",
+      "requires": "B0_success",
+      "max_generation_submissions": 1,
+      "output_ui_file": "Lab_B1_SolAttn_Clip1.json",
+      "node_type": "BlockSparseAttention",
+      "preset_not_claimed_optimal": true,
+      "sparse": {
+        "selection": "sol-attn",
+        "tau": 1.0,
+        "start_percent": 0.05,
+        "end_percent": 1.0,
+        "dense_blocks": "0,1,48,49",
+        "min_tokens": 12288,
+        "extra_tokens": 256,
+        "sink_conditioning": "exact_kv_and_rows",
+        "verbose": true
+      }
+    },
+    {
+      "id": "V0",
+      "kind": "decode_only",
+      "max_decode_submissions": 1,
+      "max_generation_submissions": 0,
+      "output_ui_file": "Lab_V0_CurrentVAE_Decode.json"
+    },
+    {
+      "id": "V1",
+      "kind": "decode_only_int8",
+      "requires": "same_trusted_av_latent_as_V0",
+      "max_decode_submissions": 1,
+      "max_generation_submissions": 0,
+      "output_ui_file": "Lab_V1_INT8VAE_Decode.json",
+      "weight": {
+        "repo": "Comfy-Org/MiniMax-H3",
+        "revision": "0d21e5fdcfd05eb679dcca8573c1960a8f87ddf7",
+        "path": "vae/minimax_h3_video_vae_int8_convrot.safetensors",
+        "sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e"
+      }
+    }
+  ],
+  "deferred": [
+    "Veda R2VA",
+    "combined Sol plus INT8 VAE",
+    "director integration",
+    "three-segment continuity regression",
+    "main merge"
+  ],
+  "generation_budget_total": 2,
+  "decode_only_budget_total": 2,
+  "automatic_retries": 0,
+  "production_service_may_be_changed": false,
+  "ui_workflows_already_built": false,
+  "runtime_node_implementation_in_this_commit": false,
+  "measurement": "Same standalone B0/B1 host-wall boundaries; V0/V1 same-latent decode comparison. Historical Director timings are context only."
+}
