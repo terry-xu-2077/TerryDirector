@@ -31,6 +31,7 @@ _NATIVE_READY = False
 _PLANS = OrderedDict()  # At most 16 prompts; contains identifiers only, no tensors.
 _INDEX = re.compile(r"(?:^|\.)td_s(\d+)_")
 _OP_PROFILE = None
+_BACKEND_VERIFY = None
 
 
 def enabled():
@@ -254,12 +255,17 @@ def wrap_sampler(function):
                 now = time.perf_counter_ns()
                 count += 1
                 event("step_callback", span_id=key, name=phase, callback_index=count,
-                      delta_s=(now-last)/1e9, first_includes_setup=count == 1,
-                      boundary="callback_entry")
+                       delta_s=(now-last)/1e9, first_includes_setup=count == 1,
+                       boundary="callback_entry")
+                if _BACKEND_VERIFY is not None:
+                    _BACKEND_VERIFY.on_callback(count)
                 last = now
                 return original(*cb_args, **cb_kwargs)
             values["callback"] = callback
-            if _OP_PROFILE is not None:
+            if _BACKEND_VERIFY is not None:
+                with _BACKEND_VERIFY.sampling_phase(phase, values):
+                    result = function(**values)
+            elif _OP_PROFILE is not None:
                 with _OP_PROFILE.sampling_phase(phase, lambda: count):
                     result = function(**values)
             else:
@@ -315,7 +321,7 @@ def install_native():
 
 
 def install(package, node_classes):
-    global _INSTALLED, _OP_PROFILE
+    global _INSTALLED, _OP_PROFILE, _BACKEND_VERIFY
     if not enabled() or _INSTALLED:
         return
     engine = importlib.import_module(f"{package}.director_selflift")
@@ -326,6 +332,12 @@ def install(package, node_classes):
     engine.sample_selflift = wrapped
     engine_node.sample_selflift = wrapped  # Also replace the existing from-import alias.
     engine.ComfyBackend.sample = wrap_sampler(engine.ComfyBackend.sample)
+    if os.environ.get("TERRYDIRECTOR_BACKEND_VERIFY") == "1":
+        if os.environ.get("TERRYDIRECTOR_OP_PROFILE") == "1":
+            raise RuntimeError("Kitchen backend verifier cannot run with heavy operator profiler")
+        verify = importlib.import_module(f"{package}.tools.selflift_kitchen_backend_verify")
+        verify.install(importlib.import_module(__name__))
+        _BACKEND_VERIFY = verify
     if os.environ.get("TERRYDIRECTOR_OP_PROFILE") == "1":
         op = importlib.import_module(f"{package}.tools.selflift_operator_profile")
         mode = os.environ.get("TERRYDIRECTOR_OP_PROFILE_MODE", "cpu_events")

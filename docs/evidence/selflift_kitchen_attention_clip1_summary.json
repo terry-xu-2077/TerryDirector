@@ -1,0 +1,476 @@
+{
+  "schema": "selflift_kitchen_attention_clip1_v1",
+  "branch": "feat/selflift-internal",
+  "confirmed_base_commit": "fa2a7409eb73c14dea7a72b36cb8ee4c615bcf85",
+  "prompt_id": "287705bf-9d2d-400b-874e-84e21de4b1d7",
+  "director_id": "9700451",
+  "segment_id": "clip-1",
+  "generation_submitted": true,
+  "submission_count": 1,
+  "generation_success": true,
+  "stage_integrity_ok": true,
+  "stage_integrity_errors": [],
+  "backend_verification_ok": true,
+  "fallback_observed": false,
+  "backend_observation_scope": {
+    "target_only": true,
+    "real_kj_import_alias": true,
+    "kitchen_regular_and_prequantized_api": true,
+    "kitchen_cuda_extension_boundary": true,
+    "comfy_pytorch_sage_and_torch_sdpa_fallback_entrants": true,
+    "uncovered": "Other internal extension behavior and GPU kernels were not profiled; absence of observed fallback is scoped to listed entries."
+  },
+  "heavy_profiler_enabled": false,
+  "new_operator_window_count": 0,
+  "trace_readiness": {
+    "backend_verify_ready": {
+      "line": 1,
+      "utc": "2026-10-10T02:33:51.073+00:00"
+    },
+    "trace_ready": {
+      "line": 2,
+      "utc": "2026-10-10T02:33:51.074+00:00"
+    }
+  },
+  "request": {
+    "source_sha256": "36edcdc2b61bfd6d96d0fe415ebd7630b663b7a017e82563a3b211e309691ebf",
+    "submitted_sha256": "fa15bd5cc127969374d565f2caad664dd9bdc0c41e800c5f59521544328e5a64",
+    "old_advanced_node_id": "9600328",
+    "new_advanced_node_id": "9700451",
+    "attention_node_before": {
+      "inputs": {
+        "sage_attention": "auto",
+        "allow_compile": false,
+        "model": [
+          "332",
+          0
+        ]
+      },
+      "class_type": "PathchSageAttentionKJ",
+      "_meta": {
+        "title": "Patch Sage Attention KJ"
+      }
+    },
+    "attention_node_after": {
+      "class_type": "ModelAttentionBackend",
+      "inputs": {
+        "model": [
+          "332",
+          0
+        ],
+        "attention": "comfy kitchen attention"
+      },
+      "_meta": {
+        "title": "Model Attention Backend"
+      }
+    },
+    "isolation_changes": [
+      "save_subfolder",
+      "filename_prefix",
+      "client_id",
+      "workflow metadata"
+    ],
+    "other_effective_inputs_equal": true
+  },
+  "runtime": {
+    "comfyui_commit": "b26625f23a888367b92153b28d93e159e83e677b",
+    "kjnodes_commit": "3f20054214fec9f9234fd3841ae6f1e4287948f6",
+    "python": "3.12.13 | packaged by Anaconda, Inc. | (main, Jul  9 2026, 14:26:47) [MSC v.1942 64 bit (AMD64)]",
+    "versions": {
+      "torch": "2.11.0+cu128",
+      "sageattention": "2.2.0+cu130torch2.10.0andhigher.post5",
+      "comfy-kitchen": "0.2.37",
+      "comfyui-kjnodes": null
+    },
+    "source_sha256": {
+      "ComfyUI/comfy/ldm/modules/attention.py": "0daaf02f21578bbb4d913002a4a2c1a7610c3a585d7ebfe8d2a9025822c054f0",
+      "ComfyUI/comfy_extras/nodes_model_advanced.py": "8308f07f95938c2156136553ffd1e81b13e71aa6955c71f48c64404bdf91fe1c",
+      "KJNodes/nodes/minimax_nodes.py": "c371576b1bb31a2f518bdb4ceda43cb10b20338f0c9d68f99ed1be76ce06478f",
+      "KJNodes/nodes/model_optimization_nodes.py": "5317c12100a1701425a07b00bd9af6277d45101a37d82d0a3a9d75945011e51e",
+      "SageAttention/sageattention/core.py": "630ff7f7566ccc8da2c765f5276f6ac1c82534a7bb204d3c0d8f9652af6de598",
+      "Kitchen/comfy_kitchen/sage_attention.py": "565bab9b3ab7ce81a06f761812f7a775a465cebf20fecf15c9fd39590b6338b8",
+      "TerryDirector/director_trace.py": "b0ab16c70759c6bab4bb02ebee6cb77b09a932424f18799dd6c97cce04895ddb",
+      "TerryDirector/tools/selflift_kitchen_backend_verify.py": "8dc323c98d5b14a1af8c17d0eda3e094b51d1781af19d5fbba4901546512203c"
+    },
+    "runtime_h3_patch_count_log": 208
+  },
+  "preflight": {
+    "trace_tests_passed": 29,
+    "selflift_internal_tests_passed": 47,
+    "menu_has_comfy_kitchen_attention": true,
+    "registered_function": "comfy.ldm.modules.attention.attention_comfy_kitchen_int8"
+  },
+  "backend_callbacks": {
+    "low_sampling": {
+      "line": 80,
+      "utc": "2026-10-10T02:36:54.157+00:00",
+      "ok": true,
+      "api_calls": 200,
+      "extension_calls": 200,
+      "fallback_calls": 0
+    },
+    "high_sampling": {
+      "line": 113,
+      "utc": "2026-10-10T02:44:04.354+00:00",
+      "ok": true,
+      "api_calls": 200,
+      "extension_calls": 200,
+      "fallback_calls": 0
+    }
+  },
+  "phase_observations": [
+    {
+      "event": "backend_phase",
+      "prompt_id": "287705bf-9d2d-400b-874e-84e21de4b1d7",
+      "director_id": "9700451",
+      "segment_id": "clip-1",
+      "phase": "low_sampling",
+      "model": {
+        "override": "comfy.model_patcher.ModelPatcher.set_model_optimized_attention.<locals>.optimized_attention_override",
+        "inner": "comfy.ldm.modules.attention.attention_comfy_kitchen_int8",
+        "head_chunks": 4,
+        "attention_patches": 50,
+        "ffn_patches": 50,
+        "alias": "comfy.ldm.modules.attention.attention_sage"
+      },
+      "sigma_values": [
+        1.0,
+        0.9836838841438293,
+        0.9600575566291809,
+        0.9230769276618958,
+        0.8575096726417542,
+        0.7063800096511841
+      ],
+      "sigma_device": "cpu",
+      "counts": {
+        "kj_optimized_attention_alias": 1000,
+        "kitchen_api_regular": 1000,
+        "kitchen_extension_sdpa": 1000
+      },
+      "first_calls": {
+        "kj_optimized_attention_alias": {
+          "function": "comfy.ldm.modules.attention.attention_sage",
+          "qkv": null,
+          "mask_present": null
+        },
+        "kitchen_api_regular": {
+          "function": "comfy_kitchen.sage_attention.int8_attention",
+          "qkv": [
+            {
+              "shape": [
+                1,
+                14,
+                45804,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "stride": [
+                7168,
+                128,
+                21504,
+                1
+              ],
+              "device": "cuda:0"
+            },
+            {
+              "shape": [
+                1,
+                14,
+                45804,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "stride": [
+                7168,
+                128,
+                21504,
+                1
+              ],
+              "device": "cuda:0"
+            },
+            {
+              "shape": [
+                1,
+                14,
+                45804,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "stride": [
+                7168,
+                128,
+                21504,
+                1
+              ],
+              "device": "cuda:0"
+            }
+          ],
+          "mask_present": false
+        },
+        "kitchen_extension_sdpa": {
+          "function": "comfy_kitchen.backends.cuda._C.sage_sdpa",
+          "qkv": null,
+          "mask_present": null
+        }
+      },
+      "callback_count": 5,
+      "first_callback_check_ok": true,
+      "error": null
+    },
+    {
+      "event": "backend_phase",
+      "prompt_id": "287705bf-9d2d-400b-874e-84e21de4b1d7",
+      "director_id": "9700451",
+      "segment_id": "clip-1",
+      "phase": "high_sampling",
+      "model": {
+        "override": "comfy.model_patcher.ModelPatcher.set_model_optimized_attention.<locals>.optimized_attention_override",
+        "inner": "comfy.ldm.modules.attention.attention_comfy_kitchen_int8",
+        "head_chunks": 4,
+        "attention_patches": 50,
+        "ffn_patches": 50,
+        "alias": "comfy.ldm.modules.attention.attention_sage"
+      },
+      "sigma_values": [
+        0.7063800096511841,
+        0.0
+      ],
+      "sigma_device": "cpu",
+      "counts": {
+        "kj_optimized_attention_alias": 200,
+        "kitchen_api_regular": 200,
+        "kitchen_extension_sdpa": 200
+      },
+      "first_calls": {
+        "kj_optimized_attention_alias": {
+          "function": "comfy.ldm.modules.attention.attention_sage",
+          "qkv": null,
+          "mask_present": null
+        },
+        "kitchen_api_regular": {
+          "function": "comfy_kitchen.sage_attention.int8_attention",
+          "qkv": [
+            {
+              "shape": [
+                1,
+                14,
+                94764,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "stride": [
+                7168,
+                128,
+                21504,
+                1
+              ],
+              "device": "cuda:0"
+            },
+            {
+              "shape": [
+                1,
+                14,
+                94764,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "stride": [
+                7168,
+                128,
+                21504,
+                1
+              ],
+              "device": "cuda:0"
+            },
+            {
+              "shape": [
+                1,
+                14,
+                94764,
+                128
+              ],
+              "dtype": "torch.bfloat16",
+              "stride": [
+                7168,
+                128,
+                21504,
+                1
+              ],
+              "device": "cuda:0"
+            }
+          ],
+          "mask_present": false
+        },
+        "kitchen_extension_sdpa": {
+          "function": "comfy_kitchen.backends.cuda._C.sage_sdpa",
+          "qkv": null,
+          "mask_present": null
+        }
+      },
+      "callback_count": 1,
+      "first_callback_check_ok": true,
+      "error": null
+    }
+  ],
+  "history": {
+    "execution_start_ms": 1791599662595,
+    "execution_success_ms": 1791600366672,
+    "duration_s": 704.077,
+    "status": "success",
+    "completed": true
+  },
+  "plan": {
+    "h3_frames": 107,
+    "output_frames": 96
+  },
+  "stage_root_union_s": 700.9650124,
+  "speed_comparison": [
+    {
+      "stage": "conditioning",
+      "baseline_s": 83.6327453,
+      "current_s": 79.1020171,
+      "baseline_minus_current_s": 4.530728199999999,
+      "improvement_percent": 5.4174093935907175,
+      "trace_line_start": 7,
+      "trace_line_end": 70,
+      "utc_start": "2026-10-10T02:34:24.863+00:00",
+      "utc_end": "2026-10-10T02:35:43.968+00:00"
+    },
+    {
+      "stage": "low_sampling",
+      "baseline_s": 371.2014585,
+      "current_s": 319.8811333,
+      "baseline_minus_current_s": 51.32032520000001,
+      "improvement_percent": 13.82546431993613,
+      "trace_line_start": 72,
+      "trace_line_end": 87,
+      "utc_start": "2026-10-10T02:35:44.117+00:00",
+      "utc_end": "2026-10-10T02:41:04.002+00:00"
+    },
+    {
+      "stage": "resolution_transition",
+      "baseline_s": 2.985157,
+      "current_s": 2.8964182,
+      "baseline_minus_current_s": 0.08873880000000023,
+      "improvement_percent": 2.9726677692329155,
+      "trace_line_start": 88,
+      "trace_line_end": 104,
+      "utc_start": "2026-10-10T02:41:04.003+00:00",
+      "utc_end": "2026-10-10T02:41:06.900+00:00"
+    },
+    {
+      "stage": "latent_upscale",
+      "baseline_s": 2.9037516,
+      "current_s": 2.8131869,
+      "baseline_minus_current_s": 0.09056470000000028,
+      "improvement_percent": 3.118885926743881,
+      "trace_line_start": 89,
+      "trace_line_end": 103,
+      "utc_start": "2026-10-10T02:41:04.006+00:00",
+      "utc_end": "2026-10-10T02:41:06.820+00:00"
+    },
+    {
+      "stage": "high_sampling",
+      "baseline_s": 217.5810762,
+      "current_s": 177.4560699,
+      "baseline_minus_current_s": 40.125006300000024,
+      "improvement_percent": 18.441404464383297,
+      "trace_line_start": 105,
+      "trace_line_end": 116,
+      "utc_start": "2026-10-10T02:41:06.900+00:00",
+      "utc_end": "2026-10-10T02:44:04.359+00:00"
+    },
+    {
+      "stage": "selflift",
+      "baseline_s": 591.80174,
+      "current_s": 500.267782,
+      "baseline_minus_current_s": 91.53395799999998,
+      "improvement_percent": 15.466997106159234,
+      "trace_line_start": 71,
+      "trace_line_end": 117,
+      "utc_start": "2026-10-10T02:35:44.096+00:00",
+      "utc_end": "2026-10-10T02:44:04.369+00:00"
+    },
+    {
+      "stage": "decode_cache",
+      "baseline_s": 121.7629709,
+      "current_s": 117.5522592,
+      "baseline_minus_current_s": 4.2107117000000045,
+      "improvement_percent": 3.4581216841843703,
+      "trace_line_start": 122,
+      "trace_line_end": 141,
+      "utc_start": "2026-10-10T02:44:05.069+00:00",
+      "utc_end": "2026-10-10T02:46:02.622+00:00"
+    },
+    {
+      "stage": "final_output",
+      "baseline_s": 4.1127157,
+      "current_s": 3.9829849,
+      "baseline_minus_current_s": 0.12973079999999992,
+      "improvement_percent": 3.1543828813647377,
+      "trace_line_start": 142,
+      "trace_line_end": 145,
+      "utc_start": "2026-10-10T02:46:02.648+00:00",
+      "utc_end": "2026-10-10T02:46:06.633+00:00"
+    },
+    {
+      "stage": "low_plus_high",
+      "baseline_s": 588.7825347,
+      "current_s": 497.3372032,
+      "baseline_minus_current_s": 91.44533150000007,
+      "improvement_percent": 15.531257486534283,
+      "note": "sum of sibling low and high stages only"
+    },
+    {
+      "stage": "history_total",
+      "baseline_s": 804.347,
+      "current_s": 704.077,
+      "baseline_minus_current_s": 100.26999999999998,
+      "improvement_percent": 12.466012802932067,
+      "note": "raw execution_success minus execution_start, no queue polling"
+    }
+  ],
+  "video": {
+    "filename": "TerryDirector_SelfLift_Kitchen_Clip1_00001_.mp4",
+    "width": 1920,
+    "height": 1088,
+    "fps": 24,
+    "frames": 96,
+    "duration_s": 4,
+    "video_codec": "h264",
+    "audio_codec": "aac",
+    "video_decode_ok": true,
+    "audio_decode_ok": true,
+    "size_bytes": 3752760
+  },
+  "quality": {
+    "paired_static_samples_s": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "face_and_hand": "对应抽帧可见，未见明显结构破坏",
+    "detail_and_exposure": "对应抽帧无明显曝光崩溃；细节差异未作定量评级",
+    "full_motion_and_flicker": "待人工确认",
+    "audio_content_and_sync": "待人工确认"
+  },
+  "limitations": [
+    "single historical comparison; no randomized repeated trials",
+    "lightweight Python wrapper can add overhead",
+    "no GPU kernel timing in this run",
+    "global Sage startup option remained enabled; scoped MODEL override was Kitchen"
+  ],
+  "raw_evidence_files": {
+    "request": "selflift_kitchen_attention_clip1_request.json",
+    "request_diff": "selflift_kitchen_attention_clip1_request_diff.json",
+    "submit_response": "selflift_kitchen_attention_clip1_submit_response.json",
+    "history": "selflift_kitchen_attention_clip1_history.json",
+    "stage_summary": "selflift_kitchen_attention_clip1_stage_summary.json",
+    "trace": "trace-28780-c37e269ecd37419bb24c4c53db96ce1d.jsonl",
+    "backend_observer": "kitchen-28780.jsonl",
+    "stdout": "selflift_kitchen_clip1_comfy_stdout.log",
+    "stderr": "selflift_kitchen_clip1_comfy_stderr.log"
+  },
+  "diagnostics_restored_off": true
+}
