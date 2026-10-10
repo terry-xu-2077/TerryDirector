@@ -3,7 +3,7 @@
  * while the optional TerryDirector second-pass configuration socket is linked.
  *
  * This is presentation state only: widget values, sockets, sampler schedules,
- * workflow serialization and the SelfLift runtime are never rewritten.
+ * workflow serialization and the second-pass runtime are never rewritten.
  */
 const ORDINARY_SAMPLING_WIDGETS = new Map([
   ["sampler", "采样器"],
@@ -12,9 +12,9 @@ const ORDINARY_SAMPLING_WIDGETS = new Map([
   ["sigmas_denoise", "Denoise"],
 ]);
 
-const TAKEOVER_SUFFIX = "（SelfLift 接管）";
+const TAKEOVER_SUFFIX = "（二采接管）";
 const TAKEOVER_HINT =
-  "已接入 TerryDirector 二采配置：SelfLift 使用二采节点的采样日程。" +
+  "已接入二采配置：普通采样参数已由二采配置接管。" +
   "当前参数仅供普通采样使用，断开二采配置后恢复生效。";
 
 export function hasSecondPassConnection(node) {

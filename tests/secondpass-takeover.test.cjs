@@ -50,8 +50,10 @@ test('link ID zero disables precisely four controls with visible takeover labels
   assert.equal(updateSecondPassTakeover(node), true);
   node.widgets.slice(0, 4).forEach(widget => {
     assert.equal(widget.disabled, true);
-    assert.match(widget.label, /SelfLift 接管/);
+    assert.match(widget.label, /二采接管/);
+    assert.doesNotMatch(widget.label, /SelfLift/);
     assert.match(widget.tooltip, /二采配置/);
+    assert.doesNotMatch(widget.tooltip, /SelfLift/);
     assert.equal(widget.computedDisabled, true);
   });
   node.widgets.slice(4).forEach(w => assert.equal(w.disabled, false));
