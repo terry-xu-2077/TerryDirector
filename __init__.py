@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .director_selflift_node import TerryDirectorSelfLiftSampler
+
 from typing_extensions import override
 
 from comfy_api.latest import ComfyExtension, io
@@ -32,8 +34,9 @@ WEB_DIRECTORY = "./web"
 class TerryDirectorExtension(ComfyExtension):
     @override
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
-        return [
+        node_classes = [
             TerryDirectorSecondPassConfig,
+            TerryDirectorSelfLiftSampler,
             TerryDirectorConfig,
             TerryDirector,
             TerryDirectorAdvanced,
@@ -50,6 +53,9 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorPackAdvancedOutput,
             TerryDirectorResampleReferenceVideo,
         ]
+        from .director_trace import install
+        install(__package__, node_classes)
+        return node_classes
 
 
 async def comfy_entrypoint() -> TerryDirectorExtension:

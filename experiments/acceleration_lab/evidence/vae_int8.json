@@ -1,0 +1,33 @@
+{
+  "schema": "terry_acceleration_lab_vae_int8_v1",
+  "branch": "feat/selflift-internal",
+  "confirmed_commit": "af0a9887d7076d3b33daf557c60b134014fd3c01",
+  "status": "ALREADY_ACTIVE_AND_NO_TRUSTED_LAB_LATENT",
+  "current_video_vae_filename": "minimax_h3_video_vae_int8_convrot.safetensors",
+  "current_video_vae_size_bytes": 2811065184,
+  "current_video_vae_sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e",
+  "specified_official_candidate": {
+    "repository": "Comfy-Org/MiniMax-H3",
+    "revision": "0d21e5fdcfd05eb679dcca8573c1960a8f87ddf7",
+    "relative_path": "vae/minimax_h3_video_vae_int8_convrot.safetensors",
+    "sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e"
+  },
+  "same_weight_and_local_path": true,
+  "download_count": 0,
+  "v0_api_sha256": "f55443bdcdb8d249248595bf859306b8ef88cc55c494e89eee6d62ffc5a6dfef",
+  "v0_ui_sha256": "f89591b8f8e9cc5ed0f4d25bd2c73d89d6b06a66098ef69033a03b7f7688f631",
+  "v1_api_sha256": "c246723b0899fbaccf9d93f04dbaa409265b1f82d92e4684b0d72a1cac63dcd0",
+  "v1_ui_sha256": "e3facfb56e7ceb6e8319bbec26360f270ef64ea86eeb625838bbf2b40d47befb",
+  "both_decode_graphs_use_same_B0_AV_checkpoint": true,
+  "b0_checkpoint_created": false,
+  "v0_decode_submissions": 0,
+  "v1_decode_submissions": 0,
+  "video_vae_decode_seconds": null,
+  "weight_load_seconds": null,
+  "save_encode_seconds": null,
+  "peak_vram_bytes": null,
+  "technical": "ALREADY_ACTIVE; DECODE_BLOCKED_NO_TRUSTED_B0_AV_LATENT",
+  "speed": "NO_VALID_A_B_COMPARISON",
+  "visual": "NOT_DECODED",
+  "audio_and_sync": "NOT_TESTED"
+}

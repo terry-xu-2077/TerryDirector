@@ -1,0 +1,85 @@
+{
+  "schema": "terry_acceleration_lab_sol_retry_v1",
+  "branch": "feat/selflift-internal",
+  "confirmed_base_commit": "88c168e6a732dd26a9ef028f27b33d3b8da6b82f",
+  "production_baseline": "0c82cd7bfb2de963304479eda86e02513e106da0",
+  "preflight": {
+    "unit_tests": "22/22 pass",
+    "isolation_before_after": "pass; forbidden_changed_paths=[]",
+    "actual_sigma_execute": "pass, CPU float32; source schedule unchanged and synthetic refining schedule expanded 4 to 6 sigmas; input tensors unchanged",
+    "frozen_root": "G:\\AIGC\\ComfyUI_Codex\\ComfyUI\\custom_nodes\\TerryDirector",
+    "frozen_director_node_sha256": "de0ea0c96e360560b07bdee15c71b41891924392885df718c94d6ea8d5a67ee9",
+    "frozen_director_selflift_sha256": "8d45fdfb41db0fa3f72f1d02ee99c0c1209dd3f339286ab075ad74e88f76830f",
+    "production_root_imported_by_sigma_preflight": false,
+    "fresh_isolated_instances": true,
+    "backend_schema_validation_errors": 0,
+    "ui_file_opened_in_frontend": false
+  },
+  "input": {
+    "report46_request_sha256": "fa15bd5cc127969374d565f2caad664dd9bdc0c41e800c5f59521544328e5a64",
+    "compiled_prompt_sha256": "353ee9913b2d40fc272e498e2f330d9bf689b59a371a1b6d71c15b0aaa57e1f7",
+    "b0_api_sha256": "d867be9289b4f91e4d61feb6b9ee4e3172a61370fcbad9a35dd7c5912083e864",
+    "b1_api_sha256": "f1808f2a6b9d367930117468c7f99ebd43a8709153f9ca2a98ef6c2328edaa7a",
+    "asset_hashes_and_parameter_detail": "evidence/sol_attn.json",
+    "vae_status": "ALREADY_ACTIVE"
+  },
+  "b0": {
+    "submitted": 1,
+    "prompt_id": "186cedb3-b4a1-41e2-8dc9-1c60f3182931",
+    "status": "success",
+    "execution_start_ms": 1791606293332,
+    "execution_success_ms": 1791607098017,
+    "duration_s": 804.685,
+    "stages_s": {
+      "conditioning": 112.0701214,
+      "low_sampling": 357.2919559,
+      "high_sampling": 201.419842,
+      "selflift_total_includes_sampling_and_upscale": 561.8316424,
+      "checkpoint_av": 0.0680729,
+      "audio_vae_decode": 0.4795355,
+      "video_vae_decode": 123.4111456,
+      "save_encode": 3.351622
+    },
+    "sampling_callbacks": {"low": 5, "high": 1},
+    "sol_chunked_calls": 0,
+    "sigmas": [1.0, 0.9836838841438293, 0.9600575566291809, 0.9230769276618958, 0.8575096726417542, 0.7063800096511841, 0.0],
+    "checkpoint_bytes": 25114989,
+    "video": {
+      "local_relative_path": "local/runs/sol_retry_b0/runtime/output/video/Lab_B0_Clip1_00001_.mp4",
+      "sha256": "eb80b4c96febafe578b96d1168ce8252d08989e1ea154708879025e6ef3fc7e0",
+      "bytes": 3613665,
+      "width": 1920, "height": 1088, "fps": 24, "frames": 96, "duration_s": 4.0,
+      "video_codec": "h264", "audio_codec": "aac", "audio_sample_rate": 32000
+    },
+    "history_sha256": "04c3e6099347616f44218b6072d19aeac3350141da9b39686ce51a7426f6e46f",
+    "stages_sha256": "247586339e090e62e523f905af007e552f7e99715d57733cc3fb2bf01f00c3ca"
+  },
+  "b1": {
+    "submitted": 1,
+    "prompt_id": "44f89a2a-1272-40a2-a23c-6cf900b5ef55",
+    "status": "error",
+    "execution_start_ms": 1791607132187,
+    "execution_error_ms": 1791607132545,
+    "duration_to_error_s": 0.358,
+    "error_node": "6 BlockSparseAttention",
+    "exception_type": "TypeError",
+    "exception_message": "BlockSparseAttention.execute() missing 1 required positional argument: 'selection'",
+    "request_has_selection": true,
+    "runtime_current_inputs_has_selection": false,
+    "h3_forward_count": 0,
+    "sol_chunked_calls": 0,
+    "history_sha256": "ffdfb1a2fcc52af9a8644ea32901898ed6c0b0614aab8c192d398f70d2037b22"
+  },
+  "local_evidence_relative_paths": {
+    "b0_history": "local/runs/sol_retry_b0/history.json",
+    "b0_stages": "local/runs/sol_retry_b0/runtime/output/.acceleration_lab/stages.jsonl",
+    "b0_stderr": "local/runs/sol_retry_b0/lab_stderr.log",
+    "b0_checkpoint": "local/runs/sol_retry_b0/runtime/output/.acceleration_lab/B0_AV.pt",
+    "b1_history": "local/runs/sol_retry_b1/history.json",
+    "b1_stderr": "local/runs/sol_retry_b1/lab_stderr.log"
+  },
+  "diagnostic_scope": "stage timing uses CUDA sync before and after sampling and video decode, CUDA peak reset, callbacks, and optional sol producer wrapper; these costs are included in the measurements and are not separately quantified",
+  "quality": "awaiting_manual_continuous_viewing_and_listening",
+  "production_service_restarted": false,
+  "main_merged": false
+}

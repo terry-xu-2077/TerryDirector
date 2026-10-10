@@ -1,0 +1,125 @@
+{
+  "schema": "cu130_dependency_repair_v1",
+  "date": "2026-10-10",
+  "branch": "feat/selflift-internal",
+  "terry_director_commit": "bb09bac138dc5d6d8b950b2071766fd7f5a4bbd2",
+  "status": "ACCEPTED_WITH_USER_EXEMPTION_FOR_LTX",
+  "original_conflicts": [
+    {
+      "distribution": "llama-cpp-python",
+      "version": "0.3.46",
+      "requirement": "numpy>=1.21.6,<=2.3.2",
+      "installed": "numpy 2.5.3"
+    },
+    {
+      "distribution": "numba",
+      "version": "0.66.0",
+      "requirement": "numpy>=1.22,<2.5",
+      "installed": "numpy 2.5.3"
+    },
+    {
+      "distribution": "mixpanel",
+      "version": "5.2.0",
+      "requirement": "pydantic>=2.0.0,<2.12",
+      "installed": "pydantic 2.13.5",
+      "source": "local installed metadata"
+    }
+  ],
+  "changes": [
+    {
+      "distribution": "numpy",
+      "from": "2.5.3",
+      "to": "2.3.2",
+      "wheel_sha256": "9e196ade2400c0c737d93465327d1ae7c06c7cb8a1756121ebf54b06ca183c7f"
+    },
+    {
+      "distribution": "pydantic",
+      "from": "2.13.5",
+      "to": "2.11.10",
+      "wheel_sha256": "802a655709d49bd004c31e865ef37da30b540786a46bfce02333e0e24b5fe29a"
+    },
+    {
+      "distribution": "pydantic-core",
+      "from": "2.41.5",
+      "to": "2.33.2",
+      "wheel_sha256": "f941635f2a3d96b2973e867144fde513665c87f13fe0e193c158ac51bfaaa7b2"
+    }
+  ],
+  "plan": {
+    "preflight_guard": "pass",
+    "postclone_guard": "pass",
+    "installed_guard": "pass",
+    "base_requirements_checked": 469,
+    "proposed_distribution_changes": 3,
+    "direct_url_changes": 0,
+    "install_count": 1,
+    "wheelhouse_only": true
+  },
+  "pip_check": {
+    "before_exit_code": 1,
+    "before_conflicts": 3,
+    "after_exit_code": 0,
+    "after_stdout": "No broken requirements found."
+  },
+  "protected_core": {
+    "python": "3.12.13",
+    "torch": "2.11.0+cu130",
+    "torchvision": "0.26.0+cu130",
+    "torchaudio": "2.11.0+cu130",
+    "comfy_kitchen": "0.2.37",
+    "sageattention": "2.2.0+cu130torch2.10.0andhigher.post5",
+    "triton_windows": "3.7.1.post27",
+    "protected_binary_hashes_matched": 38,
+    "protected_binary_hash_mismatches": 0,
+    "comfyui_commit": "b26625f23a888367b92153b28d93e159e83e677b",
+    "kj_nodes_commit": "3f20054214fec9f9234fd3841ae6f1e4287948f6"
+  },
+  "backup": {
+    "cu130_snapshot_preserved": true,
+    "cu130_snapshot_binary_matches": 38,
+    "cu130_snapshot_binary_mismatches": 0,
+    "cu128_backup_touched": false,
+    "rollback_executed": false
+  },
+  "runtime": {
+    "cpu_smoke": "pass",
+    "numba_compile": "pass",
+    "llama_cpp_import": "pass_model_not_loaded",
+    "pydantic_settings_smoke": "pass",
+    "qwen_tts_import": "pass_model_not_loaded",
+    "sage_import": "pass",
+    "kitchen_cuda_extension_import": "pass",
+    "full_8190_initialization": "pass",
+    "kitchen_cuda_available": true,
+    "kitchen_cuda_disabled": false,
+    "sol_registry_symbol_present": true,
+    "sol_min_compute_capability": "8.0",
+    "device_compute_capability": "8.6",
+    "sol_kernel_executed": false,
+    "formal_8188_restored": true,
+    "formal_8188_api_ready": true,
+    "formal_8188_queue_running": 0,
+    "formal_8188_queue_pending": 0,
+    "formal_8188_listener_count": 1,
+    "formal_8188_registered_nodes_before": 2759,
+    "formal_8188_registered_nodes_after": 2979,
+    "formal_8188_removed_nodes": 0,
+    "was_suite_import": "pass",
+    "qwen_tts_plugin_import": "pass"
+  },
+  "exceptions": [
+    {
+      "item": "ComfyUI-LTXVideo import",
+      "status": "excluded per user instruction",
+      "detail": "Kornia 0.8.3 does not export pad from kornia.geometry.transform.pyramid; Kornia unchanged."
+    },
+    {
+      "item": "pydantic-settings pyproject parse warning",
+      "status": "unresolved",
+      "detail": "Warning persisted before/after; exact source was not located."
+    }
+  ],
+  "generation_submissions": 0,
+  "model_loads": 0,
+  "main_merged": false
+}

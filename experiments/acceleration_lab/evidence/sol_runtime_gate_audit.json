@@ -1,0 +1,113 @@
+{
+  "schema": "terry_accel_sol_runtime_gate_audit_v1",
+  "branch": "feat/selflift-internal",
+  "confirmed_base_commit": "c9d0e1609121b79ce362157fd16ec9a22d96a96e",
+  "production_baseline": "0c82cd7bfb2de963304479eda86e02513e106da0",
+  "generation_submissions": 0,
+  "generation_allowed": false,
+  "tests": {
+    "experiment_tests": "67/67 pass",
+    "isolation_before": "pass; forbidden_changed_paths=[]",
+    "isolation_after": "pass; forbidden_changed_paths=[]"
+  },
+  "environment": {
+    "python": "3.12.13",
+    "torch": "2.11.0+cu128",
+    "torch_version_cuda": "12.8",
+    "comfy_kitchen": "0.2.37",
+    "gpu": "NVIDIA GeForce RTX 3090",
+    "compute_capability": [8, 6],
+    "sol_minimum_compute_capability": [8, 0],
+    "comfyui_commit": "b26625f23a888367b92153b28d93e159e83e677b"
+  },
+  "import_order_child_process": {
+    "pid": 18124,
+    "same_process_for_both_snapshots": true,
+    "before_quant_ops": {
+      "quant_ops_loaded": false,
+      "cuda_backend_registered": true,
+      "cuda_backend_disabled": false,
+      "registry_cuda_available_and_enabled": true,
+      "extension_loaded": true,
+      "extension_has_sol_attn_symbol": true,
+      "constraints_present": true,
+      "device_meets_minimum": true,
+      "sol_attn_is_available": true,
+      "status": "AVAILABLE_BY_CURRENT_PROCESS_CHECK_ONLY"
+    },
+    "after_quant_ops": {
+      "quant_ops_loaded": true,
+      "cuda_backend_registered": true,
+      "cuda_backend_disabled": true,
+      "registry_cuda_available_and_enabled": false,
+      "extension_loaded": true,
+      "extension_has_sol_attn_symbol": true,
+      "constraints_present": true,
+      "device_meets_minimum": true,
+      "sol_attn_is_available": false,
+      "status": "CUDA_REGISTRY_DISABLED"
+    },
+    "availability_changed": true,
+    "generation_allowed": false,
+    "model_forwards": 0,
+    "kernel_smoke_executed": false
+  },
+  "actual_lab_registration": {
+    "pid": 22032,
+    "started_local_time": "2026-10-10T14:35:31+08:00",
+    "snapshot_local_time": "2026-10-10T14:35:40+08:00",
+    "extension_node_registered": true,
+    "quant_ops_loaded": true,
+    "torch_version_cuda": "12.8",
+    "cuda_backend_registered": true,
+    "cuda_backend_disabled": true,
+    "registry_cuda_available_and_enabled": false,
+    "extension_loaded": true,
+    "extension_has_sol_attn_symbol": true,
+    "constraints_present": true,
+    "device_meets_minimum": true,
+    "sol_attn_is_available": false,
+    "status": "CUDA_REGISTRY_DISABLED",
+    "model_forwards": 0,
+    "kernel_smoke_executed": false,
+    "generation_allowed": false,
+    "startup_warning": "You need pytorch with cu130 or higher to use optimized CUDA operations.",
+    "instance_stopped_after_collection": true
+  },
+  "source_hashes": {
+    "comfy_quant_ops_py": "8e094d4f29226d50ceb2014f3c0cfe5cabe85a1ed9ce70f0adfe5d943e0ef587",
+    "comfy_kitchen_init_py": "a6cc073c46db51f1ff055065daa809ab217d642adfc8b0f552be049bbe18b4a3",
+    "comfy_kitchen_registry_py": "e7eb061c1d52222af2a8d738102bfe9f4e85d5cc5a9f9fe4bd443d0185b0f77f",
+    "kitchen_cuda_backend_py": "27ef9c1063a3dcdee6e05928e07588ed82f076b64c07c131d987d065ab4c50ac",
+    "kitchen_cuda_extension_pyd": "d41adbb507c46868446beb1d756d3953a4fc5b9187970baf83f7abe5993c58b9",
+    "audit_tool_py": "9ca00970ac773f0659bbdee042cde79883010e80979f168bf8ff5edf4f358ef5"
+  },
+  "direct_observations": [
+    "In one new child process, importing Kitchen alone leaves CUDA registered and enabled and Sol availability true.",
+    "Importing comfy.quant_ops in that same PID emits the cu130 warning, leaves the CUDA backend registered and extension present, marks CUDA disabled, and changes Sol availability to false.",
+    "The actual isolated 8190 server at lab extension registration has the same disabled state; CUDA extension and symbol exist, and SM 8.6 meets the recorded SM 8.0 constraint."
+  ],
+  "classification": {
+    "result": "registered_but_disabled_by_comfy_cuda_build_gate",
+    "extension_missing": false,
+    "symbol_missing": false,
+    "architecture_unsatisfied": false,
+    "unknown_for_this_live_snapshot": false,
+    "historical_report01_process_state": "not_reconstructed; current-process repro explains the difference but does not invent old process snapshots"
+  },
+  "interpretation": "torch.version.cuda=12.8 is below the local Comfy quant_ops threshold 13.0; quant_ops disables the Kitchen CUDA registry. The tested availability change is directly observed in the fresh child process and the disabled state is directly observed at live lab registration.",
+  "limitations": [
+    "The import-only child process reproduces import order, not full server initialization.",
+    "The live snapshot is taken at experimental extension registration and does not assert no later runtime mutation.",
+    "No model forward, attention kernel smoke, microbenchmark, or video generation was run.",
+    "This does not claim the Kitchen dense attention path is unavailable or that the entire model ran on CPU."
+  ],
+  "private_evidence_relative_paths": {
+    "import_order_full_snapshot": "local/sol_runtime_audit/import_order.json",
+    "live_registration_full_snapshot": "local/runs/sol_runtime_audit/runtime/output/.acceleration_lab/sol-runtime-audit-22032-20261010T063540654264Z.json",
+    "live_stdout": "local/runs/sol_runtime_audit/lab_stdout.log",
+    "live_stderr": "local/runs/sol_runtime_audit/lab_stderr.log"
+  },
+  "formal_8188_restarted": false,
+  "main_merged": false
+}

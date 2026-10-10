@@ -1,0 +1,83 @@
+{
+  "schema": "terry_acceleration_lab_sol_cu130_comparison_v1",
+  "branch": "feat/selflift-internal",
+  "required_commit": "134d309",
+  "current_commit": "134d30938667ceb35eb783788b5c0757cee31ebd",
+  "environment_ready": true,
+  "environment_source": "report07 cu130 handover; not reinitialized this turn",
+  "environment": {
+    "python": "3.12.13",
+    "torch": "2.11.0+cu130",
+    "torchvision": "0.26.0+cu130",
+    "torchaudio": "2.11.0+cu130",
+    "torch_cuda_build": "13.0",
+    "comfy_kitchen": "0.2.37",
+    "comfyui_commit": "b26625f23a888367b92153b28d93e159e83e677b",
+    "kjnodes_commit": "3f20054214fec9f9234fd3841ae6f1e4287948f6",
+    "cu128_backup_untouched": true,
+    "dependencies_installed_or_upgraded": false
+  },
+  "preflight": {
+    "unit_tests": {
+      "passed": 67,
+      "failed": 0
+    },
+    "isolation": {
+      "passed": true,
+      "production_files_unchanged": true,
+      "forbidden_changed_paths": []
+    },
+    "queues_empty": true,
+    "b0_api_sha256": "d867be9289b4f91e4d61feb6b9ee4e3172a61370fcbad9a35dd7c5912083e864",
+    "b1_api_sha256": "b1cfd6576406102d31bc2868c605a24a9adf72edab213135398d5ac0daf911b5",
+    "b1_binding": {
+      "passed": true,
+      "normalized_selection": {
+        "selection": "sol-attn",
+        "tau": 1.0
+      },
+      "old_format_rejected": true
+    },
+    "workflow_validation": {
+      "passed": false,
+      "error": "The selected 8188 object_info registry does not include TerryAccelLabCondition (KeyError); validation stopped before starting an isolated 8190 instance."
+    },
+    "generation_submissions": 0
+  },
+  "b0_success": false,
+  "b0": {
+    "started": false,
+    "submissions": 0,
+    "prompt_id": null,
+    "execution_start_ms": null,
+    "execution_success_ms": null,
+    "actual_interpreter": null,
+    "sol_gate": null,
+    "sol_chunked_calls": null,
+    "stage_timings": null,
+    "output_spec": null,
+    "quality": "pending_manual_confirmation; no media generated"
+  },
+  "b1_success": false,
+  "b1": {
+    "started": false,
+    "submissions": 0,
+    "prompt_id": null,
+    "actual_interpreter": null,
+    "sol_gate": null,
+    "sol_chunked_calls": null,
+    "stage_timings": null,
+    "output_spec": null,
+    "quality": "pending_manual_confirmation; no media generated",
+    "not_started_reason": "B0 preflight did not pass; sequential stop rule"
+  },
+  "sol_observed": false,
+  "speed_comparison": {
+    "available": false,
+    "reason": "No cu130 B0/B1 generation was submitted; report03 cu128 B0 is historical cross-environment reference only."
+  },
+  "traceback": "Preflight workflow validation raised KeyError: 'TerryAccelLabCondition' after reading the live 8188 object_info registry. No generation process was started.",
+  "main_merged": false,
+  "production_code_modified": false,
+  "formal_service_restarted": false
+}

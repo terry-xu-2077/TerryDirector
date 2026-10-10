@@ -1,0 +1,323 @@
+{
+  "schema": "selflift_lowvram_attention_clip1_compact_v1",
+  "code_commit": "756c2d9a164f99b788ec1033dbacb15bc06485d7",
+  "baseline_code_commit": "fbdf0ae5b9f1de981771c51d2524535ac82e223a",
+  "prompt_id": "13cb6203-424c-43ec-bc39-bb3bfb50eb3b",
+  "director_id": "9600328",
+  "generation_submitted": true,
+  "submission_count": 1,
+  "integrity_ok": true,
+  "integrity_errors": [],
+  "trace_session": "321acf815ae84866ac15f6f7b3e5f33e",
+  "trace_pid": 32720,
+  "raw_trace_sha256": "79af51f6f3ce5a97e36f38e246e0551b46250e5c0d6e292b8c3826568050872b",
+  "source_request_sha256": "efed65e30406b7c612541fb68aceff411eaa0f8b7084b2bcfc9c3ce563e7b1cf",
+  "submitted_request_sha256": "36edcdc2b61bfd6d96d0fe415ebd7630b663b7a017e82563a3b211e309691ebf",
+  "history": {
+    "execution_start_ms": 1791592213681,
+    "execution_success_ms": 1791593018028,
+    "execution_start_utc": "2026-10-10T00:30:13.681+00:00",
+    "execution_success_utc": "2026-10-10T00:43:38.028+00:00",
+    "duration_s": 804.347,
+    "status": "success",
+    "completed": true
+  },
+  "measured_root_union_s": 801.3714211,
+  "history_minus_measured_union_s": 2.9755789,
+  "plan": [
+    {
+      "id": "clip-1",
+      "index": 1,
+      "h3_frames": 107,
+      "output_frames": 96
+    }
+  ],
+  "trace_markers": [
+    {
+      "event": "trace_ready",
+      "line": 1,
+      "utc": "2026-10-10T00:29:46.116+00:00",
+      "monotonic_ns": 290868532144000
+    },
+    {
+      "event": "native_trace_ready",
+      "line": 2,
+      "utc": "2026-10-10T00:30:15.086+00:00",
+      "monotonic_ns": 290897501153700
+    },
+    {
+      "event": "plan",
+      "line": 4,
+      "utc": "2026-10-10T00:30:15.090+00:00",
+      "monotonic_ns": 290897505349300
+    }
+  ],
+  "model_chain": {
+    "baseline": [
+      "UNETLoader",
+      "LoraLoaderModelOnly",
+      "PathchSageAttentionKJ",
+      "MiniMaxChunkFeedForward",
+      "TerryDirectorConfig"
+    ],
+    "current": [
+      "UNETLoader",
+      "LoraLoaderModelOnly",
+      "PathchSageAttentionKJ",
+      "MiniMaxLowVRAMAttention",
+      "MiniMaxChunkFeedForward",
+      "TerryDirectorConfig"
+    ],
+    "candidate": {
+      "head_chunks": 4
+    },
+    "ffn": {
+      "chunks": 2,
+      "seq_threshold": 4096
+    },
+    "runtime_patch_count_log": 208,
+    "runtime_head_group_calls_independently_observed": false
+  },
+  "stages": [
+    {
+      "event": "conditioning",
+      "segment_id": "clip-1",
+      "parent_id": null,
+      "line_start": 6,
+      "line_end": 69,
+      "utc_start": "2026-10-10T00:30:15.823+00:00",
+      "utc_end": "2026-10-10T00:31:39.458+00:00",
+      "monotonic_start_ns": 290898239559700,
+      "monotonic_end_ns": 290981872305000,
+      "host_wall_s": 83.6327453,
+      "outside_children_s": 77.2680546,
+      "baseline_host_wall_s": 84.2392087,
+      "baseline_line_start": 134,
+      "baseline_line_end": 197,
+      "delta_baseline_minus_current_s": 0.6064634,
+      "improvement_percent": 0.7199
+    },
+    {
+      "event": "low_sampling",
+      "segment_id": "clip-1",
+      "parent_id": "d398721836f44acc95729274102f4a07",
+      "line_start": 71,
+      "line_end": 84,
+      "utc_start": "2026-10-10T00:31:39.594+00:00",
+      "utc_end": "2026-10-10T00:37:50.801+00:00",
+      "monotonic_start_ns": 290982009054600,
+      "monotonic_end_ns": 291353210513100,
+      "host_wall_s": 371.2014585,
+      "outside_children_s": 371.1467304,
+      "baseline_host_wall_s": 373.1614507,
+      "baseline_line_start": 199,
+      "baseline_line_end": 212,
+      "delta_baseline_minus_current_s": 1.9599922,
+      "improvement_percent": 0.5252
+    },
+    {
+      "event": "resolution_transition",
+      "segment_id": "clip-1",
+      "parent_id": "d398721836f44acc95729274102f4a07",
+      "line_start": 85,
+      "line_end": 101,
+      "utc_start": "2026-10-10T00:37:50.801+00:00",
+      "utc_end": "2026-10-10T00:37:53.787+00:00",
+      "monotonic_start_ns": 291353211809800,
+      "monotonic_end_ns": 291356196966800,
+      "host_wall_s": 2.985157,
+      "outside_children_s": 0.0814054,
+      "baseline_host_wall_s": 2.9977045,
+      "baseline_line_start": 213,
+      "baseline_line_end": 229,
+      "delta_baseline_minus_current_s": 0.0125475,
+      "improvement_percent": 0.4186
+    },
+    {
+      "event": "latent_upscale",
+      "segment_id": "clip-1",
+      "parent_id": "58636ee12d684052baade4ae8f2dbf0b",
+      "line_start": 86,
+      "line_end": 100,
+      "utc_start": "2026-10-10T00:37:50.804+00:00",
+      "utc_end": "2026-10-10T00:37:53.709+00:00",
+      "monotonic_start_ns": 291353214613400,
+      "monotonic_end_ns": 291356118365000,
+      "host_wall_s": 2.9037516,
+      "outside_children_s": 2.2247416,
+      "baseline_host_wall_s": 2.9178772,
+      "baseline_line_start": 214,
+      "baseline_line_end": 228,
+      "delta_baseline_minus_current_s": 0.0141256,
+      "improvement_percent": 0.4841
+    },
+    {
+      "event": "high_sampling",
+      "segment_id": "clip-1",
+      "parent_id": "d398721836f44acc95729274102f4a07",
+      "line_start": 102,
+      "line_end": 111,
+      "utc_start": "2026-10-10T00:37:53.787+00:00",
+      "utc_end": "2026-10-10T00:41:31.372+00:00",
+      "monotonic_start_ns": 291356199242000,
+      "monotonic_end_ns": 291573780318200,
+      "host_wall_s": 217.5810762,
+      "outside_children_s": 217.4820747,
+      "baseline_host_wall_s": 218.5354439,
+      "baseline_line_start": 230,
+      "baseline_line_end": 239,
+      "delta_baseline_minus_current_s": 0.9543677,
+      "improvement_percent": 0.4367
+    },
+    {
+      "event": "selflift",
+      "segment_id": "clip-1",
+      "parent_id": null,
+      "line_start": 70,
+      "line_end": 112,
+      "utc_start": "2026-10-10T00:31:39.574+00:00",
+      "utc_end": "2026-10-10T00:41:31.382+00:00",
+      "monotonic_start_ns": 290981988235400,
+      "monotonic_end_ns": 291573789975400,
+      "host_wall_s": 591.80174,
+      "outside_children_s": 0.0340483,
+      "baseline_host_wall_s": 594.7370045,
+      "baseline_line_start": 198,
+      "baseline_line_end": 240,
+      "delta_baseline_minus_current_s": 2.9352645,
+      "improvement_percent": 0.4935
+    },
+    {
+      "event": "latent_checkpoint",
+      "segment_id": "clip-1",
+      "parent_id": null,
+      "line_start": 113,
+      "line_end": 116,
+      "utc_start": "2026-10-10T00:41:32.012+00:00",
+      "utc_end": "2026-10-10T00:41:32.070+00:00",
+      "monotonic_start_ns": 291574420075500,
+      "monotonic_end_ns": 291574477099600,
+      "host_wall_s": 0.0570241,
+      "outside_children_s": 0.0043131,
+      "baseline_host_wall_s": 0.0563279,
+      "baseline_line_start": 241,
+      "baseline_line_end": 244,
+      "delta_baseline_minus_current_s": -0.0006962,
+      "improvement_percent": -1.236
+    },
+    {
+      "event": "decode_cache",
+      "segment_id": "clip-1",
+      "parent_id": null,
+      "line_start": 117,
+      "line_end": 136,
+      "utc_start": "2026-10-10T00:41:32.080+00:00",
+      "utc_end": "2026-10-10T00:43:33.845+00:00",
+      "monotonic_start_ns": 291574488158700,
+      "monotonic_end_ns": 291696251129600,
+      "host_wall_s": 121.7629709,
+      "outside_children_s": 0.7108325,
+      "baseline_host_wall_s": 122.247848,
+      "baseline_line_start": 245,
+      "baseline_line_end": 264,
+      "delta_baseline_minus_current_s": 0.4848771,
+      "improvement_percent": 0.3966
+    },
+    {
+      "event": "final_output",
+      "segment_id": null,
+      "parent_id": null,
+      "line_start": 137,
+      "line_end": 140,
+      "utc_start": "2026-10-10T00:43:33.870+00:00",
+      "utc_end": "2026-10-10T00:43:37.984+00:00",
+      "monotonic_start_ns": 291696277396500,
+      "monotonic_end_ns": 291700390112200,
+      "host_wall_s": 4.1127157,
+      "outside_children_s": 3.4958469
+    }
+  ],
+  "step_callbacks": [
+    {
+      "segment_id": "clip-1",
+      "stage": "low_sampling",
+      "callback_index": 1,
+      "line": 78,
+      "utc": "2026-10-10T00:32:59.853+00:00",
+      "monotonic_ns": 291062267246500,
+      "delta_s": 80.2589294,
+      "first_includes_setup": true
+    },
+    {
+      "segment_id": "clip-1",
+      "stage": "low_sampling",
+      "callback_index": 2,
+      "line": 79,
+      "utc": "2026-10-10T00:34:05.785+00:00",
+      "monotonic_ns": 291128197573900,
+      "delta_s": 65.9303329,
+      "first_includes_setup": false
+    },
+    {
+      "segment_id": "clip-1",
+      "stage": "low_sampling",
+      "callback_index": 3,
+      "line": 80,
+      "utc": "2026-10-10T00:35:18.431+00:00",
+      "monotonic_ns": 291200842796100,
+      "delta_s": 72.6452112,
+      "first_includes_setup": false
+    },
+    {
+      "segment_id": "clip-1",
+      "stage": "low_sampling",
+      "callback_index": 4,
+      "line": 81,
+      "utc": "2026-10-10T00:36:31.316+00:00",
+      "monotonic_ns": 291273727057500,
+      "delta_s": 72.8842714,
+      "first_includes_setup": false
+    },
+    {
+      "segment_id": "clip-1",
+      "stage": "low_sampling",
+      "callback_index": 5,
+      "line": 82,
+      "utc": "2026-10-10T00:37:44.476+00:00",
+      "monotonic_ns": 291346887078700,
+      "delta_s": 73.1600138,
+      "first_includes_setup": false
+    },
+    {
+      "segment_id": "clip-1",
+      "stage": "high_sampling",
+      "callback_index": 1,
+      "line": 109,
+      "utc": "2026-10-10T00:41:31.366+00:00",
+      "monotonic_ns": 291573774216800,
+      "delta_s": 217.576353,
+      "first_includes_setup": true
+    }
+  ],
+  "comparison": {
+    "low_plus_high_s": 588.7825347,
+    "baseline_low_plus_high_s": 591.6968946,
+    "low_plus_high_improvement_percent": 0.4925,
+    "low_callbacks_2_to_5_s": 284.6198293,
+    "baseline_low_callbacks_2_to_5_s": 285.9697266
+  },
+  "video": {
+    "filename": "TerryDirector_SelfLift_LowVRAM_Clip1_00001_.mp4",
+    "size_bytes": 3748235,
+    "sha256": "d9357647078e5a0830ee117e2f88bf998187c81f16111f1c6024c3a831d5935e",
+    "width": 1920,
+    "height": 1088,
+    "fps": 24,
+    "frames": 96,
+    "duration_s": 4,
+    "audio_codec": "aac",
+    "audio_decode_ok": true
+  },
+  "timing_policy": "Host wall perf_counter_ns; no forced CUDA sync; nested parent/child times overlap and must not be added.",
+  "quality_policy": "Three still frames inspected against report 34 first four seconds; full motion and sound not actually watched or heard."
+}

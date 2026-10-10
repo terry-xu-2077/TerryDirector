@@ -1,0 +1,241 @@
+{
+  "schema": "terry_accel_lab_cu130_env_handover_v1",
+  "run_date": "2026-10-10",
+  "status": "PASS_WITH_NOTES",
+  "branch": "feat/selflift-internal",
+  "source_commits": {
+    "terrydirector_before_report": "c68aa00a088a7d0bfd8d9c4c60cafddd9d3a62c5",
+    "comfyui": "b26625f23a888367b92153b28d93e159e83e677b",
+    "kjnodes": "3f20054214fec9f9234fd3841ae6f1e4287948f6"
+  },
+  "pre_handover_audit_commit": "c68aa00a088a7d0bfd8d9c4c60cafddd9d3a62c5",
+  "trigger": {
+    "report": "experiments/acceleration_lab/reports/06_SOL_RUNTIME_GATE_AUDIT.md",
+    "old_torch_cuda_build": "12.8",
+    "old_full_server_sol_available": false,
+    "old_cuda_backend_disabled": true,
+    "interpretation": "The documented blocker remained after the zero-generation audit; migration was authorized."
+  },
+  "migration": {
+    "performed": true,
+    "rollback_performed": false,
+    "old_environment_type": "Conda prefix",
+    "original_prefix": "ComfyUI/.venv",
+    "backup_prefix": "ComfyUI/.venv_cu128_backup_20261010_144207",
+    "new_prefix": "ComfyUI/.venv",
+    "backup_left_untouched": true,
+    "backup_key_binary_hashes_match": 48,
+    "conda_version": "25.11.1",
+    "python_version": "3.12.13",
+    "driver_changed": false,
+    "system_cuda_toolkit_changed": false
+  },
+  "wheels": [
+    {
+      "filename": "torch-2.11.0+cu130-cp312-cp312-win_amd64.whl",
+      "sha256": "ef8beae16d781c3244ef28dc7bee6d8871c26bbde65d5bf66e902cb61972c4ab",
+      "source": "https://download.pytorch.org/whl/cu130/torch/",
+      "provided_by_user": true
+    },
+    {
+      "filename": "torchvision-0.26.0+cu130-cp312-cp312-win_amd64.whl",
+      "sha256": "a3578f7c8e8a2724306c68c56873a1675fa7ce45471e18235c720a2ed242fe44",
+      "source": "https://download.pytorch.org/whl/cu130/torchvision/",
+      "provided_by_user": true
+    },
+    {
+      "filename": "torchaudio-2.11.0+cu130-cp312-cp312-win_amd64.whl",
+      "sha256": "f74949f9ace1e4a6cf9468bdb3211b9cfa0af6ea348125471ac71c8621d6c77d",
+      "source": "https://download.pytorch.org/whl/cu130/torchaudio/",
+      "provided_by_user": true
+    }
+  ],
+  "package_versions": {
+    "torch_before": "2.11.0+cu128",
+    "torch_after": "2.11.0+cu130",
+    "torchvision_before": "0.26.0+cu128",
+    "torchvision_after": "0.26.0+cu130",
+    "torchaudio_before": "2.11.0+cu128",
+    "torchaudio_after": "2.11.0+cu130",
+    "comfy_kitchen": "0.2.37",
+    "sageattention": "2.2.0+cu130torch2.10.0andhigher.post5",
+    "triton_windows": "3.7.1.post27",
+    "comfyui": "0.39.0"
+  },
+  "device": {
+    "name": "NVIDIA GeForce RTX 3090",
+    "driver_version": "591.74",
+    "compute_capability": "8.6",
+    "torch_cuda_build": "13.0",
+    "cuda_available": true
+  },
+  "pip_check": {
+    "before_conflicts": 3,
+    "after_conflicts": 3,
+    "new_conflicts": 0,
+    "conflicts": [
+      "llama-cpp-python requires numpy<=2.3.2; installed numpy 2.5.3",
+      "mixpanel requires pydantic<2.12; installed pydantic 2.13.5",
+      "numba requires numpy<2.5; installed numpy 2.5.3"
+    ],
+    "freeze_changes": "Only torch, torchvision and torchaudio build entries changed; new direct_url metadata points to the local cu130 wheels."
+  },
+  "tests": {
+    "unittest_discover": {
+      "passed": true,
+      "tests": 67,
+      "failures": 0,
+      "errors": 0
+    },
+    "git_isolation": {
+      "passed": true,
+      "production_files_unchanged": true,
+      "forbidden_changed_paths": [],
+      "baseline_commit": "0c82cd7bfb2de963304479eda86e02513e106da0"
+    }
+  },
+  "import_order_audit": {
+    "passed": true,
+    "generation_submissions": 0,
+    "before_quant_ops": {
+      "sol_available": true,
+      "cuda_backend_disabled": false,
+      "registry_cuda_available": true,
+      "extension_loaded": true,
+      "extension_has_sol_attn": true,
+      "errors": []
+    },
+    "after_quant_ops": {
+      "sol_available": true,
+      "cuda_backend_disabled": false,
+      "registry_cuda_available": true,
+      "extension_loaded": true,
+      "extension_has_sol_attn": true,
+      "errors": []
+    },
+    "availability_changed": false,
+    "cuda_disabled_changed": false
+  },
+  "full_8190_server_audit": {
+    "passed": true,
+    "pid": 30804,
+    "torch_cuda_build": "13.0",
+    "sol_available": true,
+    "cuda_backend_disabled": false,
+    "extension_loaded": true,
+    "extension_has_sol_attn": true,
+    "errors": [],
+    "object_info_key_count": 1246,
+    "registered_nodes": [
+      "TerryAccelLabSelfLift",
+      "TerryAccelLabSolLowVRAMBridge",
+      "MiniMaxChunkFeedForward",
+      "ModelAttentionBackend"
+    ],
+    "prompt_endpoint_called": false,
+    "queue_submissions": 0
+  },
+  "microtensor_smoke": {
+    "passed": true,
+    "model_forwards": 0,
+    "dtype": "bfloat16",
+    "device": "cuda:0",
+    "cases": [
+      {
+        "path": "Kitchen Sol regular",
+        "input": "Q/K/V [1,64,1,128]",
+        "output": "[1,64,1,128]",
+        "finite": true,
+        "single_call_ms": 12.024
+      },
+      {
+        "path": "Kitchen Sol chunked",
+        "input": "QKV [64,384], T=64, H=1",
+        "output": "[1,64,1,128] + Kmean/Vscale [1,128]",
+        "finite": true,
+        "single_call_ms": 28.908
+      },
+      {
+        "path": "Comfy Kitchen INT8 attention",
+        "input": "Q/K/V [1,1,64,128]",
+        "output": "[1,1,64,128]",
+        "finite": true,
+        "single_call_ms": 12.468
+      },
+      {
+        "path": "SageAttention",
+        "input": "Q/K/V [1,1,64,128]",
+        "output": "[1,1,64,128]",
+        "finite": true,
+        "single_call_ms": 473.887
+      },
+      {
+        "path": "Comfy Kitchen INT8 linear",
+        "input": "X [4,64], Wq [32,64]",
+        "output": "[4,32]",
+        "finite": true,
+        "single_call_ms": 4.283
+      }
+    ],
+    "timings_are_performance_benchmarks": false
+  },
+  "formal_service": {
+    "port": 8188,
+    "original_command_restored": true,
+    "active_listener_pid": 33652,
+    "start_process_reported_pid": 14104,
+    "listener_executable": "ComfyUI/.venv/python.exe",
+    "listener_command": "main.py --listen 0.0.0.0 --port 8188 --enable-manager --use-sage-attention",
+    "http_ready": true,
+    "queue_running": 0,
+    "queue_pending": 0,
+    "registered_node_count": 2759,
+    "selflift_sampler_registered": true,
+    "sol_nodes_registered": true,
+    "port_8190_closed": true,
+    "transient_port_conflict_log_present": true
+  },
+  "startup_notes": [
+    {
+      "item": "Kornia optional-node import error: cannot import name pad from kornia.geometry.transform.pyramid",
+      "comparison": "No old formal-service stderr snapshot was available; whether this predates migration is unknown."
+    },
+    {
+      "item": "Numba optional-node import error: installed NumPy 2.5.3 exceeds the package's 2.4-or-less bound",
+      "comparison": "The NumPy/Numba conflict was present in pre-migration pip check."
+    },
+    {
+      "item": "A Port 8188 already in use message occurred during startup; final single listener and HTTP API were verified.",
+      "comparison": "Transient startup note retained; final service is operational."
+    }
+  ],
+  "generation_submissions": 0,
+  "video_tasks": 0,
+  "main_merged": false,
+  "private_evidence_root": "experiments/acceleration_lab/local/env_handover/20261010_144207/",
+  "private_server_logs": "experiments/acceleration_lab/local/runs/cu130_handover_20261010/",
+  "private_evidence_files": [
+    "python_info.json",
+    "pip_freeze.txt",
+    "pip_list.json",
+    "pip_check.txt",
+    "conda_env_export.yml",
+    "conda_explicit.txt",
+    "environment_layout.json",
+    "old_env_file_inventory.json",
+    "old_key_binary_hashes.json",
+    "backup_hash_recheck.json",
+    "cu130_first_probe.json",
+    "cu130_import_order_audit.json",
+    "8190_runtime_audit_summary.json",
+    "microtensor_results.json",
+    "experiment_tests.log",
+    "isolation_check.log",
+    "8190_stop.json",
+    "8188_cu130_start.json",
+    "8188_registered_nodes_summary.json",
+    "8188_error_scan.json",
+    "8188_cu130_stdout.log",
+    "8188_cu130_stderr.log"
+  ]
+}

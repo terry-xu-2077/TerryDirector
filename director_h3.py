@@ -275,17 +275,12 @@ def _sample_segment(
             "tiling_axis": str(second["tiling_axis"]),
         }
 
-        if str(second.get("sampler_model_inputs", "current")) == "legacy":
-            inputs["model"] = runtime["model"]
-            if second.get("high_res_model") is not None:
-                inputs["model_hires"] = second["high_res_model"]
-        else:
-            inputs["low_res_model"] = runtime["model"]
-            if second.get("high_res_model") is not None:
-                inputs["high_res_model"] = second["high_res_model"]
+        inputs["model"] = runtime["model"]
+        if second.get("high_res_model") is not None:
+            inputs["high_res_model"] = second["high_res_model"]
 
         return graph.node(
-            "SelfLiftAvatarH3Sampler",
+            "TerryDirectorSelfLiftSampler",
             f"{prefix}_selflift_sample",
             **inputs,
         ).out(0)
