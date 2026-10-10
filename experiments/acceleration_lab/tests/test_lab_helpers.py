@@ -79,7 +79,8 @@ class BuilderTests(unittest.TestCase):
         b1 = self.builder.build_sample(self.source, self.segment, "B1")
         sparse = [node for node in b1.values() if node["class_type"] == "BlockSparseAttention"]
         self.assertEqual(len(sparse), 1)
-        self.assertEqual(sparse[0]["inputs"]["selection"], {"selection": "sol-attn", "tau": 1.0})
+        self.assertEqual(sparse[0]["inputs"]["selection"], "sol-attn")
+        self.assertEqual(sparse[0]["inputs"]["selection.tau"], 1.0)
         for graph in (b0, b1):
             self.assertEqual(sum(n["class_type"] == "TerryAccelLabSaveVideo" for n in graph.values()), 1)
             self.assertFalse(any(n["class_type"].startswith("TerryDirector") for n in graph.values()))

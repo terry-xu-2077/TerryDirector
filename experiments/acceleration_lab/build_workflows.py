@@ -75,7 +75,7 @@ def build_sample(original, segment, variant):
     final_model = ffn
     if variant == "B1":
         final_model = add(graph, "BlockSparseAttention", model=link(ffn),
-            selection={"selection": "sol-attn", "tau": 1.0}, start_percent=.05,
+            selection="sol-attn", **{"selection.tau": 1.0}, start_percent=.05,
             end_percent=1.0, dense_blocks="0,1,48,49", min_tokens=12288,
             extra_tokens=256, sink_conditioning="exact_kv_and_rows", verbose=True)
     clip = add(graph, "CLIPLoader", **source["331"]["inputs"])

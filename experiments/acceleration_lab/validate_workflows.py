@@ -5,6 +5,36 @@ from pathlib import Path
 from urllib.request import urlopen
 
 
+def expand_dynamic_definitions(definitions, live_inputs, errors, prefix=""):
+    """Validate API wire form, not the dict passed to execute after V3 nesting.
+
+    Only expand the selected branch. The real ComfyUI binding preflight is in
+    preflight_sparse_binding.py; this static check does not replace it.
+    """
+    expanded = {"required": {}, "optional": {}}
+    for group in ("required", "optional"):
+        for name, definition in definitions.get(group, {}).items():
+            key = prefix + name
+            if definition[0] != "COMFY_DYNAMICCOMBO_V3":
+                expanded[group][key] = definition
+                continue
+            options = definition[1]["options"]
+            allowed = [option["key"] for option in options]
+            expanded[group][key] = (allowed, {})
+            if key not in live_inputs:
+                continue  # Required-root check below reports this.
+            value = live_inputs[key]
+            if not isinstance(value, str) or value not in allowed:
+                errors.append(f"{key}: DynamicCombo requires a string option; "
+                              "send child values as dotted keys, not an execute-time dict")
+                continue
+            option = next(item for item in options if item["key"] == value)
+            children = expand_dynamic_definitions(option["inputs"], live_inputs, errors, key + ".")
+            for child_group in expanded:
+                expanded[child_group].update(children[child_group])
+    return expanded
+
+
 def validate(api, ui, registry):
     graph = json.loads(Path(api).read_text(encoding="utf-8"))["prompt"]
     workflow = json.loads(Path(ui).read_text(encoding="utf-8"))
@@ -22,10 +52,15 @@ def validate(api, ui, registry):
         if schema is None:
             errors.append(f"{node_id}: unregistered {kind}")
             continue
-        definitions = schema["input"]
-        required = definitions.get("required", {})
-        optional = definitions.get("optional", {})
         inputs = node["inputs"]
+        dynamic_errors = []
+        definitions = expand_dynamic_definitions(schema["input"], inputs, dynamic_errors)
+        errors.extend(f"{node_id}: {error}" for error in dynamic_errors)
+        required = definitions["required"]
+        optional = definitions["optional"]
+        if kind == "BlockSparseAttention":
+            if inputs.get("selection") != "sol-attn" or inputs.get("selection.tau") != 1.0:
+                errors.append(f"{node_id}: expected lab Sol preset selection=sol-attn, selection.tau=1.0")
         missing = set(required) - set(inputs)
         if missing:
             errors.append(f"{node_id}: missing {sorted(missing)}")
@@ -46,11 +81,17 @@ def validate(api, ui, registry):
                     errors.append(f"{node_id}.{name}: {source[slot]} -> {expected}")
             elif isinstance(expected, list) and value not in expected:
                 errors.append(f"{node_id}.{name}: enum value invalid")
-            elif expected == "COMFY_DYNAMICCOMBO_V3":
-                if not isinstance(value, dict) or not any(option["key"] == value.get(name) for option in definition[1]["options"]):
-                    errors.append(f"{node_id}.{name}: dynamic combo invalid")
-                elif kind == "BlockSparseAttention" and value.get("tau") != 1.0:
-                    errors.append(f"{node_id}.{name}: Sol tau missing")
+    # The generated UI carries named values and an API snapshot; stale nested
+    # DynamicCombo metadata must not pass just because node counts match.
+    if workflow.get("extra", {}).get("acceleration_lab_api") != graph:
+        errors.append("UI embedded API differs from submitted API")
+    for ui_node in workflow["nodes"]:
+        node = graph.get(str(ui_node["id"]))
+        if node and node["class_type"] == "BlockSparseAttention":
+            named = ui_node.get("widgets_values_named", {})
+            for key in ("selection", "selection.tau"):
+                if key not in named or named[key] != node["inputs"].get(key):
+                    errors.append(f"{ui_node['id']}: UI/API dynamic widget differs: {key}")
     edges = {edge[0] for edge in workflow["links"]}
     if len(edges) != len(workflow["links"]):
         errors.append("Duplicate UI link IDs")
