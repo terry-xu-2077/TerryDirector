@@ -30,6 +30,7 @@ _INSTALLED = False
 _NATIVE_READY = False
 _PLANS = OrderedDict()  # At most 16 prompts; contains identifiers only, no tensors.
 _INDEX = re.compile(r"(?:^|\.)td_s(\d+)_")
+_OP_PROFILE = None
 
 
 def enabled():
@@ -258,7 +259,11 @@ def wrap_sampler(function):
                 last = now
                 return original(*cb_args, **cb_kwargs)
             values["callback"] = callback
-            result = function(**values)
+            if _OP_PROFILE is not None:
+                with _OP_PROFILE.sampling_phase(phase, lambda: count):
+                    result = function(**values)
+            else:
+                result = function(**values)
             event("sampler_return", span_id=key, name=phase, callbacks=count,
                   tail_since_callback_s=(time.perf_counter_ns()-last)/1e9)
         if state["calls"] == 1:
@@ -310,7 +315,7 @@ def install_native():
 
 
 def install(package, node_classes):
-    global _INSTALLED
+    global _INSTALLED, _OP_PROFILE
     if not enabled() or _INSTALLED:
         return
     engine = importlib.import_module(f"{package}.director_selflift")
@@ -321,6 +326,11 @@ def install(package, node_classes):
     engine.sample_selflift = wrapped
     engine_node.sample_selflift = wrapped  # Also replace the existing from-import alias.
     engine.ComfyBackend.sample = wrap_sampler(engine.ComfyBackend.sample)
+    if os.environ.get("TERRYDIRECTOR_OP_PROFILE") == "1":
+        op = importlib.import_module(f"{package}.tools.selflift_operator_profile")
+        mode = os.environ.get("TERRYDIRECTOR_OP_PROFILE_MODE", "cpu_events")
+        op.install(importlib.import_module(__name__), mode)
+        _OP_PROFILE = op
     patch(lifter, "learned_lift", "latent_upscale")
     patch(lifter, "_load", "upscaler_weights")
     patch(lifter, "_offload_owned", "upscaler_offload")
