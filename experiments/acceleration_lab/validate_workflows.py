@@ -2,7 +2,9 @@
 import argparse
 import json
 from pathlib import Path
-from urllib.request import urlopen
+from urllib.error import URLError
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, build_opener
 
 
 def expand_dynamic_definitions(definitions, live_inputs, errors, prefix=""):
@@ -74,7 +76,12 @@ def validate(api, ui, registry):
             expected = definition[0]
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str) and value[0] in graph:
                 source_id, slot = value
-                source = registry[graph[source_id]["class_type"]]["output"]
+                source_kind = graph[source_id]["class_type"]
+                source_schema = registry.get(source_kind)
+                if source_schema is None:
+                    errors.append(f"{node_id}.{name}: source {source_id} is unregistered: {source_kind}")
+                    continue
+                source = source_schema["output"]
                 if not isinstance(slot, int) or slot < 0 or slot >= len(source):
                     errors.append(f"{node_id}.{name}: invalid source slot")
                 elif isinstance(expected, str) and source[slot] != expected:
@@ -98,21 +105,89 @@ def validate(api, ui, registry):
     return errors
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--server", default="http://127.0.0.1:8190")
-    parser.add_argument("--directory", type=Path, required=True)
-    args = parser.parse_args()
-    with urlopen(args.server + "/object_info", timeout=20) as stream:
+def lab_server_url(value):
+    """This experiment uses 8190 only; never substitute the production 8188."""
+    parsed = urlsplit(value)
+    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.port != 8190 or parsed.username is not None or parsed.password is not None
+            or parsed.path not in {"", "/"} or parsed.query or parsed.fragment):
+        raise ValueError("Use the isolated http://127.0.0.1:8190 instance. "
+                         "Do not validate lab workflows against production 8188.")
+    return value.rstrip("/")
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise URLError("Lab registry redirects are refused; do not change the target instance")
+
+
+def read_lab_registry(server, required_lab_nodes):
+    server = lab_server_url(server)
+    # No proxy or redirect can silently route validation to another server.
+    opener = build_opener(ProxyHandler({}), _NoRedirect())
+    with opener.open(server + "/object_info", timeout=20) as stream:
         registry = json.load(stream)
-    names = ("Lab_B0_Dense_Clip1", "Lab_B1_SolAttn_Clip1",
-             "Lab_V0_CurrentVAE_Decode", "Lab_V1_INT8VAE_Decode")
-    result = {}
-    for name in names:
-        result[name] = validate(args.directory / (name + ".api.json"),
-                                args.directory / (name + ".json"), registry)
+    if not isinstance(registry, dict):
+        raise ValueError("Lab object_info is not a node registry")
+    missing = sorted(set(required_lab_nodes) - set(registry))
+    if missing:
+        raise ValueError("Lab nodes are not loaded in this 8190 process: " + ", ".join(missing)
+                         + ". Check its PID, module paths and startup log; "
+                           "do not install lab nodes into production.")
+    return registry
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=(
+        "Read-only workflow validation AFTER starting the isolated lab. "
+        "This tool neither starts a server nor submits generation."))
+    parser.add_argument("--server", default="http://127.0.0.1:8190")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--directory", type=Path, help="Validate the four original lab file pairs")
+    source.add_argument("--api", type=Path, help="Validate only this API; requires --ui")
+    parser.add_argument("--ui", type=Path, help="Matching UI file for --api")
+    args = parser.parse_args(argv)
+    if bool(args.api) != bool(args.ui):
+        parser.error("--api and --ui must be supplied together; --ui cannot accompany --directory")
+    result = {"generation_submissions": 0, "runtime_identity_verified": False,
+              "scope": "Registry/schema/link validation only; verify PID, interpreter and Sol gate separately"}
+    try:
+        server = lab_server_url(args.server)
+    except ValueError as exc:
+        result.update(status="WRONG_INSTANCE", error=str(exc))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 2
+    result["server"] = server
+    if args.api:
+        pairs = [(args.api, args.ui)]
+    else:
+        names = ("Lab_B0_Dense_Clip1", "Lab_B1_SolAttn_Clip1",
+                 "Lab_V0_CurrentVAE_Decode", "Lab_V1_INT8VAE_Decode")
+        pairs = [(args.directory / (name + ".api.json"), args.directory / (name + ".json"))
+                 for name in names]
+    try:
+        required_lab_nodes = set()
+        for api, ui in pairs:
+            if not ui.is_file():
+                raise FileNotFoundError(ui)
+            graph = json.loads(api.read_text(encoding="utf-8"))["prompt"]
+            required_lab_nodes.update(node["class_type"] for node in graph.values()
+                                      if node["class_type"].startswith("TerryAccelLab"))
+        registry = read_lab_registry(server, required_lab_nodes)
+        result["workflows"] = {str(api): validate(api, ui, registry) for api, ui in pairs}
+        passed = not any(result["workflows"].values())
+        result["status"] = "SCHEMA_VALIDATED" if passed else "VALIDATION_FAILED"
+    except (URLError, TimeoutError, ConnectionError) as exc:
+        result.update(status="LAB_UNREACHABLE_OR_NOT_READY", error=str(exc), next_action=(
+            "After offline checks and confirming port 8190 is free, start start_lab.ps1 "
+            "-Port 8190 -RunName <new_unique_name>. Verify that PID finishes initialization, "
+            "then repeat this read-only check on 8190. Never substitute 8188."))
+        passed = False
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        result.update(status="PRECHECK_BLOCKED", error=str(exc))
+        passed = False
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if not any(result.values()) else 2
+    return 0 if passed else 2
 
 
 if __name__ == "__main__":
