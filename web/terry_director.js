@@ -1512,10 +1512,10 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>合并画面内存</strong>
+        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
       </div>
       <div class="td-output-memory-note">${isLoopEnd
-        ? "连接循环信息与官方 H3 工作流后显示预计内存占用。"
+        ? "连接循环信息与官方 H3 工作流后显示流式输出概况。"
         : "连接 TerryDirector 后显示预计内存占用。"}</div>
     `;
   } else if (estimate.state === "advanced") {
@@ -1533,7 +1533,7 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>循环输出概况</strong>
+        <strong>流式视频输出</strong>
       </div>
       <div class="td-output-memory-meta">
         ${estimate.activeClips} 个启用片段 · ${estimate.frames} 帧 · ${seconds}s · 24 fps
@@ -1545,28 +1545,33 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>合并画面内存</strong>
+        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
       </div>
       <div class="td-output-memory-note">${estimate.hint || "正在读取时间线与分辨率信息…"}</div>
     `;
   } else {
     const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
     const memory = estimate.gib.toFixed(1);
-    root.className = `td-output-memory-card is-${estimate.level}`;
+    root.className = isLoopEnd ? "td-output-memory-card is-normal"
+      : `td-output-memory-card is-${estimate.level}`;
     root.innerHTML = `
       <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">${estimate.level === "high" ? "!" : "i"}</span>
-        <strong>合并整段画面预计占用 <b>${memory} GB</b> 内存</strong>
+        <span class="td-output-memory-icon">${isLoopEnd ? "i" : estimate.level === "high" ? "!" : "i"}</span>
+        <strong>${isLoopEnd
+          ? `流式视频 · 避免约 <b>${memory} GB</b> 整段画面占用`
+          : `合并整段画面预计占用 <b>${memory} GB</b> 内存`}</strong>
       </div>
       <div class="td-output-memory-meta">
         ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}${isLoopEnd && estimate.source === "upstream" ? " · 上游分辨率" : ""}
       </div>
       <div class="td-output-memory-note">
-        ${estimate.level === "high"
-          ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
-          : estimate.level === "notice"
-            ? "内存占用较高，后续图像节点可能继续增加内存占用。"
-            : "当前合并画面内存占用处于正常范围。"}
+        ${isLoopEnd
+          ? "逐段无损缓存，交由 SaveVideo 单次流式编码；无需物化整段 IMAGE / AUDIO。"
+          : estimate.level === "high"
+            ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
+            : estimate.level === "notice"
+              ? "内存占用较高，后续图像节点可能继续增加内存占用。"
+              : "当前合并画面内存占用处于正常范围。"}
       </div>
     `;
   }

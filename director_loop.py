@@ -22,6 +22,7 @@ from comfy_extras.nodes_minimax_h3 import MiniMaxH3AddGuide
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_core import config_json, normalize_config
+from .director_loop_video import TerryDirectorStreamVideo
 from .director_internal import (
     TerryDirectorDecodeSegmentToCache,
     TerryDirectorMaterializeTimeline,
@@ -167,7 +168,7 @@ def _wants_segment_latents(dynprompt, close_id):
     """
     for node in (getattr(dynprompt, "original_prompt", None) or {}).values():
         for value in node.get("inputs", {}).values():
-            if is_link(value) and str(value[0]) == str(close_id) and int(value[1]) == 0:
+            if is_link(value) and str(value[0]) == str(close_id) and int(value[1]) == 1:
                 return True
     return False
 
@@ -571,7 +572,12 @@ class TerryDirectorLoopCache(io.ComfyNode):
 
 
 class TerryDirectorLoopEnd(io.ComfyNode):
-    """One visible boundary, automatic lossless cache + final IMAGE/AUDIO merge."""
+    """Low-memory video wrapper and optional segment LATENT outputs.
+
+    All video/audio frames remain in the validated lossless segment cache.
+    The VIDEO's save_to() is called by ComfyUI's official SaveVideo, which
+    streams frame-by-frame from disk without assembling a timeline-sized IMAGE.
+    """
 
     @classmethod
     def define_schema(cls):
@@ -583,19 +589,35 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             is_input_list=True,
             is_output_node=True,
             description=(
-                "自动缓存每段并传递连续性上下文；全部完成后无损合并画面/音频。"
-                "分段潜变量仅在输出连接下游时保留，避免无用的内存累计。"
+                "只输出流式 VIDEO 与按需保留的分段潜变量。"
+                "视频直接连接官方 SaveVideo，不需要 CreateVideo。"
+                "视频/音频原始分段保存在无损 .pt 中，保存时逐段编码。"
             ),
             inputs=[
                 io.Latent.Input("samples", display_name="H3采样结果", optional=True),
                 io.Vae.Input("vae", display_name="视频VAE", optional=True),
                 io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据", optional=True),
+                io.Combo.Input(
+                    "bit_depth", display_name="bit_depth",
+                    options=["auto", 8, 10], default="auto",
+                    advanced=True, socketless=True,
+                    tooltip="默认 sRGB 使用 8-bit，HDR 使用 10-bit；无需修改即可直接保存。",
+                ),
+                io.Combo.Input(
+                    "color_space", display_name="color_space",
+                    options=["sRGB", "HDR", "HDR PQ"], default="sRGB",
+                    advanced=True, socketless=True,
+                    tooltip=(
+                        "沿用官方 CreateVideo 的色彩空间标记。"
+                        "仅当输入已经是真正 HDR 画面时选择 HDR / HDR PQ，"
+                        "此选项不会把 SDR 画面转换为 HDR。"
+                    ),
+                ),
             ],
             outputs=[
+                io.Video.Output(display_name="视频"),
                 io.Latent.Output(display_name="分段潜变量", is_output_list=True),
-                io.Image.Output(display_name="合并画面"),
-                io.Audio.Output(display_name="合并音频"),
             ],
             hidden=[io.Hidden.execution_list, io.Hidden.unique_id],
         )
@@ -605,10 +627,9 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, **kwargs):
-        # LoopResult releases this external block after all iterations have
-        # written lossless segments. The user-facing H3/VAE connections were
-        # removed by LoopStart when it installed the dynamic loop body.
+    def execute(cls, bit_depth="auto", color_space="sRGB", **kwargs):
+        # Native LoopResult releases this block after all per-segment caches
+        # are complete. Unlike Base, no timeline-sized IMAGE/AUDIO is created.
         results = cls.hidden.execution_list.get_external_block_result(
             _one(cls.hidden.unique_id)
         )
@@ -616,24 +637,33 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         if not descriptors:
             raise ValueError("循环结束没有收到任何已完成片段")
 
+        # Preserve the Base/Advanced post-sampling model release behaviour.
+        import gc
+        gc.collect()
+        try:
+            import comfy.model_management as model_management
+            model_management.unload_all_models()
+            model_management.soft_empty_cache()
+        except Exception as exc:
+            print(
+                f"[TerryDirector Loop] Model release before output skipped: {exc}",
+                flush=True,
+            )
+        gc.collect()
+
         segment_latents = []
-        expected_frames = 0
         for raw in descriptors:
             info = json.loads(str(raw))
-            expected_frames += int(info["frames"])
             latent_path = info.get("latent_path")
             if latent_path:
-                # These paths are written by our internal lossless cache, not
-                # supplied through untrusted workflow input widgets.
                 segment_latents.append(
                     torch.load(str(latent_path), map_location="cpu", weights_only=False)
                 )
 
-        merged = TerryDirectorMaterializeTimeline.execute(
-            segments={
-                f"segment_{index}": raw
-                for index, raw in enumerate(descriptors)
-            },
-            expected_frames=expected_frames,
+        video = TerryDirectorStreamVideo(
+            descriptors,
+            fps=24,
+            bit_depth=_one(bit_depth),
+            color_space=_one(color_space),
         )
-        return io.NodeOutput(segment_latents, merged[0], merged[1])
+        return io.NodeOutput(video, segment_latents)

@@ -1,80 +1,48 @@
-# TerryDirector 原生 H3 循环器 · 循环上下文 / 片段数据
+# TerryDirector 原生 H3 时间线循环器 · 流式视频输出
 
-> 分支：integrate/selflift-native-h3-loop。基于 ComfyUI 0.39.0 原生循环语义与 TerryDirector Base 无损分段缓存。尚未完成 RTX 3090 真机 H3 循环验收。
+> 整合测试分支：integrate/selflift-native-h3-loop。基于 ComfyUI 0.39.0 原生循环、原 Base 无损 .pt 分段缓存；尚待用户 RTX 3090 实际视频生成验收。原 Base/Advanced/SelfLift 采样逻辑保持不变。
 
-## 节点接线
+## 用户看到的节点
 
-TerryDirector 循环开始
-  └─ 【循环上下文】(TERRYDIRECTOR_LOOP_CONTEXT)
-       ↓
-TerryDirector 循环信息
-  ├─ 【片段数据】(TERRYDIRECTOR_SEGMENT_DATA) → 循环条件 / 循环结束
-  ├─ 提示词 / H3 帧数 → MiniMaxH3ReferenceToVideo（官方）
-  ├─ Seed → RandomNoise（官方）
-  └─ image_0..8 → MiniMaxH3ReferenceToVideo（官方）
+TerryDirector 循环开始 → 【循环上下文】→ TerryDirector 循环信息
+→ 【片段数据】→ TerryDirector 循环条件、TerryDirector 循环结束
+→ 官方 MiniMaxH3ReferenceToVideo / BasicGuider / SamplerCustomAdvanced
+→ TerryDirector 循环结束（接收 H3采样结果、两个 VAE、片段数据）
+→ 【视频 VIDEO】直接连接官方 SaveVideo
+→ 【分段潜变量 LATENT 列表】仅在需要时连接其他节点
 
-MiniMaxH3ReferenceToVideo (positive / latent)
-  ↓
-TerryDirector 循环条件 (正向条件 / 潜变量 / 两种 VAE / 片段数据)
-  ↓
-BasicGuider + SamplerCustomAdvanced（官方）
-  ↓ H3采样结果
-TerryDirector 循环结束 (H3采样结果 / 视频VAE / 音频VAE / 片段数据)
-  ├─ 分段潜变量（LATENT 列表，可选连接）
-  ├─ 合并画面 ─┐
-  └─ 合并音频 ─┴─→ CreateVideo → SaveVideo（官方）
-  └─ 内嵌「合并画面内存」预计占用框
+循环开始保留同一套时间线和编辑窗口；片段信息节点输出原来的 Prompt、H3 帧数、Seed、最多 9 张参考图。循环上下文类型 TERRYDIRECTOR_LOOP_CONTEXT 和片段数据类型 TERRYDIRECTOR_SEGMENT_DATA 仍然区分，无法混接。
 
-循环缓存、上一段上下文回传与无损最终合并全都在循环结束的动态内部图里，不再需要可见的缓存/合并节点，也不需要画回环线。
+循环结束仅有两个输出：**视频 VIDEO（输出0）**和**分段潜变量 LATENT 列表（输出1）**。不再有合并 IMAGE/AUDIO，不需要 CreateVideo，也不提供 A/B 模式切换或合并开关。无需兼容旧版循环结束工作流。
 
-## 两种数据的严格区别
+## VIDEO 的真正低内存实现
 
-**循环上下文**（仅由「循环开始」产生）是整个当前循环轮次的信封：
+1. 原有 TerryDirectorDecodeSegmentToCache 每轮将 IMAGE float32 和 AUDIO 无损写入 .pt。下一个片段只承接上一段必需的尾帧/重叠图像与音频；不会累积整条 IMAGE。
+2. 所有片段生成后，TerryDirectorLoopEnd 不调用 TerryDirectorMaterializeTimeline，也不预分配完整 IMAGE/AUDIO。它返回实现 ComfyUI 官方 VideoInput 接口的 TerryDirectorStreamVideo 轻量对象，只包含各段缓存路径、fps、位深、色彩空间等元信息。
+3. 官方 SaveVideo 查询该对象的 get_dimensions()，随后调用 save_to()。VIDEO 逐段加载无损 .pt、逐帧送入一个视频编码会话、逐段送入同一音频编码会话，再释放本段画面/音频。最终仅进行一次有损视频/音频编码，不产生中间 H.264。
+4. SaveVideo 成功保存文件后删除本次运行的无损缓存目录；失败时删除不完整的目标视频、保留缓存便于定位错误。仅运行循环结束未连接 SaveVideo 时，.pt 保留至下一次该循环实例生成之前。
+5. 分段潜变量按需生成：只有输出1连接下游时，才在每轮将完整原始 H3 AV LATENT 存为 CPU .latent.pt 并于结束时加载为列表；正常仅输出 VIDEO 时不消耗额外 LATENT 缓存。
+6. 输出卡片复用 TerryDirector Output 现有 CSS 和内存估算，显示“流式视频 · 避免约 N GB 整段画面占用”，实际分辨率可反向追踪官方 ResolutionSelector。此数字是避免物化的理论完整 IMAGE 体积，并非整个程序的当前 RSS 或显存占用。
 
-- 类型：TERRYDIRECTOR_LOOP_CONTEXT；
-- 运行期标记：_type = terrydirector.loop_context；
-- current_segment：时间线编译好的当前片段，含 prompt、h3_frames、assets、continuity、assembly、_loop 等；
-- previous_context：上一轮缓存返回的紧凑尾帧 / 重叠区图像及音频；首段为空。
+## 参数位置和职责
 
-**片段数据**（由「循环信息」解析、整理后产生）是供生成图使用的扁平化片段参数：
+- 帧率为时间线固定的 24 fps，不增加普通控件。
+- 循环结束的高级输入：bit_depth 为 auto/8/10，默认 auto；color_space 为 sRGB/HDR/HDR PQ，默认 sRGB。按官方 CreateVideo 的相同语义，auto 对 SDR 选择8位，对 HDR 选择10位。color_space 仅设置编码色彩空间，不会将 SDR 自动转换成 HDR。
+- 视频格式 MP4/MKV/WebM、编码 H.264/AV1、CRF、文件名全部由官方 SaveVideo 设置。官方 SaveVideo 已支持标准 VIDEO 输入，无需定制保存节点。
 
-- 类型：TERRYDIRECTOR_SEGMENT_DATA；
-- 运行期标记：_type = terrydirector.segment_data；
-- 直接包含当前片段的 id、prompt、h3_frames、assets、continuity、assembly、_loop、output_frames 等字段；
-- 仍携带 previous_context，仅用于镜头连续性判断与后续缓存处理；
-- 配套输出 Prompt / H3帧数 / Seed / 当前需要的参考图片；
-- 只允许连接「循环条件」「循环结束」的片段数据输入，不可拿循环上下文代替。
+## 边界
 
-这不只是重命名。两个 ComfyUI Custom IO 类型不同，运行时结构也不同；接口接反会在 ComfyUI 连线时暴露类型不匹配，运行时另有 _type 校验。
+- 长视频仍需要足够磁盘空间保存逐段无损缓存，也需要容纳**一个片段**的解码张量以及视频/音频编码器本身的内存；不能保证任意配置下都不会耗尽内存。
+- 该 VIDEO 在首次 SaveVideo 成功保存前不能被要求直接物化完整图像，例如 GetVideoComponents 或视频裁剪；会明确提示先保存。保存后从已生成的视频文件正常按官方接口访问。
+- 当前循环信息仍只处理图片参考；视频/音频引用会显式报错。高级断点恢复、局部重跑仍保留在原 Advanced 中，未迁入此循环器。
+- 这版新输出协议不用兼容旧工作流。导入新版 JSON：17 节点、36 连线，原九镜头提示词与七张图片资产完整保留，默认仅前3段启用。
 
-## 原生循环与缓存生命周期
-
-- 循环开始持有原时间线/浮窗 UI，将启用片段编译为 List 轮次，挂起片段由已有编译器处理；
-- 内部 TerryDirectorLoopFrame 组装包含本轮片段与上一轮 carry 的循环上下文；
-- 循环信息将其转成片段数据，保留官方 H3 图片参考索引与尾帧参考语义；
-- 每轮由 TerryDirectorLoopCache 自动调用现有 TerryDirectorDecodeSegmentToCache，将生成帧与原始音频无损写入 .pt，只回传下一轮必需的紧凑上下文；
-- 内部使用 ComfyUI LoopIteration、LoopProgress、LoopResult 及 execution_list external block，最终结束节点由此放行；
-- 「循环结束」固定完成合并，不再提供「合并输出」开关；所有片段生成并缓存后调用已有 TerryDirectorMaterializeTimeline，释放生成模型后预分配最终 IMAGE/AUDIO，逐段读取并一次性合并，仍由下游官方 CreateVideo / SaveVideo 负责编码。
-- 输出与原「TerryDirector 输出」一致：**分段潜变量（LATENT 原生列表） / 合并画面（IMAGE） / 合并音频（AUDIO）**。只有第一路分段潜变量连接下游时，内部才逐段将原始 H3 AV latent 无损缓存成 CPU .pt 侧车文件；最终统一读取。没有连接时不产生额外 latent 缓存，避免破坏已验收的低内存生成路径。
-- 复用原「TerryDirector 输出」的**合并画面内存**信息框及 CSS，不单独复制一套 UI。循环结束从「循环信息 → 循环开始」追踪时间线有效帧数；从采样链内 MiniMaxH3ReferenceToVideo 读取宽高。即使宽高被外部连线覆盖，也沿着连接反向读取官方 ResolutionSelector 的宽高输出索引及「宽高比 / 百万像素 / 倍数」，完全按官方 0.39.0 计算规则（MP×1024²、Python round 半偶舍入）重算真实设置。支持官方 PrimitiveInt/PrimitiveFloat 固定数值和普通 Reroute；不使用已失效的 H3 控件数值。按 float32 RGB 计算最终 IMAGE 画面的理论内存（不含模型、VAE、其它内存开销）。
-- 只有遇到真正动态/无法追溯的上游参数、多个不同 H3 条件来源时才不显示内存数字；卡片改为 **「循环输出概况」**，仍显示有效片段数、总帧数、时长与 24fps，明确说明当前分辨率无法静态确认。随着分辨率选择器或其固定数值节点的控件/连线变化，内存卡片自动刷新。
-
-## 当前边界
-
-- 循环开始的实时进度会通过 ComfyUI 原生 `progress_state` 中的 `real_node_id`、循环展开节点的 zero-based iteration 后缀、`display_node_id` 和真实 `value/max` 映射回已启用片段；跳过挂起片段、排除其他导演实例及非采样节点。
-- 时间线内显示采样 `N/M` 实际步数和进度条；最多显示 99% 的片段进度，直至现有无损缓存完成事件才标记真正的片段 100%，以区分采样结束与整段完成。正常 ComfyUI Base / Advanced 原进度映射不变。
-- 当前「循环信息」只支持图片作为参考素材，遇到视频/音频资产引用明确报错；还没有做这些资产的外部适配。
-- 这套循环器不自动接入导演二采配置，外部官方 H3 节点组可由用户自由更换；已验收的内置 SelfLift 仍独立保留在原 Base / Advanced。
-- 当前没有迁入 Advanced 的断点恢复、分段重跑、LATENT checkpoint 或一次性流式最终编码。
-- 不修改原 SelfLift 算法、Base / Advanced 生成逻辑、时间线编辑 UI 样式、Prompt/资产池文件。
-- 示例必须使用具有循环上下文 / 片段数据专用端口类型的新版 JSON，旧版 AnyType 端口 JSON 不应继续作为验收依据。
-
-## 验证
-
-静态与隔离测试：
+## 本地验收
 
     python -m unittest discover -s tests -p "test_director_loop.py" -v
+    python -m unittest discover -s tests -p "test_loop_video.py" -v
     python -m unittest discover -s tests -p "test_loop_integration_contract.py" -v
+    node --check web/terry_director.js
     node --test tests/*.test.cjs
 
-真实验收依然以已提供的 9 片段 / 7 图片、仅前三段启用的 4+3+5 秒工作流为基准。预期 3 次不同 Prompt 的官方 H3 采样、上一片段真实尾帧承接、3 段无损缓存以及一次 Final merge，合计 288 帧、12 秒。GPU 执行与图像质量待用户本机实测。
+用新版示例做 4s+3s+5s 的官方 H3 循环：期望三次采样、三个 .pt 分段、24fps 下共288帧12秒、一条 SaveVideo 直连输出。检查保存时内存不会增加整段 IMAGE、最终视频音画、保存后缓存删除与失败保留。真实 GPU 生成尚未完成，不能把静态/隔离测试当作实机验收。

@@ -57,7 +57,13 @@ class DirectorLoopTests(unittest.TestCase):
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
         self.assertIn('TerryDirectorDecodeSegmentToCache.execute(', text)
+        self.assertIn('io.Video.Output(display_name="视频")', text)
         self.assertIn('io.Latent.Output(display_name="分段潜变量", is_output_list=True)', text)
+        self.assertNotIn('io.Image.Output(display_name="合并画面")', text)
+        self.assertNotIn('io.Audio.Output(display_name="合并音频")', text)
+        self.assertIn('from .director_loop_video import TerryDirectorStreamVideo', text)
+        self.assertNotIn('"output_mode"', text)
+        self.assertNotIn('TerryDirectorMaterializeTimeline.execute', text)
         self.assertNotIn('"merge_output"', text)
         self.assertIn('store_latents=store_latents', text)
         self.assertIn('io.Custom("TERRYDIRECTOR_LOOP_CONTEXT")', text)
@@ -223,17 +229,14 @@ class DirectorLoopTests(unittest.TestCase):
                 "is_link": lambda value: isinstance(value, list) and len(value) == 2,
             })["_wants_segment_latents"](node, "end")
         self.assertFalse(check({
-            "save_video": {"inputs": {"video": ["create_video", 0]}},
-            "create_video": {"inputs": {
-                "images": ["end", 1], "audio": ["end", 2],
-            }},
+            "save_video": {"inputs": {"video": ["end", 0]}},
         }))
         self.assertTrue(check({
-            "latent_consumer": {"inputs": {"latent": ["end", 0]}},
-            "create_video": {"inputs": {"images": ["end", 1]}},
+            "latent_consumer": {"inputs": {"latent": ["end", 1]}},
+            "save_video": {"inputs": {"video": ["end", 0]}},
         }))
 
-    def test_fused_end_always_materializes_and_optional_latents(self):
+    def test_fused_end_returns_lazy_video_and_only_requested_latents(self):
         descriptions = [
             json.dumps({"frames": 96, "path": "/virtual/1"}),
             json.dumps({"frames": 72, "path": "/virtual/2"}),
@@ -242,12 +245,12 @@ class DirectorLoopTests(unittest.TestCase):
             def get_external_block_result(self, node_id):
                 assert node_id == "end"
                 return [[descriptions[0]], [descriptions[1]]]
-        class Materialize:
-            calls = []
-            @classmethod
-            def execute(cls, **kwargs):
-                cls.calls.append(kwargs)
-                return FakeNodeOutput("IMAGE", "AUDIO")
+        class FakeVideo:
+            def __init__(self, descriptors, fps, bit_depth, color_space):
+                self.descriptors = descriptors
+                self.fps = fps
+                self.bit_depth = bit_depth
+                self.color_space = color_space
         latent_loads = []
         def latent_loader(path, map_location, weights_only):
             latent_loads.append((path, map_location, weights_only))
@@ -256,27 +259,29 @@ class DirectorLoopTests(unittest.TestCase):
             "_one": lambda v: v[0] if isinstance(v, list) else v,
             "json": json,
             "torch": types.SimpleNamespace(load=latent_loader),
-            "TerryDirectorMaterializeTimeline": Materialize,
+            "TerryDirectorStreamVideo": FakeVideo,
         })
         cls = ns["TerryDirectorLoopEnd"]
         cls.hidden = types.SimpleNamespace(
             unique_id=["end"], execution_list=Block()
         )
         out = cls.execute()
-        self.assertEqual(out.args, ([], "IMAGE", "AUDIO"))
-        self.assertEqual(Materialize.calls[0]["expected_frames"], 168)
-        self.assertEqual(len(Materialize.calls[0]["segments"]), 2)
+        self.assertIsInstance(out.args[0], FakeVideo)
+        self.assertEqual(out.args[1], [])
+        self.assertEqual(out.args[0].fps, 24)
+        self.assertEqual(out.args[0].bit_depth, "auto")
+        self.assertEqual(out.args[0].color_space, "sRGB")
+        self.assertEqual(len(out.args[0].descriptors), 2)
         self.assertFalse(latent_loads)
 
-        with_latent = json.dumps({
+        descriptions[0] = json.dumps({
             "frames": 96, "path": "/virtual/1", "latent_path": "/virtual/1.latent.pt"
         })
-        descriptions[0] = with_latent
-        out = cls.execute()
-        self.assertEqual(out.args[0], [{"samples": "/virtual/1.latent.pt"}])
-        self.assertEqual(out.args[1:], ("IMAGE", "AUDIO"))
+        out = cls.execute(bit_depth=["10"], color_space=["HDR PQ"])
+        self.assertEqual(out.args[1], [{"samples": "/virtual/1.latent.pt"}])
+        self.assertEqual(out.args[0].bit_depth, "10")
+        self.assertEqual(out.args[0].color_space, "HDR PQ")
         self.assertEqual(latent_loads, [("/virtual/1.latent.pt", "cpu", False)])
-        self.assertEqual(len(Materialize.calls), 2)
 
     def test_guide_independent_or_tail(self):
         import torch
