@@ -56,10 +56,10 @@ def _notify(loop_id, segment_id, state):
 def _load_image(asset):
     source = asset.get("source") or {}
     if source.get("type") != "comfy-input":
-        raise ValueError("循环媒体仅接受已上传到 ComfyUI input 的资产")
+        raise ValueError("循环信息仅接受已上传到 ComfyUI input 的资产")
     name = source.get("path")
     if not name or not folder_paths.exists_annotated_filepath(name):
-        raise FileNotFoundError(f"循环媒体找不到 ComfyUI input 图片: {name}")
+        raise FileNotFoundError(f"循环信息找不到 ComfyUI input 图片: {name}")
     path = folder_paths.get_annotated_filepath(name)
     with Image.open(path) as opened:
         image = ImageOps.exif_transpose(opened).convert("RGB")
@@ -345,7 +345,7 @@ class TerryDirectorLoopInfo(io.ComfyNode):
         assets = segment["assets"]
         if assets.get("videos") or assets.get("audios"):
             raise ValueError(
-                "循环媒体当前版本支持图片参考；视频/音频资产适配尚未实现，"
+                "循环信息当前版本支持图片参考；视频/音频资产适配尚未实现，"
                 "请先使用图片参考工作流测试。"
             )
         _notify(segment["_loop"]["loop_id"], segment["id"], "running")
@@ -409,7 +409,7 @@ class TerryDirectorLoopCondition(io.ComfyNode):
                 image=images[-1:], frame_idx=0,
             )
         if kind != "overlap":
-            raise ValueError(f"无法识别的循环承接模式: {kind}")
+            raise ValueError(f"无法识别的循环条件模式: {kind}")
         frames = int(continuity["frames"])
         if images.shape[0] < frames:
             raise ValueError("上一片段保留的重叠图像帧不足")
