@@ -25,7 +25,6 @@ from .director_core import config_json, normalize_config
 from .director_loop_video import TerryDirectorStreamVideo
 from .director_internal import (
     TerryDirectorDecodeSegmentToCache,
-    TerryDirectorMaterializeTimeline,
     _cache_to_cpu,
     prepare_base_run_cache,
 )

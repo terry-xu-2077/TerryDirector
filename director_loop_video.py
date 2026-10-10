@@ -13,7 +13,6 @@ import shutil
 from fractions import Fraction
 
 import av
-import numpy as np
 import torch
 
 import folder_paths
@@ -117,7 +116,13 @@ class TerryDirectorStreamVideo(VideoInput):
         if len(roots) != 1:
             return
         root = roots.pop()
-        common = os.path.commonpath((os.path.normcase(root), os.path.normcase(temp_root)))
+        try:
+            common = os.path.commonpath((
+                os.path.normcase(root), os.path.normcase(temp_root)
+            ))
+        except ValueError:
+            # Different drives on Windows: never delete unrelated data.
+            return
         if common != os.path.normcase(temp_root) or root == temp_root:
             return
         shutil.rmtree(root, ignore_errors=True)
