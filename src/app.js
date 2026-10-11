@@ -80,6 +80,9 @@
         src:siteDemoThumbnail(item.number),number:item.number,id:item.id
       })));
       loadDocument(siteDemoDocument);
+      app.dataset.demoSource=siteDemoPath;
+      app.dataset.demoClipCount=String(state.clips.length);
+      app.dataset.demoAssetCount=String(state.assetIds.length);
       // Enable controls for visual QA; no actual inference will run here.
       aiConfig={previewOnly:true};renderAiControls();
       title='特瑞 · 荒星三镜头';
