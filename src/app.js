@@ -73,13 +73,14 @@
   let resolutionEditBefore=null;
   let title='远航之前',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,transitionMenu=null;
+  let aiConfig=null,aiJob=null,aiPolling=false,aiSeen=new Set();
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button></div>
-      <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button></div>
+      <div class="top-timeline-duration"><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前 AI 增强</span></label><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
@@ -91,7 +92,8 @@
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
         <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
-        <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div></div>
+        <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button></div>
+        <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
       <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
@@ -107,6 +109,9 @@
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
+  const localPrompt=c=>(c?.promptMode==='ai'&&String(c.aiPrompt||'').trim())?c.aiPrompt:(c?.prompt||'');
+  const editablePrompt=c=>c?.promptMode==='ai'?(c?.aiPrompt||''):(c?.prompt||'');
+  const canEnhance=()=>!!aiConfig&&!hostReadonly&&!aiJob;
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
   function closeTransitionMenu(){
@@ -145,9 +150,9 @@
   function mutate(fn){if(hostReadonly)return;finishResolutionEdit();finishPromptEdit();const before=C.copy(state);fn();commit(before);}
   function updateHistory(){ $('[data-action=undo]').disabled=hostReadonly||!history.undoItems.length;$('[data-action=redo]').disabled=hostReadonly||!history.redoItems.length; }
   function renderPrompt(){
-    const c=current(),text=c?.prompt||'';
+    const c=current(),text=editablePrompt(c);
     $('#noClip').hidden=!!c;
-    promptEditor.setContext(c?.id||null,text,promptView);
+    promptEditor.setContext(c?(c.id+':'+(c.promptMode||'user')):null,text,promptView);
     $('#promptText').readOnly=hostReadonly;
     $('#promptVisual').contentEditable=hostReadonly?'false':String(!!c);
     const useGlobal=$('#useGlobalPrompt');
@@ -160,6 +165,19 @@
       viewSwitch.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';
     }
     $('#promptCount').textContent=c?`${text.length} 字`:'';
+    const aiSelected=c?.promptMode==='ai';
+    $('[data-action=prompt-user]')?.classList.toggle('is-selected',!aiSelected);
+    $('[data-action=prompt-ai]')?.classList.toggle('is-selected',!!aiSelected);
+    const warning=$('#aiStatus');
+    if(warning){
+      const meta=c?.aiMetadata||{};
+      const old=!!c?.aiPrompt&&!!meta.sourcePrompt&&(
+        meta.sourcePrompt!==c.prompt ||
+        meta.sourceGlobalPrompt!==(c.useGlobalPrompt===false?'':state.globalPrompt));
+      warning.textContent=old?'原文已更新 · AI 结果未重新增强':c?.aiPrompt?'AI 结果已保存':'';
+      warning.title=old?'仅修改 AI Seed 或手动增强会重新生成，修改原文不会自动重跑。':'';
+    }
+    renderAiControls();
   }
   function renderTimelineDuration(clips){
     const frames=C.arrangementFrames(clips),output=$('#timelineDuration');
@@ -250,12 +268,12 @@
   }
   function syncReferences(clip,entries=poolEntries()){
     if(!clip)return false;
-    const refs=referencesIn(clip.prompt,entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
+    const refs=referencesIn(localPrompt(clip),entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
     clip.refs=refs;return changed;
   }
   function effectiveReferences(clip,entries=poolEntries()){
     if(!clip)return [];
-    const ids=new Set(referencesIn(clip.prompt,entries));
+    const ids=new Set(referencesIn(localPrompt(clip),entries));
     if(clip.useGlobalPrompt!==false)for(const id of referencesIn(state.globalPrompt,entries))ids.add(id);
     return [...ids];
   }
@@ -289,7 +307,7 @@
   }
 
   function referenceBudgetForClip(clip,{
-    localPrompt=clip?.prompt||'',
+    localPrompt=localPrompt(clip),
     globalPrompt=state.globalPrompt,
     useGlobal=clip?.useGlobalPrompt!==false,
     transitionMode=clip?.transitionMode,
@@ -338,7 +356,7 @@
     if(!clip)return {allowed:false,reason:'请先选择片段'};
     const entries=poolEntries(),source=entries.find(item=>item.id===asset.id);
     if(!source)return {allowed:false,reason:'资产不在当前资产池'};
-    const localPrompt=promptWithAsset(value??clip.prompt,source,replacingRaw);
+    const localPrompt=promptWithAsset(value??editablePrompt(clip),source,replacingRaw);
     const budget=referenceBudgetForClip(clip,{localPrompt,entries});
     return budget.ok?{allowed:true}:{allowed:false,reason:referenceLimitReason(clip,budget)};
   }
@@ -388,7 +406,7 @@
   function refreshAssetUsage(){
     const c=current(),entries=poolEntries();
     const globalRefs=new Set(referencesIn(state.globalPrompt,entries));
-    const currentLocalRefs=new Set(c?referencesIn(c.prompt,entries):[]);
+    const currentLocalRefs=new Set(c?referencesIn(localPrompt(c),entries):[]);
     for(const tile of $('#references').querySelectorAll('[data-reference]')){
       const id=tile.dataset.reference;
       const globalUsed=globalRefs.has(id);
@@ -481,6 +499,67 @@
     if(result)c.resolution=result.settings;
     renderResolutionResult();
   }
+
+  function renderAiControls(){
+    const connected=!!aiConfig,busy=!!aiJob;
+    const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
+    if(single){single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';}
+    if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
+    const checkbox=$('#autoAiEnhance');
+    if(checkbox){checkbox.checked=!!state.autoAiEnhance;checkbox.disabled=!connected||hostReadonly||busy;checkbox.title=connected?'Queue 时先完成批量 AI 增强，再执行 H3':'请先连接 TerryDirector Llama 配置节点';}
+  }
+  function switchPromptMode(mode){
+    if(hostReadonly||!current()||aiJob)return;
+    if(current().promptMode===mode)return;
+    mutate(()=>{const c=current();c.promptMode=mode;c.aiOptOut=mode==='user'&&!!c.aiPrompt;});
+  }
+  async function startAiEnhance(all){
+    if(!canEnhance()||!embedded){toast('请先连接 TerryDirector Llama 配置节点');return;}
+    const clips=(all?state.clips:[current()]).filter(c=>c&&!c.suspended&&c.prompt?.trim());
+    if(!clips.length){toast('没有可增强的片段');return;}
+    finishPromptEdit();
+    try{
+      const response=await fetch('/terrydirector/api/ai-enhance',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({llama_config:aiConfig,document:documentPayload(),clip_ids:clips.map(c=>c.id)})
+      });
+      const payload=await response.json();
+      if(!response.ok)throw new Error(payload.error||'无法启动 AI 增强');
+      aiJob=payload.job_id;aiSeen=new Set();
+      renderAiControls();toast('正在使用本地 Qwen 增强提示词');
+      void pollAiJob();
+    }catch(error){aiJob=null;renderAiControls();toast(error?.message||'启动 AI 增强失败');}
+  }
+  async function pollAiJob(){
+    if(!aiJob||aiPolling)return;
+    aiPolling=true;
+    const targetJob=aiJob;
+    try{
+      const response=await fetch('/terrydirector/api/ai-jobs/'+encodeURIComponent(targetJob),{cache:'no-store'});
+      if(!response.ok)throw new Error('AI 任务状态不可用');
+      const job=await response.json();
+      for(const result of job.results||[]){
+        if(aiSeen.has(result.id))continue;aiSeen.add(result.id);
+        const clip=state.clips.find(c=>c.id===result.id);
+        if(!clip)continue;
+        mutate(()=>{
+          clip.aiPrompt=String(result.prompt||'');
+          clip.aiMetadata=result.metadata||{};
+          clip.promptMode='ai';clip.aiOptOut=false;
+        });
+      }
+      if(['completed','error','cancelled'].includes(job.status)){
+        aiJob=null;renderAll();
+        if(job.status==='completed')toast('AI 增强完成 '+job.done+'/'+job.total);
+        else toast(job.error||'AI 增强已取消，已完成片段得到保留');
+      }else{$('#aiStatus').textContent='正在增强 '+job.done+'/'+job.total+' 个片段';}
+    }catch(error){aiJob=null;toast(error?.message||'AI 增强连接失败');}
+    finally{
+      aiPolling=false;
+      if(aiJob===targetJob)setTimeout(()=>void pollAiJob(),650);
+      else renderAiControls();
+    }
+  }
   function renderAll(){
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
     syncAllReferences();
@@ -502,7 +581,7 @@
     getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
     getAssetAvailability:clipAssetAvailability,
     onBeforeChange:()=>{if(hostReadonly)return false;if(!editBefore)editBefore=C.copy(state);},
-    onChange:text=>{if(hostReadonly)return;const c=current();if(c){c.prompt=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
+    onChange:text=>{if(hostReadonly)return;const c=current();if(c){c[c.promptMode==='ai'?'aiPrompt':'prompt']=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
     onCommit:finishPromptEdit,
     onHistory:redo=>actions[redo?'redo':'undo']()
   });
@@ -547,21 +626,23 @@
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    if(template)Object.assign(c,{aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{}});
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
   // A reference is written into the clip's single prompt. The refs array is a
   // derived list of stable asset IDs; removing a prompt tag never deletes media.
   function appendReferences(clip,ids){
-    const entries=poolEntries(),used=new Set(referencesIn(clip.prompt,entries));
+    const field=clip.promptMode==='ai'?'aiPrompt':'prompt';
+    const entries=poolEntries(),used=new Set(referencesIn(clip[field],entries));
     const add=entries.filter(a=>ids.includes(a.id)&&!used.has(a.id));
     const blocked=[];
     for(const asset of add){
-      const nextPrompt=promptWithAsset(clip.prompt,asset);
+      const nextPrompt=promptWithAsset(clip[field],asset);
       const budget=referenceBudgetForClip(clip,{localPrompt:nextPrompt,entries});
       if(!budget.ok){blocked.push({asset,budget});continue;}
-      clip.prompt=nextPrompt;
+      clip[field]=nextPrompt;
       used.add(asset.id);
     }
     return blocked;
@@ -585,14 +666,14 @@
         state.assetIds=state.assetIds.filter(x=>x!==id);
         const key=mediaKey(mediaNames[asset.kind],asset.number),removeTag=(prompt)=>String(prompt||'').replace(mediaPattern(),(raw,kind,number)=>mediaKey(kind,number)===key?'':raw);
         state.globalPrompt=removeTag(state.globalPrompt);
-        for(const clip of state.clips)clip.prompt=removeTag(clip.prompt);
+        for(const clip of state.clips){clip.prompt=removeTag(clip.prompt);clip.aiPrompt=removeTag(clip.aiPrompt);}
       });
       // Retain the cached media URL for undo and any active simulation snapshot.
     });
   }
   function insertReference(id){
     const a=poolEntries().find(x=>x.id===id),clip=current();if(!a||!clip)return;
-    const availability=clipAssetAvailability({id:a.id,raw:`<${a.token}>`,token:a.token},{value:clip.prompt});
+    const availability=clipAssetAvailability({id:a.id,raw:`<${a.token}>`,token:a.token},{value:editablePrompt(clip)});
     if(!availability.allowed){toast(availability.reason||'当前参考资产额度已满');return;}
     promptEditor.insert(`<${a.token}>`);
   }
@@ -786,6 +867,7 @@
         fps:Number(raw.fps)||C.FPS,
         selected:raw.selected||raw.clips[0]?.id||null,
         globalPrompt:String(raw.globalPrompt||''),
+        autoAiEnhance:raw.autoAiEnhance===true,
         clips:raw.clips,
         assets:Array.isArray(raw.assets)?raw.assets:[]
       };
@@ -858,10 +940,12 @@
     const clips=(Array.isArray(raw.clips)?raw.clips:[]).map((clip,index)=>{
       const start=Math.max(0,Number.parseInt(clip?.start,10)||0),end=Math.max(start+1,Number.parseInt(clip?.end,10)||start+C.FPS*10);
       return {id:String(clip?.id||`clip-${index+1}`),name:String(clip?.name||`片段 ${String(index+1).padStart(2,'0')}`),
-        start,end,prompt:String(clip?.prompt||''),refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
+        start,end,prompt:String(clip?.prompt||''),aiPrompt:String(clip?.aiPrompt||''),promptMode:clip?.promptMode==='ai'?'ai':'user',
+        aiOptOut:clip?.aiOptOut===true,aiMetadata:clip?.aiMetadata&&typeof clip.aiMetadata==='object'?C.copy(clip.aiMetadata):{},
+        refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
         useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
     });
-    state={globalPrompt:String(raw.globalPrompt||''),clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
+    state={globalPrompt:String(raw.globalPrompt||''),autoAiEnhance:raw.autoAiEnhance===true,clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
     history=new C.History();assetGridKey='';activity.clear();
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
@@ -870,8 +954,8 @@
   }
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
-    return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
-      clips:state.clips.map(({id,name,start,end,prompt,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
+    return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,autoAiEnhance:!!state.autoAiEnhance,
+      clips:state.clips.map(({id,name,start,end,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
@@ -921,7 +1005,7 @@
     if(!d.open)d.showModal();
   }
   function queueWorkflow(){
-    if(hostReadonly)return;
+    if(hostReadonly||aiJob){if(aiJob)toast('AI 增强执行中，不能提交视频生成');return;}
     finishDurationEdit();finishPromptEdit();syncAllReferences();
     if(!embedded){toast('正式嵌入 ComfyUI 后可从这里运行整个工作流。');return;}
     embedDirty=false;
@@ -933,6 +1017,7 @@
   }
   function saveToHost(){
     if(hostReadonly)return;
+    if(aiJob){toast('AI 增强仍在进行，请完成或取消后再保存');return;}
     finishPromptEdit();
     if(!embedded){markEdited();toast('已保存编排。正式接入 ComfyUI 后会同时隐藏浮窗。');return;}
     embedDirty=false;
@@ -941,6 +1026,11 @@
   }
   const actions={
     new:newClip,
+    'prompt-user':()=>switchPromptMode('user'),
+    'prompt-ai':()=>switchPromptMode('ai'),
+    'ai-enhance':()=>void startAiEnhance(false),
+    'enhance-all':()=>void startAiEnhance(true),
+    'toggle-auto-ai':()=>{if(aiConfig&&!hostReadonly)mutate(()=>state.autoAiEnhance=!state.autoAiEnhance);},
     'global-prompt':openGlobalPrompt,
     'import-timeline':()=>{if(!hostReadonly)$('#timelineImportInput').click();},
     'export-timeline':exportTimelineData,
@@ -979,6 +1069,10 @@
 
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
+  $('#autoAiEnhance').addEventListener('change',e=>{
+    if(!aiConfig||hostReadonly){e.target.checked=!!state.autoAiEnhance;return;}
+    const checked=e.target.checked;mutate(()=>state.autoAiEnhance=checked);
+  });
   $('#useGlobalPrompt').addEventListener('change',e=>{
     const clip=current();if(!clip)return;
     const enabled=!!e.target.checked;
@@ -1053,6 +1147,7 @@
       if(event.origin!==hostOrigin||event.source!==window.parent)return;
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
+      else if(message.type==='terrydirector:ai-config'){aiConfig=message.config||null;renderAiControls();}
       else if(message.type==='terrydirector:preferences')defaultTransitionMode=normalizeTransitionMode(message.defaultTransitionMode,'tail_reference');
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
       else if(message.type==='terrydirector:request-save')saveToHost();
