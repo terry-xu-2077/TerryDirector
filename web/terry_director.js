@@ -44,10 +44,12 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   "TerryDirectorLoopCondition", "BasicGuider", "SamplerCustomAdvanced",
   "KSampler", "KSamplerAdvanced",
   "ResolutionSelector", "PrimitiveInt", "PrimitiveFloat",
-  "PrimitiveString", "Reroute",
+  "PrimitiveString", "Reroute", "GetNode", "SetNode",
   "MiniMaxH3VAEDecodeFast", "VAELoader",
   "TerryXuMemoryCleanup", "LTXVSeparateAVLatent",
   "SelfLiftAvatarH3Sampler", "TerryDirectorSelfLiftSampler",
+  "TerryWireBusPack", "TerryWireBusUnpack",
+  "TerryWirelessBusPack", "TerryWirelessBusUnpack",
 ]);
 const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
@@ -1428,6 +1430,45 @@ function renderNode(node) {
 
 
 
+function resolveVirtualOutputSource(source, seen = new Set()) {
+  if (!source?.node) return source || null;
+  let node = source.node;
+  let outputIndex = Number(source.outputIndex);
+  if (!Number.isSafeInteger(outputIndex) || outputIndex < 0) return source;
+
+  for (let depth = 0; depth < 16; depth += 1) {
+    const key = String(node.id) + ":" + outputIndex;
+    if (seen.has(key)) break;
+    seen.add(key);
+
+    // TerryTools exposes a versioned resolver on both wired and wireless
+    // Bus-Out nodes. Keep the generic resolveVirtualOutput fallback for its
+    // older wireless implementation and other compatible virtual nodes.
+    const resolver =
+      (typeof node.__terryBusResolveOutput === "function"
+        ? node.__terryBusResolveOutput
+        : typeof node.resolveVirtualOutput === "function"
+          ? node.resolveVirtualOutput
+          : null);
+    if (!resolver) break;
+
+    let resolved = null;
+    try {
+      resolved = resolver.call(node, outputIndex);
+    } catch {
+      break;
+    }
+    const nextNode = resolved?.node;
+    const nextSlot = Number(resolved?.slot ?? resolved?.outputIndex);
+    if (!nextNode || !Number.isSafeInteger(nextSlot) || nextSlot < 0) break;
+    if (nextNode === node && nextSlot === outputIndex) break;
+    node = nextNode;
+    outputIndex = nextSlot;
+  }
+
+  return { node, outputIndex };
+}
+
 function linkedOutputForInput(node, inputName) {
   if (!node) return null;
   const graph = node.graph || app.rootGraph || app.graph;
@@ -1450,9 +1491,10 @@ function linkedOutputForInput(node, inputName) {
   if (!link) return null;
   const upstreamNode = graph.getNodeById?.(link.origin_id);
   const outputIndex = Number(link.origin_slot);
-  return upstreamNode && Number.isSafeInteger(outputIndex) && outputIndex >= 0
-    ? { node: upstreamNode, outputIndex }
-    : null;
+  if (!upstreamNode || !Number.isSafeInteger(outputIndex) || outputIndex < 0) {
+    return null;
+  }
+  return resolveVirtualOutputSource({ node: upstreamNode, outputIndex });
 }
 
 function linkedNodeForInput(node, inputName) {
