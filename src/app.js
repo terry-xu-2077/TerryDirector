@@ -92,7 +92,7 @@
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
         <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
-        <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button></div>
+        <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
@@ -520,6 +520,11 @@
     const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
     if(single){single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';}
     if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
+    const cancel=$('[data-action=ai-cancel]');
+    if(cancel){cancel.hidden=!busy;cancel.disabled=!busy;}
+    const raw=$('#promptText'),visual=$('#promptVisual');
+    if(raw)raw.readOnly=hostReadonly||busy;
+    if(visual)visual.contentEditable=(hostReadonly||busy||!current())?'false':'true';
     const checkbox=$('#autoAiEnhance');
     if(checkbox){checkbox.checked=!!state.autoAiEnhance;checkbox.disabled=!connected||hostReadonly||busy;checkbox.title=connected?'Queue 时先完成批量 AI 增强，再执行 H3':'请先连接 TerryDirector Llama 配置节点';}
   }
@@ -544,6 +549,14 @@
       markEdited();renderAiControls();toast('正在使用本地 Qwen 增强提示词');
       void pollAiJob();
     }catch(error){aiJob=null;renderAiControls();toast(error?.message||'启动 AI 增强失败');}
+  }
+  async function cancelAiJob(){
+    if(!aiJob)return;
+    try{
+      const response=await fetch('/terrydirector/api/ai-jobs/'+encodeURIComponent(aiJob)+'/cancel',{method:'POST'});
+      if(!response.ok)throw new Error('无法取消当前增强任务');
+      toast('正在请求取消 AI 增强');
+    }catch(error){toast(error?.message||'取消失败');}
   }
   async function pollAiJob(){
     if(!aiJob||aiPolling)return;
@@ -1045,6 +1058,7 @@
     'prompt-user':()=>switchPromptMode('user'),
     'prompt-ai':()=>switchPromptMode('ai'),
     'ai-enhance':()=>void startAiEnhance(false),
+    'ai-cancel':()=>void cancelAiJob(),
     'enhance-all':()=>void startAiEnhance(true),
     'toggle-auto-ai':()=>{if(aiConfig&&!hostReadonly)mutate(()=>state.autoAiEnhance=!state.autoAiEnhance);},
     'global-prompt':openGlobalPrompt,

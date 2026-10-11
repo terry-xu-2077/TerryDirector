@@ -926,3 +926,6 @@ body.td-run-readonly .timeline-panel {
 .ai-all-button:disabled,.ai-prompt-button:disabled,.ai-auto-label:has(input:disabled) {
   opacity:.4; cursor:not-allowed;
 }
+
+.ai-prompt-actions { display:flex; align-items:center; gap:6px; }
+.ai-cancel-button:not([hidden]) { color:var(--td-ink-soft,#b3b3be); }
