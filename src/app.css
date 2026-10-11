@@ -907,3 +907,22 @@ body.td-run-readonly .reference-body,
 body.td-run-readonly .timeline-panel {
   opacity: 1;
 }
+
+/* TerryDirector AI prompt enhancement: shared typography / inherited theme. */
+.ai-prompt-toolbar { display:flex; align-items:center; justify-content:space-between;
+  gap:10px; padding:8px 14px; flex-wrap:wrap; }
+.ai-prompt-tabs { display:flex; background:rgba(120,120,135,.11); padding:3px;
+  border-radius:8px; align-items:center; gap:2px; }
+.ai-prompt-tab { background:transparent; border:0; border-radius:6px; padding:7px 12px;
+  color:var(--td-ink-soft,#a3a3ad); cursor:pointer; font:inherit; font-size:12px; }
+.ai-prompt-tab.is-selected { background:rgba(155,132,184,.22);
+  color:var(--td-ink-main,#f0e9f6); }
+.ai-prompt-tab:focus-visible { outline:2px solid #aa81d0; outline-offset:1px; }
+.ai-prompt-button { flex-shrink:0; }
+.ai-prompt-status { flex:1; text-align:right; font-size:11px; color:#bd9b70; }
+.ai-auto-label { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  white-space:nowrap; margin-right:12px; font-size:12px; color:inherit; }
+.ai-auto-label input { width:14px; height:14px; accent-color:var(--td-warm-500,#d98946); }
+.ai-all-button:disabled,.ai-prompt-button:disabled,.ai-auto-label:has(input:disabled) {
+  opacity:.4; cursor:not-allowed;
+}

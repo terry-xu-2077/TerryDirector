@@ -109,7 +109,7 @@
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
-  const localPrompt=c=>(c?.promptMode==='ai'&&String(c.aiPrompt||'').trim())?c.aiPrompt:(c?.prompt||'');
+  const clipLocalPrompt=c=>(c?.promptMode==='ai'&&String(c.aiPrompt||'').trim())?c.aiPrompt:(c?.prompt||'');
   const editablePrompt=c=>c?.promptMode==='ai'?(c?.aiPrompt||''):(c?.prompt||'');
   const canEnhance=()=>!!aiConfig&&!hostReadonly&&!aiJob;
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
@@ -268,12 +268,12 @@
   }
   function syncReferences(clip,entries=poolEntries()){
     if(!clip)return false;
-    const refs=referencesIn(localPrompt(clip),entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
+    const refs=referencesIn(clipLocalPrompt(clip),entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
     clip.refs=refs;return changed;
   }
   function effectiveReferences(clip,entries=poolEntries()){
     if(!clip)return [];
-    const ids=new Set(referencesIn(localPrompt(clip),entries));
+    const ids=new Set(referencesIn(clipLocalPrompt(clip),entries));
     if(clip.useGlobalPrompt!==false)for(const id of referencesIn(state.globalPrompt,entries))ids.add(id);
     return [...ids];
   }
@@ -307,7 +307,7 @@
   }
 
   function referenceBudgetForClip(clip,{
-    localPrompt=localPrompt(clip),
+    localPrompt=clipLocalPrompt(clip),
     globalPrompt=state.globalPrompt,
     useGlobal=clip?.useGlobalPrompt!==false,
     transitionMode=clip?.transitionMode,
@@ -406,7 +406,7 @@
   function refreshAssetUsage(){
     const c=current(),entries=poolEntries();
     const globalRefs=new Set(referencesIn(state.globalPrompt,entries));
-    const currentLocalRefs=new Set(c?referencesIn(localPrompt(c),entries):[]);
+    const currentLocalRefs=new Set(c?referencesIn(clipLocalPrompt(c),entries):[]);
     for(const tile of $('#references').querySelectorAll('[data-reference]')){
       const id=tile.dataset.reference;
       const globalUsed=globalRefs.has(id);
