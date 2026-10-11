@@ -1071,37 +1071,196 @@
   }
   function destroyGlobalPromptEditor(){
     if(globalPromptEditor){globalPromptEditor.destroy();globalPromptEditor=null;}
+    globalModal=null;
   }
   function openGlobalPrompt(){
     if(hostReadonly)return;
     finishPromptEdit();promptEditor?.closeMenu();stopDialogMedia();destroyGlobalPromptEditor();
     const d=$('#dialog');d.dataset.mode='global-prompt';$('#dialogTitle').textContent='全局提示词';
-    $('#dialogBody').innerHTML=`<div class="global-prompt-shell"><div class="global-prompt-toolbar"><span class="subtle">默认作用于所有片段；单个片段可在编辑栏关闭。</span><button class="prompt-view-switch global-prompt-view-switch" type="button" aria-label="切换全局提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></div><div class="prompt-editor global-prompt-editor"><div class="prompt-editor-body"><textarea id="globalPromptText" aria-label="全局提示词" placeholder="填写人物、场景、服装、声音或公共参考；输入 @ 引用资产，输入 / 插入 H3 语法。" spellcheck="false"></textarea><div id="globalPromptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="全局可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="填写全局提示词，输入 @ 引用资产，输入 / 插入 H3 语法"></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="globalPromptCount" class="subtle prompt-count"></span></div></div></div>`;
+    $('#dialogBody').innerHTML=[
+      '<div class="global-prompt-shell">',
+        '<div class="global-prompt-toolbar">',
+          '<div class="ai-prompt-tabs global-version-tabs" role="group" aria-label="全局提示词版本">',
+            '<button type="button" class="ai-prompt-tab" id="globalPromptUserTab">用户提示词</button>',
+            '<button type="button" class="ai-prompt-tab" id="globalPromptAiTab">AI 增强提示词</button>',
+          '</div>',
+          '<div class="global-prompt-actions">',
+            '<button class="button ghost" type="button" id="globalAiEnhanceButton">✦ AI 提示增强</button>',
+            '<button class="button ghost" type="button" id="globalAiCancelButton" hidden>取消增强</button>',
+            '<button class="prompt-view-switch global-prompt-view-switch" type="button" aria-label="切换全局提示词显示方式" aria-pressed="false">',
+              '<span>可视化</span><i aria-hidden="true"></i><span>纯文本</span>',
+            '</button>',
+          '</div>',
+        '</div>',
+        '<div class="prompt-editor global-prompt-editor">',
+          '<div class="prompt-editor-body">',
+            '<textarea id="globalPromptText" aria-label="全局提示词" placeholder="填写人物、场景、服装、声音或公共参考；输入 @ 引用资产，输入 / 插入 H3 语法。" spellcheck="false"></textarea>',
+            '<div id="globalPromptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox"',
+                 ' aria-label="全局可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0"',
+                 ' data-placeholder="填写全局提示词，输入 @ 引用资产，输入 / 插入 H3 语法"></div>',
+          '</div>',
+          '<div class="prompt-head prompt-editor-footer">',
+            '<span class="subtle prompt-help">全局约束作用于启用它的所有片段</span>',
+            '<span class="subtle global-ai-status" id="globalAiStatus" role="status"></span>',
+            '<span id="globalPromptCount" class="subtle prompt-count"></span>',
+          '</div>',
+        '</div>',
+      '</div>',
+    ].join('');
     $('#dialogActions').innerHTML='<button class="button ghost" id="globalPromptCancel">取消</button><button class="button primary" id="globalPromptSave">保存全局提示词</button>';
-    let draft=state.globalPrompt||'',beforeText=null;const undo=[],redo=[];
-    const count=()=>{$('#globalPromptCount').textContent=`${draft.length} 字`;};
-    const commitDraft=()=>{if(beforeText!==null&&beforeText!==draft){undo.push(beforeText);redo.length=0;}beforeText=null;};
-    const refresh=()=>{globalPromptEditor.setContext('global-prompt',draft,globalPromptView);const button=$('.global-prompt-view-switch'),isText=globalPromptView==='text';button.classList.toggle('is-text',isText);button.setAttribute('aria-pressed',String(isText));button.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';count();};
+
+    const fields={
+      user:{text:state.globalPrompt||'',undo:[],redo:[],before:null},
+      ai:{text:state.aiGlobalPrompt||'',undo:[],redo:[],before:null}
+    };
+    let version=state.globalPromptMode==='ai'?'ai':'user';
+    let metadata=C.copy(state.globalAiMetadata||{});
+    const currentField=()=>fields[version];
+    const commitDraft=()=>{
+      const field=currentField();
+      if(field.before!==null&&field.before!==field.text){
+        field.undo.push(field.before);field.redo.length=0;
+      }
+      field.before=null;
+    };
+    const isBusy=()=>!!aiJob;
+    const updateBusy=()=>{
+      if(d.dataset.mode!=='global-prompt')return;
+      const active=!!aiConfig&&!hostReadonly&&!isBusy();
+      const enhance=$('#globalAiEnhanceButton');
+      if(enhance){
+        enhance.disabled=!active||!fields.user.text.trim();
+        enhance.title=!embedded?'查看静态 H3 Skill 全局提示词示例':
+          !aiConfig?'请先连接 TerryDirector Llama 配置节点':'使用本地 Qwen 增强全局提示词';
+        enhance.textContent=isBusy()?'正在增强全局提示词…':'✦ AI 提示增强';
+      }
+      const cancel=$('#globalAiCancelButton');
+      if(cancel){cancel.hidden=!isBusy();cancel.disabled=!isBusy();}
+      for(const id of ['globalPromptUserTab','globalPromptAiTab']){
+        const button=$('#'+id);if(button)button.disabled=isBusy();
+      }
+      const view=$('.global-prompt-view-switch');
+      if(view)view.disabled=isBusy();
+      const raw=$('#globalPromptText'),visual=$('#globalPromptVisual');
+      if(raw)raw.readOnly=hostReadonly||isBusy();
+      if(visual)visual.contentEditable=hostReadonly||isBusy()?'false':'true';
+      for(const id of ['globalPromptSave','globalPromptCancel']){
+        const button=$('#'+id);if(button)button.disabled=isBusy();
+      }
+    };
+    const refresh=()=>{
+      globalPromptEditor.setContext('global-prompt-'+version,currentField().text,globalPromptView);
+      const view=$('.global-prompt-view-switch'),isText=globalPromptView==='text';
+      view.classList.toggle('is-text',isText);
+      view.setAttribute('aria-pressed',String(isText));
+      view.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';
+      $('#globalPromptUserTab').classList.toggle('is-selected',version==='user');
+      $('#globalPromptAiTab').classList.toggle('is-selected',version==='ai');
+      $('#globalPromptCount').textContent=currentField().text.length+' 字';
+      const message=$('#globalAiStatus');
+      const stale=!!fields.ai.text&&!!metadata.sourcePrompt&&metadata.sourcePrompt!==fields.user.text;
+      message.textContent=metadata.provenance==='skill-authored-demo'
+        ?'H3 Skill 静态示例 · 非 Qwen 实测输出'
+        :stale?'原文已更新 · AI 全局结果未重新增强'
+        :fields.ai.text?'已有 AI 全局增强稿':'全局原文与 AI 结果分别保存';
+      message.title=stale?'修改原文不会自动重做；手动点击增强即可更新全局稿':'';
+      updateBusy();
+    };
+    globalModal={updateBusy};
     globalPromptEditor=new window.TDH3Editor({
       visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),menuRoot:d,
-      getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
-      getAssetAvailability:globalAssetAvailability,
-      onBeforeChange:()=>{if(beforeText===null)beforeText=draft;},
-      onChange:text=>{draft=text;count();},onCommit:commitDraft,
-      onHistory:isRedo=>{commitDraft();const from=isRedo?redo:undo,to=isRedo?undo:redo;if(!from.length)return;to.push(draft);draft=from.pop();refresh();}
+      getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,
+        raw:'<'+a.token+'>',preview:a.kind==='image'?a.src:''})),
+      getAssetAvailability:(asset,options)=>globalAssetAvailability(asset,{
+        ...options,value:options?.value??currentField().text
+      }),
+      onBeforeChange:()=>{if(currentField().before===null)currentField().before=currentField().text;},
+      onChange:text=>{currentField().text=text;$('#globalPromptCount').textContent=text.length+' 字';},
+      onCommit:commitDraft,
+      onHistory:isRedo=>{
+        commitDraft();const field=currentField();
+        const from=isRedo?field.redo:field.undo,to=isRedo?field.undo:field.redo;
+        if(!from.length)return;to.push(field.text);field.text=from.pop();refresh();
+      }
     });
-    $('.global-prompt-view-switch').addEventListener('click',()=>{commitDraft();globalPromptView=globalPromptView==='visual'?'text':'visual';refresh();});
-    $('#globalPromptCancel').onclick=()=>d.close();
-    $('#globalPromptSave').onclick=()=>{
-      commitDraft();
-      const validation=validateGlobalPrompt(draft);
-      if(!validation.ok){
-        toast(validation.reason||'全局提示词的参考资产超过当前可用额度');
+    function switchVersion(next){
+      if(isBusy()||next===version)return;
+      commitDraft();version=next;refresh();
+    }
+    $('#globalPromptUserTab').onclick=()=>switchVersion('user');
+    $('#globalPromptAiTab').onclick=()=>switchVersion('ai');
+    $('.global-prompt-view-switch').addEventListener('click',()=>{
+      if(isBusy())return;
+      commitDraft();globalPromptView=globalPromptView==='visual'?'text':'visual';refresh();
+    });
+    async function pollGlobalEnhancement(jobId){
+      const status=$('#globalAiStatus');
+      try{
+        const response=await fetch('/terrydirector/api/ai-jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
+        if(!response.ok)throw new Error('全局增强任务状态不可用');
+        const job=await response.json();
+        const result=(job.results||[]).find(item=>item.id==='__global__');
+        if(result&&result.prompt){
+          fields.ai.text=String(result.prompt);
+          fields.ai.undo.length=0;fields.ai.redo.length=0;fields.ai.before=null;
+          metadata=result.metadata||{};
+          version='ai';
+          refresh();
+        }
+        if(['completed','error','cancelled'].includes(job.status)){
+          aiJob=null;renderAiControls();
+          if(job.status==='completed')toast('全局提示词 AI 增强已完成，点击保存应用');
+          else toast(job.error||'全局提示词增强已取消');
+        }else{
+          status.textContent='正在增强全局提示词…';
+          setTimeout(()=>{if(aiJob===jobId&&d.open)void pollGlobalEnhancement(jobId);},650);
+        }
+      }catch(error){
+        aiJob=null;renderAiControls();toast(error?.message||'无法获取全局 AI 结果');
+      }
+    }
+    $('#globalAiEnhanceButton').onclick=async()=>{
+      if(!embedded){
+        if(fields.ai.text){version='ai';refresh();toast('展示按 H3 Skill 编写的全局增强稿（非模型推理）');}
+        else toast('网站只展示静态 UI，真实增强请在 ComfyUI 中执行。');
         return;
       }
-      const before=C.copy(state);if(draft!==state.globalPrompt){state.globalPrompt=draft;commit(before);}d.close();
+      if(!aiConfig||isBusy()||!fields.user.text.trim())return;
+      commitDraft();
+      const validation=validateGlobalPrompt(fields.user.text);
+      if(!validation.ok){toast(validation.reason||'全局提示词引用无效');return;}
+      const source=documentPayload();
+      source.globalPrompt=fields.user.text;
+      source.globalPromptMode='user';
+      try{
+        const response=await fetch('/terrydirector/api/ai-enhance',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({scope:'global',llama_config:aiConfig,document:source})
+        });
+        const payload=await response.json();
+        if(!response.ok)throw new Error(payload.error||'无法启动全局 AI 增强');
+        aiJob=payload.job_id;renderAiControls();
+        $('#globalAiStatus').textContent='正在增强全局提示词…';
+        void pollGlobalEnhancement(aiJob);
+      }catch(error){aiJob=null;renderAiControls();toast(error?.message||'无法增强全局提示词');}
     };
-    refresh();if(!d.open)d.showModal();
+    $('#globalAiCancelButton').onclick=()=>void cancelAiJob();
+    $('#globalPromptCancel').onclick=()=>{if(!isBusy())d.close();};
+    $('#globalPromptSave').onclick=()=>{
+      if(isBusy())return;
+      commitDraft();
+      const globalChoice=version==='ai'&&fields.ai.text.trim()?fields.ai.text:fields.user.text;
+      const validation=validateGlobalPrompt(globalChoice);
+      if(!validation.ok){toast(validation.reason||'全局提示词的参考资产超过当前可用额度');return;}
+      const before=C.copy(state);
+      state.globalPrompt=fields.user.text;
+      state.aiGlobalPrompt=fields.ai.text;
+      state.globalPromptMode=version==='ai'&&fields.ai.text.trim()?'ai':'user';
+      state.globalAiMetadata=C.copy(metadata);
+      commit(before);
+      d.close();
+    };
+    refresh();if(!d.open)d.showModal();updateBusy();
   }
   function confirmCloseEditor(){
     if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}
