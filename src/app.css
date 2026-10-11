@@ -1199,3 +1199,61 @@ body:not(.td-embedded) #app { margin-inline:auto; }
     left:12px;right:12px;justify-content:center;
   }
 }
+
+
+/* Global prompt AI: two editable versions plus one explicit manual enhancement.
+ * Preserve the existing standalone modal and H3 editor canvas/textarea. */
+dialog[data-mode="global-prompt"] { width:min(940px,calc(100vw - 40px)); }
+dialog[data-mode="global-prompt"] .global-prompt-shell { min-width:0; }
+dialog[data-mode="global-prompt"] .global-prompt-toolbar {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  justify-content:space-between;
+}
+dialog[data-mode="global-prompt"] .global-version-tabs {
+  flex:0 1 auto;
+  min-width:0;
+}
+dialog[data-mode="global-prompt"] .global-prompt-actions {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  min-width:0;
+}
+dialog[data-mode="global-prompt"] .global-prompt-actions .button {
+  min-height:30px;
+  font-size:11px;
+}
+dialog[data-mode="global-prompt"] .global-prompt-actions .prompt-view-switch {
+  flex:none;
+}
+dialog[data-mode="global-prompt"] .global-ai-status {
+  flex:1 1 auto;
+  min-width:0;
+  color:var(--td-text-secondary);
+  text-align:right;
+  font-size:11px;
+  white-space:normal;
+}
+dialog[data-mode="global-prompt"] .prompt-editor-footer {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 12px;
+}
+dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
+  flex:none;
+}
+@media (max-width:760px) {
+  dialog[data-mode="global-prompt"] { width:calc(100vw - 24px); }
+  dialog[data-mode="global-prompt"] .global-prompt-actions {
+    justify-content:flex-start;
+    width:100%;
+  }
+  dialog[data-mode="global-prompt"] .global-ai-status {
+    text-align:left;
+  }
+}

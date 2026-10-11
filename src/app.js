@@ -96,6 +96,14 @@
           sourceGlobalPrompt:clip.useGlobalPrompt===false?'':documentData.globalPrompt
         };
       }
+      if(typeof sample.globalAiPrompt!=='string'||!sample.globalAiPrompt.trim())
+        throw new Error('静态全局增强稿缺失');
+      documentData.aiGlobalPrompt=sample.globalAiPrompt;
+      documentData.globalPromptMode='user';
+      documentData.globalAiMetadata={
+        seed:'demo',provenance:'skill-authored-demo',model:'Static site example',
+        skill:'h3-prompt-writing-global',sourcePrompt:documentData.globalPrompt
+      };
       siteDemoDocument=C.copy(documentData);
       demoInputFiles.splice(0,demoInputFiles.length,...documentData.assets.map(item=>({
         path:item.source?.path||'',name:item.name,kind:item.kind,
@@ -110,7 +118,9 @@
       // Enable controls for visual QA; no actual inference will run here.
       aiConfig={previewOnly:true};renderAiControls();
       title='特瑞 · 荒星三镜头';
-      toast('已载入 3 段 H3 Skill 静态增强稿；保留原始提示词，可切换标签对比。');
+      toast('已载入 3 段和全局 H3 Skill 静态增强稿，支持与原文切换。');
+      if(new URLSearchParams(location.search).get('global-ai')==='1')
+        requestAnimationFrame(()=>openGlobalPrompt());
       return documentData;
     }catch(error){
       console.error('[TerryDirector Demo] Failed to load acceptance workflow:',error);
