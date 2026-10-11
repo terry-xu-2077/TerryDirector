@@ -12,7 +12,7 @@ This repository is a **ComfyUI custom node package**, not a development-task arc
 - Preserve the separated second-pass configuration chain: `TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector / TerryDirector Advanced`. Do not require the external selflift-Avatar plugin.
 - Base exposes IMAGE/AUDIO through `TerryDirector 输出`. Advanced stores and streams its own file-backed output, with interruption recovery and per-clip rerun.
 - The separate looper accepts already-decoded IMAGE/AUDIO and exposes only a streaming VIDEO. LoopEnd must not decode LATENT or expose segment LATENT. Keep the external ComfyUI sampler/decoder group editable and avoid forcing an H3 prefix onto TerryDirector's public loop sockets.
-- Model adapter registry: `minimax_h3` ready; `ltx_2_5` reserved/not ready. Never fall back to H3 decode for unknown model formats.
+- Model adapter registry: `minimax_h3` ready; `ltx_2_5` reserved/not ready. Never fall back to H3 frame/reference/continuity semantics for unknown model formats.
 - The loop's temporary cache and downstream SaveVideo must stay low-memory; successful final saving clears current-run temporary files, failures retain diagnostic source caches.
 - Real ComfyUI events drive per-segment sampling progress. Never fake elapsed time or completed states.
 - Existing core source in `director_core.py`, `director_compile.py`, `director_h3.py`, `director_selflift*.py`, `director_loop*.py` is production functionality. Any refactor must preserve the corresponding recorded behaviour in `docs/STABLE_BASELINES.md`.
