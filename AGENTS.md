@@ -15,6 +15,7 @@ This repository is a **ComfyUI custom node package**, not a development-task arc
 - Model adapter registry: `minimax_h3` ready; `ltx_2_5` reserved/not ready. Never fall back to H3 frame/reference/continuity semantics for unknown model formats.
 - The loop's temporary cache and downstream SaveVideo must stay low-memory; successful final saving clears current-run temporary files, failures retain diagnostic source caches.
 - Real ComfyUI events drive per-segment sampling progress. Never fake elapsed time or completed states.
+- Queue-stage automatic AI enhancement must honor ComfyUI's native Stop/Interrupt flag during streamed token generation. Editor-owned manual AI jobs remain separately cancellable and must not be coupled to Queue interruption.
 - Existing core source in `director_core.py`, `director_compile.py`, `director_h3.py`, `director_selflift*.py`, `director_loop*.py` is production functionality. Any refactor must preserve the corresponding recorded behaviour in `docs/STABLE_BASELINES.md`.
 
 ## Development conventions
