@@ -1,10 +1,25 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
+import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
+import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
+import { findLoopMemorySources, readH3Resolution } from "./td_loop_memory.js";
+import { createLoopOutputCheckCard } from "./td_loop_output_check.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
 const OUTPUT_NODE_CLASS = "TerryDirectorOutput";
-const isDirector = node => node?.comfyClass === NODE_CLASS || node?.comfyClass === ADVANCED_NODE_CLASS;
+const LOOP_NODE_CLASS = "TerryDirectorLooper";
+const LOOP_END_NODE_CLASS = "TerryDirectorLoopEnd";
+const LOOP_INFO_NODE_CLASS = "TerryDirectorLoopInfo";
+const H3_CONDITION_NODE_CLASS = "MiniMaxH3ReferenceToVideo";
+const LOOP_MEMORY_SOURCE_CLASSES = new Set([
+  LOOP_NODE_CLASS, LOOP_INFO_NODE_CLASS, H3_CONDITION_NODE_CLASS,
+  "TerryDirectorLoopCondition", "BasicGuider", "SamplerCustomAdvanced",
+  "KSampler", "KSamplerAdvanced",
+  "ResolutionSelector", "PrimitiveInt", "PrimitiveFloat",
+  "PrimitiveString", "Reroute",
+]);
+const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
 const CONFIG_ADVANCED_WIDGETS = new Set([
   "multiple",
@@ -19,6 +34,43 @@ const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 40;
 const OUTPUT_MEMORY_NOTICE_GIB = 4;
 const OUTPUT_MEMORY_HIGH_GIB = 8;
+
+const tdTempDisk = { info: null, failed: false, pending: false, requestedAt: 0 };
+
+function refreshTempDiskSpace({ force = false } = {}) {
+  const now = Date.now();
+  // One lightweight request across all LoopEnd nodes. Refresh on node change,
+  // but do not continuously poll or request again on its own rerender.
+  if (tdTempDisk.pending ||
+      (!force && now - tdTempDisk.requestedAt < 30000)) return;
+  tdTempDisk.requestedAt = now;
+  tdTempDisk.pending = true;
+  void api.fetchApi("/terrydirector/api/temp-space")
+    .then(async response => {
+      if (!response.ok) throw new Error("Temp disk query failed");
+      const data = await response.json();
+      if (data.available && Number.isFinite(Number(data.free_bytes))) {
+        tdTempDisk.info = {
+          freeBytes: Math.max(0, Number(data.free_bytes)),
+          drive: String(data.drive || ""),
+        };
+        tdTempDisk.failed = false;
+      } else {
+        tdTempDisk.info = null;
+        tdTempDisk.failed = true;
+      }
+    })
+    .catch(() => {
+      tdTempDisk.info = null;
+      tdTempDisk.failed = true;
+    })
+    .finally(() => {
+      tdTempDisk.pending = false;
+      refreshAllOutputMemoryInfo();
+    });
+}
+
+
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -31,6 +83,7 @@ const cssHref = new URL("./terry_director.css", import.meta.url).href;
 // beforeQueued callbacks, seed controls and queue bookkeeping still run), then
 // repair the partial target at the lower api.queuePrompt boundary if needed.
 const tdPendingPartialRuns = [];
+let tdActiveExecutionPromptId = null;
 
 function removePendingPartialRun(request) {
   const index = tdPendingPartialRuns.indexOf(request);
@@ -87,9 +140,66 @@ function bindDirectorPartialQueueGuard() {
   api.__tdPartialQueueGuardBound = true;
 }
 
+function loopExecutionTarget(node) {
+  if (node?.comfyClass !== LOOP_NODE_CLASS) return String(node.id);
+  const graph = node.graph || app.graph;
+  const visited = new Set();
+  const queue = [node];
+  const ends = [];
+  while (queue.length) {
+    const cursor = queue.shift();
+    if (!cursor || visited.has(cursor.id)) continue;
+    visited.add(cursor.id);
+    if (cursor.comfyClass === LOOP_END_NODE_CLASS) {
+      ends.push(String(cursor.id));
+      continue;
+    }
+    for (const output of cursor.outputs || []) {
+      for (const linkId of output.links || []) {
+        const link = graph?.links?.[linkId];
+        if (!link) continue;
+        const next = graph?.getNodeById?.(link.target_id) ||
+          graph?._nodes?.find(n => n.id === link.target_id);
+        if (next && !visited.has(next.id)) queue.push(next);
+      }
+    }
+  }
+  if (ends.length !== 1) {
+    throw new Error("TerryDirector 循环需要恰好一个已连线的「循环结束」节点");
+  }
+  // If the loop has exactly one downstream video save, include the final
+  // merge/encode in the partial-queue target. Otherwise run the loop boundary
+  // alone and leave downstream processing to the normal ComfyUI queue.
+  const endNode = graph?.getNodeById?.(Number(ends[0])) ||
+    graph?._nodes?.find(item => String(item.id) === ends[0]);
+  const downstreamSeen = new Set();
+  const pending = [endNode];
+  const saves = new Set();
+  while (pending.length) {
+    const current = pending.shift();
+    if (!current || downstreamSeen.has(current.id)) continue;
+    downstreamSeen.add(current.id);
+    if (current.comfyClass === "SaveVideo") {
+      saves.add(String(current.id));
+      continue;
+    }
+    if (current.comfyClass === LOOP_NODE_CLASS) continue;
+    for (const output of current.outputs || []) {
+      for (const linkId of output.links || []) {
+        const link = graph?.links?.[linkId];
+        if (!link) continue;
+        const next = graph?.getNodeById?.(link.target_id) ||
+          graph?._nodes?.find(item => item.id === link.target_id);
+        if (next && !downstreamSeen.has(next.id)) pending.push(next);
+      }
+    }
+  }
+  return saves.size === 1 ? [...saves][0] : ends[0];
+}
+
 function queueDirectorNode(node) {
   const request = {
-    nodeId: String(node.id),
+    nodeId: loopExecutionTarget(node),
     // Keep queued-behind-current-run requests alive, but do not let a failed
     // submission affect unrelated prompts indefinitely.
     expiresAt: Date.now() + 30 * 60 * 1000,
@@ -533,6 +643,37 @@ function pushActivity(node, { fullRender = false } = {}) {
   );
 }
 
+function bindLoopSegmentActivity() {
+  if (api.__tdLoopSegmentActivityBound) return;
+  api.__tdLoopSegmentActivityBound = true;
+  api.addEventListener("terrydirector:loop-segment", event => {
+    const detail = event.detail || {};
+    const node = directorNodeFromId(detail.node_id);
+    if (node?.comfyClass !== LOOP_NODE_CLASS) return;
+    if (tdActiveExecutionPromptId != null) ensurePromptRun(node, tdActiveExecutionPromptId);
+    const activity = ensureActivity(node);
+    const clip = activity[String(detail.clip_id)];
+    if (!clip) return;
+    const now = performance.now();
+    if (detail.status === "running") {
+      Object.assign(clip, {
+        status: RUN_RUNNING, progress: 0, startedAt: now,
+        samplingStep: null, samplingSteps: null,
+        completedAt: null, elapsedSeconds: 0, error: "",
+      });
+    } else if (detail.status === "completed") {
+      Object.assign(clip, {
+        status: RUN_COMPLETED, progress: 1,
+        elapsedSeconds: clip.startedAt ? (now - clip.startedAt) / 1000 : 0,
+        completedAt: new Date().toISOString(), error: "",
+      });
+    } else {
+      return;
+    }
+    pushActivity(node);
+  });
+}
+
 function pushPreferences() {
   if (!frameReady || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
@@ -653,6 +794,56 @@ function applyProgressState(detail) {
   }
 }
 
+/**
+ * Native H3 sampler nodes have their own visible node IDs, not the "td_sN_*"
+ * expanded node IDs used by Base/Advanced. Link their real progress_state
+ * value/max back to the enclosing Looper and zero-based active segment.
+ */
+function applyLoopSamplerProgress(detail) {
+  const promptId = detail?.prompt_id;
+  // A late event from an older prompt must never reset an already completed
+  // segment or re-lock a different director instance.
+  if (promptId == null || tdActiveExecutionPromptId == null ||
+      String(promptId) !== String(tdActiveExecutionPromptId)) return;
+
+  const changes = new Set();
+  for (const sample of collectLoopSamplerProgress(detail, app.graph)) {
+    const node = directorNodeFromId(sample.loopId);
+    if (node?.comfyClass !== LOOP_NODE_CLASS) continue;
+    if (node.__tdPromptId != null && String(node.__tdPromptId) !== String(promptId)) continue;
+
+    const clip = activeLoopClip(readConfig(node).document.clips, sample.iteration);
+    if (!clip) continue;
+    ensurePromptRun(node, promptId);
+    const record = ensureActivity(node)[clip.id];
+    if (!record || record.status === RUN_COMPLETED || record.status === RUN_ERROR) continue;
+
+    const now = performance.now();
+    const startedAt = record.startedAt || now;
+    // Sampling at N/N is not yet a finished segment: VAE decode and the
+    // lossless .pt cache still have to complete. Only the cache event sets 100%.
+    const progress = Math.min(0.99, sample.fraction);
+    if (record.status === RUN_RUNNING &&
+        record.progress === progress &&
+        record.samplingStep === sample.step &&
+        record.samplingSteps === sample.totalSteps) continue;
+
+    Object.assign(record, {
+      status: RUN_RUNNING,
+      progress,
+      samplingStep: sample.step,
+      samplingSteps: sample.totalSteps,
+      startedAt,
+      elapsedSeconds: (now - startedAt) / 1000,
+      completedAt: null,
+      error: "",
+    });
+    changes.add(node);
+  }
+
+  for (const node of changes) pushActivity(node);
+}
+
 function finishPromptActivity(promptId, success, message = "") {
   let matched = false;
   for (const node of app.graph?._nodes || []) {
@@ -718,6 +909,7 @@ function bindExecutionActivity() {
 
   api.addEventListener("execution_start", event => {
     const promptId = event.detail?.prompt_id;
+    tdActiveExecutionPromptId = promptId ?? null;
     // A restored Advanced result may already have a <video> element holding
     // browser/WDDM video surfaces before Comfy starts sampling. Release those
     // surfaces at prompt start, before the first sampler progress event.
@@ -728,7 +920,10 @@ function bindExecutionActivity() {
     }
   });
 
-  api.addEventListener("progress_state", event => applyProgressState(event.detail));
+  api.addEventListener("progress_state", event => {
+    applyProgressState(event.detail);
+    applyLoopSamplerProgress(event.detail);
+  });
 
   api.addEventListener("execution_cached", event => {
     const promptId = event.detail?.prompt_id;
@@ -799,6 +994,8 @@ function bindExecutionActivity() {
   });
 
   api.addEventListener("execution_success", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(event.detail?.prompt_id, true);
     if (matched) {
       for (const node of app.graph?._nodes || []) {
@@ -807,6 +1004,8 @@ function bindExecutionActivity() {
     }
   });
   api.addEventListener("execution_error", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
@@ -819,6 +1018,8 @@ function bindExecutionActivity() {
     }
   });
   api.addEventListener("execution_interrupted", event => {
+    const finishedPromptId = event.detail?.prompt_id;
+    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
     const matched = finishPromptActivity(
       event.detail?.prompt_id,
       false,
@@ -1117,10 +1318,14 @@ function timelineHtml(documentData, activity = {}) {
       const suspended = clip.suspended ? " is-suspended" : "";
       const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
       const duration = timeText(Math.max(0, durationFrames));
+      const samplingSteps = Number(record.samplingSteps);
+      const samplingInfo = running && samplingSteps > 0
+        ? ` · 采样 ${Number(record.samplingStep) || 0}/${samplingSteps}`
+        : "";
       const statusText = visualCompleted
         ? "已完成"
         : running
-          ? (percent > 0 ? `生成中 ${percent}%` : "准备中")
+          ? (samplingInfo ? `生成中 ${percent}%${samplingInfo}` : (percent > 0 ? `生成中 ${percent}%` : "准备中"))
           : failed
             ? "生成失败"
             : "";
@@ -1174,15 +1379,14 @@ function renderNode(node) {
 
 
 
-function linkedNodeForInput(node, inputName) {
+function linkedOutputForInput(node, inputName) {
   if (!node) return null;
   const graph = node.graph || app.rootGraph || app.graph;
   const inputIndex = node.inputs?.findIndex(item => item.name === inputName) ?? -1;
   if (inputIndex < 0 || !graph) return null;
 
   // ComfyUI frontend 1.53+ stores graph.links as a Map. Prefer the node/graph
-  // accessors so this also works with the newer ECS-backed link store and
-  // subgraphs; keep a small compatibility fallback for older frontends.
+  // accessors so this also works with ECS-backed links and older frontends.
   let link = node.getInputLink?.(inputIndex) || null;
   if (!link) {
     const linkId = node.inputs?.[inputIndex]?.link;
@@ -1194,8 +1398,16 @@ function linkedNodeForInput(node, inputName) {
         null;
     }
   }
+  if (!link) return null;
+  const upstreamNode = graph.getNodeById?.(link.origin_id);
+  const outputIndex = Number(link.origin_slot);
+  return upstreamNode && Number.isSafeInteger(outputIndex) && outputIndex >= 0
+    ? { node: upstreamNode, outputIndex }
+    : null;
+}
 
-  return link ? graph.getNodeById?.(link.origin_id) || null : null;
+function linkedNodeForInput(node, inputName) {
+  return linkedOutputForInput(node, inputName)?.node || null;
 }
 
 function effectiveTimelineFrames(documentData) {
@@ -1260,6 +1472,52 @@ function directorResolution(node) {
   return { width, height };
 }
 
+function mergeFrameMemoryEstimate(frames, resolution) {
+  const { width, height } = resolution;
+  const gib = frames * width * height * 3 * 4 / (1024 ** 3);
+  return {
+    state: "ready",
+    frames,
+    seconds: frames / FPS,
+    width,
+    height,
+    gib,
+    level:
+      gib >= OUTPUT_MEMORY_HIGH_GIB
+        ? "high"
+        : gib >= OUTPUT_MEMORY_NOTICE_GIB
+          ? "notice"
+          : "normal",
+  };
+}
+
+function loopEndMemoryEstimate(node) {
+  // H3.width/height may be overridden by the official ResolutionSelector.
+  // Trace their actual linked outputs before using stale H3 widget values.
+  const { looper, h3 } = findLoopMemorySources(node, linkedNodeForInput);
+  if (!looper) return { state: "disconnected" };
+  const documentData = readConfig(looper).document;
+  const frames = effectiveTimelineFrames(documentData);
+  const activeClips = (documentData.clips || []).filter(clip => !clip.suspended).length;
+  const summary = {
+    state: "summary",
+    frames,
+    seconds: frames / FPS,
+    activeClips,
+    hint: frames > 0
+      ? "分辨率来自动态或暂不支持的上游计算；请以生成时的实际尺寸为准。"
+      : "当前没有启用的片段。",
+  };
+  if (frames < 1) return summary;
+  const resolution = readH3Resolution(h3, linkedOutputForInput);
+  if (!resolution) return summary;
+  return {
+    ...mergeFrameMemoryEstimate(frames, resolution),
+    activeClips,
+    source: resolution.source,
+  };
+}
+
 function outputMemoryEstimate(node) {
   const director = linkedNodeForInput(node, "director_output");
   if (!director || !isDirector(director)) {
@@ -1277,40 +1535,32 @@ function outputMemoryEstimate(node) {
     return { state: "pending" };
   }
 
-  const bytes = frames * resolution.width * resolution.height * 3 * 4;
-  const gib = bytes / (1024 ** 3);
-
-  return {
-    state: "ready",
-    frames,
-    seconds: frames / FPS,
-    width: resolution.width,
-    height: resolution.height,
-    gib,
-    level:
-      gib >= OUTPUT_MEMORY_HIGH_GIB
-        ? "high"
-        : gib >= OUTPUT_MEMORY_NOTICE_GIB
-          ? "notice"
-          : "normal",
-  };
+  return mergeFrameMemoryEstimate(frames, resolution);
 }
 
 function renderOutputMemoryInfo(node) {
   const root = node?.__tdOutputInfoRoot;
   if (!root) return;
 
-  const estimate = outputMemoryEstimate(node);
+  const isLoopEnd = node.comfyClass === LOOP_END_NODE_CLASS;
+  const estimate = isLoopEnd ? loopEndMemoryEstimate(node) : outputMemoryEstimate(node);
   root.hidden = false;
 
-  if (estimate.state === "disconnected") {
+  if (isLoopEnd) {
+    refreshTempDiskSpace();
+    const card = createLoopOutputCheckCard(estimate, tdTempDisk);
+    root.className = card.className;
+    root.innerHTML = card.html;
+  } else if (estimate.state === "disconnected") {
     root.className = "td-output-memory-card is-idle";
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>合并画面内存</strong>
+        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
       </div>
-      <div class="td-output-memory-note">连接 TerryDirector 后显示预计内存占用。</div>
+      <div class="td-output-memory-note">${isLoopEnd
+        ? "连接循环信息与官方 H3 工作流后显示流式输出概况。"
+        : "连接 TerryDirector 后显示预计内存占用。"}</div>
     `;
   } else if (estimate.state === "advanced") {
     root.className = "td-output-memory-card is-idle";
@@ -1321,33 +1571,51 @@ function renderOutputMemoryInfo(node) {
       </div>
       <div class="td-output-memory-note">不会在生成阶段保留整条合并画面。</div>
     `;
+  } else if (isLoopEnd && estimate.state === "summary") {
+    const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
+    root.className = "td-output-memory-card is-idle";
+    root.innerHTML = `
+      <div class="td-output-memory-title">
+        <span class="td-output-memory-icon">i</span>
+        <strong>流式视频输出</strong>
+      </div>
+      <div class="td-output-memory-meta">
+        ${estimate.activeClips} 个启用片段 · ${estimate.frames} 帧 · ${seconds}s · 24 fps
+      </div>
+      <div class="td-output-memory-note">${estimate.hint}</div>
+    `;
   } else if (estimate.state !== "ready") {
     root.className = "td-output-memory-card is-idle";
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>合并画面内存</strong>
+        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
       </div>
-      <div class="td-output-memory-note">正在读取时间线与分辨率信息…</div>
+      <div class="td-output-memory-note">${estimate.hint || "正在读取时间线与分辨率信息…"}</div>
     `;
   } else {
     const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
     const memory = estimate.gib.toFixed(1);
-    root.className = `td-output-memory-card is-${estimate.level}`;
+    root.className = isLoopEnd ? "td-output-memory-card is-normal"
+      : `td-output-memory-card is-${estimate.level}`;
     root.innerHTML = `
       <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">${estimate.level === "high" ? "!" : "i"}</span>
-        <strong>合并整段画面预计占用 <b>${memory} GB</b> 内存</strong>
+        <span class="td-output-memory-icon">${isLoopEnd ? "i" : estimate.level === "high" ? "!" : "i"}</span>
+        <strong>${isLoopEnd
+          ? `流式视频 · 避免约 <b>${memory} GB</b> 整段画面占用`
+          : `合并整段画面预计占用 <b>${memory} GB</b> 内存`}</strong>
       </div>
       <div class="td-output-memory-meta">
-        ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}
+        ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}${isLoopEnd && estimate.source === "upstream" ? " · 上游分辨率" : ""}
       </div>
       <div class="td-output-memory-note">
-        ${estimate.level === "high"
-          ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
-          : estimate.level === "notice"
-            ? "内存占用较高，后续图像节点可能继续增加内存占用。"
-            : "当前合并画面内存占用处于正常范围。"}
+        ${isLoopEnd
+          ? "逐段无损缓存，交由 SaveVideo 单次流式编码；无需物化整段 IMAGE / AUDIO。"
+          : estimate.level === "high"
+            ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
+            : estimate.level === "notice"
+              ? "内存占用较高，后续图像节点可能继续增加内存占用。"
+              : "当前合并画面内存占用处于正常范围。"}
       </div>
     `;
   }
@@ -1358,7 +1626,8 @@ function renderOutputMemoryInfo(node) {
       const width = Math.max(Number(node.size?.[0]) || 320, 320);
       const height = Math.max(
         Number(computed?.[1]) || 0,
-        estimate?.state === "ready" ? 205 : 185
+        isLoopEnd ? (estimate?.state === "disconnected" ? 185 : 255) :
+          (estimate?.state === "ready" ? 205 : 185)
       );
       node.setSize?.([width, height]);
     } catch {}
@@ -1368,12 +1637,14 @@ function renderOutputMemoryInfo(node) {
 
 function refreshAllOutputMemoryInfo() {
   for (const node of app.graph?._nodes || []) {
-    if (node?.comfyClass === OUTPUT_NODE_CLASS) renderOutputMemoryInfo(node);
+    if (node?.comfyClass === OUTPUT_NODE_CLASS ||
+        node?.comfyClass === LOOP_END_NODE_CLASS) renderOutputMemoryInfo(node);
   }
 }
 
 function mountOutputNode(node) {
-  if (!node || node.comfyClass !== OUTPUT_NODE_CLASS) return;
+  if (!node || (node.comfyClass !== OUTPUT_NODE_CLASS &&
+                node.comfyClass !== LOOP_END_NODE_CLASS)) return;
   ensureCss();
 
   if (!node.__tdOutputInfoRoot) {
@@ -1395,8 +1666,8 @@ function mountOutputNode(node) {
       root,
       {
         hideOnZoom: false,
-        getMinHeight: () => 76,
-        getMaxHeight: () => 96,
+        getMinHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 120 : 76,
+        getMaxHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 165 : 96,
         margin: 5,
       }
     );
@@ -1409,7 +1680,8 @@ function mountOutputNode(node) {
     const computed = node.computeSize?.();
     node.setSize?.([
       width,
-      Math.max(Number(computed?.[1]) || 0, 185),
+      Math.max(Number(computed?.[1]) || 0,
+        node.comfyClass === LOOP_END_NODE_CLASS ? 255 : 185),
     ]);
   }
 
@@ -1426,6 +1698,41 @@ function mountOutputNode(node) {
   renderOutputMemoryInfo(node);
 }
 
+
+/**
+ * The old Output estimates resolution from TerryDirector Config. LoopEnd
+ * estimates it from the official H3 ReferenceToVideo node, so changes to its
+ * width/height widgets must refresh the same shared memory notice.
+ */
+function bindLoopMemorySource(node) {
+  if (!node || !LOOP_MEMORY_SOURCE_CLASSES.has(node.comfyClass)) return;
+  const watchedWidgets = node.comfyClass === H3_CONDITION_NODE_CLASS
+    ? ["width", "height"]
+    : node.comfyClass === "ResolutionSelector"
+      ? ["aspect_ratio", "megapixels", "multiple"]
+      : ["PrimitiveInt", "PrimitiveFloat", "PrimitiveString"].includes(node.comfyClass)
+        ? ["value"]
+        : [];
+  for (const name of watchedWidgets) {
+    const widget = node.widgets?.find(item => item.name === name);
+    if (!widget || widget.__tdMemoryRefreshBound) continue;
+    const originalCallback = widget.callback;
+    widget.callback = function(...args) {
+      const result = originalCallback?.apply(this, args);
+      queueMicrotask(refreshAllOutputMemoryInfo);
+      return result;
+    };
+    widget.__tdMemoryRefreshBound = true;
+  }
+  if (node.__tdLoopMemoryLinkBound) return;
+  const originalConnectionCallback = node.onConnectionsChange;
+  node.onConnectionsChange = function(...args) {
+    const result = originalConnectionCallback?.apply(this, args);
+    queueMicrotask(refreshAllOutputMemoryInfo);
+    return result;
+  };
+  node.__tdLoopMemoryLinkBound = true;
+}
 
 // Advanced review is intentionally independent of the full editor timeline.
 // Persist UI selection in memory, never in the creative document.
@@ -2142,6 +2449,9 @@ function setNativeWidgetHidden(widget, hidden) {
 function applyConfigAdvancedVisibility(node) {
   if (!node || node.comfyClass !== CONFIG_NODE_CLASS) return;
 
+  // Native widget disabled state reflects the active second-pass connection.
+  bindSecondPassTakeover(node);
+
   for (const widget of node.widgets || []) {
     if (!CONFIG_ADVANCED_WIDGETS.has(widget.name)) continue;
 
@@ -2227,6 +2537,7 @@ function mountNode(node) {
     }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
+    if (node.comfyClass === LOOP_NODE_CLASS) hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
@@ -2247,6 +2558,7 @@ function mountNode(node) {
   if (!backing) return;
   hideBackingWidget(backing);
   hideBackingWidget(tailReferencePromptWidget(node));
+  if (node.comfyClass === LOOP_NODE_CLASS) hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
@@ -2477,22 +2789,27 @@ app.registerExtension({
     ensureEditorOverlay();
     bindDirectorPartialQueueGuard();
     bindExecutionActivity();
+    bindLoopSegmentActivity();
   },
   nodeCreated(node) {
+    queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
+               node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
     }
   },
   loadedGraphNode(node) {
+    queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS) {
+    } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
+               node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
     }
   },
