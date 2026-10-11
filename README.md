@@ -85,7 +85,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
                                                   └─ VIDEO → 官方 SaveVideo
 ```
 
-循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的 **「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环器直接输出 **VIDEO**，无需再连接 CreateVideo。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO，不再接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
+循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的低透明度 **圆角凸包「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环器直接输出 **VIDEO**，无需再连接 CreateVideo。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO，不再接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
 
 ## 时间线与编辑
 
