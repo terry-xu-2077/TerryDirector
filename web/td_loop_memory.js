@@ -14,7 +14,10 @@ export function findLoopMemorySources(loopEnd, upstream) {
     return { looper: null, h3: null };
   }
 
-  const pending = [upstream(loopEnd, "samples")];
+  const pending = [
+    upstream(loopEnd, "samples"),
+    upstream(loopEnd, "images"),
+  ].filter(Boolean);
   const visited = new Set();
   const references = new Set();
   while (pending.length && visited.size < 256) {
@@ -114,4 +117,74 @@ export function readH3Resolution(node, linkedOutput) {
     result.source = "upstream";
   }
   return result;
+}
+
+
+const KNOWN_FAST_DECODE_VAE_SCALES = new Map([
+  ["minimax-h3-x2-detail-v1.safetensors", 2],
+]);
+
+function basename(value) {
+  return String(value || "").replaceAll("\\", "/").split("/").pop().toLowerCase();
+}
+
+function upstreamThroughReroutes(node, upstream, inputName = null) {
+  let current = node;
+  const visited = new Set();
+  for (let depth = 0; current && depth < 16; depth += 1) {
+    if (visited.has(current)) return null;
+    visited.add(current);
+    if (current.comfyClass !== "Reroute") return current;
+    const name = inputName || current.inputs?.[0]?.name;
+    current = name ? upstream?.(current, name) : null;
+    inputName = null;
+  }
+  return null;
+}
+
+function knownFastDecodeScale(decodeNode, upstream) {
+  if (decodeNode?.comfyClass !== "MiniMaxH3VAEDecodeFast") return null;
+  const vaeNode = upstreamThroughReroutes(upstream?.(decodeNode, "vae"), upstream);
+  if (vaeNode?.comfyClass !== "VAELoader") return null;
+  const vaeName = basename(widgetValue(vaeNode, "vae_name"));
+  const scale = KNOWN_FAST_DECODE_VAE_SCALES.get(vaeName);
+  if (!scale) return null;
+  return { scale, vaeName };
+}
+
+/**
+ * Resolve the LoopEnd's actual cached/output image size when it can be proven
+ * from the static graph. Legacy H3 decode uses the generation resolution.
+ * External Fast Decode only returns a definite size for explicitly known VAE
+ * scaling contracts; unknown post-processing remains intentionally unknown.
+ */
+export function readLoopOutputResolution(loopEnd, h3, upstream, linkedOutput) {
+  const base = readH3Resolution(h3, linkedOutput);
+  if (!base) return null;
+
+  const externalSource = upstreamThroughReroutes(
+    upstream?.(loopEnd, "images"), upstream
+  );
+  if (!externalSource) {
+    return {
+      ...base,
+      source: base.source || "h3",
+      resolutionLabel: base.source === "upstream" ? "上游生成尺寸" : "H3 生成尺寸",
+    };
+  }
+
+  const fastDecode = knownFastDecodeScale(externalSource, upstream);
+  if (!fastDecode) return null;
+
+  const width = base.width * fastDecode.scale;
+  const height = base.height * fastDecode.scale;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)) return null;
+  return {
+    width,
+    height,
+    source: "fast_decode_known_scale",
+    scale: fastDecode.scale,
+    vaeName: fastDecode.vaeName,
+    resolutionLabel: fastDecode.scale + "X VAE 推算",
+  };
 }
