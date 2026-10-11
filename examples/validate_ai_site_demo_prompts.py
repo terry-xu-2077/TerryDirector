@@ -49,7 +49,7 @@ def validate() -> dict:
         "[Global direction]", "[Visual language]", "[Lighting and palette]",
         "[Shared reference definitions]", "Sony Venice 2", "2.39:1",
     ))
-    assert re.findall(r"<Picture\\s+(\\d+)>", global_ai) == [
+    assert re.findall(r"<Picture\s+(\d+)>", global_ai) == [
         str(i) for i in range(1, 8)
     ]
     assert "<Picture 8>" not in global_ai

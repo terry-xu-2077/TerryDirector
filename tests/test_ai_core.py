@@ -128,8 +128,8 @@ def test_global_ai_compiler_uses_selected_version_without_extra_tail():
         }
         plan=comp.compile_timeline(doc)
         segments=plan["segments"]
-        assert segments[0]["prompt"].startswith("AI GLOBAL\\n\\nORIGINAL CLIP")
-        assert segments[1]["prompt"].startswith("AI GLOBAL\\n\\nNEXT CLIP")
+        assert segments[0]["prompt"].startswith("AI GLOBAL\n\nORIGINAL CLIP")
+        assert segments[1]["prompt"].startswith("AI GLOBAL\n\nNEXT CLIP")
         assert segments[0]["continuity"]["kind"] == "independent"
         assert segments[1]["continuity"]["kind"] == "tail_reference"
         assert segments[1]["continuity"]["picture_number"] == 1
