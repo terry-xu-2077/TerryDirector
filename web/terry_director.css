@@ -1021,7 +1021,7 @@
   width: calc(100% - 10px);
   min-width: 0;
   margin: 4px 5px 2px;
-  padding: 10px 12px 9px;
+  padding: 8px 10px 7px;
   overflow: hidden;
   border: 1px solid rgba(155,120,255,.20);
   border-radius: 10px;
@@ -1049,7 +1049,7 @@
   align-items:center;
   justify-content:space-between;
   gap:10px;
-  margin-bottom:5px;
+  margin-bottom:4px;
 }
 .td-loop-condition-title strong {
   color:#e8e3ec;
@@ -1073,7 +1073,7 @@
   align-items:baseline;
   justify-content:space-between;
   gap:10px;
-  min-height:18px;
+  min-height:17px;
   font-variant-numeric:tabular-nums;
 }
 .td-loop-condition-row > span {
@@ -1082,7 +1082,7 @@
 }
 .td-loop-condition-row > strong {
   min-width:0;
-  max-width:68%;
+  max-width:82%;
   overflow:hidden;
   color:#e8e3ec;
   font-size:10px;
@@ -1092,14 +1092,14 @@
   white-space:nowrap;
 }
 .td-loop-condition-empty {
-  padding:14px 0 10px;
+  padding:10px 0 7px;
   color:rgba(181,175,188,.65);
   font-size:9px;
   text-align:center;
 }
 .td-loop-condition-progress {
   height:2px;
-  margin-top:8px;
+  margin-top:6px;
   overflow:hidden;
   border-radius:999px;
   background:rgba(255,255,255,.07);
