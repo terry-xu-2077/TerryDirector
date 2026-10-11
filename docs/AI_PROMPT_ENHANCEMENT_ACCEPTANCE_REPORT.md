@@ -11,9 +11,9 @@
 |---|---|
 | GPU / 驱动 | NVIDIA GeForce RTX 3090 24GB，驱动 591.74；验收检查时总占用 2822 MiB（桌面进程占用） |
 | ComfyUI | `user/comfyui_8188.log` 记录 Python 3.12.13、PyTorch 2.11.0+cu130、CUDA 可用、RTX 3090；服务器启动于 2026-10-11 12:09:05，8188 |
-| 当前 ComfyUI 进程可操作性 | 日志只证实服务器已启动；当前受限会话未能可靠读取该进程命令行或与 UI 交互 |
-| Python 依赖检查 | `ComfyUI/.venv/Scripts/python.exe` 不存在，无法从本会话运行同一解释器的 `pip check` 或 `llama_cpp` 导入检查；日志未提供 `llama-cpp-python` 版本/导入证据 |
-| 模型 | Qwen3.8 27B GGUF 与 mmproj 文件在共享 `models/LLM` 中存在；示例还指定 `Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf` 与 `mmproj-F16.gguf`，本次未能证明二者在 ComfyUI 可见的 `models/LLM` 下拉列表中。示例所需 H3 模型、文本编码器、视频 VAE、音频 VAE 未在 `ComfyUI/models` 对应目录发现；checkpoint 目录仅有占位文件。不能启动 H3 阶段 |
+| 当前 ComfyUI 进程可操作性 | ComfyUI 日志证实 12:09:05 启动 8188；本次复核时 8188 已无监听，HTTP API 不可访问，队列无法查询。本会话未重启或打断任何服务 |
+| Python 依赖检查 | 实际解释器为 `ComfyUI/.venv/python.exe`（Conda 风格布局）；Python 3.12.13、torch 2.11.0+cu130、CUDA 13.0 可用；`pip check` 返回 `No broken requirements found`；`from llama_cpp import Llama` 和 `Qwen35ChatHandler` 均成功导入。之前按 `Scripts/python.exe` 路径判为解释器缺失，属于误判，现更正 |
+| 模型 | Qwen3.8 GGUF 及 mmproj 在 `ComfyUI/models/LLM` 存在，但示例 widget 选择的 `Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf` / `mmproj-F16.gguf` 名称未找到；H3 主模型 `minimax_h3_ref2va_pruned_int8_convrot.safetensors`、编码器 `qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors`、视频 VAE `minimax_h3_video_vae_int8_convrot.safetensors`、音频 VAE `minimax_h3_audio_vae_fp32.safetensors` 均未在模型目录发现。因此不能以原示例在当前模型配置下完成生成 |
 | 输出工具 | `ffprobe` / `ffmpeg` 可执行文件在 ComfyUI venv Scripts 中，但该 venv Python 不存在；没有本轮输出视频供探测 |
 | ComfyUI 启动日志 | TerryDirector 列在成功导入节点清单；日志还显示 `ComfyUI-LTXVideo` 导入失败（与本轮目标无关）。没有 AI Queue、Qwen 加载或 H3 采样记录 |
 | AI Seed / 视频 Seed | 8888 / 9（示例 JSON 和静态校验） |
@@ -45,7 +45,7 @@
 | P0-05 | **未测** | 未执行原文变更后的方案 A 检查。 |
 | P0-06 | **未测** | 未运行视频 Seed 变化场景。 |
 | P0-07 | **未测** | 未运行 AI Seed 8888→8889；未验证元数据和批量模型加载次数。 |
-| P0-08 | **阻塞** | 未操作编辑器/HTTP Job；解释器依赖导入未验证，无法确认按钮/API 轮询与不触发 Queue。 |
+| P0-08 | **阻塞** | Python Llama 和 Qwen35ChatHandler 导入通过；但 ComfyUI API 在复核时不可访问，未能验证编辑器按钮、HTTP Job 轮询及不触发 Queue。 |
 | P0-09 | **未测** | 未执行保存、重开、刷新或重启持久化检查。 |
 | P0-10 | **未测** | 未断开 Llama 连接检查按钮状态和错误处理。 |
 | P0-11 | **未测** | 未启动推理，因此无法检查取消、异常恢复、并发锁或 Qwen 显存回收。 |
@@ -64,7 +64,7 @@
 
 ## 阻塞结论与复跑条件
 
-本次没有对任何模型包、PyTorch、CUDA、ComfyUI 或输入素材作变更。完成 GPU 验收前需恢复可调用的 ComfyUI Python（当前记录的 `ComfyUI/.venv/Scripts/python.exe` 路径不存在）、验证 `llama_cpp.Llama` 与 `Qwen35ChatHandler` 导入、确认示例所需 GGUF/mmproj 与 H3 模型/编码器/VAE 均在当前 ComfyUI 模型搜索路径可见，然后从示例 JSON 实际导入并逐项执行 P0。不能用已有旧视频代替本轮 SaveVideo 输出。
+本次没有对任何模型包、PyTorch、CUDA、ComfyUI 或输入素材作变更。ComfyUI Python 依赖与 Llama 接口现已确认正常；当前剩余实机条件是恢复运行中的 ComfyUI 服务、确认示例实际可选的 Qwen GGUF/mmproj 配置，以及提供示例指定的 H3 主模型、编码器和双 VAE（或在本机导入副本中选择已安装的等价 H3 文件并记录）。满足后仍需从示例 JSON 实际导入并逐项执行 P0。不能用已有旧视频代替本轮 SaveVideo 输出。
 
 - 发现并修复：无；未形成代码修复。
 - 修复提交：无。
