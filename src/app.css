@@ -1124,3 +1124,76 @@ body.td-embedded #app > .topbar {
     padding-inline: 7px;
   }
 }
+
+
+/* Website-only responsive QA controls: never displayed in embedded ComfyUI. */
+body:not(.td-embedded) #app { margin-inline:auto; }
+.td-site-demo-controls {
+  position:fixed;
+  z-index:80;
+  right:clamp(12px,3vw,36px);
+  bottom:clamp(12px,3vh,28px);
+  display:flex;
+  align-items:center;
+  gap:5px;
+  max-width:calc(100vw - 24px);
+  padding:8px 10px;
+  border:1px solid var(--td-border);
+  border-radius:10px;
+  background:var(--td-bg-panel);
+  box-shadow:0 8px 30px rgba(0,0,0,.3);
+}
+.td-site-demo-controls > span {
+  margin-right:6px;
+  color:var(--td-text-muted);
+  white-space:nowrap;
+  font-size:11px;
+}
+.td-site-demo-controls > button {
+  min-width:36px;
+  padding:5px 8px;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  font-size:11px;
+}
+.td-site-demo-controls > button:hover { background:var(--td-bg-hover); }
+.td-site-demo-controls > button[aria-pressed="true"] {
+  color:var(--td-text-main);
+  border-color:var(--td-border-focus);
+  background:var(--td-accent-soft);
+}
+
+/* Under genuinely narrow editor widths, scroll the content panels rather
+ * than forcing a 280px asset well onto a sub-700px two-column canvas. */
+@container td-editor-shell (max-width: 750px) {
+  #app > .workspace {
+    display:flex;
+    flex-direction:column;
+    flex:1 1 auto;
+    overflow-y:auto;
+    overflow-x:hidden;
+    min-height:0;
+  }
+  #app > .workspace > .prompt-panel {
+    flex:0 0 440px;
+    min-width:0;
+    padding-inline:14px;
+  }
+  #app > .workspace > #referenceResize { display:none; }
+  #app > .workspace > .reference-panel {
+    flex:0 0 auto;
+    min-height:390px;
+    min-width:0;
+    padding-inline:14px;
+  }
+  #app > .workspace > .reference-panel .reference-body {
+    min-height:280px;
+    overflow:visible;
+  }
+}
+@media (max-width: 550px) {
+  .td-site-demo-controls {
+    left:12px;right:12px;justify-content:center;
+  }
+}

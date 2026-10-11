@@ -1224,7 +1224,23 @@
     });
     window.parent.postMessage({type:'terrydirector:ready'},hostOrigin);
   }
-  if(!embedded)window.TerryDirectorDemo.ready=loadSiteDemo();
+  if(!embedded){
+    const previewControls=$('#demoPreviewControls');
+    if(previewControls){
+      previewControls.hidden=false;
+      previewControls.addEventListener('click',event=>{
+        const button=event.target.closest('[data-demo-width]');
+        if(!button)return;
+        const width=button.dataset.demoWidth;
+        app.style.maxWidth=width==='auto'?'':String(Number(width))+'px';
+        previewControls.querySelectorAll('[data-demo-width]').forEach(item=>{
+          item.setAttribute('aria-pressed',String(item===button));
+        });
+        requestAnimationFrame(()=>{timeline?.resize();timeline?.fit();});
+      });
+    }
+    window.TerryDirectorDemo.ready=loadSiteDemo();
+  }
   window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();});
   window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));});
 })();
