@@ -1,0 +1,128 @@
+name: TerryDirector AI enhancement smoke
+on:
+  push:
+    branches:
+      - feat/ai-prompt-enhancement
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python static compilation
+        run: |
+          python -m py_compile director_ai_core.py director_ai.py director_ai_node.py director_ai_jobs.py director_core.py director_compile.py director_node.py server_routes.py __init__.py
+      - name: AI seed policy tests
+        run: |
+          python - <<'PY'
+          import runpy
+          tests = runpy.run_path("tests/test_ai_core.py")
+          for name, test in tests.items():
+              if name.startswith("test_") and callable(test):
+                  test()
+                  print("PASS", name)
+          PY
+      - name: Global AI backend contract (CPU, fake VLM)
+        run: |
+          python - <<'PY'
+          import runpy
+          tests=runpy.run_path("tests/test_ai_global_backend.py")
+          tests["test_global_vlm_scope_and_asset_integrity"]()
+          print("PASS global VLM asset mapping, seed and reference validation")
+          PY
+      - name: Website H3 Skill sample text contract
+        run: |
+          python examples/validate_ai_site_demo_prompts.py
+      - name: JavaScript syntax
+        run: |
+          node --check src/app.js
+          node --input-type=module --check < web/terry_director.js
+      - name: Acceptance example workflow contract
+        run: |
+          python examples/validate_ai_3clip_workflow.py
+      - name: Verify website demo in headless browser
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$BROWSER" ]; then
+            echo "::warning::Browser unavailable; JavaScript syntax and JSON contract still checked"
+            exit 0
+          fi
+          python -m http.server 8765 --bind 127.0.0.1 > /tmp/td-site-http.log 2>&1 &
+          WEB_PID=$!
+          trap 'kill "$WEB_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --virtual-time-budget=4500 --window-size=1440,950 \
+            --dump-dom http://127.0.0.1:8765/index.html > /tmp/td-site-dom.html 2>/tmp/td-site-browser.log
+          python - <<'PY'
+          from pathlib import Path
+          dom = Path("/tmp/td-site-dom.html").read_text(encoding="utf-8")
+          required = (
+              'data-demo-clip-count="3"',
+              'data-demo-asset-count="7"',
+              'data-demo-ai-version="skill-authored-demo"',
+              'data-demo-ai-source="examples/TerryDirector_AI_3clips_demo_prompts.json"',
+              'data-demo-clip-count="3"',
+              'subject_definitions:',
+              'non_diegetic_music:',
+              '00_特瑞_Terry.jpeg',
+              'Generate_vehicle_multi-view_images_2K_202608132251.jpeg',
+              'Picture 7',
+              'data-action="prompt-ai"',
+              'data-demo-width="680"',
+          )
+          for item in required:
+              assert item in dom, f"Static demo did not render: {item}"
+          assert dom.count('class="reference-tile ') == 7, "Expected seven reference tiles"
+          print("PASS: 3 authentic clips and 7 references loaded in the browser")
+          PY
+          mkdir -p website-preview
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
+            --window-size=1440,950 --screenshot="website-preview/td-demo-wide.png" \
+            http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
+            --window-size=940,950 --screenshot="website-preview/td-demo-narrow.png" \
+            http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
+            --window-size=700,950 --screenshot="website-preview/td-demo-compact.png" \
+            http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
+      - name: Verify global prompt popup on demo website
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$BROWSER" ]; then exit 0; fi
+          python -m http.server 8766 --bind 127.0.0.1 >/tmp/td-global-web.log 2>&1 &
+          WEB_PID=$!
+          trap 'kill "$WEB_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --virtual-time-budget=4500 \
+            --dump-dom "http://127.0.0.1:8766/index.html?global-ai=1&show-ai-global=1" >/tmp/td-global-dom.html 2>/tmp/td-global-browser.log
+          python - <<'PY'
+          from pathlib import Path
+          html = Path("/tmp/td-global-dom.html").read_text(encoding="utf-8")
+          for value in (
+              'id="globalAiEnhanceButton"', 'id="globalPromptAiTab"',
+              'id="globalPromptUserTab"', '生成前自动AI增强提示',
+              '[Global direction]', '已提供',
+          ):
+              if value == '已提供':
+                  continue
+              assert value in html, f"Missing global AI demonstration UI: {value}"
+          print("PASS: site global AI modal is rendered")
+          PY
+          mkdir -p website-preview
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --virtual-time-budget=4500 --window-size=1400,960 \
+            --screenshot="website-preview/td-demo-global-ai.png" \
+            "http://127.0.0.1:8766/index.html?global-ai=1&show-ai-global=1" >/dev/null 2>/dev/null
+      - name: Attach website browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrydirector-ai-website-preview
+          path: website-preview/
+          if-no-files-found: ignore

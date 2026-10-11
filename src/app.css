@@ -907,3 +907,353 @@ body.td-run-readonly .reference-body,
 body.td-run-readonly .timeline-panel {
   opacity: 1;
 }
+
+/* TerryDirector AI prompt enhancement: shared typography / inherited theme. */
+.ai-prompt-toolbar { display:flex; align-items:center; justify-content:space-between;
+  gap:10px; padding:8px 14px; flex-wrap:wrap; }
+.ai-prompt-tabs { display:flex; background:rgba(120,120,135,.11); padding:3px;
+  border-radius:8px; align-items:center; gap:2px; }
+.ai-prompt-tab { background:transparent; border:0; border-radius:6px; padding:7px 12px;
+  color:var(--td-ink-soft,#a3a3ad); cursor:pointer; font:inherit; font-size:12px; }
+.ai-prompt-tab.is-selected { background:rgba(155,132,184,.22);
+  color:var(--td-ink-main,#f0e9f6); }
+.ai-prompt-tab:focus-visible { outline:2px solid #aa81d0; outline-offset:1px; }
+.ai-prompt-button { flex-shrink:0; }
+.ai-prompt-status { flex:1; text-align:right; font-size:11px; color:#bd9b70; }
+.ai-auto-label { display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+  white-space:nowrap; margin-right:12px; font-size:12px; color:inherit; }
+.ai-auto-label input { width:14px; height:14px; accent-color:var(--td-warm-500,#d98946); }
+.ai-all-button:disabled,.ai-prompt-button:disabled,.ai-auto-label:has(input:disabled) {
+  opacity:.4; cursor:not-allowed;
+}
+
+.ai-prompt-actions { display:flex; align-items:center; gap:6px; }
+.ai-cancel-button:not([hidden]) { color:var(--td-ink-soft,#b3b3be); }
+
+
+/* 2026-10-11: responsive editor action hierarchy.
+ * Use the floating editor's OWN width (not the outer ComfyUI viewport).
+ * No absolute centre placement: groups may never overlap the elapsed time. */
+#app { container: td-editor-shell / inline-size; }
+#app > .topbar {
+  display: grid;
+  grid-template-areas: "brand leading duration actions";
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 8px;
+  height: auto;
+  min-height: 56px;
+  padding: 8px 18px;
+}
+body.td-embedded #app > .topbar {
+  display: grid;
+  height: auto;
+  min-height: 52px;
+  column-gap: 12px;
+  row-gap: 8px;
+  padding: 8px 18px;
+}
+#app > .topbar .brand {
+  grid-area: brand;
+  min-width: 0;
+  white-space: nowrap;
+}
+#app > .topbar .top-timeline-leading {
+  grid-area: leading;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 0;
+}
+#app > .topbar .top-timeline-duration {
+  grid-area: duration;
+  position: static;
+  inset: auto;
+  transform: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  justify-self: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+#app > .topbar .top-actions {
+  grid-area: actions;
+  margin-left: 0;
+  min-width: 0;
+  justify-self: end;
+}
+#app > .topbar .top-timeline-leading > .button {
+  flex: none;
+}
+#app > .topbar .ai-auto-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0 4px;
+  white-space: nowrap;
+}
+#app > .topbar .ai-auto-label input { flex: none; }
+
+/* At normal floating-window sizes use two real header rows. */
+@container td-editor-shell (max-width: 1500px) {
+  #app > .topbar {
+    grid-template-areas:
+      "brand duration actions"
+      "leading leading leading";
+    grid-template-columns: minmax(150px, 1fr) auto minmax(330px, 1fr);
+  }
+  #app > .topbar .brand { justify-self: start; }
+  #app > .topbar .top-timeline-duration { justify-self: center; }
+  #app > .topbar .top-timeline-leading {
+    justify-self: stretch;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+}
+
+/* On smaller shells give all primary controls their own flow rows. */
+@container td-editor-shell (max-width: 930px) {
+  #app > .topbar {
+    grid-template-areas:
+      "brand actions"
+      "duration duration"
+      "leading leading";
+    grid-template-columns: minmax(0, 1fr) max-content;
+    padding-inline: 12px;
+  }
+  #app > .topbar .top-timeline-duration { justify-self: center; }
+  #app > .topbar .top-timeline-leading { gap: 6px 8px; }
+}
+
+/* At phone-width shells, wrap instead of shrinking button labels to illegibility. */
+@container td-editor-shell (max-width: 640px) {
+  #app > .topbar {
+    grid-template-areas:
+      "brand"
+      "duration"
+      "actions"
+      "leading";
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 12px;
+    gap: 7px;
+  }
+  #app > .topbar .top-actions {
+    justify-self: stretch;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #app > .topbar .top-timeline-duration { justify-self: start; }
+  #app > .topbar .top-timeline-leading > .button {
+    min-height: 30px;
+    padding-inline: 8px;
+  }
+}
+
+/* The clip title, duration and prompt-mode controls have a narrower *local*
+ * container than the editor. They must break independently of the topbar. */
+#app .prompt-panel { container: td-prompt-panel / inline-size; }
+@container td-prompt-panel (max-width: 630px) {
+  #app .composer-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(165px, 195px);
+    grid-template-areas: "identity duration" "global view";
+    align-items: center;
+    gap: 6px 10px;
+    padding-block: 7px;
+  }
+  #app .composer-heading .clip-identity {
+    grid-area: identity;
+    min-width: 0;
+  }
+  #app .composer-heading .clip-duration-control {
+    grid-area: duration;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+  #app .composer-heading .clip-global-toggle {
+    grid-area: global;
+    justify-self: start;
+  }
+  #app .composer-heading .prompt-view-switch {
+    grid-area: view;
+    justify-self: end;
+  }
+  #app .ai-prompt-toolbar {
+    padding-inline: 0;
+    gap: 6px;
+  }
+}
+@container td-prompt-panel (max-width: 360px) {
+  #app .composer-heading {
+    grid-template-areas: "identity" "duration" "global" "view";
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #app .composer-heading .prompt-view-switch { justify-self: start; }
+}
+
+/* Asset add/import buttons similarly wrap inside their own narrow panel. */
+#app .reference-panel { container: td-reference-panel / inline-size; }
+@container td-reference-panel (max-width: 410px) {
+  #app .reference-heading,
+  body.td-embedded #app .reference-heading {
+    height: auto;
+    min-height: 78px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
+    gap: 6px;
+    padding-block: 7px;
+  }
+  #app .reference-heading .reference-actions {
+    width: 100%;
+    margin: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #app .reference-heading .reference-actions .button {
+    flex: 1 1 auto;
+    padding-inline: 7px;
+  }
+}
+
+
+/* Website-only responsive QA controls: never displayed in embedded ComfyUI. */
+body:not(.td-embedded) #app { margin-inline:auto; }
+.td-site-demo-controls {
+  position:fixed;
+  z-index:80;
+  right:clamp(12px,3vw,36px);
+  bottom:clamp(12px,3vh,28px);
+  display:flex;
+  align-items:center;
+  gap:5px;
+  max-width:calc(100vw - 24px);
+  padding:8px 10px;
+  border:1px solid var(--td-border);
+  border-radius:10px;
+  background:var(--td-bg-panel);
+  box-shadow:0 8px 30px rgba(0,0,0,.3);
+}
+.td-site-demo-controls > span {
+  margin-right:6px;
+  color:var(--td-text-muted);
+  white-space:nowrap;
+  font-size:11px;
+}
+.td-site-demo-controls > button {
+  min-width:36px;
+  padding:5px 8px;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  font-size:11px;
+}
+.td-site-demo-controls > button:hover { background:var(--td-bg-hover); }
+.td-site-demo-controls > button[aria-pressed="true"] {
+  color:var(--td-text-main);
+  border-color:var(--td-border-focus);
+  background:var(--td-accent-soft);
+}
+
+/* Under genuinely narrow editor widths, scroll the content panels rather
+ * than forcing a 280px asset well onto a sub-700px two-column canvas. */
+@container td-editor-shell (max-width: 750px) {
+  #app > .workspace {
+    display:flex;
+    flex-direction:column;
+    flex:1 1 auto;
+    overflow-y:auto;
+    overflow-x:hidden;
+    min-height:0;
+  }
+  #app > .workspace > .prompt-panel {
+    order:1;
+    flex:0 0 440px;
+    min-width:0;
+    padding-inline:14px;
+  }
+  #app > .workspace > #referenceResize { display:none; }
+  #app > .workspace > .reference-panel {
+    order:2;
+    flex:0 0 auto;
+    min-height:390px;
+    min-width:0;
+    padding-inline:14px;
+  }
+  #app > .workspace > .reference-panel .reference-body {
+    min-height:280px;
+    overflow:visible;
+  }
+}
+@media (max-width: 550px) {
+  .td-site-demo-controls {
+    left:12px;right:12px;justify-content:center;
+  }
+}
+
+
+/* Global prompt AI: two editable versions plus one explicit manual enhancement.
+ * Preserve the existing standalone modal and H3 editor canvas/textarea. */
+dialog[data-mode="global-prompt"] { width:min(940px,calc(100vw - 40px)); }
+dialog[data-mode="global-prompt"] .global-prompt-shell { min-width:0; }
+dialog[data-mode="global-prompt"] .global-prompt-toolbar {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px 12px;
+  justify-content:space-between;
+}
+dialog[data-mode="global-prompt"] .global-version-tabs {
+  flex:0 1 auto;
+  min-width:0;
+}
+dialog[data-mode="global-prompt"] .global-prompt-actions {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+  min-width:0;
+}
+dialog[data-mode="global-prompt"] .global-prompt-actions .button {
+  min-height:30px;
+  font-size:11px;
+}
+dialog[data-mode="global-prompt"] .global-prompt-actions .prompt-view-switch {
+  flex:none;
+}
+dialog[data-mode="global-prompt"] .global-ai-status {
+  flex:1 1 auto;
+  min-width:0;
+  color:var(--td-text-secondary);
+  text-align:right;
+  font-size:11px;
+  white-space:normal;
+}
+dialog[data-mode="global-prompt"] .prompt-editor-footer {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 12px;
+}
+dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
+  flex:none;
+}
+@media (max-width:760px) {
+  dialog[data-mode="global-prompt"] { width:calc(100vw - 24px); }
+  dialog[data-mode="global-prompt"] .global-prompt-actions {
+    justify-content:flex-start;
+    width:100%;
+  }
+  dialog[data-mode="global-prompt"] .global-ai-status {
+    text-align:left;
+  }
+}

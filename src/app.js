@@ -35,52 +35,126 @@
   const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',snap:'吸附',chain:'后续联动',duplicate:'复制',delete:'删除',suspend:'挂起','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
   function ib(action,name,title,active='',pressed=null){return `<button class="icon-button ${active}" data-action="${action}" title="${title}" aria-label="${title}"${pressed===null?'':` aria-pressed="${pressed}"`}>${icon(name)}<span>${esc(actionNames[action]||title)}</span></button>`;}
   const launch=window.TDStills.launch;
-  // Tiny authored starfield placeholder, not a model output.
-  const stars=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><defs><radialGradient id="g"><stop stop-color="#46415a"/><stop offset="1" stop-color="#202432"/></radialGradient></defs><rect width="800" height="450" fill="url(#g)"/>${Array.from({length:88},(_,i)=>`<circle cx="${(i*137.2)%800}" cy="${(i*71.13)%450}" r="${i%13?'.7':'1.5'}" fill="#ded9e8" opacity="${.25+(i%7)/10}"/>`).join('')}<ellipse cx="350" cy="225" rx="150" ry="5" fill="#dca5a6" opacity=".12" transform="rotate(-24 350 225)"/></svg>`;
-  const sampleAssets=[{id:'launch-wide',name:'发射场 · 全景',kind:'image',src:launch,detail:'640 × 427 · 示例静帧'},{id:'launch-detail',name:'塔架 · 局部',kind:'image',src:launch,detail:'画面参考 · 同一原图'},{id:'stars',name:'星空 · 视觉占位',kind:'image',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(stars),detail:'程序绘制 · 视觉占位'}];
-  // Static input examples, never a listing of the user's disk. Source identity
-  // is separate from the project's stable Picture/Video/Audio number.
-  const demoInputFiles=[
-    {path:'demo_launch.jpg',name:'发射场 · 全景',kind:'image',src:launch,sampleId:'launch-wide'},
-    {path:'references/demo_tower.jpg',name:'塔架 · 局部',kind:'image',src:launch,sampleId:'launch-detail'},
-    {path:'references/demo_stars.svg',name:'星空 · 视觉占位',kind:'image',src:sampleAssets[2].src,sampleId:'stars'},
-    {path:'references/demo_launch_alt.jpg',name:'发射场 · 备选示例',kind:'image',src:launch}
-  ];
-  sampleAssets.forEach(asset=>{asset.source={type:'demo-input',path:demoInputFiles.find(file=>file.sampleId===asset.id).path};});
-  // Media objects live once per page. The project stores active asset IDs, so
-  // import/delete undo does not copy blobs or invalidate a restored Object URL.
-  sampleAssets.forEach((asset,index)=>asset.number=index+1);
-  let assets=embedded?[]:sampleAssets.slice(),nextPoolNumber=embedded?{image:1,video:1,audio:1}:{image:4,video:1,audio:1};
+  // The stand-alone website uses the exact three-clip acceptance workflow.
+  // Embedded ComfyUI nodes still receive their live documents from the host.
+  const sampleAssets=[];
+  const demoInputFiles=[];
+  const demoInitial=[];
+  const initial=[];
+  let assets=[],nextPoolNumber={image:1,video:1,audio:1};
+  let siteDemoDocument=null;
+  const siteDemoPath='examples/TerryDirector_AI_3clips_0.2MP.json';
+  const siteDemoAiPath='examples/TerryDirector_AI_3clips_demo_prompts.json';
+  const siteDemoLabels=['人物参考','载具参考','场景遗迹','荒星地貌','避难所','货币道具','地下虫群'];
+  function siteDemoThumbnail(number){
+    // Explicit placeholder: the seven original source images are NOT in Git.
+    const n=Math.max(1,Math.min(7,Math.floor(Number(number)||1)));
+    const colors=['#716451','#626c79','#70637e','#5e617b','#687586','#83767c','#62727f'];
+    const shade=colors[n-1];
+    const label=siteDemoLabels[n-1];
+    const svg='<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">'
+      +'<defs><linearGradient id="g" x2="0.8" y2="1"><stop stop-color="'+shade+'"/><stop offset="1" stop-color="#242834"/></linearGradient></defs>'
+      +'<rect width="240" height="240" fill="url(#g)"/>'
+      +'<rect x="19" y="19" width="202" height="202" rx="8" fill="none" stroke="#d4c6dc" stroke-opacity=".15"/>'
+      +'<circle cx="120" cy="79" r="29" fill="#c9c0d9" fill-opacity=".08" stroke="#dfd9eb" stroke-opacity=".26"/>'
+      +'<path d="M108 79h24m-12-12v24" stroke="#e4dcec" stroke-opacity=".45" stroke-width="2"/>'
+      +'<text x="120" y="138" text-anchor="middle" fill="#f1eafa" font-size="18" font-family="sans-serif">'
+      +label+'</text>'
+      +'<text x="120" y="163" text-anchor="middle" fill="#d5d1dd" font-size="11" font-family="sans-serif">PREVIEW UNAVAILABLE</text>'
+      +'<text x="120" y="187" text-anchor="middle" fill="#c8c0d0" font-size="11" font-family="sans-serif">Picture '+n+'</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  }
+  async function loadSiteDemo(){
+    try{
+      const response=await fetch(new URL(siteDemoPath,document.baseURI),{cache:'no-store'});
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      const workflow=await response.json();
+      const node=workflow.nodes?.find(item=>item.type==='TerryDirector');
+      const serialized=node?.widgets_values_named?.config_json;
+      if(typeof serialized!=='string')throw new Error('找不到 TerryDirector 时间线');
+      const documentData=JSON.parse(serialized).document;
+      if(!Array.isArray(documentData?.clips)||!Array.isArray(documentData?.assets))
+        throw new Error('示例文件缺少片段或资产');
+      const sampleResponse=await fetch(new URL(siteDemoAiPath,document.baseURI),{cache:'no-store'});
+      if(!sampleResponse.ok)throw new Error('无法加载 H3 Skill 静态示例增强稿 (HTTP '+sampleResponse.status+')');
+      const sample=await sampleResponse.json();
+      if(sample?.skill!=='h3-prompt-writing'||sample?.mode!=='Ref2VA'
+          ||sample?.workflow!==siteDemoPath||sample?.clips?.length!==documentData.clips.length)
+        throw new Error('H3 Skill 示例增强稿和验收工作流不一致');
+      for(const result of sample.clips){
+        const clip=documentData.clips.find(item=>item.id===result.id);
+        if(!clip||typeof result.aiPrompt!=='string'||!result.aiPrompt.trim())
+          throw new Error('示例增强稿片段缺失：'+String(result.id));
+        // These are manually authored fixture texts, never actual Qwen results.
+        // Deliberately use a nonnumeric seed so imported demo data cannot be
+        // silently mistaken for a valid AI Seed cache in a real Queue.
+        clip.aiPrompt=result.aiPrompt;
+        clip.promptMode='ai';
+        clip.aiMetadata={
+          seed:'demo',provenance:'skill-authored-demo',model:'Static site example',
+          skill:'h3-prompt-writing',sourcePrompt:clip.prompt,
+          sourceGlobalPrompt:clip.useGlobalPrompt===false?'':documentData.globalPrompt
+        };
+      }
+      if(typeof sample.globalAiPrompt!=='string'||!sample.globalAiPrompt.trim())
+        throw new Error('静态全局增强稿缺失');
+      documentData.aiGlobalPrompt=sample.globalAiPrompt;
+      documentData.globalPromptMode='user';
+      documentData.globalAiMetadata={
+        seed:'demo',provenance:'skill-authored-demo',model:'Static site example',
+        skill:'h3-prompt-writing-global',sourcePrompt:documentData.globalPrompt
+      };
+      siteDemoDocument=C.copy(documentData);
+      // Only the ?global-ai=1&show-ai-global=1 screenshot route defaults
+      // to the enhanced tab. Normal website visits still show the original.
+      if(new URLSearchParams(location.search).get('show-ai-global')==='1')
+        siteDemoDocument.globalPromptMode='ai';
+      demoInputFiles.splice(0,demoInputFiles.length,...documentData.assets.map(item=>({
+        path:item.source?.path||'',name:item.name,kind:item.kind,
+        src:siteDemoThumbnail(item.number),number:item.number,id:item.id
+      })));
+      loadDocument(siteDemoDocument);
+      app.dataset.demoSource=siteDemoPath;
+      app.dataset.demoAiSource=siteDemoAiPath;
+      app.dataset.demoAiVersion='skill-authored-demo';
+      app.dataset.demoClipCount=String(state.clips.length);
+      app.dataset.demoAssetCount=String(state.assetIds.length);
+      // Enable controls for visual QA; no actual inference will run here.
+      aiConfig={previewOnly:true};renderAiControls();
+      title='特瑞 · 荒星三镜头';
+      toast('已载入 3 段和全局 H3 Skill 静态增强稿，支持与原文切换。');
+      if(new URLSearchParams(location.search).get('global-ai')==='1')
+        requestAnimationFrame(()=>openGlobalPrompt());
+      return documentData;
+    }catch(error){
+      console.error('[TerryDirector Demo] Failed to load acceptance workflow:',error);
+      toast('无法加载示例工作流，请从网页服务器或分支在线预览链接打开。');
+      return null;
+    }
+  }
   let assetGridKey='';
   const mediaNames={image:'Picture',video:'Video',audio:'Audio'};
   const mediaPattern=()=>/<(Picture|Video|Audio)\s+(\d+)>/gi;
   const mediaKey=(kind,number)=>`${kind.toLowerCase()}:${Number(number)}`;
   const transitionLabels={tail_reference:'尾帧参考',tail_continuation:'尾帧续接',independent:'独立'};
   const normalizeTransitionMode=(value,fallback='tail_continuation')=>Object.hasOwn(transitionLabels,value)?value:fallback;
-  const prompts=[
-    'integrated_multimodal_description:\n[Shot 1] [00:00] 黎明前的发射场，塔架静立，远处的工作灯映着薄雾。\nThe camera pushes in 缓缓靠近主体。\noverall_soundscape:\n远处的风声与设备低鸣。',
-    'subject_definitions:\n<Picture 1> 发射场与塔架，作为场景和构图参考。\n\ndetailed_description:\n[Shot 1] [00:00] 承接上一片段，冷蓝色天幕逐渐被暖光照亮。\nThe camera tilts up 摄影机沿塔架缓慢上移，保持场景与主体一致。\n(S1) <d>[Chinese] 准备好了，我们出发。</d>\n\noverall_soundscape:\n延续环境风声。',
-    'detailed_description:\n[Shot 1] [00:00] 摄影机继续靠近主体，金属表面浮现细腻的光泽。\nThe camera pushes in 保持连续的清晨光线。',
-    'detailed_description:\n[Shot 1] [00:00] 镜头离开发射场，望向辽阔天幕，让最后一束光自然淡出画面。\noverall_soundscape:\n空间逐渐安静。'
-  ];
-  const demoInitial=[['发射前夜',0,10],['蓝调时刻',8,18],['靠近光',16,26],['向更远处',24,34]].map((a,i)=>({id:`clip-${i+1}`,name:a[0],start:a[1]*C.FPS,end:a[2]*C.FPS,asset:i===3?'stars':'launch-wide',refs:[],prompt:prompts[i],useGlobalPrompt:true,transitionMode:'tail_reference',resolution:{...R.DEFAULT},audio:true,guide:'画面参考',suspended:false}));
-  const initial=embedded?[]:demoInitial;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
-  function resetActivity(){activity.clear();for(const [id,seconds] of [['clip-1',300],['clip-2',186]])activity.set(id,{status:'completed',progress:1,elapsedSeconds:seconds,completedAt:'2026-09-28T07:00:00Z',example:true});}
+  function resetActivity(){activity.clear();}
   if(!embedded)resetActivity();else activity.clear();
-  let state={globalPrompt:'',clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
+  let state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
-  let promptEditor=null,globalPromptEditor=null,transitionMenu=null;
+  let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
+  let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
+  let aiConfig=null,aiJob=null,aiPolling=false,aiSeen=new Set();
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前自动AI增强提示</span></label></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
-      <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
+      <div class="top-actions">${embedded?'':`<span class="prototype">H3 Skill · 静态增强稿</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
       <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
@@ -91,7 +165,8 @@
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
         <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
-        <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="promptCount" class="subtle prompt-count"></span></div></div>
+        <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
+        <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
       <div id="referenceResize" class="resize-v" role="separator" tabindex="0" aria-label="调整参考资产区域宽度" aria-orientation="vertical"></div>
@@ -107,6 +182,11 @@
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
+  const clipLocalPrompt=c=>(c?.promptMode==='ai'&&String(c.aiPrompt||'').trim())?c.aiPrompt:(c?.prompt||'');
+  const effectiveGlobalPrompt=()=>state.globalPromptMode==='ai'&&String(state.aiGlobalPrompt||'').trim()
+    ?state.aiGlobalPrompt:state.globalPrompt;
+  const editablePrompt=c=>c?.promptMode==='ai'?(c?.aiPrompt||''):(c?.prompt||'');
+  const canEnhance=()=>!!aiConfig&&!hostReadonly&&!aiJob;
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
   function closeTransitionMenu(){
@@ -145,9 +225,9 @@
   function mutate(fn){if(hostReadonly)return;finishResolutionEdit();finishPromptEdit();const before=C.copy(state);fn();commit(before);}
   function updateHistory(){ $('[data-action=undo]').disabled=hostReadonly||!history.undoItems.length;$('[data-action=redo]').disabled=hostReadonly||!history.redoItems.length; }
   function renderPrompt(){
-    const c=current(),text=c?.prompt||'';
+    const c=current(),text=editablePrompt(c);
     $('#noClip').hidden=!!c;
-    promptEditor.setContext(c?.id||null,text,promptView);
+    promptEditor.setContext(c?(c.id+':'+(c.promptMode||'user')):null,text,promptView);
     $('#promptText').readOnly=hostReadonly;
     $('#promptVisual').contentEditable=hostReadonly?'false':String(!!c);
     const useGlobal=$('#useGlobalPrompt');
@@ -160,6 +240,24 @@
       viewSwitch.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';
     }
     $('#promptCount').textContent=c?`${text.length} 字`:'';
+    const aiSelected=c?.promptMode==='ai';
+    $('[data-action=prompt-user]')?.classList.toggle('is-selected',!aiSelected);
+    $('[data-action=prompt-ai]')?.classList.toggle('is-selected',!!aiSelected);
+    const warning=$('#aiStatus');
+    if(warning){
+      const meta=c?.aiMetadata||{};
+      const old=!!c?.aiPrompt&&!!meta.sourcePrompt&&(
+        meta.sourcePrompt!==c.prompt ||
+        meta.sourceGlobalPrompt!==(c.useGlobalPrompt===false?'':effectiveGlobalPrompt()));
+      if(!embedded&&meta.provenance==='skill-authored-demo'){
+        warning.textContent=aiSelected?'H3 Skill 静态示例 · 非模型实测输出':'已提供 H3 Skill 静态增强示例';
+        warning.title='仅供网站展示双提示词 UI。原始工作流的 aiPrompt 仍为空，真实运行必须调用 Qwen 增强。';
+      }else{
+        warning.textContent=old?'原文已更新 · AI 结果未重新增强':c?.aiPrompt?'AI 结果已保存':'';
+        warning.title=old?'仅修改 AI Seed 或手动增强会重新生成，修改原文不会自动重跑。':'';
+      }
+    }
+    renderAiControls();
   }
   function renderTimelineDuration(clips){
     const frames=C.arrangementFrames(clips),output=$('#timelineDuration');
@@ -250,13 +348,13 @@
   }
   function syncReferences(clip,entries=poolEntries()){
     if(!clip)return false;
-    const refs=referencesIn(clip.prompt,entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
+    const refs=referencesIn(clipLocalPrompt(clip),entries),changed=JSON.stringify(refs)!==JSON.stringify(clip.refs);
     clip.refs=refs;return changed;
   }
   function effectiveReferences(clip,entries=poolEntries()){
     if(!clip)return [];
-    const ids=new Set(referencesIn(clip.prompt,entries));
-    if(clip.useGlobalPrompt!==false)for(const id of referencesIn(state.globalPrompt,entries))ids.add(id);
+    const ids=new Set(referencesIn(clipLocalPrompt(clip),entries));
+    if(clip.useGlobalPrompt!==false)for(const id of referencesIn(effectiveGlobalPrompt(),entries))ids.add(id);
     return [...ids];
   }
 
@@ -289,8 +387,8 @@
   }
 
   function referenceBudgetForClip(clip,{
-    localPrompt=clip?.prompt||'',
-    globalPrompt=state.globalPrompt,
+    localPrompt=clipLocalPrompt(clip),
+    globalPrompt=effectiveGlobalPrompt(),
     useGlobal=clip?.useGlobalPrompt!==false,
     transitionMode=clip?.transitionMode,
     entries=poolEntries(),
@@ -338,7 +436,7 @@
     if(!clip)return {allowed:false,reason:'请先选择片段'};
     const entries=poolEntries(),source=entries.find(item=>item.id===asset.id);
     if(!source)return {allowed:false,reason:'资产不在当前资产池'};
-    const localPrompt=promptWithAsset(value??clip.prompt,source,replacingRaw);
+    const localPrompt=promptWithAsset(value??editablePrompt(clip),source,replacingRaw);
     const budget=referenceBudgetForClip(clip,{localPrompt,entries});
     return budget.ok?{allowed:true}:{allowed:false,reason:referenceLimitReason(clip,budget)};
   }
@@ -387,8 +485,8 @@
   function syncAllReferences(){const entries=poolEntries();state.clips.forEach(c=>syncReferences(c,entries));}
   function refreshAssetUsage(){
     const c=current(),entries=poolEntries();
-    const globalRefs=new Set(referencesIn(state.globalPrompt,entries));
-    const currentLocalRefs=new Set(c?referencesIn(c.prompt,entries):[]);
+    const globalRefs=new Set(referencesIn(effectiveGlobalPrompt(),entries));
+    const currentLocalRefs=new Set(c?referencesIn(clipLocalPrompt(c),entries):[]);
     for(const tile of $('#references').querySelectorAll('[data-reference]')){
       const id=tile.dataset.reference;
       const globalUsed=globalRefs.has(id);
@@ -445,6 +543,7 @@
     media.addEventListener('error',()=>{if(!media.isConnected||!d.open)return;wrap.replaceChildren();wrap.textContent='浏览器无法预览此格式，素材仍可作为参考保留。';});
     wrap.append(media);body.append(wrap);media.src=asset.src;
     const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='comfy-input'?'ComfyUI input/'+asset.source.path:asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
+    if(!embedded)note.textContent='站点仅用占位缩略图展示原参考图位置。真正的图片文件仍在本机 ComfyUI/input，不在公开仓库中。';
     if(!d.open)d.showModal();
   }
   function resolutionFromControls(){
@@ -481,6 +580,97 @@
     if(result)c.resolution=result.settings;
     renderResolutionResult();
   }
+
+  function applyHostAiPatch(records){
+    if(!records||typeof records!=='object')return;
+    let changed=false;
+    for(const clip of state.clips){
+      const patch=records[String(clip.id)];
+      if(!patch?.aiPrompt||!patch?.aiMetadata)continue;
+      const nextSeed=Number(patch.aiMetadata.seed);
+      if(clip.aiPrompt&&Number(clip.aiMetadata?.seed)===nextSeed)continue;
+      clip.aiPrompt=String(patch.aiPrompt);
+      clip.aiMetadata=C.copy(patch.aiMetadata);
+      if(!clip.aiOptOut)clip.promptMode='ai';
+      changed=true;
+    }
+    if(changed){renderAll();}
+  }
+  function renderAiControls(){
+    const connected=!!aiConfig,busy=!!aiJob;
+    const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
+    if(single){single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';single.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':'调用本地 Llama 增强片段';}
+    if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
+    const cancel=$('[data-action=ai-cancel]');
+    if(cancel){cancel.hidden=!busy;cancel.disabled=!busy;}
+    globalModal?.updateBusy?.();
+    const raw=$('#promptText'),visual=$('#promptVisual');
+    if(raw)raw.readOnly=hostReadonly||busy;
+    if(visual)visual.contentEditable=(hostReadonly||busy||!current())?'false':'true';
+    const checkbox=$('#autoAiEnhance');
+    if(checkbox){checkbox.checked=!!state.autoAiEnhance;checkbox.disabled=!connected||hostReadonly||busy;checkbox.title=connected?'Queue 时先完成批量 AI 增强，再执行 H3':'请先连接 TerryDirector Llama 配置节点';}
+  }
+  function switchPromptMode(mode){
+    if(hostReadonly||!current()||aiJob)return;
+    if(current().promptMode===mode)return;
+    mutate(()=>{const c=current();c.promptMode=mode;c.aiOptOut=mode==='user'&&!!c.aiPrompt;});
+  }
+  async function startAiEnhance(all){
+    if(!embedded){toast('网站只展示创作界面，不会启动 Qwen 或 ComfyUI Queue。');return;}
+    if(!canEnhance()){toast('请先连接 TerryDirector Llama 配置节点');return;}
+    const clips=(all?state.clips:[current()]).filter(c=>c&&!c.suspended&&c.prompt?.trim());
+    if(!clips.length){toast('没有可增强的片段');return;}
+    finishPromptEdit();
+    try{
+      const response=await fetch('/terrydirector/api/ai-enhance',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({llama_config:aiConfig,document:documentPayload(),clip_ids:clips.map(c=>c.id)})
+      });
+      const payload=await response.json();
+      if(!response.ok)throw new Error(payload.error||'无法启动 AI 增强');
+      aiJob=payload.job_id;aiSeen=new Set();
+      markEdited();renderAiControls();toast('正在使用本地 Qwen 增强提示词');
+      void pollAiJob();
+    }catch(error){aiJob=null;renderAiControls();toast(error?.message||'启动 AI 增强失败');}
+  }
+  async function cancelAiJob(){
+    if(!aiJob)return;
+    try{
+      const response=await fetch('/terrydirector/api/ai-jobs/'+encodeURIComponent(aiJob)+'/cancel',{method:'POST'});
+      if(!response.ok)throw new Error('无法取消当前增强任务');
+      toast('正在请求取消 AI 增强');
+    }catch(error){toast(error?.message||'取消失败');}
+  }
+  async function pollAiJob(){
+    if(!aiJob||aiPolling)return;
+    aiPolling=true;
+    const targetJob=aiJob;
+    try{
+      const response=await fetch('/terrydirector/api/ai-jobs/'+encodeURIComponent(targetJob),{cache:'no-store'});
+      if(!response.ok)throw new Error('AI 任务状态不可用');
+      const job=await response.json();
+      for(const result of job.results||[]){
+        if(aiSeen.has(result.id))continue;aiSeen.add(result.id);
+        const clip=state.clips.find(c=>c.id===result.id);
+        if(!clip)continue;
+        mutate(()=>{
+          clip.aiPrompt=String(result.prompt||'');
+          clip.aiMetadata=result.metadata||{};
+          clip.promptMode='ai';clip.aiOptOut=false;
+        });
+      }
+      if(['completed','error','cancelled'].includes(job.status)){
+        aiJob=null;renderAll();
+        if(job.status==='completed')toast('AI 增强完成 '+job.done+'/'+job.total);
+        else toast(job.error||'AI 增强已取消，已完成片段得到保留');
+      }else{$('#aiStatus').textContent='正在增强 '+job.done+'/'+job.total+' 个片段';}
+    }catch(error){aiJob=null;toast(error?.message||'AI 增强连接失败');}
+    finally{
+      aiPolling=false;
+      if(aiJob===targetJob)setTimeout(()=>void pollAiJob(),650);
+      else renderAiControls();
+    }
+  }
   function renderAll(){
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
     syncAllReferences();
@@ -502,7 +692,7 @@
     getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
     getAssetAvailability:clipAssetAvailability,
     onBeforeChange:()=>{if(hostReadonly)return false;if(!editBefore)editBefore=C.copy(state);},
-    onChange:text=>{if(hostReadonly)return;const c=current();if(c){c.prompt=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
+    onChange:text=>{if(hostReadonly)return;const c=current();if(c){c[c.promptMode==='ai'?'aiPrompt':'prompt']=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
     onCommit:finishPromptEdit,
     onHistory:redo=>actions[redo?'redo':'undo']()
   });
@@ -547,21 +737,23 @@
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    if(template)Object.assign(c,{aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{}});
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
   });timeline.fit();}
   // A reference is written into the clip's single prompt. The refs array is a
   // derived list of stable asset IDs; removing a prompt tag never deletes media.
   function appendReferences(clip,ids){
-    const entries=poolEntries(),used=new Set(referencesIn(clip.prompt,entries));
+    const field=clip.promptMode==='ai'?'aiPrompt':'prompt';
+    const entries=poolEntries(),used=new Set(referencesIn(clip[field],entries));
     const add=entries.filter(a=>ids.includes(a.id)&&!used.has(a.id));
     const blocked=[];
     for(const asset of add){
-      const nextPrompt=promptWithAsset(clip.prompt,asset);
+      const nextPrompt=promptWithAsset(clip[field],asset);
       const budget=referenceBudgetForClip(clip,{localPrompt:nextPrompt,entries});
       if(!budget.ok){blocked.push({asset,budget});continue;}
-      clip.prompt=nextPrompt;
+      clip[field]=nextPrompt;
       used.add(asset.id);
     }
     return blocked;
@@ -573,7 +765,7 @@
   function deleteAsset(id){
     const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
     finishPromptEdit();
-    const entries=poolEntries(),globalUsed=referencesIn(state.globalPrompt,entries).includes(id);
+    const entries=poolEntries(),globalUsed=referencesIn(effectiveGlobalPrompt(),entries).includes(id);
     const users=state.clips.filter(c=>effectiveReferences(c,entries).includes(id));
     const detail=globalUsed
       ? `它被全局提示词引用，并会作用于 ${users.length} 个启用全局提示词的片段。确认后会同时移除全局与片段提示词中的对应引用标签。`
@@ -585,14 +777,15 @@
         state.assetIds=state.assetIds.filter(x=>x!==id);
         const key=mediaKey(mediaNames[asset.kind],asset.number),removeTag=(prompt)=>String(prompt||'').replace(mediaPattern(),(raw,kind,number)=>mediaKey(kind,number)===key?'':raw);
         state.globalPrompt=removeTag(state.globalPrompt);
-        for(const clip of state.clips)clip.prompt=removeTag(clip.prompt);
+        state.aiGlobalPrompt=removeTag(state.aiGlobalPrompt);
+        for(const clip of state.clips){clip.prompt=removeTag(clip.prompt);clip.aiPrompt=removeTag(clip.aiPrompt);}
       });
       // Retain the cached media URL for undo and any active simulation snapshot.
     });
   }
   function insertReference(id){
     const a=poolEntries().find(x=>x.id===id),clip=current();if(!a||!clip)return;
-    const availability=clipAssetAvailability({id:a.id,raw:`<${a.token}>`,token:a.token},{value:clip.prompt});
+    const availability=clipAssetAvailability({id:a.id,raw:`<${a.token}>`,token:a.token},{value:editablePrompt(clip)});
     if(!availability.allowed){toast(availability.reason||'当前参考资产额度已满');return;}
     promptEditor.insert(`<${a.token}>`);
   }
@@ -699,7 +892,7 @@
   function pickDemoInputAssets(){
     finishResolutionEdit();finishPromptEdit();
     const selected=new Set();
-    const inPool=path=>poolEntries().some(a=>a.source?.type==='demo-input'&&a.source.path===path);
+    const inPool=path=>poolEntries().some(a=>a.source?.path===path);
     modal('从 ComfyUI input 选取',`
       <p class="input-demo-note"><strong>示例目录 · 尚未连接 ComfyUI</strong><br>这里只演示选取流程，没有读取你本地的 input，也不会上传或复制文件。</p>
       <div class="input-picker-location">${icon('folder')}<span>ComfyUI / input</span><span class="subtle">演示</span></div>
@@ -712,10 +905,10 @@
           for(const file of files){
             // Reuse the cached entry after pool deletion / undo; never upload or
             // allocate a second project entry for the same input-relative path.
-            let asset=assets.find(a=>a.source?.type==='demo-input'&&a.source.path===file.path);
+            let asset=assets.find(a=>a.source?.path===file.path);
             if(!asset){
               asset={id:'input-demo-'+nextAsset++,name:file.name,kind:file.kind,src:file.src,
-                number:nextPoolNumber[file.kind]++,source:{type:'demo-input',path:file.path}};
+                number:nextPoolNumber[file.kind]++,source:{type:'comfy-input',path:file.path}};
               assets.push(asset);
             }
             if(!state.assetIds.includes(asset.id))state.assetIds.push(asset.id);
@@ -760,7 +953,7 @@
     nextPoolNumber={image:withSamples?4:1,video:1,audio:1};assetGridKey='';
   }
   function showHome(){finishPromptEdit();promptEditor.closeMenu();stopDialogMedia();timeline.stop();$('#workspace').hidden=true;$('#timelineResize').hidden=true;$('#timelinePanel').hidden=true;$('#projectHome').hidden=false;
-    $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
+    $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:none"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();}
   function exportTimelineData(){
@@ -786,6 +979,10 @@
         fps:Number(raw.fps)||C.FPS,
         selected:raw.selected||raw.clips[0]?.id||null,
         globalPrompt:String(raw.globalPrompt||''),
+        aiGlobalPrompt:String(raw.aiGlobalPrompt||''),
+        globalPromptMode:raw.globalPromptMode==='ai'?'ai':'user',
+        globalAiMetadata:raw.globalAiMetadata&&typeof raw.globalAiMetadata==='object'?C.copy(raw.globalAiMetadata):{},
+        autoAiEnhance:raw.autoAiEnhance===true,
         clips:raw.clips,
         assets:Array.isArray(raw.assets)?raw.assets:[]
       };
@@ -818,7 +1015,9 @@
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;
     return {id:String(raw.id||`asset-${index+1}`),name:String(raw.name||path.split('/').at(-1)||path),kind,
-      number:Math.max(1,Number.parseInt(raw.number,10)||1),src:inputPreviewUrl(path),source:{type:'comfy-input',path}};
+      number:Math.max(1,Number.parseInt(raw.number,10)||1),
+      src:embedded?inputPreviewUrl(path):siteDemoThumbnail(raw.number),
+      source:{type:'comfy-input',path}};
   }
   function applyHostActivity(payload){
     if(!embedded)return;
@@ -858,58 +1057,233 @@
     const clips=(Array.isArray(raw.clips)?raw.clips:[]).map((clip,index)=>{
       const start=Math.max(0,Number.parseInt(clip?.start,10)||0),end=Math.max(start+1,Number.parseInt(clip?.end,10)||start+C.FPS*10);
       return {id:String(clip?.id||`clip-${index+1}`),name:String(clip?.name||`片段 ${String(index+1).padStart(2,'0')}`),
-        start,end,prompt:String(clip?.prompt||''),refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
+        start,end,prompt:String(clip?.prompt||''),aiPrompt:String(clip?.aiPrompt||''),promptMode:clip?.promptMode==='ai'?'ai':'user',
+        aiOptOut:clip?.aiOptOut===true,aiMetadata:clip?.aiMetadata&&typeof clip.aiMetadata==='object'?C.copy(clip.aiMetadata):{},
+        refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
         useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
     });
-    state={globalPrompt:String(raw.globalPrompt||''),clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
+    state={globalPrompt:String(raw.globalPrompt||''),aiGlobalPrompt:String(raw.aiGlobalPrompt||''),
+      globalPromptMode:raw.globalPromptMode==='ai'?'ai':'user',
+      globalAiMetadata:raw.globalAiMetadata&&typeof raw.globalAiMetadata==='object'?C.copy(raw.globalAiMetadata):{},
+      autoAiEnhance:raw.autoAiEnhance===true,clips,
+      selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),
+      assetIds:assets.map(a=>a.id)};
     history=new C.History();assetGridKey='';activity.clear();
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
     renderAll();timeline.fit();timeline.setFrame(current()?.start||0);
-    window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
+    if(embedded)window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
   }
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
     return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
-      clips:state.clips.map(({id,name,start,end,prompt,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
+      aiGlobalPrompt:state.aiGlobalPrompt||'',globalPromptMode:state.globalPromptMode==='ai'?'ai':'user',
+      globalAiMetadata:state.globalAiMetadata||{},autoAiEnhance:!!state.autoAiEnhance,
+      clips:state.clips.map(({id,name,start,end,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
   function destroyGlobalPromptEditor(){
     if(globalPromptEditor){globalPromptEditor.destroy();globalPromptEditor=null;}
+    globalModal=null;
   }
   function openGlobalPrompt(){
     if(hostReadonly)return;
     finishPromptEdit();promptEditor?.closeMenu();stopDialogMedia();destroyGlobalPromptEditor();
     const d=$('#dialog');d.dataset.mode='global-prompt';$('#dialogTitle').textContent='全局提示词';
-    $('#dialogBody').innerHTML=`<div class="global-prompt-shell"><div class="global-prompt-toolbar"><span class="subtle">默认作用于所有片段；单个片段可在编辑栏关闭。</span><button class="prompt-view-switch global-prompt-view-switch" type="button" aria-label="切换全局提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></div><div class="prompt-editor global-prompt-editor"><div class="prompt-editor-body"><textarea id="globalPromptText" aria-label="全局提示词" placeholder="填写人物、场景、服装、声音或公共参考；输入 @ 引用资产，输入 / 插入 H3 语法。" spellcheck="false"></textarea><div id="globalPromptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="全局可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="填写全局提示词，输入 @ 引用资产，输入 / 插入 H3 语法"></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="globalPromptCount" class="subtle prompt-count"></span></div></div></div>`;
+    $('#dialogBody').innerHTML=[
+      '<div class="global-prompt-shell">',
+        '<div class="global-prompt-toolbar">',
+          '<div class="ai-prompt-tabs global-version-tabs" role="group" aria-label="全局提示词版本">',
+            '<button type="button" class="ai-prompt-tab" id="globalPromptUserTab">用户提示词</button>',
+            '<button type="button" class="ai-prompt-tab" id="globalPromptAiTab">AI 增强提示词</button>',
+          '</div>',
+          '<div class="global-prompt-actions">',
+            '<button class="button ghost" type="button" id="globalAiEnhanceButton">✦ AI 提示增强</button>',
+            '<button class="button ghost" type="button" id="globalAiCancelButton" hidden>取消增强</button>',
+            '<button class="prompt-view-switch global-prompt-view-switch" type="button" aria-label="切换全局提示词显示方式" aria-pressed="false">',
+              '<span>可视化</span><i aria-hidden="true"></i><span>纯文本</span>',
+            '</button>',
+          '</div>',
+        '</div>',
+        '<div class="prompt-editor global-prompt-editor">',
+          '<div class="prompt-editor-body">',
+            '<textarea id="globalPromptText" aria-label="全局提示词" placeholder="填写人物、场景、服装、声音或公共参考；输入 @ 引用资产，输入 / 插入 H3 语法。" spellcheck="false"></textarea>',
+            '<div id="globalPromptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox"',
+                 ' aria-label="全局可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0"',
+                 ' data-placeholder="填写全局提示词，输入 @ 引用资产，输入 / 插入 H3 语法"></div>',
+          '</div>',
+          '<div class="prompt-head prompt-editor-footer">',
+            '<span class="subtle prompt-help">全局约束作用于启用它的所有片段</span>',
+            '<span class="subtle global-ai-status" id="globalAiStatus" role="status"></span>',
+            '<span id="globalPromptCount" class="subtle prompt-count"></span>',
+          '</div>',
+        '</div>',
+      '</div>',
+    ].join('');
     $('#dialogActions').innerHTML='<button class="button ghost" id="globalPromptCancel">取消</button><button class="button primary" id="globalPromptSave">保存全局提示词</button>';
-    let draft=state.globalPrompt||'',beforeText=null;const undo=[],redo=[];
-    const count=()=>{$('#globalPromptCount').textContent=`${draft.length} 字`;};
-    const commitDraft=()=>{if(beforeText!==null&&beforeText!==draft){undo.push(beforeText);redo.length=0;}beforeText=null;};
-    const refresh=()=>{globalPromptEditor.setContext('global-prompt',draft,globalPromptView);const button=$('.global-prompt-view-switch'),isText=globalPromptView==='text';button.classList.toggle('is-text',isText);button.setAttribute('aria-pressed',String(isText));button.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';count();};
+
+    const fields={
+      user:{text:state.globalPrompt||'',undo:[],redo:[],before:null},
+      ai:{text:state.aiGlobalPrompt||'',undo:[],redo:[],before:null}
+    };
+    let version=state.globalPromptMode==='ai'?'ai':'user';
+    let metadata=C.copy(state.globalAiMetadata||{});
+    const currentField=()=>fields[version];
+    const commitDraft=()=>{
+      const field=currentField();
+      if(field.before!==null&&field.before!==field.text){
+        field.undo.push(field.before);field.redo.length=0;
+      }
+      field.before=null;
+    };
+    const isBusy=()=>!!aiJob;
+    const updateBusy=()=>{
+      if(d.dataset.mode!=='global-prompt')return;
+      const active=!!aiConfig&&!hostReadonly&&!isBusy();
+      const enhance=$('#globalAiEnhanceButton');
+      if(enhance){
+        enhance.disabled=!active||!fields.user.text.trim();
+        enhance.title=!embedded?'查看静态 H3 Skill 全局提示词示例':
+          !aiConfig?'请先连接 TerryDirector Llama 配置节点':'使用本地 Qwen 增强全局提示词';
+        enhance.textContent=isBusy()?'正在增强全局提示词…':'✦ AI 提示增强';
+      }
+      const cancel=$('#globalAiCancelButton');
+      if(cancel){cancel.hidden=!isBusy();cancel.disabled=!isBusy();}
+      for(const id of ['globalPromptUserTab','globalPromptAiTab']){
+        const button=$('#'+id);if(button)button.disabled=isBusy();
+      }
+      const view=$('.global-prompt-view-switch');
+      if(view)view.disabled=isBusy();
+      const raw=$('#globalPromptText'),visual=$('#globalPromptVisual');
+      if(raw)raw.readOnly=hostReadonly||isBusy();
+      if(visual)visual.contentEditable=hostReadonly||isBusy()?'false':'true';
+      for(const id of ['globalPromptSave','globalPromptCancel']){
+        const button=$('#'+id);if(button)button.disabled=isBusy();
+      }
+    };
+    const refresh=()=>{
+      globalPromptEditor.setContext('global-prompt-'+version,currentField().text,globalPromptView);
+      const view=$('.global-prompt-view-switch'),isText=globalPromptView==='text';
+      view.classList.toggle('is-text',isText);
+      view.setAttribute('aria-pressed',String(isText));
+      view.title=isText?'当前：纯文本，点击切换到可视化':'当前：可视化，点击切换到纯文本';
+      $('#globalPromptUserTab').classList.toggle('is-selected',version==='user');
+      $('#globalPromptAiTab').classList.toggle('is-selected',version==='ai');
+      $('#globalPromptCount').textContent=currentField().text.length+' 字';
+      const message=$('#globalAiStatus');
+      const stale=!!fields.ai.text&&!!metadata.sourcePrompt&&metadata.sourcePrompt!==fields.user.text;
+      message.textContent=metadata.provenance==='skill-authored-demo'
+        ?'H3 Skill 静态示例 · 非 Qwen 实测输出'
+        :stale?'原文已更新 · AI 全局结果未重新增强'
+        :fields.ai.text?'已有 AI 全局增强稿':'全局原文与 AI 结果分别保存';
+      message.title=stale?'修改原文不会自动重做；手动点击增强即可更新全局稿':'';
+      updateBusy();
+    };
+    globalModal={updateBusy};
     globalPromptEditor=new window.TDH3Editor({
       visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),menuRoot:d,
-      getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
-      getAssetAvailability:globalAssetAvailability,
-      onBeforeChange:()=>{if(beforeText===null)beforeText=draft;},
-      onChange:text=>{draft=text;count();},onCommit:commitDraft,
-      onHistory:isRedo=>{commitDraft();const from=isRedo?redo:undo,to=isRedo?undo:redo;if(!from.length)return;to.push(draft);draft=from.pop();refresh();}
+      getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,
+        raw:'<'+a.token+'>',preview:a.kind==='image'?a.src:''})),
+      getAssetAvailability:(asset,options)=>globalAssetAvailability(asset,{
+        ...options,value:options?.value??currentField().text
+      }),
+      onBeforeChange:()=>{if(currentField().before===null)currentField().before=currentField().text;},
+      onChange:text=>{
+        currentField().text=text;
+        $('#globalPromptCount').textContent=text.length+' 字';
+        updateBusy();
+        if(version==='user'&&fields.ai.text&&metadata.sourcePrompt&&metadata.sourcePrompt!==text)
+          $('#globalAiStatus').textContent='原文已更新 · AI 全局结果未重新增强';
+      },
+      onCommit:commitDraft,
+      onHistory:isRedo=>{
+        commitDraft();const field=currentField();
+        const from=isRedo?field.redo:field.undo,to=isRedo?field.undo:field.redo;
+        if(!from.length)return;to.push(field.text);field.text=from.pop();refresh();
+      }
     });
-    $('.global-prompt-view-switch').addEventListener('click',()=>{commitDraft();globalPromptView=globalPromptView==='visual'?'text':'visual';refresh();});
-    $('#globalPromptCancel').onclick=()=>d.close();
-    $('#globalPromptSave').onclick=()=>{
-      commitDraft();
-      const validation=validateGlobalPrompt(draft);
-      if(!validation.ok){
-        toast(validation.reason||'全局提示词的参考资产超过当前可用额度');
+    function switchVersion(next){
+      if(isBusy()||next===version)return;
+      commitDraft();version=next;refresh();
+    }
+    $('#globalPromptUserTab').onclick=()=>switchVersion('user');
+    $('#globalPromptAiTab').onclick=()=>switchVersion('ai');
+    $('.global-prompt-view-switch').addEventListener('click',()=>{
+      if(isBusy())return;
+      commitDraft();globalPromptView=globalPromptView==='visual'?'text':'visual';refresh();
+    });
+    async function pollGlobalEnhancement(jobId){
+      const status=$('#globalAiStatus');
+      try{
+        const response=await fetch('/terrydirector/api/ai-jobs/'+encodeURIComponent(jobId),{cache:'no-store'});
+        if(!response.ok)throw new Error('全局增强任务状态不可用');
+        const job=await response.json();
+        const result=(job.results||[]).find(item=>item.id==='__global__');
+        if(result&&result.prompt){
+          fields.ai.text=String(result.prompt);
+          fields.ai.undo.length=0;fields.ai.redo.length=0;fields.ai.before=null;
+          metadata=result.metadata||{};
+          version='ai';
+          refresh();
+        }
+        if(['completed','error','cancelled'].includes(job.status)){
+          aiJob=null;renderAiControls();
+          if(job.status==='completed')toast('全局提示词 AI 增强已完成，点击保存应用');
+          else toast(job.error||'全局提示词增强已取消');
+        }else{
+          status.textContent='正在增强全局提示词…';
+          setTimeout(()=>{if(aiJob===jobId&&d.open)void pollGlobalEnhancement(jobId);},650);
+        }
+      }catch(error){
+        aiJob=null;renderAiControls();toast(error?.message||'无法获取全局 AI 结果');
+      }
+    }
+    $('#globalAiEnhanceButton').onclick=async()=>{
+      if(!embedded){
+        if(fields.ai.text){version='ai';refresh();toast('展示按 H3 Skill 编写的全局增强稿（非模型推理）');}
+        else toast('网站只展示静态 UI，真实增强请在 ComfyUI 中执行。');
         return;
       }
-      const before=C.copy(state);if(draft!==state.globalPrompt){state.globalPrompt=draft;commit(before);}d.close();
+      if(!aiConfig||isBusy()||!fields.user.text.trim())return;
+      commitDraft();
+      const validation=validateGlobalPrompt(fields.user.text);
+      if(!validation.ok){toast(validation.reason||'全局提示词引用无效');return;}
+      const source=documentPayload();
+      source.globalPrompt=fields.user.text;
+      source.globalPromptMode='user';
+      try{
+        const response=await fetch('/terrydirector/api/ai-enhance',{
+          method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({scope:'global',llama_config:aiConfig,document:source})
+        });
+        const payload=await response.json();
+        if(!response.ok)throw new Error(payload.error||'无法启动全局 AI 增强');
+        aiJob=payload.job_id;renderAiControls();
+        $('#globalAiStatus').textContent='正在增强全局提示词…';
+        void pollGlobalEnhancement(aiJob);
+      }catch(error){aiJob=null;renderAiControls();toast(error?.message||'无法增强全局提示词');}
     };
-    refresh();if(!d.open)d.showModal();
+    $('#globalAiCancelButton').onclick=()=>void cancelAiJob();
+    $('#globalPromptCancel').onclick=()=>{if(!isBusy())d.close();};
+    $('#globalPromptSave').onclick=()=>{
+      if(isBusy())return;
+      commitDraft();
+      const globalChoice=version==='ai'&&fields.ai.text.trim()?fields.ai.text:fields.user.text;
+      const validation=validateGlobalPrompt(globalChoice);
+      if(!validation.ok){toast(validation.reason||'全局提示词的参考资产超过当前可用额度');return;}
+      const before=C.copy(state);
+      state.globalPrompt=fields.user.text;
+      state.aiGlobalPrompt=fields.ai.text;
+      state.globalPromptMode=version==='ai'&&fields.ai.text.trim()?'ai':'user';
+      state.globalAiMetadata=C.copy(metadata);
+      commit(before);
+      d.close();
+    };
+    refresh();if(!d.open)d.showModal();updateBusy();
   }
   function confirmCloseEditor(){
+    if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}
     promptEditor?.closeMenu();stopDialogMedia();
     const d=$('#dialog');
     d.dataset.mode='confirm-close';
@@ -921,7 +1295,7 @@
     if(!d.open)d.showModal();
   }
   function queueWorkflow(){
-    if(hostReadonly)return;
+    if(hostReadonly||aiJob){if(aiJob)toast('AI 增强执行中，不能提交视频生成');return;}
     finishDurationEdit();finishPromptEdit();syncAllReferences();
     if(!embedded){toast('正式嵌入 ComfyUI 后可从这里运行整个工作流。');return;}
     embedDirty=false;
@@ -933,6 +1307,7 @@
   }
   function saveToHost(){
     if(hostReadonly)return;
+    if(aiJob){toast('AI 增强仍在进行，请完成或取消后再保存');return;}
     finishPromptEdit();
     if(!embedded){markEdited();toast('已保存编排。正式接入 ComfyUI 后会同时隐藏浮窗。');return;}
     embedDirty=false;
@@ -941,6 +1316,12 @@
   }
   const actions={
     new:newClip,
+    'prompt-user':()=>switchPromptMode('user'),
+    'prompt-ai':()=>switchPromptMode('ai'),
+    'ai-enhance':()=>void startAiEnhance(false),
+    'ai-cancel':()=>void cancelAiJob(),
+    'enhance-all':()=>void startAiEnhance(true),
+    'toggle-auto-ai':()=>{if(aiConfig&&!hostReadonly)mutate(()=>state.autoAiEnhance=!state.autoAiEnhance);},
     'global-prompt':openGlobalPrompt,
     'import-timeline':()=>{if(!hostReadonly)$('#timelineImportInput').click();},
     'export-timeline':exportTimelineData,
@@ -951,7 +1332,7 @@
     'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
     'save-close':saveToHost,
     'queue-workflow':queueWorkflow,
-    'close-editor':()=>{if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
+    'close-editor':()=>{if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     undo:()=>{finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
     redo:()=>{finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
@@ -963,7 +1344,11 @@
     delete:()=>{if(!current())return;timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
     suspend:()=>{if(current())mutate(()=>{current().suspended=!current().suspended;});},
-    reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={globalPrompt:'',clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};renderAll();timeline.fit();timeline.setFrame(192);}
+    reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(false);
+      if(!embedded&&siteDemoDocument){loadDocument(C.copy(siteDemoDocument));aiConfig={previewOnly:true};renderAiControls();return;}
+      state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},
+        autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]};
+      renderAll();timeline.fit();timeline.setFrame(0);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');
@@ -979,6 +1364,10 @@
 
   });
   $('#clipName').addEventListener('change',e=>{if(current())mutate(()=>current().name=e.target.value.trim()||'未命名片段');});
+  $('#autoAiEnhance').addEventListener('change',e=>{
+    if(!aiConfig||hostReadonly){e.target.checked=!!state.autoAiEnhance;return;}
+    const checked=e.target.checked;mutate(()=>state.autoAiEnhance=checked);
+  });
   $('#useGlobalPrompt').addEventListener('change',e=>{
     const clip=current();if(!clip)return;
     const enabled=!!e.target.checked;
@@ -1046,19 +1435,52 @@
   $('#scrollBar').addEventListener('pointermove',e=>{if(scrollDrag)timeline.setScroll(scrollDrag.initial+(e.clientX-scrollDrag.x)*scrollDrag.scale);});for(const event of ['pointerup','pointercancel','lostpointercapture'])$('#scrollBar').addEventListener(event,()=>scrollDrag=null);
   window.TerryDirectorDemo={getState:()=>C.copy(state),getAssets:()=>C.copy(poolEntries()),getDocument:()=>C.copy(documentPayload()),loadDocument,getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
   $('#dialog').addEventListener('close',()=>{stopDialogMedia();if($('#dialog').dataset.mode==='media')$('#dialogBody').replaceChildren();});
-  $('#dialog').addEventListener('click',e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.currentTarget.close();});
+  $('#dialog').addEventListener('cancel',event=>{
+    if($('#dialog').dataset.mode==='global-prompt'&&aiJob){
+      event.preventDefault();toast('全局 AI 增强仍在进行，请完成或取消后关闭');
+    }
+  });
+  $('#dialog').addEventListener('click',e=>{
+    if(e.target!==e.currentTarget)return;
+    const r=e.currentTarget.getBoundingClientRect();
+    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){
+      if(e.currentTarget.dataset.mode==='global-prompt'&&aiJob){
+        toast('全局 AI 增强仍在进行，请先取消');return;
+      }
+      e.currentTarget.close();
+    }
+  });
   window.addEventListener('pointerdown',e=>{if(transitionMenu&&!transitionMenu.contains(e.target))closeTransitionMenu();},true);
   if(embedded){
     window.addEventListener('message',event=>{
       if(event.origin!==hostOrigin||event.source!==window.parent)return;
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
+      else if(message.type==='terrydirector:ai-config'){aiConfig=message.config||null;renderAiControls();}
+      else if(message.type==='terrydirector:ai-patch')applyHostAiPatch(message.clips);
       else if(message.type==='terrydirector:preferences')defaultTransitionMode=normalizeTransitionMode(message.defaultTransitionMode,'tail_reference');
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
     window.parent.postMessage({type:'terrydirector:ready'},hostOrigin);
+  }
+  if(!embedded){
+    const previewControls=$('#demoPreviewControls');
+    if(previewControls){
+      previewControls.hidden=false;
+      previewControls.addEventListener('click',event=>{
+        const button=event.target.closest('[data-demo-width]');
+        if(!button)return;
+        const width=button.dataset.demoWidth;
+        app.style.maxWidth=width==='auto'?'':String(Number(width))+'px';
+        previewControls.querySelectorAll('[data-demo-width]').forEach(item=>{
+          item.setAttribute('aria-pressed',String(item===button));
+        });
+        requestAnimationFrame(()=>{timeline?.resize();timeline?.fit();});
+      });
+    }
+    window.TerryDirectorDemo.ready=loadSiteDemo();
   }
   window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();});
   window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));});

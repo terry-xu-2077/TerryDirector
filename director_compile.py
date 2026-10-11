@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from .director_core import FPS
+from .director_ai_core import effective_global_prompt
 
 H3_MIN_FRAMES = 5
 H3_FRAME_STEP = 17
@@ -147,11 +148,15 @@ def _append_tail_reference_prompt(prompt: str, template: str, picture_number: in
 
 def _effective_prompt(document: dict[str, Any], clip: dict[str, Any]) -> str:
     """Build the exact prompt H3 receives for one segment."""
-    segment_prompt = str(clip.get("prompt") or "")
+    segment_prompt = (
+        str(clip.get("aiPrompt") or "")
+        if clip.get("promptMode") == "ai" and str(clip.get("aiPrompt") or "").strip()
+        else str(clip.get("prompt") or "")
+    )
     if clip.get("useGlobalPrompt") is False:
         return segment_prompt
 
-    global_prompt = str(document.get("globalPrompt") or "")
+    global_prompt = effective_global_prompt(document)
     if not global_prompt:
         return segment_prompt
     if not segment_prompt:

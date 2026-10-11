@@ -92,6 +92,29 @@ TerryDirector 循环信息
 
 ComfyUI → Settings → TerryDirector → 时间线 中可调整默认镜头衔接和尾帧参考提示词模板。
 
+
+## 可选：AI 提示词增强（开发分支）
+
+本功能不依赖额外安装 `ComfyUI_Qwen_H3_Prompt` 或 `ComfyUI-llama-cpp_vlm` 自定义节点。
+仅在使用增强时才需要本机 Qwen3.8 GGUF 权重、对应的 `mmproj` 视觉投影器和兼容的 `llama-cpp-python` Python 包。
+默认的 H3 文本/视频生成不要求安装这个 Python 依赖。
+
+1. 将 GGUF 主模型及 `mmproj` 放在 `ComfyUI/models/LLM/`（可使用子文件夹），重启 ComfyUI。
+2. 在运行 ComfyUI 的**同一个 Python 环境**中安装与本机系统/Python/CUDA 匹配的 `llama-cpp-python`。Qwen3.8 视觉功能需要支持 `Qwen35ChatHandler` 的构建，可参考 [JamePeng 发布包](https://github.com/JamePeng/llama-cpp-python/releases)；不要在已有 cu130 环境直接覆盖 torch。
+3. 添加 **TerryDirector Llama 配置** 节点，选择 GGUF、mmproj、AI Seed（与视频 Seed 独立）。
+4. 连接该节点的「Llama 配置」输出到 **TerryDirector** 或 **TerryDirector Advanced** 的可选输入。
+5. 片段的「AI 提示增强」与「一键增强所有提示词」走 ComfyUI 本地 HTTP Job，**不提交 Queue**；片段原文和增强稿分别保存。
+6. 在「全局提示词」弹窗也可切换「用户提示词 / AI 增强提示词」，点击「AI 提示增强」仅增强**全局人物设定、参考素材关系、摄影/视觉/声音约束**。全局内容不属于一个固定时长的片段，因此输出为适用于所有片段的英文约束说明，而非六节 Ref2VA 镜头输出。原文保留；保存时当前选中的全局版本参与时间线编译以及片段 AI 提示增强。
+7. 编辑器顶部开关现名为 **「生成前自动AI增强提示」**。开启后，一次 Queue 自动增强**需要处理的片段**，再执行 H3；全局提示词需要用户在弹窗中**手动点击增强**，不会因运行 Queue 而暗中改写。
+
+**AI Seed 规则：** 对片段，首次没有结果时增强；已有 AI 结果且 Seed 相同则复用；修改原文、全局提示词、时长或模型只显示旧结果状态，不自动重做。更换 AI Seed 会重新增强片段；手动按增强按钮则强制重做对应范围。全局增强属于显式手动任务：再次点击即重新生成，修改全局原文只提示旧 AI 版本过期，不自动重跑。挂起片段和用户明确选择只使用原文的片段不参与 Queue 自动增强。
+
+AI 仅处理当前片段自身的提示词、时长、当前引用的媒体及启用的全局约束；不提前模拟尾帧、重叠或相邻片段连续性。尾帧/重叠仍由既有时间线编译与采样过程处理。
+
+**媒体边界：** 图片通过 VLM 读取；视频在可使用 OpenCV 时抽样最多四帧供 VLM 观察（未安装解码器时只传媒体名称，不假称已经分析视频）；音频文件目前只传名称，不做听觉内容分析。
+
+**资源提示：** Qwen3.8 27B Q4 会占用大量显存。默认一次只允许一个 AI 推理任务，批量运行只加载一次模型，完成后清理资源。RTX 3090 环境下，基础三段含参考图的自动增强与 H3 视频链路已完成 GPU 实测，详见开发分支的 [AI 验收报告](AI_PROMPT_ENHANCEMENT_ACCEPTANCE_REPORT.md)。**后续新增的全局提示词手动增强仍需单独进行本机 GPU 回归**；GitHub Actions 只验证数据保存、编译行为和模拟 VLM 返回。
+
 ## 7. 常见问题
 
 **节点缺失／导入失败**：先核对 ComfyUI 版本、模型和官方生成节点是否安装。已验证的系统版本在稳定基线文档中；其它环境需要自行验证兼容性。

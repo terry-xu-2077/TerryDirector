@@ -12,6 +12,9 @@ from comfy_api.latest import io
 from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
+from .director_ai_node import LlamaConfigData
+from .director_ai import prepare_document_for_queue
+from .director_ai_core import ai_targets, require_ai_config
 from .director_h3 import build_timeline_graph
 from .director_internal import (
     load_advanced_checkpoint,
@@ -680,6 +683,7 @@ class TerryDirector(io.ComfyNode):
             ),
             inputs=[
                 DirectorConfigData.Input("director_config", display_name="导演配置"),
+                LlamaConfigData.Input("llama_config", display_name="Llama 配置", optional=True),
                 io.Int.Input(
                     "seed",
                     display_name="Seed",
@@ -727,11 +731,15 @@ class TerryDirector(io.ComfyNode):
         seed,
         config_json,
         tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
+        llama_config=None,
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
+        document = prepare_document_for_queue(
+            config["document"], llama_config, str(cls.hidden.unique_id)
+        )
         plan = compile_timeline(
-            config["document"],
+            document,
             tail_reference_prompt=tail_reference_prompt,
         )
         run_signature = _execution_signature(runtime, plan, seed)
@@ -765,6 +773,7 @@ class TerryDirectorAdvanced(TerryDirector):
             description="增强版导演节点：视频审片、原生保存、分段 LATENT 缓存与选中片段局部重跑。",
             inputs=[
                 DirectorConfigData.Input("director_config", display_name="导演配置"),
+                LlamaConfigData.Input("llama_config", display_name="Llama 配置", optional=True),
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
                     max=0xFFFFFFFFFFFFFFFF, control_after_generate=True,
@@ -833,11 +842,26 @@ class TerryDirectorAdvanced(TerryDirector):
         rerun_clip_id="", rerun_seed=0,
         recovery_mode="",
         preview_tiny_vae="none",
+        llama_config=None,
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
+        # Advanced recovery and per-clip rerun must not silently regenerate
+        # prompts for the rest of the timeline, invalidating cached segments.
+        if config["document"].get("autoAiEnhance") and (
+            str(rerun_clip_id or "").strip() or str(recovery_mode or "").strip()
+        ):
+            current_ai_seed = require_ai_config(llama_config)["seed"]
+            if ai_targets(config["document"], current_ai_seed):
+                raise ValueError(
+                    "AI Seed 已变化或存在未增强片段。Advanced 局部重跑/恢复不能重写"
+                    "其它片段的提示词；请先进行一次完整生成。"
+                )
+        document = prepare_document_for_queue(
+            config["document"], llama_config, str(cls.hidden.unique_id)
+        )
         plan = compile_timeline(
-            config["document"], tail_reference_prompt=tail_reference_prompt,
+            document, tail_reference_prompt=tail_reference_prompt,
         )
         cache_key = str(cls.hidden.unique_id)
         recovery_mode = str(recovery_mode or "").strip().lower()

@@ -227,3 +227,58 @@ async def terrydirector_temp_space(request: web.Request) -> web.Response:
     except (OSError, ValueError):
         result = {"available": False, "drive": None, "free_bytes": None}
     return web.json_response(result, headers={"Cache-Control": "no-store"})
+
+
+# AI enrichment uses an editor-owned HTTP job, never app.queuePrompt.
+# The batch's llama-cpp-python inference runs in a worker thread.
+@PromptServer.instance.routes.post("/terrydirector/api/ai-enhance")
+async def terrydirector_ai_enhance(request: web.Request) -> web.Response:
+    from .director_ai_core import require_ai_config
+    from .director_ai_jobs import AI_JOBS
+    from .director_core import normalize_document
+
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("请求体必须是 JSON 对象")
+        config = require_ai_config(payload.get("llama_config"))
+        document = normalize_document(payload.get("document"))
+        scope = payload.get("scope", "clips")
+        if scope == "global":
+            job_id = AI_JOBS.submit_global(config, document)
+        elif scope == "clips":
+            ids = payload.get("clip_ids")
+            if not isinstance(ids, list) or not ids or len(ids) > 64:
+                raise ValueError("需要选择 1–64 个片段")
+            job_id = AI_JOBS.submit(config, document, [str(x) for x in ids])
+        else:
+            raise ValueError("无效的 AI 增强范围")
+        return web.json_response({"job_id": job_id}, status=202)
+    except (ValueError, TypeError, RuntimeError) as exc:
+        return web.json_response({"error": str(exc)}, status=409 if isinstance(exc, RuntimeError) else 400)
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/ai-jobs/{job_id}")
+async def terrydirector_ai_job(request: web.Request) -> web.Response:
+    from .director_ai_jobs import AI_JOBS
+    snapshot = AI_JOBS.get(request.match_info["job_id"])
+    if snapshot is None:
+        raise web.HTTPNotFound()
+    return web.json_response(snapshot, headers={"Cache-Control": "no-store"})
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/ai-jobs/{job_id}/cancel")
+async def terrydirector_ai_cancel(request: web.Request) -> web.Response:
+    from .director_ai_jobs import AI_JOBS
+    if not AI_JOBS.cancel(request.match_info["job_id"]):
+        raise web.HTTPNotFound()
+    return web.json_response({"cancel_requested": True})
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/ai-results")
+async def terrydirector_ai_results(request: web.Request) -> web.Response:
+    from .director_ai import load_saved_ai
+    node_id = str(request.query.get("node_id") or "")
+    if not node_id:
+        raise web.HTTPBadRequest(text="node_id is required")
+    return web.json_response(load_saved_ai(node_id), headers={"Cache-Control": "no-store"})
