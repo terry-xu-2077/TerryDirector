@@ -2704,12 +2704,29 @@ function mountNode(node) {
 }
 
 
-function directorLlamaConfig(node) {
+const LLAMA_MODE_NEVER = 2;
+const LLAMA_MODE_BYPASS = 4;
+let tdAiConfigWatchTimer = null;
+let tdAiConfigSignature = "";
+
+function directorLlamaState(node) {
   const linked = linkedNodeForInput(node, "llama_config");
-  if (linked?.comfyClass !== "TerryDirectorLlamaConfig") return null;
-  const value = (name, fallback) => linked.widgets?.find(w => w.name === name)?.value ?? fallback;
-  return {
-    type: "TERRYDIRECTOR_LLAMA_CONFIG", version: 1,
+  if (linked?.comfyClass !== "TerryDirectorLlamaConfig") {
+    return { config: null, status: "disconnected", signature: "disconnected" };
+  }
+
+  const mode = Number(linked.mode ?? 0);
+  const inactive = mode === LLAMA_MODE_NEVER || mode === LLAMA_MODE_BYPASS;
+  const status = mode === LLAMA_MODE_BYPASS
+    ? "bypassed"
+    : mode === LLAMA_MODE_NEVER
+      ? "muted"
+      : "active";
+  const value = (name, fallback) =>
+    linked.widgets?.find(w => w.name === name)?.value ?? fallback;
+  const raw = {
+    type: "TERRYDIRECTOR_LLAMA_CONFIG",
+    version: 1,
     model: String(value("model", "")),
     vision_model: String(value("vision_model", "None")),
     seed: Number(value("seed", 8888)),
@@ -2720,12 +2737,38 @@ function directorLlamaConfig(node) {
     top_p: Number(value("top_p", 0.8)),
     gpu_layers: Number(value("gpu_layers", -1)),
   };
+  return {
+    config: inactive ? null : raw,
+    status,
+    signature: JSON.stringify([String(linked.id), mode, raw]),
+  };
 }
-function pushAiConfig(node=activeNode) {
+
+function pushAiConfig(node=activeNode, force=false) {
   if (!frameReady || !frame?.contentWindow || !node) return;
+  const state = directorLlamaState(node);
+  if (!force && state.signature === tdAiConfigSignature) return;
+  tdAiConfigSignature = state.signature;
   frame.contentWindow.postMessage({
-    type:"terrydirector:ai-config", config:directorLlamaConfig(node),
+    type:"terrydirector:ai-config",
+    config:state.config,
+    status:state.status,
   }, location.origin);
+}
+
+function startAiConfigWatch() {
+  if (tdAiConfigWatchTimer !== null) return;
+  tdAiConfigWatchTimer = window.setInterval(() => {
+    if (activeNode) pushAiConfig(activeNode);
+  }, 250);
+}
+
+function stopAiConfigWatch() {
+  if (tdAiConfigWatchTimer !== null) {
+    window.clearInterval(tdAiConfigWatchTimer);
+    tdAiConfigWatchTimer = null;
+  }
+  tdAiConfigSignature = "";
 }
 // Do not use writeConfig(): changing prompts during a running Advanced Queue
 // must not reset activity, prompt ID or in-progress rerun/cache state.
@@ -2815,7 +2858,7 @@ function ensureEditorOverlay() {
         );
         pendingDocument = null;
       }
-      if (activeNode) {pushActivity(activeNode);pushAiConfig(activeNode);}
+      if (activeNode) {pushActivity(activeNode);pushAiConfig(activeNode, true);}
     } else if (message.type === "terrydirector:queue-workflow" && activeNode) {
       const node = activeNode;
       const next = readConfig(node);
@@ -2858,6 +2901,8 @@ function openEditor(node, button) {
   activeNode = node;
   editorDirty = false;
   returnFocus = button || null;
+  tdAiConfigSignature = "";
+  startAiConfigWatch();
 
   const documentData = clone(readConfig(node).document);
   overlay.classList.add("is-open");
@@ -2870,7 +2915,7 @@ function openEditor(node, button) {
       location.origin
     );
     pushActivity(node);
-    pushAiConfig(node);
+    pushAiConfig(node, true);
   } else {
     pendingDocument = documentData;
   }
@@ -2894,6 +2939,7 @@ function requestDiscard() {
 function closeEditor() {
   overlay?.classList.remove("is-open");
   document.documentElement.style.overflow = "";
+  stopAiConfigWatch();
   activeNode = null;
   pendingDocument = null;
   editorDirty = false;
