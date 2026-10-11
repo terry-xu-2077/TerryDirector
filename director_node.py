@@ -14,6 +14,7 @@ from comfy_extras.nodes_resolution import ASPECT_RATIOS, AspectRatio
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_ai_node import LlamaConfigData
 from .director_ai import prepare_document_for_queue
+from .director_ai_core import ai_targets, require_ai_config
 from .director_h3 import build_timeline_graph
 from .director_internal import (
     load_advanced_checkpoint,
@@ -845,6 +846,17 @@ class TerryDirectorAdvanced(TerryDirector):
     ):
         runtime = require_runtime_config(director_config)
         config = normalize_config(config_json)
+        # Advanced recovery and per-clip rerun must not silently regenerate
+        # prompts for the rest of the timeline, invalidating cached segments.
+        if config["document"].get("autoAiEnhance") and (
+            str(rerun_clip_id or "").strip() or str(recovery_mode or "").strip()
+        ):
+            current_ai_seed = require_ai_config(llama_config)["seed"]
+            if ai_targets(config["document"], current_ai_seed):
+                raise ValueError(
+                    "AI Seed 已变化或存在未增强片段。Advanced 局部重跑/恢复不能重写"
+                    "其它片段的提示词；请先进行一次完整生成。"
+                )
         document = prepare_document_for_queue(
             config["document"], llama_config, str(cls.hidden.unique_id)
         )
