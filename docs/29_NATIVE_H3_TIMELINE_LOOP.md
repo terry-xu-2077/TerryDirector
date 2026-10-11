@@ -22,7 +22,7 @@ TerryDirector 循环开始 → 【循环上下文】→ TerryDirector 循环信�
 3. 官方 SaveVideo 查询该对象的 get_dimensions()，随后调用 save_to()。VIDEO 逐段加载无损 .pt、逐帧送入一个视频编码会话、逐段送入同一音频编码会话，再释放本段画面/音频。最终仅进行一次有损视频/音频编码，不产生中间 H.264。
 4. SaveVideo 成功保存文件后删除本次运行的无损缓存目录；失败时删除不完整的目标视频、保留缓存便于定位错误。仅运行循环结束未连接 SaveVideo 时，.pt 保留至下一次该循环实例生成之前。
 5. 分段潜变量按需生成：只有输出1连接下游时，才在每轮将完整原始 H3 AV LATENT 存为 CPU .latent.pt 并于结束时加载为列表；正常仅输出 VIDEO 时不消耗额外 LATENT 缓存。
-6. 输出卡片复用 TerryDirector Output 现有 CSS 和内存估算，显示“流式视频 · 避免约 N GB 整段画面占用”，实际分辨率可反向追踪官方 ResolutionSelector。此数字是避免物化的理论完整 IMAGE 体积，并非整个程序的当前 RSS 或显存占用。
+6. 循环结束内嵌卡片改成**「视频输出检查」**，显示时长、上游真实分辨率、24 fps、启用片段数，以及按原始 RGB float32 画面与音频估算的临时缓存空间（加约 25% 余量），而不是抽象地强调节省了多少内存。ComfyUI 通过只读接口 GET /terrydirector/api/temp-space 查询实际临时目录所在磁盘的剩余容量，只返回可用字节与盘符，不泄露完整本地路径。空间接近不足时用日常中文提示清理磁盘；保存成功自动清理缓存。此处**不是最终 MP4 大小预测**。
 
 ## 参数位置和职责
 
@@ -32,7 +32,7 @@ TerryDirector 循环开始 → 【循环上下文】→ TerryDirector 循环信�
 
 ## 边界
 
-- 长视频仍需要足够磁盘空间保存逐段无损缓存，也需要容纳**一个片段**的解码张量以及视频/音频编码器本身的内存；不能保证任意配置下都不会耗尽内存。
+- 长视频仍需要足够磁盘空间保存逐段无损缓存，也需要容纳**一个片段**的解码张量以及视频/音频编码器本身的内存；不能保证任意配置下都不会耗尽内存。磁盘预计值用于提前提示，不是可靠的最大开销保证；运行时其他软件也可能占用磁盘。
 - 该 VIDEO 在首次 SaveVideo 成功保存前不能被要求直接物化完整图像，例如 GetVideoComponents 或视频裁剪；会明确提示先保存。保存后从已生成的视频文件正常按官方接口访问。
 - 当前循环信息仍只处理图片参考；视频/音频引用会显式报错。高级断点恢复、局部重跑仍保留在原 Advanced 中，未迁入此循环器。
 - 这版新输出协议不用兼容旧工作流。导入新版 JSON：17 节点、36 连线，原九镜头提示词与七张图片资产完整保留，默认仅前3段启用。
@@ -44,5 +44,6 @@ TerryDirector 循环开始 → 【循环上下文】→ TerryDirector 循环信�
     python -m unittest discover -s tests -p "test_loop_integration_contract.py" -v
     node --check web/terry_director.js
     node --test tests/*.test.cjs
+    python -m unittest discover -s tests -p "test_loop_temp_space.py" -v
 
 用新版示例做 4s+3s+5s 的官方 H3 循环：期望三次采样、三个 .pt 分段、24fps 下共288帧12秒、一条 SaveVideo 直连输出。检查保存时内存不会增加整段 IMAGE、最终视频音画、保存后缓存删除与失败保留。真实 GPU 生成尚未完成，不能把静态/隔离测试当作实机验收。

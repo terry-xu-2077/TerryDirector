@@ -4,7 +4,7 @@
 
 用户明确决定取消 A/B 模式与旧工作流兼容，仅保留「视频 VIDEO（输出0）」和「分段潜变量 LATENT 列表（输出1）」。循环结束不再输出 IMAGE/AUDIO，也不需要 CreateVideo，VIDEO 直接连官方 SaveVideo。默认24fps，bit_depth=auto、color_space=sRGB 置于高级输入，格式/编码/文件名仍由 SaveVideo 控制。
 
-内部每段调用已验收的 Base 无损 .pt 缓存方法；新增 TerryDirectorStreamVideo（ComfyUI VideoInput 实现），在官方 SaveVideo 调用 save_to 时按段读取缓存，统一会话逐帧编码，**不调用 MaterializeTimeline 分配完整 IMAGE/AUDIO**。成功保存删除本次缓存；失败保留缓存。分段潜变量只有下游实际连接时才额外保存与加载。资源提示框改成流式输出节约的整段 IMAGE 理论内存。
+内部每段调用已验收的 Base 无损 .pt 缓存方法；新增 TerryDirectorStreamVideo（ComfyUI VideoInput 实现），在官方 SaveVideo 调用 save_to 时按段读取缓存，统一会话逐帧编码，**不调用 MaterializeTimeline 分配完整 IMAGE/AUDIO**。成功保存删除本次缓存；失败保留缓存。分段潜变量只有下游实际连接时才额外保存与加载。资源提示框后来进一步改成「视频输出检查」：只显示视频时长/实际分辨率/帧率/启用片段数、无损缓存预计临时磁盘占用及该磁盘剩余空间；空间不足明确提醒，保存成功后自动清理。通过只读 /terrydirector/api/temp-space 查询磁盘容量。
 
 新的官方 H3 示例工作流已删除 CreateVideo，仅保留 LoopEnd → SaveVideo；旧循环结束接口、老示例不用兼容。此为整合分支实验功能，尚待本地 RTX 3090 GPU 视频输出验收；main 不变。
 

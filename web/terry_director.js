@@ -3,6 +3,7 @@ import { api } from "/scripts/api.js";
 import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
 import { findLoopMemorySources, readH3Resolution } from "./td_loop_memory.js";
+import { createLoopOutputCheckCard } from "./td_loop_output_check.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
@@ -33,6 +34,43 @@ const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 40;
 const OUTPUT_MEMORY_NOTICE_GIB = 4;
 const OUTPUT_MEMORY_HIGH_GIB = 8;
+
+const tdTempDisk = { info: null, failed: false, pending: false, requestedAt: 0 };
+
+function refreshTempDiskSpace({ force = false } = {}) {
+  const now = Date.now();
+  // One lightweight request across all LoopEnd nodes. Refresh on node change,
+  // but do not continuously poll or request again on its own rerender.
+  if (tdTempDisk.pending ||
+      (!force && now - tdTempDisk.requestedAt < 30000)) return;
+  tdTempDisk.requestedAt = now;
+  tdTempDisk.pending = true;
+  void api.fetchApi("/terrydirector/api/temp-space")
+    .then(async response => {
+      if (!response.ok) throw new Error("Temp disk query failed");
+      const data = await response.json();
+      if (data.available && Number.isFinite(Number(data.free_bytes))) {
+        tdTempDisk.info = {
+          freeBytes: Math.max(0, Number(data.free_bytes)),
+          drive: String(data.drive || ""),
+        };
+        tdTempDisk.failed = false;
+      } else {
+        tdTempDisk.info = null;
+        tdTempDisk.failed = true;
+      }
+    })
+    .catch(() => {
+      tdTempDisk.info = null;
+      tdTempDisk.failed = true;
+    })
+    .finally(() => {
+      tdTempDisk.pending = false;
+      refreshAllOutputMemoryInfo();
+    });
+}
+
+
 const TRANSITION_SETTING_ID = "TerryDirector.DefaultTransitionMode";
 const TAIL_REFERENCE_PROMPT_SETTING_ID = "TerryDirector.TailReferencePrompt";
 const DEFAULT_TAIL_REFERENCE_PROMPT = "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。";
@@ -1475,6 +1513,7 @@ function loopEndMemoryEstimate(node) {
   if (!resolution) return summary;
   return {
     ...mergeFrameMemoryEstimate(frames, resolution),
+    activeClips,
     source: resolution.source,
   };
 }
@@ -1507,7 +1546,12 @@ function renderOutputMemoryInfo(node) {
   const estimate = isLoopEnd ? loopEndMemoryEstimate(node) : outputMemoryEstimate(node);
   root.hidden = false;
 
-  if (estimate.state === "disconnected") {
+  if (isLoopEnd) {
+    refreshTempDiskSpace();
+    const card = createLoopOutputCheckCard(estimate, tdTempDisk);
+    root.className = card.className;
+    root.innerHTML = card.html;
+  } else if (estimate.state === "disconnected") {
     root.className = "td-output-memory-card is-idle";
     root.innerHTML = `
       <div class="td-output-memory-title">
@@ -1582,7 +1626,8 @@ function renderOutputMemoryInfo(node) {
       const width = Math.max(Number(node.size?.[0]) || 320, 320);
       const height = Math.max(
         Number(computed?.[1]) || 0,
-        estimate?.state === "ready" ? 205 : 185
+        isLoopEnd ? (estimate?.state === "disconnected" ? 185 : 255) :
+          (estimate?.state === "ready" ? 205 : 185)
       );
       node.setSize?.([width, height]);
     } catch {}
@@ -1621,8 +1666,8 @@ function mountOutputNode(node) {
       root,
       {
         hideOnZoom: false,
-        getMinHeight: () => 76,
-        getMaxHeight: () => 96,
+        getMinHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 120 : 76,
+        getMaxHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 165 : 96,
         margin: 5,
       }
     );
@@ -1635,7 +1680,8 @@ function mountOutputNode(node) {
     const computed = node.computeSize?.();
     node.setSize?.([
       width,
-      Math.max(Number(computed?.[1]) || 0, 185),
+      Math.max(Number(computed?.[1]) || 0,
+        node.comfyClass === LOOP_END_NODE_CLASS ? 255 : 185),
     ]);
   }
 

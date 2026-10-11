@@ -99,7 +99,12 @@ class LoopIntegrationContractTest(unittest.TestCase):
         self.assertIn('readH3Resolution(h3, linkedOutputForInput)', text)
         self.assertIn('node.comfyClass === "ResolutionSelector"', text)
         self.assertIn('const activeClips = (documentData.clips || []).filter(clip => !clip.suspended).length', text)
-        self.assertIn('循环输出概况', text)
+        self.assertIn("createLoopOutputCheckCard(estimate, tdTempDisk)", text)
+        self.assertIn('api.fetchApi("/terrydirector/api/temp-space")', text)
+        self.assertIn("refreshTempDiskSpace()", text)
+        self.assertIn('td-output-check-row', (ROOT / "web" / "terry_director.css").read_text(encoding="utf-8"))
+        page = (ROOT / "server_routes.py").read_text(encoding="utf-8")
+        self.assertIn('"/terrydirector/api/temp-space"', page)
         self.assertIn("TerryDirectorAdvanced", text)
 
     def test_old_sample_execution_not_replaced(self):
