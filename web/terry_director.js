@@ -1081,6 +1081,7 @@ function defaultDocument() {
     fps: FPS,
     selected: "clip-1",
     globalPrompt: "",
+    autoAiEnhance: false,
     clips: [
       {
         id: "clip-1",
@@ -1088,6 +1089,10 @@ function defaultDocument() {
         start: 0,
         end: FPS * 10,
         prompt: "",
+        aiPrompt: "",
+        promptMode: "user",
+        aiOptOut: false,
+        aiMetadata: {},
         refs: [],
         useGlobalPrompt: true,
         transitionMode: "tail_reference",
@@ -1137,6 +1142,10 @@ function normalizeConfig(value) {
           start,
           end,
           prompt: String(raw?.prompt || ""),
+          aiPrompt: String(raw?.aiPrompt || ""),
+          promptMode: raw?.promptMode === "ai" ? "ai" : "user",
+          aiOptOut: raw?.aiOptOut === true,
+          aiMetadata: raw?.aiMetadata && typeof raw.aiMetadata === "object" ? clone(raw.aiMetadata) : {},
           refs: Array.isArray(raw?.refs) ? raw.refs.map(String) : [],
           useGlobalPrompt: raw?.useGlobalPrompt !== false,
           transitionMode: normalizeTransitionMode(raw?.transitionMode, "tail_continuation"),
@@ -1183,6 +1192,7 @@ function normalizeConfig(value) {
       fps: FPS,
       selected,
       globalPrompt: String(rawDoc.globalPrompt || ""),
+      autoAiEnhance: rawDoc.autoAiEnhance === true,
       clips,
       assets,
     },
@@ -1226,7 +1236,8 @@ function authoredAssetIds(documentData) {
   const assets = documentData.assets || [];
   const ids = referencedAssetIds(documentData.globalPrompt, assets);
   for (const clip of documentData.clips || []) {
-    for (const id of referencedAssetIds(clip.prompt, assets)) ids.add(id);
+    const activePrompt = clip.promptMode === "ai" && clip.aiPrompt ? clip.aiPrompt : clip.prompt;
+    for (const id of referencedAssetIds(activePrompt, assets)) ids.add(id);
   }
   return ids;
 }
@@ -2513,6 +2524,15 @@ function applyConfigAdvancedVisibility(node) {
 
 function mountNode(node) {
   ensureActivity(node);
+  if (!node.__tdAiLinkBound) {
+    const previous = node.onConnectionsChange;
+    node.onConnectionsChange = function(...args) {
+      const result = previous?.apply(this,args);
+      queueMicrotask(()=>{if(this===activeNode)pushAiConfig(this);});
+      return result;
+    };
+    node.__tdAiLinkBound=true;
+  }
   syncTailReferencePromptWidget(node);
 
   if (!node.__tdMinWidthBound) {
@@ -2656,6 +2676,83 @@ function mountNode(node) {
   }
 }
 
+
+function directorLlamaConfig(node) {
+  const linked = linkedNodeForInput(node, "llama_config");
+  if (linked?.comfyClass !== "TerryDirectorLlamaConfig") return null;
+  const value = (name, fallback) => linked.widgets?.find(w => w.name === name)?.value ?? fallback;
+  return {
+    type: "TERRYDIRECTOR_LLAMA_CONFIG", version: 1,
+    model: String(value("model", "")),
+    vision_model: String(value("vision_model", "None")),
+    seed: Number(value("seed", 8888)),
+    think_mode: !!value("think_mode", false),
+    n_ctx: Number(value("n_ctx", 8192)),
+    max_tokens: Number(value("max_tokens", 8192)),
+    temperature: Number(value("temperature", 0.7)),
+    top_p: Number(value("top_p", 0.8)),
+    gpu_layers: Number(value("gpu_layers", -1)),
+  };
+}
+function pushAiConfig(node=activeNode) {
+  if (!frameReady || !frame?.contentWindow || !node) return;
+  frame.contentWindow.postMessage({
+    type:"terrydirector:ai-config", config:directorLlamaConfig(node),
+  }, location.origin);
+}
+// Do not use writeConfig(): changing prompts during a running Advanced Queue
+// must not reset activity, prompt ID or in-progress rerun/cache state.
+function applyAiResultsWithoutReset(node, records) {
+  if (!isDirector(node) || !records || typeof records !== "object") return false;
+  const current = readConfig(node);
+  let changed = false;
+  for (const clip of current.document.clips || []) {
+    const patch = records[String(clip.id)];
+    if (!patch?.aiPrompt || !patch?.aiMetadata) continue;
+    const seed = Number(patch.aiMetadata.seed);
+    if (!Number.isFinite(seed)) continue;
+    if (clip.aiPrompt && Number(clip.aiMetadata?.seed) === seed) continue;
+    clip.aiPrompt = String(patch.aiPrompt);
+    clip.aiMetadata = clone(patch.aiMetadata);
+    if (!clip.aiOptOut) clip.promptMode = "ai";
+    changed = true;
+  }
+  if (!changed) return false;
+  const widget = configWidget(node);
+  if (!widget) return false;
+  widget.value = JSON.stringify(current);
+  widget.callback?.(widget.value);
+  markChanged(node);
+  renderNode(node);
+  return true;
+}
+async function restoreAiResultsFromDisk(node) {
+  try {
+    const response = await api.fetchApi("/terrydirector/api/ai-results?node_id="+encodeURIComponent(node.id));
+    if (!response.ok) return;
+    const json = await response.json();
+    const changed = applyAiResultsWithoutReset(node,json.clips);
+    if (changed && node === activeNode && frameReady && !editorDirty) {
+      frame.contentWindow.postMessage({type:"terrydirector:ai-patch",clips:json.clips},location.origin);
+    }
+  } catch (_) { /* No cache exists, and normal editing must still work. */ }
+}
+function bindAiResultsSync() {
+  if (api.__tdAiResultsBound) return;
+  api.__tdAiResultsBound = true;
+  api.addEventListener("terrydirector:ai-result", event => {
+    const detail = event.detail || {};
+    const node = directorNodeFromId(detail.node_id);
+    if (!isDirector(node)) return;
+    applyAiResultsWithoutReset(node, detail.clips);
+    if (node === activeNode && frameReady) {
+      frame.contentWindow.postMessage({
+        type:"terrydirector:ai-patch",clips:detail.clips
+      }, location.origin);
+    }
+  });
+}
+
 let overlay = null;
 let frame = null;
 let activeNode = null;
@@ -2691,7 +2788,7 @@ function ensureEditorOverlay() {
         );
         pendingDocument = null;
       }
-      if (activeNode) pushActivity(activeNode);
+      if (activeNode) {pushActivity(activeNode);pushAiConfig(activeNode);}
     } else if (message.type === "terrydirector:queue-workflow" && activeNode) {
       const node = activeNode;
       const next = readConfig(node);
@@ -2746,9 +2843,11 @@ function openEditor(node, button) {
       location.origin
     );
     pushActivity(node);
+    pushAiConfig(node);
   } else {
     pendingDocument = documentData;
   }
+  void restoreAiResultsFromDisk(node);
   frame.focus();
 }
 
@@ -2814,6 +2913,7 @@ app.registerExtension({
     bindDirectorPartialQueueGuard();
     bindExecutionActivity();
     bindLoopSegmentActivity();
+    bindAiResultsSync();
   },
   nodeCreated(node) {
     syncLoopSocketLabels(node);
