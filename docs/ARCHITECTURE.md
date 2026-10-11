@@ -43,9 +43,9 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 ## 可选 AI 提示词增强（开发分支）
 
 `TerryDirectorLlamaConfig` 节点输出配置数据，不在节点执行时加载 Qwen；
-Base / Advanced / 循环开始节点都支持可选的 `llama_config` 输入。`director_ai_node.py` 负责节点定义，
+Base / Advanced / 循环开始节点都支持可选的 `llama_config` 输入。`TerryDirectorLlamaConfig` 同时提供系统提示词预设与可连接的多行自定义 system prompt：自定义值会先 `strip()`，非空时完整替换 system role；空白值回退到预设，默认预设为 H3 Skill。`director_ai_node.py` 负责节点定义，
 `director_ai_core.py` 负责 AI Seed 独占的自动重做规则，`director_ai.py` 负责本地
-`llama-cpp-python` 加载、H3 Skill、多模态资产编码、结果校验以及按片段保存 Queue 增强结果，
+`llama-cpp-python` 加载、系统提示词选择、多模态资产编码、结果校验以及按片段保存 Queue 增强结果，
 `director_ai_jobs.py` 与 `server_routes.py` 负责编辑器独立 HTTP Job、进度与取消。
 
 全局提示词的原始文本、AI 文本和当前选择独立保存为 `globalPrompt`、`aiGlobalPrompt` 和 `globalPromptMode`；编译器与片段 AI 增强读取同一个 effective 全局版本。全局手动增强使用独立 `scope=global` HTTP Job，加载一次 Qwen/VLM 检查原始参考标签，不经过 ComfyUI Queue；其结果为跨片段约束，不包含单段的六节 Ref2VA 镜头结构。全局结果只由手动增强刷新，现有自动增强开关不自动重写全局内容。
