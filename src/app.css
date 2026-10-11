@@ -33,7 +33,8 @@ input,textarea { min-width:0; }
 }
 .topbar { height:56px;flex-shrink:0;display:flex;align-items:center;gap:26px;padding:0 22px;border-bottom:1px solid var(--td-border-soft);background:var(--td-bg-panel); }
 .brand { display:flex;align-items:center;gap:10px;font-size:16px;font-weight:650;letter-spacing:-.5px; }
-.brand-mark { width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--td-border);border-radius:7px;background:var(--td-bg-surface);color:var(--td-effect); }
+.brand-mark { width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--td-border);border-radius:7px;background:var(--td-bg-surface);color:var(--td-effect);overflow:hidden; }
+.brand-mark img { width:20px;height:20px;display:block;object-fit:contain; }
 .brand-sub { margin-left:3px;font-size:10px;font-weight:400;letter-spacing:1px;color:var(--td-text-muted); }
 .crumbs { display:flex;align-items:center;gap:13px;color:var(--td-text-muted); }
 .crumbs>svg { width:13px; }
