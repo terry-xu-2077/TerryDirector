@@ -1176,12 +1176,14 @@ body:not(.td-embedded) #app { margin-inline:auto; }
     min-height:0;
   }
   #app > .workspace > .prompt-panel {
+    order:1;
     flex:0 0 440px;
     min-width:0;
     padding-inline:14px;
   }
   #app > .workspace > #referenceResize { display:none; }
   #app > .workspace > .reference-panel {
+    order:2;
     flex:0 0 auto;
     min-height:390px;
     min-width:0;
