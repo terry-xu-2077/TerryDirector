@@ -349,8 +349,8 @@ function drawLoopRegion(ctx, canvas, graph, region, visibleArea) {
 
   const center = polygonCentroid(geometry.hull, geometry.bounds);
   if (center) {
-    ctx.fillStyle = "rgba(242, 218, 193, 0.14)";
-    ctx.font = `600 ${18 / scale}px Inter, Arial, sans-serif`;
+    ctx.fillStyle = "rgba(242, 218, 193, 0.09)";
+    ctx.font = `600 ${36 / scale}px Inter, Arial, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("TerryDirector循环域", center[0], center[1]);
