@@ -35,6 +35,13 @@ def require_ai_config(value: Any) -> dict[str, Any]:
     return result
 
 
+def effective_global_prompt(document: dict) -> str:
+    """Select the global block independently of each clip's prompt version."""
+    if document.get("globalPromptMode") == "ai" and str(document.get("aiGlobalPrompt") or "").strip():
+        return str(document["aiGlobalPrompt"])
+    return str(document.get("globalPrompt") or "")
+
+
 def source_signature(clip: dict, global_prompt: str = "", assets: list | None = None) -> str:
     source = {
         "prompt": str(clip.get("prompt") or ""),

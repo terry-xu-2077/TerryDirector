@@ -1081,6 +1081,9 @@ function defaultDocument() {
     fps: FPS,
     selected: "clip-1",
     globalPrompt: "",
+    aiGlobalPrompt: "",
+    globalPromptMode: "user",
+    globalAiMetadata: {},
     autoAiEnhance: false,
     clips: [
       {
@@ -1192,6 +1195,9 @@ function normalizeConfig(value) {
       fps: FPS,
       selected,
       globalPrompt: String(rawDoc.globalPrompt || ""),
+      aiGlobalPrompt: String(rawDoc.aiGlobalPrompt || ""),
+      globalPromptMode: rawDoc.globalPromptMode === "ai" ? "ai" : "user",
+      globalAiMetadata: rawDoc.globalAiMetadata && typeof rawDoc.globalAiMetadata === "object" ? clone(rawDoc.globalAiMetadata) : {},
       autoAiEnhance: rawDoc.autoAiEnhance === true,
       clips,
       assets,
@@ -1234,7 +1240,9 @@ function referencedAssetIds(prompt, assets) {
 
 function authoredAssetIds(documentData) {
   const assets = documentData.assets || [];
-  const ids = referencedAssetIds(documentData.globalPrompt, assets);
+  const globalPrompt = documentData.globalPromptMode === "ai" && documentData.aiGlobalPrompt
+    ? documentData.aiGlobalPrompt : documentData.globalPrompt;
+  const ids = referencedAssetIds(globalPrompt, assets);
   for (const clip of documentData.clips || []) {
     const activePrompt = clip.promptMode === "ai" && clip.aiPrompt ? clip.aiPrompt : clip.prompt;
     for (const id of referencedAssetIds(activePrompt, assets)) ids.add(id);

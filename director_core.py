@@ -18,6 +18,9 @@ def default_document() -> dict[str, Any]:
         "fps": FPS,
         "selected": "clip-1",
         "globalPrompt": "",
+        "aiGlobalPrompt": "",
+        "globalPromptMode": "user",
+        "globalAiMetadata": {},
         "autoAiEnhance": False,
         "clips": [
             {
@@ -130,6 +133,9 @@ def normalize_document(value: Any) -> dict[str, Any]:
         "fps": FPS,
         "selected": selected,
         "globalPrompt": str(value.get("globalPrompt") or ""),
+        "aiGlobalPrompt": str(value.get("aiGlobalPrompt") or ""),
+        "globalPromptMode": "ai" if value.get("globalPromptMode") == "ai" else "user",
+        "globalAiMetadata": dict(value["globalAiMetadata"]) if isinstance(value.get("globalAiMetadata"), dict) else {},
         "autoAiEnhance": value.get("autoAiEnhance") is True,
         "clips": clips,
         "assets": assets,

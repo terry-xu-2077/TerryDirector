@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from .director_core import FPS
+from .director_ai_core import effective_global_prompt
 
 H3_MIN_FRAMES = 5
 H3_FRAME_STEP = 17
@@ -155,7 +156,7 @@ def _effective_prompt(document: dict[str, Any], clip: dict[str, Any]) -> str:
     if clip.get("useGlobalPrompt") is False:
         return segment_prompt
 
-    global_prompt = str(document.get("globalPrompt") or "")
+    global_prompt = effective_global_prompt(document)
     if not global_prompt:
         return segment_prompt
     if not segment_prompt:
