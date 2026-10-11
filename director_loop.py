@@ -7,8 +7,6 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import uuid
 
 import folder_paths
@@ -32,7 +30,6 @@ from .director_core import config_json, normalize_config
 from .director_loop_video import TerryDirectorStreamVideo
 from .director_internal import (
     TerryDirectorDecodeSegmentToCache,
-    _cache_to_cpu,
     prepare_base_run_cache,
 )
 
@@ -177,42 +174,6 @@ class TerryDirectorLoopFrame(io.ComfyNode):
         })
 
 
-def _wants_segment_latents(dynprompt, close_id):
-    """Keep H3 LATENT only when End's list output is wired to a consumer.
-
-    A disconnected output must not accumulate sampled video/audio tensors
-    across segments. Reading the original graph before dynamic expansion
-    also works when the final SaveVideo uses only IMAGE/AUDIO.
-    """
-    for node in (getattr(dynprompt, "original_prompt", None) or {}).values():
-        for value in node.get("inputs", {}).values():
-            if is_link(value) and str(value[0]) == str(close_id) and int(value[1]) == 1:
-                return True
-    return False
-
-
-def _save_segment_latent(samples, descriptor):
-    """Persist the full AV LATENT beside its existing lossless Base segment.
-
-    The parent Base run directory is already cleaned by MaterializeTimeline
-    after the final merge. No latent tensor survives in the GPU-side loop
-    accumulation; only the lightweight sidecar path is carried.
-    """
-    path = str(descriptor["path"]) + ".latent.pt"
-    root = os.path.dirname(path)
-    fd, temp_path = tempfile.mkstemp(
-        prefix="td_loop_latent_", suffix=".pt", dir=root
-    )
-    os.close(fd)
-    try:
-        torch.save(_cache_to_cpu(samples), temp_path)
-        os.replace(temp_path, path)
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    return path
-
-
 def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_value):
     """Adapt ComfyUI's native List loop expansion without exposing internal wires.
 
@@ -224,26 +185,10 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
     graph = GraphBuilder()
     end = dynprompt.get_node(close_id)
     end_inputs = end["inputs"]
-    if not is_link(end_inputs.get("segment_data")):
-        raise ValueError("循环结束必须连接 segment_data")
-
-    has_images = is_link(end_inputs.get("images"))
-    has_audio = is_link(end_inputs.get("audio"))
-    if has_images != has_audio:
-        raise ValueError("循环结束的外部解码模式必须同时连接 images 与 audio")
-    decoded_mode = has_images and has_audio
-
-    latent_required = ("samples", "vae", "audio_vae")
-    latent_mode = all(is_link(end_inputs.get(name)) for name in latent_required)
-    if not decoded_mode and not latent_mode:
-        raise ValueError(
-            "循环结束需要连接外部解码后的 images + audio，"
-            "或旧版 samples + vae + audio_vae"
-        )
-
-    store_latents = _wants_segment_latents(dynprompt, close_id)
-    if decoded_mode and store_latents and not is_link(end_inputs.get("samples")):
-        raise ValueError("需要输出分段潜变量时，外部解码模式也必须连接 samples")
+    required = ("segment_data", "images", "audio")
+    for name in required:
+        if not is_link(end_inputs.get(name)):
+            raise ValueError(f"循环结束必须连接 {name}")
     copied_loop_metadata = {}
     carry = initial_value
     previous_dependencies = []
@@ -300,26 +245,18 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
                     "_loop_end": copies[original["_loop_end"]].id,
                 }
 
-        # The user-facing End node is not cloned. Cache either the user's
-        # already-decoded media (preferred for custom/2X VAE workflows) or
-        # preserve the legacy LATENT + VAE decode contract.
+        # The user-facing End node is not cloned. The loop boundary only
+        # accepts media that the user's generation graph has already decoded.
         cache_inputs = {
             "segment_data": copied_link(end_inputs["segment_data"]),
+            "images": copied_link(end_inputs["images"]),
+            "audio": copied_link(end_inputs["audio"]),
         }
         if is_link(end_inputs.get("dependency")):
             cache_inputs["dependency"] = copied_link(end_inputs["dependency"])
-        if decoded_mode:
-            cache_inputs["images"] = copied_link(end_inputs["images"])
-            cache_inputs["audio"] = copied_link(end_inputs["audio"])
-            if store_latents:
-                cache_inputs["samples"] = copied_link(end_inputs["samples"])
-        else:
-            for name in latent_required:
-                cache_inputs[name] = copied_link(end_inputs[name])
 
         cache = graph.node(
             "TerryDirectorLoopCache", f"cache_{position}",
-            store_latents=store_latents,
             **cache_inputs,
         )
         cache.set_override_display_id(close_id)
@@ -418,7 +355,7 @@ class TerryDirectorLooper(StartLoop):
         )
         end = dynprompt.get_node(end_id)
         remaining_inputs = end["inputs"].copy()
-        for key in ("samples", "vae", "audio_vae", "images", "audio", "segment_data", "dependency"):
+        for key in ("images", "audio", "segment_data", "dependency"):
             remaining_inputs.pop(key, None)
         execution_list.add_node(end_id)
         execution_list.add_external_block(end_id)
@@ -521,7 +458,7 @@ class TerryDirectorLoopCondition(io.ComfyNode):
         return io.NodeOutput(result)
 
 class TerryDirectorLoopCache(io.ComfyNode):
-    """Cache one loop segment from decoded media or the legacy H3 latent path."""
+    """Cache one already-decoded loop segment and return compact continuity context."""
 
     @classmethod
     def define_schema(cls):
@@ -532,14 +469,10 @@ class TerryDirectorLoopCache(io.ComfyNode):
             is_dev_only=True,
             description="内部无损分段缓存与紧凑连续性上下文。",
             inputs=[
-                io.Latent.Input("samples", display_name="采样结果", optional=True),
-                io.Vae.Input("vae", display_name="视频VAE", optional=True),
-                io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
-                io.Image.Input("images", display_name="已解码画面", optional=True),
-                io.Audio.Input("audio", display_name="已解码音频", optional=True),
+                io.Image.Input("images", display_name="已解码画面"),
+                io.Audio.Input("audio", display_name="已解码音频"),
                 io.AnyType.Input("dependency", display_name="循环结束依赖", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据"),
-                io.Boolean.Input("store_latents", default=False, socketless=True),
             ],
             outputs=[
                 io.String.Output(display_name="分段缓存"),
@@ -552,66 +485,35 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(
-        cls,
-        segment_data,
-        store_latents=False,
-        samples=None,
-        vae=None,
-        audio_vae=None,
-        images=None,
-        audio=None,
-        dependency=None,
-    ):
+    def execute(cls, images, audio, segment_data, dependency=None):
         segment = _require_segment_data(segment_data)
-        adapter = adapter_from_segment(segment)
         loop = segment["_loop"]
-        decoded_mode = images is not None or audio is not None
-        if decoded_mode:
-            if images is None or audio is None:
-                raise ValueError("循环缓存的外部解码模式必须同时提供 IMAGE 与 AUDIO")
-            assembly = segment["assembly"]
-            result = TerryDirectorDecodeSegmentToCache.execute(
-                images=images,
-                audio=audio,
-                cache_key=loop["cache_key"],
-                run_signature=loop["run_signature"],
-                segment_id=segment["id"],
-                signature=loop["signature"],
-                output_frames=int(segment["output_frames"]),
-                trim_head_frames=int(assembly["trim_head_frames"]),
-                gap_frames=int(assembly["gap_before_frames"]),
-                gap_after_frames=int(assembly["gap_after_frames"]),
-                context_frames=int(loop["context_frames"]),
-                fps=24,
-            )
-        else:
-            if samples is None or vae is None or audio_vae is None:
-                raise ValueError(
-                    "循环缓存需要外部 IMAGE/AUDIO，"
-                    "或完整的 LATENT + 视频VAE + 音频VAE"
-                )
-            result = adapter.cache_segment(
-                segment, samples, vae, audio_vae,
-                cache_node=TerryDirectorDecodeSegmentToCache,
-            )
-        descriptor = json.loads(result[0])
-        if bool(store_latents):
-            if samples is None:
-                raise ValueError("保存分段潜变量需要连接 samples")
-            descriptor["latent_path"] = _save_segment_latent(samples, descriptor)
+        assembly = segment["assembly"]
+        result = TerryDirectorDecodeSegmentToCache.execute(
+            images=images,
+            audio=audio,
+            cache_key=loop["cache_key"],
+            run_signature=loop["run_signature"],
+            segment_id=segment["id"],
+            signature=loop["signature"],
+            output_frames=int(segment["output_frames"]),
+            trim_head_frames=int(assembly["trim_head_frames"]),
+            gap_frames=int(assembly["gap_before_frames"]),
+            gap_after_frames=int(assembly["gap_after_frames"]),
+            context_frames=int(loop["context_frames"]),
+            fps=24,
+        )
         _notify(loop["loop_id"], segment["id"], "completed")
         return io.NodeOutput(
-            json.dumps(descriptor, ensure_ascii=False),
+            str(result[0]),
             {"images": result[1], "audio": result[2]},
         )
 
 class TerryDirectorLoopEnd(io.ComfyNode):
-    """Low-memory video wrapper and optional segment LATENT outputs.
+    """Low-memory VIDEO wrapper for already-decoded loop segment media.
 
-    All video/audio frames remain in the validated lossless segment cache.
-    The VIDEO's save_to() is called by ComfyUI's official SaveVideo, which
-    streams frame-by-frame from disk without assembling a timeline-sized IMAGE.
+    LoopEnd never decodes LATENT and never exposes segment LATENT. The user
+    graph must provide final IMAGE/AUDIO for each iteration.
     """
 
     @classmethod
@@ -624,26 +526,22 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             is_input_list=True,
             is_output_node=True,
             description=(
-                "支持两种闭环：外部已解码 IMAGE/AUDIO，或旧版 LATENT+VAE。"
-                "连接已解码画面/音频时优先使用外部结果，可直接接 MiniMax H3 VAE Decode (fast)。"
-                "最终仍输出低内存流式 VIDEO 与按需保留的分段潜变量。"
+                "接收循环体已经解码完成的 IMAGE/AUDIO，写入无损分段缓存并输出低内存流式 VIDEO。"
+                "循环结束不再负责 VAE 解码，也不输出分段潜变量。"
             ),
             inputs=[
-                io.Latent.Input("samples", display_name="采样结果", optional=True),
-                io.Vae.Input("vae", display_name="视频VAE", optional=True),
-                io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据", optional=True),
                 io.Image.Input(
                     "images", display_name="已解码画面", optional=True,
-                    tooltip="自定义解码链输出；连接后优先使用此画面，不再由 TerryDirector 普通 VAE 二次解码。",
+                    tooltip="连接循环体最终画面，例如 MiniMax H3 VAE Decode (fast) 的 IMAGE 输出。",
                 ),
                 io.Audio.Input(
                     "audio", display_name="已解码音频", optional=True,
-                    tooltip="与已解码画面配套的分段音频。",
+                    tooltip="连接与已解码画面配套的最终分段音频。",
                 ),
                 io.AnyType.Input(
                     "dependency", display_name="循环结束依赖", optional=True,
-                    tooltip="可接 VHS Video Combine 等每段必须执行的输出节点结果，用于确保该分支完成后再结束当前循环。",
+                    tooltip="可接 VHS Video Combine 等每段必须执行的输出节点结果，确保该分支完成后再结束当前循环。",
                 ),
                 io.Combo.Input(
                     "bit_depth", display_name="bit_depth",
@@ -664,7 +562,6 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             ],
             outputs=[
                 io.Video.Output(display_name="视频"),
-                io.Latent.Output(display_name="分段潜变量", is_output_list=True),
             ],
             hidden=[io.Hidden.execution_list, io.Hidden.unique_id],
         )
@@ -675,8 +572,6 @@ class TerryDirectorLoopEnd(io.ComfyNode):
 
     @classmethod
     def execute(cls, bit_depth="auto", color_space="sRGB", **kwargs):
-        # Native LoopResult releases this block after all per-segment caches
-        # are complete. Unlike Base, no timeline-sized IMAGE/AUDIO is created.
         results = cls.hidden.execution_list.get_external_block_result(
             _one(cls.hidden.unique_id)
         )
@@ -684,7 +579,6 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         if not descriptors:
             raise ValueError("循环结束没有收到任何已完成片段")
 
-        # Preserve the Base/Advanced post-sampling model release behaviour.
         import gc
         gc.collect()
         try:
@@ -698,19 +592,11 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             )
         gc.collect()
 
-        segment_latents = []
-        for raw in descriptors:
-            info = json.loads(str(raw))
-            latent_path = info.get("latent_path")
-            if latent_path:
-                segment_latents.append(
-                    torch.load(str(latent_path), map_location="cpu", weights_only=False)
-                )
-
         video = TerryDirectorStreamVideo(
             descriptors,
             fps=24,
             bit_depth=_one(bit_depth),
             color_space=_one(color_space),
         )
-        return io.NodeOutput(video, segment_latents)
+        return io.NodeOutput(video)
+
