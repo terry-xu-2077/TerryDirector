@@ -8,7 +8,7 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 
 **标准导演：** `TerryDirectorSecondPassConfig`（可选）→ `TerryDirectorConfig` → `TerryDirector` / `TerryDirectorAdvanced`，基础版另接 `TerryDirectorOutput`。这条链负责模型、尺寸、音视频 VAE 与普通/二采参数。所有片段使用共享时间线、Seed、提示词与素材配置。
 
-**独立循环器：** `TerryDirectorLooper` → `TerryDirectorLoopInfo` → 用户自己的 H3 / Self-Lift / 解码节点组及 `TerryDirectorLoopCondition` → `TerryDirectorLoopEnd`。循环器依托 ComfyUI 原生 LoopIteration / LoopProgress / LoopResult 展开，隐藏缓存及上下文回传。循环结束支持旧版 `LATENT + VAE` 闭环，也支持用户在循环体内先完成解码后直接提交 `IMAGE + AUDIO`；后一模式用于 `MiniMax H3 VAE Decode (fast)`、2X VAE 等自定义解码链，并避免 TerryDirector 再做一次普通 VAE 解码。循环结束仍输出流式 `VIDEO` 与可选分段 `LATENT`。
+**独立循环器：** `TerryDirectorLooper` → `TerryDirectorLoopInfo` → 用户自己的 H3 / Self-Lift / 解码节点组及 `TerryDirectorLoopCondition` → `TerryDirectorLoopEnd`。循环器依托 ComfyUI 原生 LoopIteration / LoopProgress / LoopResult 展开，隐藏缓存及上下文回传。循环体必须自行完成解码并向循环结束提交最终 `IMAGE + AUDIO`；LoopEnd 不再接收 VAE 或 LATENT，也不执行解码，只输出流式 `VIDEO`。
 
 **内部节点：** 负责分段缓存、潜变量加载、输出包装和素材重新采样；标记为内部用途，不需要用户在画布上手工连接。
 
@@ -43,7 +43,7 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 ## 可选 AI 提示词增强（开发分支）
 
 `TerryDirectorLlamaConfig` 节点输出配置数据，不在节点执行时加载 Qwen；
-Base / Advanced 多一个可选的 `llama_config` 输入。`director_ai_node.py` 负责节点定义，
+Base / Advanced / 循环开始节点都支持可选的 `llama_config` 输入。`director_ai_node.py` 负责节点定义，
 `director_ai_core.py` 负责 AI Seed 独占的自动重做规则，`director_ai.py` 负责本地
 `llama-cpp-python` 加载、H3 Skill、多模态资产编码、结果校验以及按片段保存 Queue 增强结果，
 `director_ai_jobs.py` 与 `server_routes.py` 负责编辑器独立 HTTP Job、进度与取消。
@@ -73,7 +73,7 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢复／片段重跑，最终一次性编码视频，避免中间 H.264 有损压缩。保存成功后清理生成时的分段画面缓存，保留必要的 checkpoint。
 
-独立循环器：每段既可以沿用内部 H3 VAE 解码，也可以接收循环体已经解码完成的 IMAGE/AUDIO。外部解码模式会把这组媒体直接写入无损分段缓存，并从同一结果提取尾帧/音频上下文；因此 2X fast decode 可以成为真正的最终画面路径而不是旁路预览。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，不要求再保存最终整条 VIDEO。分段 LATENT 只有被外部连线使用时才额外缓存。
+独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO，将其写入无损分段缓存并从同一结果提取尾帧/音频上下文；因此 2X Fast Decode、锐化或其他画面处理可以直接成为连续性与最终输出的真实来源。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，并用「循环结束依赖」闭合该副作用分支。LoopEnd 不再保存或输出分段 LATENT。
 
 **资源边界：** 文件化缓存减少时间线累积，但无法消除当前单段解码、VAE 与编码器的 RAM/显存需求。长时间线仍需足够的 ComfyUI 临时目录磁盘空间。
 
@@ -81,9 +81,9 @@ Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢�
 
 `director_loop_adapters.py` 目前登记 `minimax_h3`（默认、可运行）与 `ltx_2_5`（预留、`ready=False`）。
 
-适配器负责：`compile_plan`、`sampling_frames`、`reference_images`、`apply_continuity`、`cache_segment`。这些职责把模型特定的帧数、参考图、Guide 和解码行为与通用循环框架区分开。
+适配器负责：`compile_plan`、`sampling_frames`、`reference_images`、`apply_continuity`。这些职责只处理模型特定的帧数、参考图和连续性 Guide；解码不属于适配器或 LoopEnd，而是用户可编辑的循环体。
 
-**LTX 2.5 尚不能运行。** 新增适配器必须先满足自己的合法帧数、条件构造与联合音视频解码，再允许注册为可用；未知模型不能静默复用 H3 实现。
+**LTX 2.5 尚不能运行。** 新增适配器必须先满足自己的合法帧数、参考输入与连续性条件构造，再允许注册为可用；未知模型不能静默复用 H3 Guide 语义。
 
 ## 兼容与维护
 
