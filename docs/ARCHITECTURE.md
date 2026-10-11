@@ -8,7 +8,7 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 
 **标准导演：** `TerryDirectorSecondPassConfig`（可选）→ `TerryDirectorConfig` → `TerryDirector` / `TerryDirectorAdvanced`，基础版另接 `TerryDirectorOutput`。这条链负责模型、尺寸、音视频 VAE 与普通/二采参数。所有片段使用共享时间线、Seed、提示词与素材配置。
 
-**独立循环器：** `TerryDirectorLooper` → `TerryDirectorLoopInfo` → 用户自己的官方 H3 生成节点组及 `TerryDirectorLoopCondition` → `TerryDirectorLoopEnd`。循环器依托 ComfyUI 原生 LoopIteration / LoopProgress / LoopResult 展开，隐藏缓存及上下文回传。循环结束只输出流式 `VIDEO` 与可选分段 `LATENT`；直接连接官方 SaveVideo。
+**独立循环器：** `TerryDirectorLooper` → `TerryDirectorLoopInfo` → 用户自己的 H3 / Self-Lift / 解码节点组及 `TerryDirectorLoopCondition` → `TerryDirectorLoopEnd`。循环器依托 ComfyUI 原生 LoopIteration / LoopProgress / LoopResult 展开，隐藏缓存及上下文回传。循环结束支持旧版 `LATENT + VAE` 闭环，也支持用户在循环体内先完成解码后直接提交 `IMAGE + AUDIO`；后一模式用于 `MiniMax H3 VAE Decode (fast)`、2X VAE 等自定义解码链，并避免 TerryDirector 再做一次普通 VAE 解码。循环结束仍输出流式 `VIDEO` 与可选分段 `LATENT`。
 
 **内部节点：** 负责分段缓存、潜变量加载、输出包装和素材重新采样；标记为内部用途，不需要用户在画布上手工连接。
 
@@ -73,7 +73,7 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢复／片段重跑，最终一次性编码视频，避免中间 H.264 有损压缩。保存成功后清理生成时的分段画面缓存，保留必要的 checkpoint。
 
-独立循环器：最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取无损缓存，统一编码音频与视频，不先创建完整 IMAGE/AUDIO；最终保存成功清理对应运行目录。失败时保留缓存以便排查。分段 LATENT 只有被外部连线使用时才额外缓存。
+独立循环器：每段既可以沿用内部 H3 VAE 解码，也可以接收循环体已经解码完成的 IMAGE/AUDIO。外部解码模式会把这组媒体直接写入无损分段缓存，并从同一结果提取尾帧/音频上下文；因此 2X fast decode 可以成为真正的最终画面路径而不是旁路预览。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，不要求再保存最终整条 VIDEO。分段 LATENT 只有被外部连线使用时才额外缓存。
 
 **资源边界：** 文件化缓存减少时间线累积，但无法消除当前单段解码、VAE 与编码器的 RAM/显存需求。长时间线仍需足够的 ComfyUI 临时目录磁盘空间。
 
