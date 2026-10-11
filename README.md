@@ -37,7 +37,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector Advanced** | 高级生成、视频审片、无损分段缓存、局部重跑与中断恢复 |
 | **TerryDirector 输出** | 将基础导演输出转换为分段 LATENT、合并 IMAGE、合并 AUDIO |
 | **TerryDirector 循环开始** | 按时间线驱动普通视频生成节点组 |
-| **TerryDirector 循环信息** | 输出提示词、采样帧数、Seed、片段数据与参考图片 |
+| **TerryDirector 循环信息** | 输出提示词、采样帧数、Seed、片段数据与图片／视频／音频参考 |
 | **TerryDirector 循环条件** | 将前一段实际画面／声音应用于当前段的 H3 条件 |
 | **TerryDirector 循环结束** | 接收已解码 IMAGE/AUDIO，收集分段缓存并输出流式 VIDEO |
 
@@ -85,7 +85,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
                                                   └─ VIDEO → 官方 SaveVideo
 ```
 
-循环器直接输出 **VIDEO**，无需再连接 CreateVideo。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO，不再接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
+循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环器直接输出 **VIDEO**，无需再连接 CreateVideo。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO，不再接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
 
 ## 时间线与编辑
 
