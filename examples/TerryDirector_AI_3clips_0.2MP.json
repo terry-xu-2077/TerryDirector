@@ -33,11 +33,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "minimax_h3_fl2va_bf16.safetensors",
+        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
         "default"
       ],
       "widgets_values_named": {
-        "unet_name": "minimax_h3_fl2va_bf16.safetensors",
+        "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
         "weight_dtype": "default"
       },
       "title": "H3 模型 · 选用本机已安装权重"
@@ -71,12 +71,12 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "MiniMax-H3\\qwen3vl_32b_minimax_h3_ultra_uncensored_heretic_int8_convrot.safetensors",
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "minimax",
         "default"
       ],
       "widgets_values_named": {
-        "clip_name": "MiniMax-H3\\qwen3vl_32b_minimax_h3_ultra_uncensored_heretic_int8_convrot.safetensors",
+        "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
         "type": "minimax",
         "device": "default"
       },
@@ -111,10 +111,10 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "MiniMax-H3\\minimax_h3_video_vae_fp16.safetensors"
+        "minimax_h3_video_vae_int8_convrot.safetensors"
       ],
       "widgets_values_named": {
-        "vae_name": "MiniMax-H3\\minimax_h3_video_vae_fp16.safetensors"
+        "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
       },
       "title": "H3 视频 VAE"
     },
@@ -147,10 +147,10 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "MiniMax-H3\\minimax_h3_audio_vae_fp32.safetensors"
+        "minimax_h3_audio_vae_fp32.safetensors"
       ],
       "widgets_values_named": {
-        "vae_name": "MiniMax-H3\\minimax_h3_audio_vae_fp32.safetensors"
+        "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
       },
       "title": "H3 音频 VAE"
     },
@@ -273,8 +273,8 @@
         "Node name for S&R": "TerryDirectorLlamaConfig"
       },
       "widgets_values": [
-        "Qwen3.8/Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf",
-        "Qwen3.8/mmproj-F16.gguf",
+        "Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf",
+        "mmproj-F16.gguf",
         8888,
         "fixed",
         false,
@@ -285,8 +285,8 @@
         -1
       ],
       "widgets_values_named": {
-        "model": "Qwen3.8/Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf",
-        "vision_model": "Qwen3.8/mmproj-F16.gguf",
+        "model": "Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf",
+        "vision_model": "mmproj-F16.gguf",
         "seed": 8888,
         "control_after_generate": "fixed",
         "think_mode": false,
@@ -339,13 +339,13 @@
       "widgets_values": [
         9,
         "fixed",
-        "{\"version\":4,\"document\":{\"version\":2,\"fps\":24,\"selected\":\"clip-1\",\"globalPrompt\":\"写实真人实景，真实电影摄影，准确的材质与自然光照，摄影机运动克制且有现场观察感。只保留环境声与动作声；全程没有背景音乐，没有字幕与旁白。\",\"autoAiEnhance\":true,\"clips\":[{\"id\":\"clip-1\",\"name\":\"01 · 雨后的街道\",\"start\":0,\"end\":96,\"prompt\":\"雨后傍晚的城市街口，路面映出温暖的灯光。写实实拍广角镜头缓缓推进一家街角咖啡馆的门面。细小水滴从遮阳棚滴落，能听见远处汽车经过和雨滴落地的声音。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-2\",\"name\":\"02 · 咖啡放上桌\",\"start\":96,\"end\":168,\"prompt\":\"咖啡馆室内的木桌近景，暖色桌灯，窗外的街景在背景中自然虚化。一只手缓慢把白色瓷咖啡杯放在桌面上，热气上升。镜头轻微侧移，听见瓷器与桌面接触的清脆轻响。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-3\",\"name\":\"03 · 窗边的夜色\",\"start\":168,\"end\":288,\"prompt\":\"咖啡馆内靠窗的一名年轻人安静地望向雨后街道，窗上有细小雨痕，橙色路灯在玻璃上形成层次丰富的倒影。摄影机从人物肩后缓慢拉远，街道声音透过窗户显得柔和。结束时维持画面自然呼吸感。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false}],\"assets\":[]}}",
+        "{\"version\":4,\"document\":{\"version\":2,\"fps\":24,\"selected\":\"clip-1\",\"globalPrompt\":\"[导演说明]\\n展现特瑞在极端荒原生存的冷酷环境与高度警觉。通过物理质感、低语喘息与硬核机械动态，奠定工业废土的沉重感与纪实电影感。\\n\\n[视觉基调] \\n超写实商业人像与工业实景摄影。模拟 Sony Venice 2 搭载 Cooke S4/i 焦段（25mm / 35mm / 85mm），呈现硬朗的高光扩散与黑柔滤镜（Black Mist 1/4）质感，全篇使用 2.39:1 变形宽银幕画幅。\\n\\n[色彩光影]\\n 低饱和粉紫冷灰暗部（青色 Separation）与车辆控制台暖橙高光的极度对比；体积烟尘形成自然丁达尔效应，负向填充（Negative Fill）极强。\\n\\n[全局参考]\\n<Picture 4>:荒原氛围。\\n<Picture 1>:主角，黄色头发，橙色披风。\\n<Picture 2>:主角驾驶的单人载具。\\n<Picture 3>:荒原遗迹和矿运飞船。\\n<Picture 5>:避难所全貌。\\n<Picture 6>:各种面值的圆子。\\n<Picture 7>:地下甲壳类虫子。\",\"clips\":[{\"id\":\"clip-1\",\"name\":\"特瑞的面部与粗糙的手\",\"start\":0,\"end\":96,\"prompt\":\"镜头类型：特写 (Close-up) | 视角：主观视角/侧面\\n画面描述： 镜头贴近特瑞的面部与粗糙的手。车舱内极度狭窄，空气中悬浮着极细颗粒的灰尘。特瑞脸颊带有轻微油污与未愈合的细小划痕，保留真实的皮肤纹理与孔隙（无磨皮）。他眉头紧锁，嘴唇干裂，粗糙的手指正快速缠绕着黄色的工业绝缘胶带。仪表盘上红光的剧烈闪烁在他瞳孔中投下断续的残影。\\n\\n[运镜动态]： 手持微小呼吸感震动，35mm 镜头，F/2.0 大光圈虚化背景。随着车身抖动，镜头微微左右推挤。\\n\\n[色彩光影]： 暗部压入深青色，仪表盘的暖橙色低频闪烁光投射在脸侧，主光带极强的负向填充，对比度极高。\\n\\n[声音设计]： 引擎低沉的喘息喘鸣，混杂着低压提示音的“滴——滴——”高频电子音；风沙如细砂纸般猛烈刮擦车身外壳的 Foley 音效。\",\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"tail_reference\",\"suspended\":false,\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{}},{\"id\":\"clip-2\",\"name\":\"破损的电子屏幕\",\"start\":96,\"end\":168,\"prompt\":\"镜头类型：大特写 (Extreme Close-up) | 视角：俯视\\n画面描述： 破损的电子屏幕上，光线剧烈抖动。“剩余电量”旁边的数字疯狂下降，残存的路线图上仅剩两个闪烁点，其余区域全是被风沙侵蚀的灰色盲区。特瑞的手背带伤，沉重地拍击在控制台上。\\n\\n[运镜动态]： 50mm 镜头微距视角，快速向下微推（Dolly in）后锁定。\\n\\n[色彩光影]： 警示红光与冷蓝 LCD 屏幕光的色彩分割，高光处带有些微胶片红晕（Halation）。\\n\\n[声音设计]： 拍击控制台的沉重金属闷响，伴随电缆内电弧短路的轻微“嘶嘶”声。\\n\\n[台词]： 特瑞（低沉、微喘）：“再撑一段。”\",\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"tail_reference\",\"suspended\":false,\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{}},{\"id\":\"clip-3\",\"name\":\"“蚂蚱”载具驶入\",\"start\":168,\"end\":288,\"prompt\":\"镜头类型：大广角大全景 (Extreme Wide Shot) | 视角：低角度仰拍\\n画面描述： “蚂蚱”载具从画面右下角极其渺小地驶入。前方展开一幅恢弘而死寂的荒星全景。粉紫色的薄雾中，巨大的“ORC”旧公司遗留巨构半埋于灰紫色的地表之下，断裂的输送桥如远古巨兽的断骨刺向天际。破败的白色字母“ORC”在风沙中隐隐作响。\\n\\n[运镜动态]： 25mm 变形镜头，慢速向前平移（Tracking shot），展现无边无际的空间压迫感。\\n\\n[色彩光影]： 远景被天边的粉紫冷灰光覆盖，大气透视感极强，薄雾中呈现隐隐的体积光。\\n\\n[声音设计]： 呼啸的荒原风声（Ambiance）占满声场，车声被拉远成细小的机械咔哒声。\",\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"tail_reference\",\"suspended\":false,\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{}}],\"assets\":[{\"id\":\"input-muycldd8-1\",\"name\":\"00_特瑞_Terry.jpeg\",\"kind\":\"image\",\"number\":1,\"source\":{\"type\":\"comfy-input\",\"path\":\"00_特瑞_Terry.jpeg\"}},{\"id\":\"input-muycldd8-2\",\"name\":\"Generate_vehicle_multi-view_images_2K_202608132251.jpeg\",\"kind\":\"image\",\"number\":2,\"source\":{\"type\":\"comfy-input\",\"path\":\"Generate_vehicle_multi-view_images_2K_202608132251.jpeg\"}},{\"id\":\"input-muycldd8-3\",\"name\":\"开场遗迹.png\",\"kind\":\"image\",\"number\":3,\"source\":{\"type\":\"comfy-input\",\"path\":\"开场遗迹.png\"}},{\"id\":\"input-muycldd8-4\",\"name\":\"荒星地貌.jpeg\",\"kind\":\"image\",\"number\":4,\"source\":{\"type\":\"comfy-input\",\"path\":\"荒星地貌.jpeg\"}},{\"id\":\"input-muyqcove-5\",\"name\":\"codex_9ea39e8314544c10aa7c0e140ba871d5.png\",\"kind\":\"image\",\"number\":5,\"source\":{\"type\":\"comfy-input\",\"path\":\"codex_9ea39e8314544c10aa7c0e140ba871d5.png\"}},{\"id\":\"input-muyqcove-6\",\"name\":\"Designing_custom_coin_grid_2K_202608170722.jpeg\",\"kind\":\"image\",\"number\":6,\"source\":{\"type\":\"comfy-input\",\"path\":\"Designing_custom_coin_grid_2K_202608170722.jpeg\"}},{\"id\":\"input-muyqcwhy-7\",\"name\":\"地下虫群-个体 拷贝.jpg\",\"kind\":\"image\",\"number\":7,\"source\":{\"type\":\"comfy-input\",\"path\":\"地下虫群-个体 拷贝.jpg\"}}],\"autoAiEnhance\":true}}",
         "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。"
       ],
       "widgets_values_named": {
         "seed": 9,
         "control_after_generate": "fixed",
-        "config_json": "{\"version\":4,\"document\":{\"version\":2,\"fps\":24,\"selected\":\"clip-1\",\"globalPrompt\":\"写实真人实景，真实电影摄影，准确的材质与自然光照，摄影机运动克制且有现场观察感。只保留环境声与动作声；全程没有背景音乐，没有字幕与旁白。\",\"autoAiEnhance\":true,\"clips\":[{\"id\":\"clip-1\",\"name\":\"01 · 雨后的街道\",\"start\":0,\"end\":96,\"prompt\":\"雨后傍晚的城市街口，路面映出温暖的灯光。写实实拍广角镜头缓缓推进一家街角咖啡馆的门面。细小水滴从遮阳棚滴落，能听见远处汽车经过和雨滴落地的声音。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-2\",\"name\":\"02 · 咖啡放上桌\",\"start\":96,\"end\":168,\"prompt\":\"咖啡馆室内的木桌近景，暖色桌灯，窗外的街景在背景中自然虚化。一只手缓慢把白色瓷咖啡杯放在桌面上，热气上升。镜头轻微侧移，听见瓷器与桌面接触的清脆轻响。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-3\",\"name\":\"03 · 窗边的夜色\",\"start\":168,\"end\":288,\"prompt\":\"咖啡馆内靠窗的一名年轻人安静地望向雨后街道，窗上有细小雨痕，橙色路灯在玻璃上形成层次丰富的倒影。摄影机从人物肩后缓慢拉远，街道声音透过窗户显得柔和。结束时维持画面自然呼吸感。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false}],\"assets\":[]}}",
+        "config_json": "{\"version\":4,\"document\":{\"version\":2,\"fps\":24,\"selected\":\"clip-1\",\"globalPrompt\":\"[导演说明]\\n展现特瑞在极端荒原生存的冷酷环境与高度警觉。通过物理质感、低语喘息与硬核机械动态，奠定工业废土的沉重感与纪实电影感。\\n\\n[视觉基调] \\n超写实商业人像与工业实景摄影。模拟 Sony Venice 2 搭载 Cooke S4/i 焦段（25mm / 35mm / 85mm），呈现硬朗的高光扩散与黑柔滤镜（Black Mist 1/4）质感，全篇使用 2.39:1 变形宽银幕画幅。\\n\\n[色彩光影]\\n 低饱和粉紫冷灰暗部（青色 Separation）与车辆控制台暖橙高光的极度对比；体积烟尘形成自然丁达尔效应，负向填充（Negative Fill）极强。\\n\\n[全局参考]\\n<Picture 4>:荒原氛围。\\n<Picture 1>:主角，黄色头发，橙色披风。\\n<Picture 2>:主角驾驶的单人载具。\\n<Picture 3>:荒原遗迹和矿运飞船。\\n<Picture 5>:避难所全貌。\\n<Picture 6>:各种面值的圆子。\\n<Picture 7>:地下甲壳类虫子。\",\"clips\":[{\"id\":\"clip-1\",\"name\":\"特瑞的面部与粗糙的手\",\"start\":0,\"end\":96,\"prompt\":\"镜头类型：特写 (Close-up) | 视角：主观视角/侧面\\n画面描述： 镜头贴近特瑞的面部与粗糙的手。车舱内极度狭窄，空气中悬浮着极细颗粒的灰尘。特瑞脸颊带有轻微油污与未愈合的细小划痕，保留真实的皮肤纹理与孔隙（无磨皮）。他眉头紧锁，嘴唇干裂，粗糙的手指正快速缠绕着黄色的工业绝缘胶带。仪表盘上红光的剧烈闪烁在他瞳孔中投下断续的残影。\\n\\n[运镜动态]： 手持微小呼吸感震动，35mm 镜头，F/2.0 大光圈虚化背景。随着车身抖动，镜头微微左右推挤。\\n\\n[色彩光影]： 暗部压入深青色，仪表盘的暖橙色低频闪烁光投射在脸侧，主光带极强的负向填充，对比度极高。\\n\\n[声音设计]： 引擎低沉的喘息喘鸣，混杂着低压提示音的“滴——滴——”高频电子音；风沙如细砂纸般猛烈刮擦车身外壳的 Foley 音效。\",\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"tail_reference\",\"suspended\":false,\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{}},{\"id\":\"clip-2\",\"name\":\"破损的电子屏幕\",\"start\":96,\"end\":168,\"prompt\":\"镜头类型：大特写 (Extreme Close-up) | 视角：俯视\\n画面描述： 破损的电子屏幕上，光线剧烈抖动。“剩余电量”旁边的数字疯狂下降，残存的路线图上仅剩两个闪烁点，其余区域全是被风沙侵蚀的灰色盲区。特瑞的手背带伤，沉重地拍击在控制台上。\\n\\n[运镜动态]： 50mm 镜头微距视角，快速向下微推（Dolly in）后锁定。\\n\\n[色彩光影]： 警示红光与冷蓝 LCD 屏幕光的色彩分割，高光处带有些微胶片红晕（Halation）。\\n\\n[声音设计]： 拍击控制台的沉重金属闷响，伴随电缆内电弧短路的轻微“嘶嘶”声。\\n\\n[台词]： 特瑞（低沉、微喘）：“再撑一段。”\",\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"tail_reference\",\"suspended\":false,\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{}},{\"id\":\"clip-3\",\"name\":\"“蚂蚱”载具驶入\",\"start\":168,\"end\":288,\"prompt\":\"镜头类型：大广角大全景 (Extreme Wide Shot) | 视角：低角度仰拍\\n画面描述： “蚂蚱”载具从画面右下角极其渺小地驶入。前方展开一幅恢弘而死寂的荒星全景。粉紫色的薄雾中，巨大的“ORC”旧公司遗留巨构半埋于灰紫色的地表之下，断裂的输送桥如远古巨兽的断骨刺向天际。破败的白色字母“ORC”在风沙中隐隐作响。\\n\\n[运镜动态]： 25mm 变形镜头，慢速向前平移（Tracking shot），展现无边无际的空间压迫感。\\n\\n[色彩光影]： 远景被天边的粉紫冷灰光覆盖，大气透视感极强，薄雾中呈现隐隐的体积光。\\n\\n[声音设计]： 呼啸的荒原风声（Ambiance）占满声场，车声被拉远成细小的机械咔哒声。\",\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"tail_reference\",\"suspended\":false,\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{}}],\"assets\":[{\"id\":\"input-muycldd8-1\",\"name\":\"00_特瑞_Terry.jpeg\",\"kind\":\"image\",\"number\":1,\"source\":{\"type\":\"comfy-input\",\"path\":\"00_特瑞_Terry.jpeg\"}},{\"id\":\"input-muycldd8-2\",\"name\":\"Generate_vehicle_multi-view_images_2K_202608132251.jpeg\",\"kind\":\"image\",\"number\":2,\"source\":{\"type\":\"comfy-input\",\"path\":\"Generate_vehicle_multi-view_images_2K_202608132251.jpeg\"}},{\"id\":\"input-muycldd8-3\",\"name\":\"开场遗迹.png\",\"kind\":\"image\",\"number\":3,\"source\":{\"type\":\"comfy-input\",\"path\":\"开场遗迹.png\"}},{\"id\":\"input-muycldd8-4\",\"name\":\"荒星地貌.jpeg\",\"kind\":\"image\",\"number\":4,\"source\":{\"type\":\"comfy-input\",\"path\":\"荒星地貌.jpeg\"}},{\"id\":\"input-muyqcove-5\",\"name\":\"codex_9ea39e8314544c10aa7c0e140ba871d5.png\",\"kind\":\"image\",\"number\":5,\"source\":{\"type\":\"comfy-input\",\"path\":\"codex_9ea39e8314544c10aa7c0e140ba871d5.png\"}},{\"id\":\"input-muyqcove-6\",\"name\":\"Designing_custom_coin_grid_2K_202608170722.jpeg\",\"kind\":\"image\",\"number\":6,\"source\":{\"type\":\"comfy-input\",\"path\":\"Designing_custom_coin_grid_2K_202608170722.jpeg\"}},{\"id\":\"input-muyqcwhy-7\",\"name\":\"地下虫群-个体 拷贝.jpg\",\"kind\":\"image\",\"number\":7,\"source\":{\"type\":\"comfy-input\",\"path\":\"地下虫群-个体 拷贝.jpg\"}}],\"autoAiEnhance\":true}}",
         "tail_reference_prompt": "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。"
       }
     },
@@ -603,6 +603,33 @@
       "ai_seed": 8888,
       "video_seed": 9,
       "auto_ai": true,
+      "title": "特瑞荒星 · 原始参考图与提示词 · 尾帧参考",
+      "source_workflow": "TerryDirector_循环器_官方H3_示例工作流.json",
+      "source_policy": "Preserve exact first 3 original clip prompts and global prompt and seven reference-image paths; set all transitionMode to tail_reference",
+      "asset_count": 7,
+      "asset_paths": [
+        "00_特瑞_Terry.jpeg",
+        "Generate_vehicle_multi-view_images_2K_202608132251.jpeg",
+        "开场遗迹.png",
+        "荒星地貌.jpeg",
+        "codex_9ea39e8314544c10aa7c0e140ba871d5.png",
+        "Designing_custom_coin_grid_2K_202608170722.jpeg",
+        "地下虫群-个体 拷贝.jpg"
+      ],
+      "clip_names": [
+        "特瑞的面部与粗糙的手",
+        "破损的电子屏幕",
+        "“蚂蚱”载具驶入"
+      ],
+      "clip_transitions": [
+        "tail_reference",
+        "tail_reference",
+        "tail_reference"
+      ],
+      "references_in_global": true,
+      "tail_reference_from_clip": 2,
+      "video_model_basis": "previous official H3 workflow",
+      "global_prompt_note": "Original 2.39:1 artistic directive preserved while output node stays 16:9 0.2MP",
       "prompt_mode_initial": "user"
     }
   },
