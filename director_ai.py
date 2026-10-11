@@ -254,6 +254,10 @@ class _LlamaSession:
     def chat(self, messages: list[dict], seed: int, cancel: threading.Event | None = None) -> str:
         # Stream even when the UI only wants a final result: cancellation can
         # interrupt token generation instead of merely hiding the progress bar.
+        # Multimodal Qwen leaves image positions in the native KV cache after a
+        # completion. Clear them before the next clip while keeping GGUF loaded.
+        self.llm._ctx.memory_clear(True)
+        self.llm.reset()
         chunks = []
         for event in self.llm.create_chat_completion(
             messages=messages,
