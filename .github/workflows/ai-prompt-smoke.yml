@@ -70,6 +70,10 @@ jobs:
             --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
             --window-size=940,950 --screenshot="website-preview/td-demo-narrow.png" \
             http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
+            --window-size=700,950 --screenshot="website-preview/td-demo-compact.png" \
+            http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
       - name: Attach website browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
