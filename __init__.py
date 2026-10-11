@@ -67,8 +67,6 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorPackAdvancedOutput,
             TerryDirectorResampleReferenceVideo,
         ]
-        from .director_trace import install
-        install(__package__, node_classes)
         return node_classes
 
 

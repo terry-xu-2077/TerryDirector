@@ -1,7 +1,7 @@
 """H3 3D latent-upscaler inference, owned by TerryDirector.
 
 The layer names are the public checkpoint format, not a custom-node dependency.
-Architecture/reference details and limitations: docs/30_SELFLIFT_INTERNAL.md.
+Release implementation context and verified baseline: docs/ARCHITECTURE.md and docs/STABLE_BASELINES.md.
 """
 from __future__ import annotations
 

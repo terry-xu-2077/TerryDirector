@@ -1,118 +1,26 @@
-# TerryDirector
+# TerryDirector — repository maintenance notes
 
-## 兼容与迁移原则
+This repository is a **ComfyUI custom node package**, not a development-task archive. The root README describes the product. Current documentation is intentionally limited to:
 
-- **默认不做向后兼容。** 除非用户明确要求“兼容旧版本 / 迁移旧工作流 / 保留旧字段”，否则当前 schema 是唯一支持版本。
-- 删除废弃字段、旧分支、旧别名和迁移代码，不为“可能有人还在用”保留兼容层；旧版本数据允许直接不支持或报版本错误。
-- 不主动设计兼容策略，不写冗余 fallback，不保留双份状态。优先保持实现短、直接、单一数据模型。
+- `docs/USAGE.md`: user-facing connections and node behaviour
+- `docs/ARCHITECTURE.md`: current production module boundaries
+- `docs/STABLE_BASELINES.md`: user-validated configurations and Git history anchors
 
+## Production invariants
 
-开始真实功能开发前先读 `docs/11_H3_EXECUTION_PIPELINE.md`，再读 `docs/10_CONFIG_NODE_ARCHITECTURE.md`、`docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md`、 `docs/06_UI_IMPLEMENTATION_BLUEPRINT.md`、README、docs/01_PRODUCT_AND_TECH_DECISIONS.md、docs/03_VISUAL_THEME_CONTRACT.md 与 docs/H3_EDITOR_PORT.md。10 覆盖 09 中“主节点直接接入全部运行输入”的旧形态；09 继续覆盖更早的独立端口 / 另开网页 / 仅入口节点形态，以及浮窗生成参数面板和待定输出方案；未涉及的 UI 与交互继续以 06 为准。当前代码已进入 ComfyUI 单节点测试阶段，同时保留 HTML / CSS / JavaScript Demo；除非真实需求要求，不为实现而主动引入重型前端架构。
+- Keep the ComfyUI native node containers and the existing TerryDirector timeline/UI architecture. Do not replace the Canvas timeline, alter the accepted spacing/controls, or re-introduce previews or project hierarchy without explicit direction.
+- Preserve the separated second-pass configuration chain: `TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector / TerryDirector Advanced`. Do not require the external selflift-Avatar plugin.
+- Base exposes IMAGE/AUDIO through `TerryDirector 输出`. Advanced stores and streams its own file-backed output, with interruption recovery and per-clip rerun.
+- The separate looper exposes a streaming VIDEO and an optional segment LATENT list. Keep the external ComfyUI sampler group editable and avoid forcing an H3 prefix onto TerryDirector's public loop sockets.
+- Model adapter registry: `minimax_h3` ready; `ltx_2_5` reserved/not ready. Never fall back to H3 decode for unknown model formats.
+- The loop's temporary cache and downstream SaveVideo must stay low-memory; successful final saving clears current-run temporary files, failures retain diagnostic source caches.
+- Real ComfyUI events drive per-segment sampling progress. Never fake elapsed time or completed states.
+- Existing core source in `director_core.py`, `director_compile.py`, `director_h3.py`, `director_selflift*.py`, `director_loop*.py` is production functionality. Any refactor must preserve the corresponding recorded behaviour in `docs/STABLE_BASELINES.md`.
 
-## 当前架构：TerryDirector 配置节点 + 主节点 + 导演输出节点 + ComfyUI 页内浮窗
+## Development conventions
 
-- 2026-10-05 用户确认新增专用 **TerryDirector 配置** 节点。模型、VAE、width / height、sampler、sigmas 与生成参数集中进入配置节点，输出一个 `TERRYDIRECTOR_CONFIG`；主 TerryDirector 只保留一个可见“导演配置”输入。
-- 节点包含只读迷你时间轴，点击或使用带文字的编辑按钮，在当前 ComfyUI 页面打开大浮窗；编辑后保存退出，隐藏界面。迷你时间轴不允许拖动、裁剪或重排。**主节点外壳仍使用 ComfyUI 原生节点容器与端口体系，不自绘替换节点容器；只在容器内部嵌入与浮窗同源的自定义控件、状态和迷你时间线。**
-- 主 TerryDirector 不再通过高级输入折叠隐藏运行端口；它只有一个可见“导演配置”输入。全部运行输入集中到 TerryDirector 配置节点。
-- **配置节点不自绘输入组件。** MODEL / CLIP / 视频 VAE / 音频 VAE 回到纯 ComfyUI 原生接入点，由上游加载器负责；配置节点不重复 UNet / CLIP / VAE 文件与精度选项。分辨率使用 ComfyUI 原生 Resolution Selector 同款组件，常驻顺序固定为“宽高比 → 百万像素 → 实时分辨率预览”，multiple 放高级设置。采样器 / 调度器 / Denoise / 二采方案及其专属参数归入原生“高级输入”；**总步数 / 参考图尺寸保持常驻显示**。Seed 不属于共享配置，放在 TerryDirector 主节点。
-- 不另开浏览器页面，不启动独立工作台端口。使用原生编辑器和作用域样式，不能把 Demo 的 body / #app 全局样式直接覆盖宿主页面。隐藏时停媒体与无用渲染，运行中任务继续。
-- 保存更新该节点的可序列化编排输入并标记工作流已修改，不自动生成。编辑草稿、已保存编排和已提交快照分离，不能误写其他节点或影响已排队任务。
-- 导演台顶部总时长后提供“生成”按钮；点击前先提交片段时长 / Prompt 编辑并把当前 document 同步回 TerryDirector 节点，然后用 ComfyUI Partial Execution 仅运行当前 TerryDirector 分支，不执行同工作流中的其他导演节点。
-- 导演台内运行完成后**不在 TerryDirector 内承担视频创建 / 编码 / 封装职责**。主节点内部仍完成 H3 分段解码与最终音画合并，但只通过一个 `TERRYDIRECTOR_OUTPUT` /“导演输出”端口向外暴露结果。配套可见节点统一命名为 **`TerryDirector 输出`**，只负责解包为分段 LATENT / 合并 IMAGE / 合并 AUDIO。视频创建、预览、编码和保存全部交给下游 ComfyUI 视频节点。
-- 实现我们自己的规划 / 采样代码与内部 helper，不连接或运行时依赖 Songssx 导演台节点类。成熟源码按许可移植适配并记录来源，不另造外部调度系统。
-- **共享生成参数集中在 TerryDirector 配置节点。** 模型、VAE、尺寸、采样器、SIGMAS、总步数、参考图尺寸和二采方案属于配置节点；**Seed 单独属于 TerryDirector 主节点**，使用 ComfyUI 原生可连接 Seed 控件。导演台浮窗不重复这些运行参数，也不承担生成预览功能。
-- **浮窗没有预览窗，也没有“项目”概念、项目首页、项目标题或项目层级。** 当前布局为顶部栏下方先显示单行时间线，再显示“提示词 + 资产池”创作工作区。浮窗只保留片段时长 / 起止位置、由位置派生的重叠、提示词、资产引用，以及必要的编辑操作与保存退出。时间线缩放、后续联动、可视化 / 原文切换属于编辑操作，不因此删除。
-- **2026-10-08 输出协议更新：**TerryDirector 主节点右侧只保留一个“导演输出”端口，类型为 `TERRYDIRECTOR_OUTPUT`。配套可见节点统一命名为 **`TerryDirector 输出`**，输入该类型并只输出：**分段潜变量（LATENT 原生列表）/ 合并画面（IMAGE）/ 合并音频（AUDIO）**。该节点不得创建 VIDEO；视频创建、预览、保存由用户按需连接现有 ComfyUI 视频节点。分段 latent 每项仍是完整 H3 AV latent，按时间线顺序保留重叠；合并画面 / 音频仍由主节点内部完成裁切、去重和 gap 填充。
-- SelfLift 是一种二采方案，不是独立总开关。**配置节点**使用“二采方案”下拉菜单，默认“无”；SelfLift 放大模型与高清占比属于其专属配置。执行仍发生在主节点内部采样路径，不增加浮窗参数。
-- 详细已确认边界与技术建议见 09/10/11；普通 H3 时间线编译、原生采样展开、参考素材、段间 Guide 与最终音画合并已进入本地实机验证阶段；SelfLift 尚未接入。QuantFunc 暂缓决定保持不变。
+Use `main` as the released implementation; do new capability work on isolated branches and merge only after matching runtime validation. Current release intentionally omits historical tests, benchmark utilities and experimental launchers; do not re-add them to the production tree without a new explicit requirement.
 
-## 成熟实现优先
+Keep README customer-oriented. Do not append status diaries, pending-task checklists, huge code review reports or unverified performance claims. Archive reproducibility clues in the concise baselines document and use Git history for detailed legacy reports.
 
-- 新增需求或优化前，先查 `docs/07_REFERENCE_IMPLEMENTATIONS.md` 中用户指定的四个参考：Songssx TimelineDirector、AIMixer Director（AI 搅拌手）、yolain Easy Media（乱乱呀）与 nkxx188 H3 Easy。先定位已有节点、示例工作流和具体实现，再决定本项目需要的适配。
-- 当前普通生成基础以 **ComfyUI 原生 MiniMax H3 节点 + GraphBuilder 展开** 为准：ReferenceToVideo、AddGuide、BasicGuider、SamplerCustomAdvanced、VAE 解码。Songssx / AIMixer / Easy Media / H3 Easy 用于验证连续性、SelfLift、素材和性能实现，不作为运行时依赖。
-- TerryDirector 主节点是动态 GraphBuilder 编排节点，`fingerprint_inputs()` 固定返回 `NaN`，确保每次 Queue 都重新编译 / 展开 H3 子图；不能复用上一次中断留下的 ephemeral subgraph cache。实际 MODEL / CLIP / VAE 等上游加载仍由 ComfyUI 自己缓存，不等于每次重新加载所有模型。
-- 优先复用已存在的运行能力，只对需求差异作必要优化；记录参考仓库、固定 commit、文件 / 函数及适配差异。实际引入代码时保留相应来源和许可证信息。
-- 新增参考不自动扩大 UI 范围。保持原生 HTML / CSS / JS、既定单行时间线与资产池；不因参考仓库带有 React、多轨、AI 增强或版本 UI 就自动引入。
-- 本次参考导航核对不等于在用户机器上完成性能比较。实现时复查选用版本和示例，实际生成结果另行记录。
-
-## QuantFunc：已调研，暂缓接入
-
-- 用户于 2026-10-02 确认先记录，等待时机成熟后另行要求加入导演台。调研与兼容性边界见 [docs/08_QUANTFUNC_RESEARCH.md](docs/08_QUANTFUNC_RESEARCH.md)。
-- 当前只保留候选记录，不安装、不增加依赖或 UI 占位、不写接入代码、不改变生成工作流或项目格式。不得因上游更新或判断技术已成熟而自动集成；等待用户明确指令。
-- 未来定位为可选 MODEL 推理加速，不替代 TerryDirector 的时间线编译与原生 H3 执行图。不能把 QuantFunc 插值放大当作 H3 潜空间放大模型 / SelfLift 的等价替代，也不能为了加速破坏现有 Guide、参考素材和 AV 输出语义。
-- 原链路继续作为开发基础。恢复此项工作时，重新核对上游版本，并验证 RTX 3090 / 64GB 环境的端到端收益、连续性、原 SelfLift 与授权条件；静态调研不等于 GPU 实测。
-
-- **浮窗 UI / 时间线修复基线固定为 `408395e7620fe368775515ca515d04fae7a8daed`（Demo 06.11）。** 时间线 Canvas / 交互仍以该基线为准；当前只调整其在浮窗中的整体位置到创作工作区上方。`src/timeline.js`、时间线几何和核心交互保持原样，除非用户明确要求修改时间线。时间线底部不再显示片段统计、缩放 px/s 或状态提示，只保留横向滚动条。
-- ComfyUI 页内浮窗采用较小的居中窗口而非接近全屏：外部区域使用半透明毛玻璃，让下方 ComfyUI 画布仍可辨认；关闭按钮必须位于浮窗标题栏内、紧跟“保存并退出”右侧，不允许悬在窗口外。
-
-## UI 与交互约定
-
-- **横向排列的 UI 元素必须共享同一条视觉垂直中线。** 同一行中的标题、统计、输入、图标和按钮统一使用垂直居中布局；不要用 baseline、各自 margin 或 line-height 偏移来凑对齐。绝对定位的居中元素必须同时处理 X / Y 两轴视觉居中。
-- TerryDirector 主节点最小宽度固定为 460；页内 DOM Shell / Card / Mini Timeline 必须 `width:100% + min-width:0 + max-width:100%`，任何画布缩放或旧工作流恢复尺寸都不能让时间线溢出节点框。
-- **主节点预览时间线必须明显呈现“时间线”语义。** 顶部常驻简洁时间刻度 / 竖向刻度线；片段高度高于旧紧凑卡，信息固定两行：第一行“片段序号 + 橙色时长”，第二行“片段名称”，名称使用更暗的次级颜色。只保留片段自身生成进度；不再绘制最下方整条任务总进度线。节点当前选中片段不使用橙色填充高亮；只有正在生成的片段使用强调边框，完成后恢复普通片段外观。
-- **主节点时间线统计栏固定显示三项：** 总时长 / 片段数 / 导入资产（其中被使用数量）。片段数统计当前 TerryDirector 时间线中的全部片段，包括挂起片段。
-- **导演台顶部数据迁移：** 暂时移除“操作说明”按钮，不保留占位。顶部右侧提供“导入 / 导出”按钮；导出内容是 TerryDirector 完整创作数据（全局 Prompt、片段 Prompt、时间范围、`useGlobalPrompt`、`transitionMode`、挂起状态、资产池及 ComfyUI input 路径 / 稳定编号），不包含模型、VAE、采样器等 TerryDirector 配置节点参数。导入只替换当前导演台编辑状态并标记为未保存，必须再点“保存并退出”或“生成”才写回节点；运行只读期间允许导出但禁止导入。
-- ResolutionPreview 必须保持 ComfyUI 原生可选 / socketless 预览语义；不要把它设为 required。它没有可提交的运行值，只读取同节点的比例、MP 和 multiple Widget 做显示。
-
-以下未被上方新决策覆盖的编辑体验继续有效。旧 Demo 的参数位置、生成按钮和尺寸描述用于追溯，不是正式浮窗保留参数区的依据。
-
-- 任务编排为主：提示词编辑、项目资产池、单行时间线。只做用户确认的功能，不恢复检查器、片段列表或通用剪辑面板。
-- Demo v0.6.14 的移植起点：左侧提示词占满工作区高度，默认约占工作区 46%；右侧上排默认占右侧高度的 50%，左侧预览默认占右区宽度的 32%，其余宽度用于项目资产池；旧版右下为生成参数区。正式浮窗移除该参数区及生成参数控件，空出的空间用于既有创作区域，具体比例在 UI 迁移时确认，不增加替代的设置面板。时间线仍在底部跨全宽，保留已有分隔线交互和视觉基线；素材点击使用独立灯箱。
-- 没有真实生成数据时显示等待；演示静帧必须持续标明非模型输出。生成预览绑定任务，不随编辑选择伪造结果。
-- **片段运行状态与进度必须来自 ComfyUI 真实执行事件。** 正式嵌入版使用 `progress_state` 的动态子图 `node_id` 区分 `td_sN_sample`，以 `value / max` 驱动片段底部进度条；`td_sN_assemble` 完成后该片段才标记“已完成”。状态只保存在当前 ComfyUI 会话的节点实例中，不写入工作流 JSON。
-- 运行只读状态按 TerryDirector **节点实例**绑定：仅当前正在执行的导演节点编辑器进入只读；同一工作流中未运行的其他 TerryDirector 节点仍可打开、编辑和保存。完成、失败或取消后仅解除对应节点的只读状态。
-- **运行只读只禁止修改，不禁止浏览。** 运行中的导演台仍允许在时间线上点击切换片段焦点、平移 / 滚动 / 缩放时间线、切换可视化 / 纯文本查看、滚动提示词内容及查看资产灯箱；禁止拖动 / 裁剪片段、修改名称 / 时长 / Prompt、增删或插入资产、新建 / 删除 / 复制 / 挂起片段及保存覆盖。片段采样进度显示到 100% 时，UI 状态必须显示“已完成”，不能继续显示“生成中 100%”。
-- TerryDirector 任务被用户中断时，前端收到对应 `execution_interrupted` 后调用 ComfyUI 原生 `api.freeMemory({freeExecutionCache:true})`；让 worker 在中断收尾后卸载模型并清执行缓存。正常完成不强制卸载，继续保留 ComfyUI 的模型复用行为。
-- 每片段一份 prompt。可视化必须可编辑，@ 和 / 按指定 H3 来源的菜单语义；原文、复制、导出保留原始标签，不能用中文显示文字替代。当前不做 AI 增强或版本管理。
-- **全局提示词属于 TerryDirector 节点级创作状态。** 顶栏按钮打开浮窗编辑器，支持与片段 Prompt 相同的可视化 / 纯文本、`@` 资产引用和 `/` H3 语法。每个片段保存 `useGlobalPrompt`，新建与归一化默认 `true`；片段编辑栏在可视化开关左侧提供“使用全局”复选控件。编译时先拼接全局 Prompt 再拼接片段 Prompt，然后从合并后的 Prompt 扫描实际资产引用，因此允许资产完全只在全局 Prompt 中引用；关闭某片段的全局开关后，全局文本与其中资产都不得进入该片段任务。
-- **首尾贴合接缝支持三种镜头关系：** `尾帧参考 / 尾帧续接 / 独立`。UI 仍使用原接缝气泡，只在文字后增加下拉箭头；原“尾帧承接”统一改名为“尾帧续接”。`尾帧参考` 将上一片段最终可见尾帧作为下一片段额外 H3 图片参考，用于人物/场景状态、色彩、光线和基调，但不作为 frame 0 Guide；`尾帧续接` 继续使用已实测通过的 frame 0 Guide 无缝链路；`独立` 不读取上一片段。模式保存到后一个片段的 `transitionMode`。旧工作流没有该字段时按 `tail_continuation` 解释，保留已验证行为；新建片段从 ComfyUI Settings → TerryDirector → 时间线 →“默认镜头衔接”读取默认值，产品默认 `tail_reference`，修改 Settings 不改写已有片段。
-- **尾帧参考提示词也是用户级 Settings。** ComfyUI Settings → TerryDirector → 时间线提供多行“尾帧参考提示词”。模板支持 `{picture}` 与 `{picture_number}`；编译器必须先统计当前片段普通图片引用数量，再把尾帧分配到下一个 H3 `ref_image` 槽位，例如已有 3 张普通图片则尾帧是第 4 个输入、Prompt 中 `{picture}` 必须变成 `<Picture 4>`。最终编号写入 `continuity.picture_number`，GraphBuilder 必须按该编号接线，不能各自重新计算。模板没写占位符时自动前置正确 `<Picture N>`；模板中硬编码的 `<Picture n>` 也归一化为实际尾帧槽位。
-- **ComfyUI 0.39.0 / frontend 1.53.10 Settings 兼容规则：**同一扩展内每条 Setting 的完整 `category` 数组必须唯一，否则 `buildTree` 会把落在同一路径的后注册项覆盖前一项。TerryDirector 两条时间线设置分别使用 `['TerryDirector','时间线','默认镜头衔接']` 与 `['TerryDirector','时间线','尾帧参考提示词']`；前两级仍保证 UI 中归在同一个“时间线”分组。默认镜头衔接使用 ComfyUI 原生 `combo`，不再自绘 select。
-- H3 @ 菜单读取整个项目资产池，选取后只引用到当前片段。保持 46 条来源命令及 20 种运镜，不接入来源节点的图、连线或总线实现。不要另造富文本框架。
-- 用户只说“片段”“时间线片段”。功能按钮图标加名称，新建片段放时间线左侧。
-- 单行叠放，重叠为位置派生反馈，没有独立拖动。整数帧 [start,end)，一次拖动一步撤销。重叠时长引线放框下。白色把手仅为选中片段显示。
-- 应用四周留白为 clamp(24px,6vmin,80px)，外部背景恢复此前深灰蓝，使用更明显的柔和投影，保留内部配色。提示词标题与工具区合计 78px；时间线默认 / 最小 200px，最大 400px，上限按视口余量收紧，确保桌面工作区至少 370px 并保留编辑动作；压缩时不得裁掉进度、引线或气泡。颜色完整集中管理，Canvas、编辑器和菜单同源；不限定五色，不提供主题 UI。
-- 保留根目录 index.html、相对资源和 .nojekyll。编辑器操作不重建全局工作区，组合输入不替换输入节点。
-- 不修改共享 UI 库、Rulesmd Editor 或来源节点仓库。TerryShotMill 冻结参考。检查范围如实记录。
-
-- 提示词行内标签统一中心，不通过插入空格或换行修对齐。项目资产池延续紧凑卡片和 52px 缩略图，卡片列数随可用宽度适配，不再显示重复的添加格。资产池内部滚动，关闭预览不回收其区域或重排布局。
-- 目标分辨率不再由 TerryDirector 内部计算。主节点仅接收外部连入的 `width` / `height`；比例 / MP / 倍数由上游 Resolution Selector 等节点负责。浮窗不显示或编辑尺寸。
-- TerryDirector 不承担生成预览职责，不提供预览开关或预览面板；用户可在采样器之前使用 KJ 等独立预览节点。素材灯箱仍只用于查看参考资产。原右下参数区、参数滚动布局及生成底栏不作为正式浮窗要求，主动作保持“保存并退出”。
-- 小视口继续让创作区域按可用空间堆叠并内部滚动；不保留旧 Demo 为参数区专设的 360px 区域或参数底栏。保存退出应可达，其他尺寸与分隔线沿用既有交互并在迁移时验收。
-
-- Demo v0.6.12 补入的二次潜空间放大能力保留，但在正式节点中归入“二采方案”下拉菜单：默认“无”，选择 `SelfLift` 后展开模型和高清占比。不要再把 SelfLift 画成独立开关，也不把生成参数混入浮窗草稿或动态设置面板。
-- SelfLift 不再直接填写高清步数；使用 **0.0–1.0 的“高清占比”滑块**，默认 `0.25`。`0.25` 表示高清阶段约占总步数 25%，实际高清步数由执行层根据总步数计算。
-- 外部目标尺寸由配置节点当前分辨率参数派生；SelfLift 低清阶段约半宽半高并按模型网格对齐。浮窗保存不得覆盖运行配置。
-
-- 右上资产区域是项目共用资产池，切换片段不能过滤或清空资产。导入只加入池，允许先导入再创建片段；不要恢复“从项目选取”这一重复入口。
-- 资产编号按类型全项目稳定递增，删除不重排；提示词引用映射为资产 ID，取消一个片段的引用不删除素材。池中删除需要确认受影响片段，并可一起撤销。
-- 资产池存在素材不等于当前片段使用素材；编译器只加载 Prompt 中实际出现的 `<Picture N> / <Video N> / <Audio N>`。因此纯文本片段允许保留完整资产池，未引用素材不得进入 H3 conditioning。
-
-- 资产池顶部仅保留“上传资产”和“从 ComfyUI input 选取”：前者新增文件，后者复用服务端 input 已有文件。不是从项目资产池再选一次。Demo input 是明确标注的示例目录，不假装扫描本地路径，不引入连接 / 上传后端。
-
-- 时间线锁链「后续联动」默认开启：拖本体移动当前片段及所有后续片段，统一偏移保持组内间距/重叠，前方不动；尾部拉长 / 缩短时也按实际尾部变化量移动后续片段，保留接缝间距 / 重叠；关闭单独移动和裁剪，头部裁剪始终独立。吸附排除移动组自身，一次拖动一步撤销，开关不进项目或历史。
-
-- 信息颜色按三级优先级：普通中性、焦点紫色、最高橙色。橙色用于选中的时间线片段、主生成操作 / 关键任务进度，以及提示词里的图片、视频、音频引用标签；台词块使用珊瑚红色边线、浅底与语言标签，台词正文保持可读的白色。结构、镜头和运镜仍为紫色，不按“生成区”给普通参数或开关统一染橙。完成状态回到中性；错误语义不以层级色掩盖。当前映射以 docs/04_COLOR_BALANCE.md 为准。
-- 重叠时长标注用 8px 短引线置于框下，不能挤到框内、进度或标题上；保留原有气泡尺寸、缩放避让与被动交互。 **所有可见重叠的秒数标签必须常驻显示**，hover / 选中只改变强调程度，不再控制标签是否出现；空间拥挤时宁可标签相互靠近或重叠，也不要隐藏重叠时长。
-
-- 时间线每个片段起点常驻显示片段内部的竖条霓虹光：未选中为紫色、选中为橙色，细亮芯配向右衰减的柔光，所有光严格裁在片段内部。不要恢复旧的深色衬底/短顶边，也不是悬停白色裁剪把手；不新增命中区域或改片段位置。
-- 总编排时长固定显示在时间线工具栏左侧，新建片段之后；大号橙色，和次级“当前位置”分开。统计从零点到最后片段结束，包含空隙、重叠不重复，空项目为零；拖动预览、裁剪、撤销和取消实时同步。所有片段自身的秒数也为橙色，生成耗时仍为次级信息。
-- 本轮时间线起点 / 时长细节以 docs/05_TIMELINE_READABILITY.md 为准。
-- 时间线片段两行信息必须拉开：标题/时长/描述靠上，状态/生成耗时靠下，使用现有片段高度，不通过增高时间线解决拥挤。
-- 当前片段编辑区标题行提供“秒数数值 + 滑块”时长控制；拖动必须实时更新上方时间线几何与总时长，松手后作为一次历史操作提交。后续联动开启时，时长变化沿用时间线尾部调整的联动语义。
-- **音频连续不再提供手动开关。** 相邻片段存在时间线重叠时自动启用音频 latent 连续；没有重叠时音频独立。首尾恰好贴合但无重叠时，`尾帧参考 / 尾帧续接` 都只处理视觉关系，不延续音频 latent；`独立` 完全不读取上一片段。
-- **二采专属参数按方案条件显示。** `二采方案 = 无` 时完全隐藏 SelfLift 放大模型和 SelfLift 高清占比；仅当选择 `SelfLift` 时显示，并且它们仍属于原生“高级输入”。
-- 当前片段编号使用与时间线片段编号一致的深色圆角 badge；提示词编辑框底栏只保留引用 / H3 语法提示和字数，不重复显示“提示词”标题。
-- 调整片段秒数并提交后（滑块鼠标释放、数值确认 / 失焦），时间线自动执行一次“适应全部”；拖动预览过程中不反复 fit。
-- “新建片段”直接创建默认“新的片段”，不弹命名窗口；名称随后在片段标题行内编辑。通用弹窗样式继续保留，用于删除、未保存修改等真正需要确认的操作。
-- 片段时长滑块只作为快速 1–15s 调整：滑块视觉长度固定为所在可用区域的 30%，最大值固定 15s；旁边秒数输入框不受 15s 上限限制，可输入更长片段。
-- **H3 `5 + 17n` 帧网格只作为辅助信息。** 用户仍按普通时间线秒数编辑；片段时长控件与时间线 hover 可提示“实际输出帧 / H3 内部对齐帧 / 裁切帧数”，但不新增 H3 帧数设置项。
-
-## 实现阶段 UI Source of Truth
-
-- `docs/10_CONFIG_NODE_ARCHITECTURE.md` 是当前节点形态、参数归属与输出协议的优先依据；`docs/09_SINGLE_NODE_MODAL_ARCHITECTURE.md` 保留为历史演进记录，`docs/06_UI_IMPLEMENTATION_BLUEPRINT.md` 中未被覆盖的编辑体验继续作为验收基线。移除浮窗参数区是用户明确要求，不据此扩大其他布局或功能范围。
-- 二次潜空间放大的字段与校验参考固定提交 `a81f13b8af4a162467cec4dc377f40b7354d7ffc` 的 [`_selflift_settings`](https://github.com/Songssx/ComfyUI-MiniMaxH3-TimelineDirector/blob/a81f13b8af4a162467cec4dc377f40b7354d7ffc/minimax_h3_finite_segments.py#L43-L91)；作用范围仍是整个导演台节点，不误做成片段独立配置，控件不放回浮窗。
-- 相邻片段首尾恰好吸附（当前 startFrame == 上一片段 endFrame）时，时间几何只确定“touch”；实际生成关系由后一个片段的 `transitionMode` 决定。`tail_reference` 把上一片段 endFrame - 1 作为额外 H3 图片参考；`tail_continuation` 把该尾帧作为当前片段 frame 0 Guide；`independent` 不读取上一片段。
-- 有空隙时始终独立；有重叠时始终使用重叠连续性机制。上一片段尚无输出而当前模式需要尾帧时建立生成依赖，不伪造尾帧。
-- **相邻片段的生成语义直接显示在时间线上。** 有重叠时常驻“重叠 Xs”；首尾恰好贴合时显示当前模式“尾帧参考 / 尾帧续接 / 独立”并带下拉箭头，可直接切换；存在空隙时显示“空白 Xs”。除 touch 模式气泡外，重叠与空隙仍是位置派生的只读反馈。
-- **片段支持“挂起”。** 挂起片段仍保留时间线几何与编辑内容，但编译时视为空白、不生成；连续性计算跳过挂起片段，下一有效片段按自身位置与更左侧最近的未挂起片段重新派生 overlap / tail-frame / gap。末尾挂起区必须在最终 IMAGE / AUDIO 中补黑帧与静音。
+The source of truth for the frontend is `src/` and `web/`; the static `index.html` is also a required resource for the in-app editor. The old UI baseline commit remains `408395e7620fe368775515ca515d04fae7a8daed`.

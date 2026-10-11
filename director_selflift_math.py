@@ -1,6 +1,6 @@
 """Tensor operations for TerryDirector's independent H3 SelfLift implementation.
 
-Reference algorithm and checkpoint provenance: docs/30_SELFLIFT_INTERNAL.md.
+Release implementation context and verified baseline: docs/ARCHITECTURE.md and docs/STABLE_BASELINES.md.
 This module has no ComfyUI or external custom-node imports.
 """
 from __future__ import annotations
