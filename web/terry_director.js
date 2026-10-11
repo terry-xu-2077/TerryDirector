@@ -35,6 +35,8 @@ function syncLoopSocketLabels(node) {
       if (slot.label === "H3帧数") slot.label = "采样帧数";
     }
   } else if (node?.comfyClass === LOOP_END_NODE_CLASS) {
+    const legacySegmentIndex = node.inputs?.findIndex(item => item.name === "segment_data") ?? -1;
+    if (legacySegmentIndex >= 0) node.removeInput?.(legacySegmentIndex);
     const dependency = node.inputs?.find(item => item.name === "dependency");
     if (dependency) {
       dependency.localized_name = "循环结束依赖";
