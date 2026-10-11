@@ -2,7 +2,10 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
-import { findLoopMemorySources, readH3Resolution } from "./td_loop_memory.js";
+import {
+  findLoopMemorySources,
+  readLoopOutputResolution,
+} from "./td_loop_memory.js";
 import { createLoopOutputCheckCard } from "./td_loop_output_check.js";
 
 const NODE_CLASS = "TerryDirector";
@@ -42,6 +45,9 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   "KSampler", "KSamplerAdvanced",
   "ResolutionSelector", "PrimitiveInt", "PrimitiveFloat",
   "PrimitiveString", "Reroute",
+  "MiniMaxH3VAEDecodeFast", "VAELoader",
+  "TerryXuMemoryCleanup", "LTXVSeparateAVLatent",
+  "SelfLiftAvatarH3Sampler", "TerryDirectorSelfLiftSampler",
 ]);
 const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
 const CONFIG_NODE_CLASS = "TerryDirectorConfig";
@@ -1535,8 +1541,8 @@ function mergeFrameMemoryEstimate(frames, resolution) {
 }
 
 function loopEndMemoryEstimate(node) {
-  // H3.width/height may be overridden by the official ResolutionSelector.
-  // Trace their actual linked outputs before using stale H3 widget values.
+  // Prefer the actual LoopEnd image path. For known Fast Decode VAE contracts
+  // this can safely include spatial scaling instead of reporting H3 input size.
   const { looper, h3 } = findLoopMemorySources(node, linkedNodeForInput);
   if (!looper) return { state: "disconnected" };
   const documentData = readConfig(looper).document;
@@ -1550,17 +1556,25 @@ function loopEndMemoryEstimate(node) {
     activeClips,
     hint: frames > 0
       ? externalDecoded
-        ? "当前使用外部解码 IMAGE；缓存分辨率以实际解码结果为准，避免按 H3 生成尺寸低估 2X/放大后的临时空间。"
+        ? "外部解码链的尺寸变化无法被安全确认；当前不会猜测未知 VAE 或后处理倍率。"
         : "分辨率来自动态或暂不支持的上游计算；请以生成时的实际尺寸为准。"
       : "当前没有启用的片段。",
   };
-  if (frames < 1 || externalDecoded) return summary;
-  const resolution = readH3Resolution(h3, linkedOutputForInput);
+  if (frames < 1) return summary;
+  const resolution = readLoopOutputResolution(
+    node,
+    h3,
+    linkedNodeForInput,
+    linkedOutputForInput,
+  );
   if (!resolution) return summary;
   return {
     ...mergeFrameMemoryEstimate(frames, resolution),
     activeClips,
     source: resolution.source,
+    resolutionLabel: resolution.resolutionLabel,
+    scale: resolution.scale,
+    vaeName: resolution.vaeName,
   };
 }
 
@@ -1756,9 +1770,11 @@ function bindLoopMemorySource(node) {
     ? ["width", "height"]
     : node.comfyClass === "ResolutionSelector"
       ? ["aspect_ratio", "megapixels", "multiple"]
-      : ["PrimitiveInt", "PrimitiveFloat", "PrimitiveString"].includes(node.comfyClass)
-        ? ["value"]
-        : [];
+      : node.comfyClass === "VAELoader"
+        ? ["vae_name"]
+        : ["PrimitiveInt", "PrimitiveFloat", "PrimitiveString"].includes(node.comfyClass)
+          ? ["value"]
+          : [];
   for (const name of watchedWidgets) {
     const widget = node.widgets?.find(item => item.name === name);
     if (!widget || widget.__tdMemoryRefreshBound) continue;
