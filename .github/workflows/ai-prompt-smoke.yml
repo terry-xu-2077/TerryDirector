@@ -23,6 +23,14 @@ jobs:
                   test()
                   print("PASS", name)
           PY
+      - name: Global AI backend contract (CPU, fake VLM)
+        run: |
+          python - <<'PY'
+          import runpy
+          tests=runpy.run_path("tests/test_ai_global_backend.py")
+          tests["test_global_vlm_scope_and_asset_integrity"]()
+          print("PASS global VLM asset mapping, seed and reference validation")
+          PY
       - name: Website H3 Skill sample text contract
         run: |
           python examples/validate_ai_site_demo_prompts.py
