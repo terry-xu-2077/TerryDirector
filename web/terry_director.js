@@ -28,10 +28,10 @@ function syncLoopSocketLabels(node) {
       if (slot.label === "H3帧数") slot.label = "采样帧数";
     }
   } else if (node?.comfyClass === LOOP_END_NODE_CLASS) {
-    const slot = node.inputs?.find(item => item.name === "samples");
-    if (slot) {
-      slot.localized_name = "采样结果";
-      if (slot.label === "H3采样结果") slot.label = "采样结果";
+    const dependency = node.inputs?.find(item => item.name === "dependency");
+    if (dependency) {
+      dependency.localized_name = "循环结束依赖";
+      dependency.label = "循环结束依赖";
     }
   } else {
     return;
