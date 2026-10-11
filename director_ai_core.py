@@ -25,6 +25,8 @@ def require_ai_config(value: Any) -> dict[str, Any]:
     result = dict(value)
     result["model"] = model
     result["vision_model"] = str(value.get("vision_model") or "None")
+    preset = str(value.get("system_prompt_preset") or "H3 Skill")
+    result["system_prompt_preset"] = preset if preset in {"H3 Skill", "无"} else "H3 Skill"
     result["system_prompt"] = str(value.get("system_prompt") or "")
     result["seed"] = int(value.get("seed", 0))
     result["n_ctx"] = max(1024, int(value.get("n_ctx", 16384)))
