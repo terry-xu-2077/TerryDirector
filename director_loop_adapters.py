@@ -44,7 +44,10 @@ class LoopModelAdapter:
     def sampling_frames(self, segment: dict) -> int:
         raise NotImplementedError
 
-    def reference_images(self, segment: dict, previous_context, *, load_image):
+    def reference_media(
+        self, segment: dict, previous_context, *,
+        load_image, load_video, load_audio,
+    ):
         raise NotImplementedError
 
     def apply_continuity(self, segment: dict, positive, latent, vae,
@@ -59,7 +62,7 @@ class MiniMaxH3LoopAdapter(LoopModelAdapter):
         adapter_id=DEFAULT_LOOP_ADAPTER,
         display_name="MiniMax H3",
         ready=True,
-        description="当前已接入的 H3 帧数、图片与 Guide 适配。",
+        description="当前已接入的 H3 帧数、图片/视频/音频参考与 Guide 适配。",
     )
 
     def compile_plan(self, document, tail_reference_prompt, *, compiler):
@@ -70,14 +73,15 @@ class MiniMaxH3LoopAdapter(LoopModelAdapter):
         # adapters MUST NOT reuse the 'h3_frames' schema field.
         return int(segment["h3_frames"])
 
-    def reference_images(self, segment: dict, previous_context, *, load_image):
+    def reference_media(
+        self, segment: dict, previous_context, *,
+        load_image, load_video, load_audio,
+    ):
         assets = segment["assets"]
-        if assets.get("videos") or assets.get("audios"):
-            raise ValueError(
-                "循环信息当前版本支持图片参考；视频/音频资产适配尚未实现，"
-                "请先使用图片参考工作流测试。"
-            )
         images = [load_image(asset) for asset in assets["images"]]
+        videos = [load_video(asset) for asset in assets["videos"]]
+        audios = [load_audio(asset) for asset in assets["audios"]]
+
         if segment["continuity"]["kind"] == "tail_reference":
             previous = (previous_context or {}).get("images")
             if previous is None or previous.shape[0] < 1:
@@ -86,9 +90,18 @@ class MiniMaxH3LoopAdapter(LoopModelAdapter):
             if slot != len(images):
                 raise ValueError("尾帧参考序号与参考图输入位置不一致")
             images.append(previous[-1:].clone())
+
         if len(images) > 9:
             raise ValueError("当前循环信息节点最多提供 9 个参考图片输入")
-        return images
+        if len(videos) > 3:
+            raise ValueError("当前循环信息节点最多提供 3 个参考视频输入")
+        if len(audios) > 3:
+            raise ValueError("当前循环信息节点最多提供 3 个参考音频输入")
+        return {
+            "images": images,
+            "videos": videos,
+            "audios": audios,
+        }
 
     def apply_continuity(self, segment: dict, positive, latent, vae,
                          audio_vae, *, guide_node):
