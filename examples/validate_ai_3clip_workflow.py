@@ -87,7 +87,7 @@ def verify(workflow: dict) -> dict:
     assert [a["number"] for a in doc["assets"]] == list(range(1, 8))
     assert all(a["kind"] == "image" and a["source"]["type"] == "comfy-input"
                for a in doc["assets"])
-    assert re.findall(r"<Picture\\s+(\\d+)>", doc["globalPrompt"]) == [
+    assert re.findall(r"<Picture\s+(\d+)>", doc["globalPrompt"]) == [
         "4", "1", "2", "3", "5", "6", "7"
     ], "All seven original asset references must remain in the global prompt"
     assert "特瑞在极端荒原生存" in doc["globalPrompt"]
