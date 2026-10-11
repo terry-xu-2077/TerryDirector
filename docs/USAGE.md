@@ -53,9 +53,9 @@ TerryDirector / TerryDirector Advanced
 
 Advanced 已使用分段文件化视频输出，不应该再将其导演输出当成完整的 IMAGE/AUDIO 使用。「TerryDirector 输出」的标准 IMAGE/AUDIO 拆包功能主要面向基础模式。
 
-## 5. 时间线循环器（普通官方 H3 生成链）
+## 5. 时间线循环器（外部生成 / 解码链）
 
-循环器面向需要自己搭建或替换普通 ComfyUI 生成节点组的用户；它并非独立的 H3 模型采样器。
+循环器面向需要自己搭建或替换普通 ComfyUI 生成节点组的用户；它并非独立的 H3 模型采样器。循环结束只负责接收**已经解码完成的 IMAGE/AUDIO**、写入无损分段缓存并形成下一段连续性上下文，不再接收视频 VAE / 音频 VAE，也不再负责 LATENT 解码。
 
 ```text
 TerryDirector 循环开始
@@ -63,26 +63,29 @@ TerryDirector 循环开始
           ▼
 TerryDirector 循环信息
           │ 提示词、采样帧数、Seed、image_0..8
-          ├──────────────────────────────→ 官方 MiniMaxH3ReferenceToVideo
-          │ 片段数据                             │
-          ├─→ TerryDirector 循环条件 ←────────────┘
-          │             │ 正向条件
-          │             ▼
-          │        官方 H3 采样链
-          │             │ 采样结果 LATENT
-          └─────────────┴──→ TerryDirector 循环结束
-                                      │ 视频 VIDEO
-                                      ▼
-                               官方 SaveVideo
+          ├──────────────────────────────→ MiniMaxH3ReferenceToVideo / 自定义生成链
+          │ 片段数据
+          ├─→ TerryDirector 循环条件
+          │
+          │        外部采样 / Self-Lift
+          │               │ LATENT
+          │               ▼
+          │        用户自己的解码节点
+          │          ├─ IMAGE ───────────────→ 循环结束 · 已解码画面
+          │          └─ AUDIO ───────────────→ 循环结束 · 已解码音频
+          │
+          └──────────────────────────────────→ 循环结束 · 片段数据
+
+TerryDirector 循环结束
+          │
+          └─ 视频 VIDEO → 官方 SaveVideo
 ```
 
-「循环上下文」和「片段数据」是两种不同的接口，不要混接。循环开始只输出循环上下文，循环信息解析成每段的提示词、帧数、Seed、素材及片段数据。循环条件决定如何使用上一段的尾帧和重叠上下文；实际 H3 的模型、条件、潜变量、采样器和 Sigmas 等仍由用户在循环体中连接。
+「循环上下文」和「片段数据」是两种不同的接口，不要混接。循环开始只输出循环上下文，循环信息解析成每段的提示词、帧数、Seed、素材及片段数据。循环条件决定如何使用上一段的尾帧和重叠上下文；实际模型、条件、潜变量、采样器、Sigmas 和解码器仍由用户在循环体中自由连接。
 
-循环开始节点也支持可选的 **TerryDirector Llama 配置** 输入，与 Base / Advanced 共用同一套 AI 提示增强机制。连接后编辑器中的片段/全局 AI 增强按钮可用；开启「生成前自动AI增强提示」时，循环器会在展开逐段生成子图之前先调用同一套 Queue 前增强逻辑，再把增强后的提示词交给循环信息节点。
+循环开始节点支持可选的 **TerryDirector Llama 配置** 输入，与 Base / Advanced 共用同一套 AI 提示增强机制。连接后编辑器中的片段/全局 AI 增强按钮可用；开启「生成前自动AI增强提示」时，循环器会在展开逐段生成子图之前先执行 Queue 前增强，再把增强后的提示词交给循环信息节点。
 
-循环结束对外固定只有 **视频 VIDEO（第一个输出）** 与 **分段潜变量 LATENT 列表（第二个输出）**。它不输出完整 IMAGE/AUDIO，也无需 A/B 模式或 CreateVideo。视频下游直接连官方 SaveVideo。分段潜变量只在输出端被下游使用时额外缓存。
-
-循环结束支持两种闭环。旧工作流继续连接「采样结果 + 视频VAE + 音频VAE + 片段数据」；自定义解码工作流可以改为直接连接「已解码画面 + 已解码音频 + 片段数据」。一旦已解码 IMAGE/AUDIO 同时接入，循环器优先使用这组媒体写入无损缓存和生成下一段连续性上下文，不再由 TerryDirector 再执行普通视频 VAE 解码。
+循环结束对外现在只保留 **视频 VIDEO** 一个输出。它不再输出分段 LATENT，也不再提供「采样结果 / 视频VAE / 音频VAE」输入。需要查看或继续处理 LATENT 时，请直接在循环体的采样器输出处分支连接，不经过循环结束。
 
 对于 **Self-Lift + 2X VAE** 工作流，推荐接线如下：
 
@@ -90,21 +93,21 @@ TerryDirector 循环信息
 SelfLift / H3 采样 LATENT
         ├─→ LTXVSeparateAVLatent → 清理节点 → MiniMax H3 VAE Decode (fast)
         │                                      │ IMAGE
-        │                                      ├────────→ TerryDirector 循环结束 · 已解码画面
+        │                                      ├────────→ 循环结束 · 已解码画面
         │                                      └────────→ VHS Video Combine（可选，每段独立保存）
         │
-        └─→ VAEDecodeAudio ─────────────────────────────→ TerryDirector 循环结束 · 已解码音频
+        └─→ VAEDecodeAudio ─────────────────────────────→ 循环结束 · 已解码音频
 
-TerryDirector 循环信息 · 片段数据 ───────────────────────→ TerryDirector 循环结束 · 片段数据
+TerryDirector 循环信息 · 片段数据 ───────────────────────→ 循环结束 · 片段数据
 ```
 
-此模式下，2X VAE（例如 `MiniMax-H3-X2-Detail-v1.safetensors`）只接 `MiniMax H3 VAE Decode (fast)`，循环结束的普通「视频VAE / 音频VAE」输入可以不接。如果还需要第二输出的「分段潜变量」，再额外把采样 LATENT 接到循环结束的「采样结果」；否则可以不接。
+2X VAE（例如 `MiniMax-H3-X2-Detail-v1.safetensors`）只属于用户自己的 Fast Decode 链。循环结束收到的就是最终解码画面，因此尾帧参考会从这组真实 IMAGE 中提取上一段尾帧。
 
-外部解码后的真实 IMAGE/AUDIO 同时也是下一轮的连续性来源，因此「尾帧参考」会取 **fast decode 后的真实尾帧**。如果希望最终得到一个个独立视频而不是整条时间线，可以保留循环体内的 `VHS Video Combine` 让每轮分别保存文件；**同时把 VHS 的 `Filenames` 输出接到循环结束的「循环结束依赖」输入**，用于闭合 ComfyUI 原生 Loop，确保每段保存都属于循环体。循环结束的流式 VIDEO 可以不再接 SaveVideo。反过来，如果仍想要一条最终视频，也可以继续保存循环结束的 VIDEO，此时它同样来自 fast decode 的分段缓存。
+如果希望每段分别由 `VHS Video Combine` 保存，需把 VHS 的 `Filenames` 输出接到循环结束的 **「循环结束依赖」** 输入。该输入不消费文件名内容，只用于告诉原生 Loop：这条每段保存分支必须完成后，当前循环才能结束。若只需要最终整条流式 VIDEO，则可以不接此依赖，直接把循环结束的 VIDEO 接官方 SaveVideo。
 
-循环结束的「视频输出检查」可以查看预计临时缓存空间及该磁盘剩余容量。保存视频成功后，无损片段临时文件会自动清理；异常中断可能保留缓存供排查。这里显示的占用是**无损片段缓存预测**，不是最终 MP4 文件大小。
+循环结束的「视频输出检查」会尽量沿已解码画面链追踪实际输出尺寸；对明确识别的 2X Fast Decode VAE 会显示推算后的尺寸并据此估算临时缓存空间。保存最终流式视频成功后，对应无损分段临时文件会自动清理；异常中断可能保留缓存供排查。
 
-**当前范围**：默认适配器是 MiniMax H3；最多 9 个图片参考输入。LTX 2.5 虽有预留适配器，但未接通生成、条件和解码，因此不可用。循环体不自动沿用主导演 Self-Lift 配置；Self-Lift、2X VAE、锐化/放大等节点仍由用户在循环体中自由搭建。
+**当前范围**：默认适配器是 MiniMax H3；最多 9 个图片参考输入。LTX 2.5 仅保留模型适配占位，尚未接通自己的帧数、参考输入和连续性 Guide。循环体中的 Self-Lift、2X VAE、锐化/放大等节点由用户自由搭建。
 
 ## 6. 片段与素材
 
@@ -115,7 +118,7 @@ TerryDirector 循环信息 · 片段数据 ────────────�
 ComfyUI → Settings → TerryDirector → 时间线 中可调整默认镜头衔接和尾帧参考提示词模板。
 
 
-## 可选：AI 提示词增强（开发分支）
+## 可选：AI 提示词增强
 
 本功能不依赖额外安装 `ComfyUI_Qwen_H3_Prompt` 或 `ComfyUI-llama-cpp_vlm` 自定义节点。
 仅在使用增强时才需要本机 Qwen3.8 GGUF 权重、对应的 `mmproj` 视觉投影器和兼容的 `llama-cpp-python` Python 包。
@@ -124,7 +127,7 @@ ComfyUI → Settings → TerryDirector → 时间线 中可调整默认镜头衔
 1. 将 GGUF 主模型及 `mmproj` 放在 `ComfyUI/models/LLM/`（可使用子文件夹），重启 ComfyUI。
 2. 在运行 ComfyUI 的**同一个 Python 环境**中安装与本机系统/Python/CUDA 匹配的 `llama-cpp-python`。Qwen3.8 视觉功能需要支持 `Qwen35ChatHandler` 的构建，可参考 [JamePeng 发布包](https://github.com/JamePeng/llama-cpp-python/releases)；不要在已有 cu130 环境直接覆盖 torch。
 3. 添加 **TerryDirector Llama 配置** 节点，选择 GGUF、mmproj、AI Seed（与视频 Seed 独立）。
-4. 连接该节点的「Llama 配置」输出到 **TerryDirector** 或 **TerryDirector Advanced** 的可选输入。
+4. 连接该节点的「Llama 配置」输出到 **TerryDirector**、**TerryDirector Advanced** 或 **TerryDirector 循环开始** 的可选输入。
 5. 片段的「AI 提示增强」与「一键增强所有提示词」走 ComfyUI 本地 HTTP Job，**不提交 Queue**；片段原文和增强稿分别保存。
 6. 在「全局提示词」弹窗也可切换「用户提示词 / AI 增强提示词」，点击「AI 提示增强」仅增强**全局人物设定、参考素材关系、摄影/视觉/声音约束**。全局内容不属于一个固定时长的片段，因此输出为适用于所有片段的英文约束说明，而非六节 Ref2VA 镜头输出。原文保留；保存时当前选中的全局版本参与时间线编译以及片段 AI 提示增强。
 7. 编辑器顶部开关现名为 **「生成前自动AI增强提示」**。开启后，一次 Queue 自动增强**需要处理的片段**，再执行 H3；全局提示词需要用户在弹窗中**手动点击增强**，不会因运行 Queue 而暗中改写。
