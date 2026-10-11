@@ -35,10 +35,17 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
             node_id="TerryDirectorLlamaConfig",
             display_name="TerryDirector Llama 配置",
             category="MiniMax H3/TerryDirector",
-            description="传递本地 GGUF / VLM、系统提示词与 AI Seed 配置；点击增强时才加载 Llama。",
+            description="传递本地 GGUF / VLM、系统提示词预设、自定义系统提示词与 AI Seed；点击增强时才加载 Llama。",
             inputs=[
                 io.Combo.Input("model", display_name="GGUF 模型", options=models, default=preferred),
                 io.Combo.Input("vision_model", display_name="视觉投影器", options=projectors, default=mmproj),
+                io.Combo.Input(
+                    "system_prompt_preset",
+                    display_name="系统提示词预设",
+                    options=["H3 Skill", "无"],
+                    default="H3 Skill",
+                    tooltip="当「系统提示词」为空时使用。H3 Skill 为 TerryDirector 默认增强规则。",
+                ),
                 io.String.Input(
                     "system_prompt",
                     display_name="系统提示词",
@@ -47,7 +54,7 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
                     dynamic_prompts=False,
                     socketless=False,
                     tooltip=(
-                        "追加到 TerryDirector 内置 H3 Skill 系统提示词。"
+                        "非空时完全替换系统提示词预设和内置 H3 Skill。"
                         "可直接在节点内编辑，也可从外部 STRING 输入连接。"
                     ),
                 ),
@@ -64,13 +71,14 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, model, vision_model, system_prompt, seed, think_mode, n_ctx, max_tokens,
+    def execute(cls, model, vision_model, system_prompt_preset, system_prompt, seed, think_mode, n_ctx, max_tokens,
                 temperature, top_p, gpu_layers):
         return io.NodeOutput({
             "type": AI_CONFIG_TYPE,
             "version": AI_CONFIG_VERSION,
             "model": str(model),
             "vision_model": str(vision_model),
+            "system_prompt_preset": str(system_prompt_preset or "H3 Skill"),
             "system_prompt": str(system_prompt or ""),
             "seed": int(seed),
             "think_mode": bool(think_mode),
