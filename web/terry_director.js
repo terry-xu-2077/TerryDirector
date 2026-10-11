@@ -22,32 +22,6 @@ function timelineTitleHtml(label = "时间线") {
   return '<span class="td-mini-title"><img class="td-mini-brand" src="' +
     BRAND_MARK_URL + '" alt="" aria-hidden="true"><span>' + label + '</span></span>';
 }
-/**
- * Workflow JSON may store the old visible slot labels. Synchronize the
- * new model-neutral presentation without touching input IDs or link indices.
- */
-function syncLoopSocketLabels(node) {
-  if (node?.comfyClass === LOOP_INFO_NODE_CLASS) {
-    const slot = node.outputs?.[1];
-    if (slot && (slot.name === "H3帧数" || slot.name === "采样帧数")) {
-      slot.name = "采样帧数";
-      slot.localized_name = "采样帧数";
-      if (slot.label === "H3帧数") slot.label = "采样帧数";
-    }
-  } else if (node?.comfyClass === LOOP_END_NODE_CLASS) {
-    const legacySegmentIndex = node.inputs?.findIndex(item => item.name === "segment_data") ?? -1;
-    if (legacySegmentIndex >= 0) node.removeInput?.(legacySegmentIndex);
-    const dependency = node.inputs?.find(item => item.name === "dependency");
-    if (dependency) {
-      dependency.localized_name = "循环结束依赖";
-      dependency.label = "循环结束依赖";
-    }
-  } else {
-    return;
-  }
-  node.setDirtyCanvas?.(true, true);
-}
-
 const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   LOOP_NODE_CLASS, LOOP_INFO_NODE_CLASS, H3_CONDITION_NODE_CLASS,
   "TerryDirectorLoopCondition", "BasicGuider", "SamplerCustomAdvanced",
@@ -3222,7 +3196,6 @@ app.registerExtension({
     bindAiResultsSync();
   },
   nodeCreated(node) {
-    syncLoopSocketLabels(node);
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
@@ -3236,7 +3209,6 @@ app.registerExtension({
     }
   },
   loadedGraphNode(node) {
-    syncLoopSocketLabels(node);
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
