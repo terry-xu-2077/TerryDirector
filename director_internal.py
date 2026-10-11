@@ -468,9 +468,11 @@ class TerryDirectorDecodeSegmentToCache(io.ComfyNode):
             category="MiniMax H3/TerryDirector/Internal",
             is_dev_only=True,
             inputs=[
-                io.Latent.Input("samples"),
-                io.Vae.Input("vae"),
-                io.Vae.Input("audio_vae"),
+                io.Latent.Input("samples", optional=True),
+                io.Vae.Input("vae", optional=True),
+                io.Vae.Input("audio_vae", optional=True),
+                io.Image.Input("images", optional=True),
+                io.Audio.Input("audio", optional=True),
                 io.String.Input("cache_key"),
                 io.String.Input("run_signature"),
                 io.String.Input("segment_id"),
@@ -496,9 +498,6 @@ class TerryDirectorDecodeSegmentToCache(io.ComfyNode):
     @classmethod
     def execute(
         cls,
-        samples,
-        vae,
-        audio_vae,
         cache_key,
         run_signature,
         segment_id,
@@ -509,6 +508,11 @@ class TerryDirectorDecodeSegmentToCache(io.ComfyNode):
         gap_after_frames,
         context_frames,
         fps,
+        samples=None,
+        vae=None,
+        audio_vae=None,
+        images=None,
+        audio=None,
     ) -> io.NodeOutput:
         started = time.perf_counter()
         output_frames = int(output_frames)
@@ -520,16 +524,41 @@ class TerryDirectorDecodeSegmentToCache(io.ComfyNode):
         if fps < 1 or output_frames < 1:
             raise ValueError("TerryDirector Base segment has invalid duration")
 
-        latent = samples["samples"]
-        video_latent = latent.unbind()[0] if getattr(latent, "is_nested", False) else latent
-        images = vae.decode(video_latent)
-        if len(images.shape) == 5:
-            images = images.reshape(
-                -1, images.shape[-3], images.shape[-2], images.shape[-1]
-            )
-        images = images[:output_frames]
+        externally_decoded = images is not None or audio is not None
+        if externally_decoded:
+            if images is None or audio is None:
+                raise ValueError("外部解码模式必须同时提供 IMAGE 与 AUDIO")
+            if not isinstance(images, torch.Tensor):
+                raise TypeError("外部解码 IMAGE 必须是 torch.Tensor")
+            if len(images.shape) == 5:
+                images = images.reshape(
+                    -1, images.shape[-3], images.shape[-2], images.shape[-1]
+                )
+            if len(images.shape) != 4 or int(images.shape[-1]) != 3:
+                raise ValueError("外部解码 IMAGE 必须是 [frames, height, width, 3]")
+            if int(images.shape[0]) < output_frames:
+                raise ValueError(
+                    f"外部解码帧数不足：{int(images.shape[0])} < {output_frames}"
+                )
+            if not isinstance(audio, dict) or not isinstance(audio.get("waveform"), torch.Tensor):
+                raise TypeError("外部解码 AUDIO 格式无效")
+            images = images[:output_frames]
+        else:
+            if samples is None or vae is None or audio_vae is None:
+                raise ValueError(
+                    "TerryDirector 分段缓存需要外部 IMAGE/AUDIO，"
+                    "或完整的 LATENT + 视频VAE + 音频VAE"
+                )
+            latent = samples["samples"]
+            video_latent = latent.unbind()[0] if getattr(latent, "is_nested", False) else latent
+            images = vae.decode(video_latent)
+            if len(images.shape) == 5:
+                images = images.reshape(
+                    -1, images.shape[-3], images.shape[-2], images.shape[-1]
+                )
+            images = images[:output_frames]
+            audio = _decode_h3_audio(audio_vae, samples)
 
-        audio = _decode_h3_audio(audio_vae, samples)
         waveform = audio["waveform"]
         sample_rate = int(audio["sample_rate"])
         output_samples = round((output_frames / fps) * sample_rate)
