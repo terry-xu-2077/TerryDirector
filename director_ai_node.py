@@ -35,10 +35,22 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
             node_id="TerryDirectorLlamaConfig",
             display_name="TerryDirector Llama 配置",
             category="MiniMax H3/TerryDirector",
-            description="仅传递本地 GGUF / VLM 与 AI Seed 配置；点击增强时才加载 Llama。",
+            description="传递本地 GGUF / VLM、系统提示词与 AI Seed 配置；点击增强时才加载 Llama。",
             inputs=[
                 io.Combo.Input("model", display_name="GGUF 模型", options=models, default=preferred),
                 io.Combo.Input("vision_model", display_name="视觉投影器", options=projectors, default=mmproj),
+                io.String.Input(
+                    "system_prompt",
+                    display_name="系统提示词",
+                    default="",
+                    multiline=True,
+                    dynamic_prompts=False,
+                    socketless=False,
+                    tooltip=(
+                        "追加到 TerryDirector 内置 H3 Skill 系统提示词。"
+                        "可直接在节点内编辑，也可从外部 STRING 输入连接。"
+                    ),
+                ),
                 io.Int.Input("seed", display_name="AI Seed", default=8888, min=0, max=0xFFFFFFFFFFFFFFFF,
                              step=1, control_after_generate=True),
                 io.Boolean.Input("think_mode", display_name="思考模式", default=False),
@@ -52,13 +64,14 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, model, vision_model, seed, think_mode, n_ctx, max_tokens,
+    def execute(cls, model, vision_model, system_prompt, seed, think_mode, n_ctx, max_tokens,
                 temperature, top_p, gpu_layers):
         return io.NodeOutput({
             "type": AI_CONFIG_TYPE,
             "version": AI_CONFIG_VERSION,
             "model": str(model),
             "vision_model": str(vision_model),
+            "system_prompt": str(system_prompt or ""),
             "seed": int(seed),
             "think_mode": bool(think_mode),
             "n_ctx": int(n_ctx),
