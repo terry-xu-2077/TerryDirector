@@ -44,6 +44,7 @@
   let assets=[],nextPoolNumber={image:1,video:1,audio:1};
   let siteDemoDocument=null;
   const siteDemoPath='examples/TerryDirector_AI_3clips_0.2MP.json';
+  const siteDemoAiPath='examples/TerryDirector_AI_3clips_demo_prompts.json';
   const siteDemoLabels=['人物参考','载具参考','场景遗迹','荒星地貌','避难所','货币道具','地下虫群'];
   function siteDemoThumbnail(number){
     // Explicit placeholder: the seven original source images are NOT in Git.
@@ -74,6 +75,27 @@
       const documentData=JSON.parse(serialized).document;
       if(!Array.isArray(documentData?.clips)||!Array.isArray(documentData?.assets))
         throw new Error('示例文件缺少片段或资产');
+      const sampleResponse=await fetch(new URL(siteDemoAiPath,document.baseURI),{cache:'no-store'});
+      if(!sampleResponse.ok)throw new Error('无法加载 H3 Skill 静态示例增强稿 (HTTP '+sampleResponse.status+')');
+      const sample=await sampleResponse.json();
+      if(sample?.skill!=='h3-prompt-writing'||sample?.mode!=='Ref2VA'
+          ||sample?.workflow!==siteDemoPath||sample?.clips?.length!==documentData.clips.length)
+        throw new Error('H3 Skill 示例增强稿和验收工作流不一致');
+      for(const result of sample.clips){
+        const clip=documentData.clips.find(item=>item.id===result.id);
+        if(!clip||typeof result.aiPrompt!=='string'||!result.aiPrompt.trim())
+          throw new Error('示例增强稿片段缺失：'+String(result.id));
+        // These are manually authored fixture texts, never actual Qwen results.
+        // Deliberately use a nonnumeric seed so imported demo data cannot be
+        // silently mistaken for a valid AI Seed cache in a real Queue.
+        clip.aiPrompt=result.aiPrompt;
+        clip.promptMode='ai';
+        clip.aiMetadata={
+          seed:'demo',provenance:'skill-authored-demo',model:'Static site example',
+          skill:'h3-prompt-writing',sourcePrompt:clip.prompt,
+          sourceGlobalPrompt:clip.useGlobalPrompt===false?'':documentData.globalPrompt
+        };
+      }
       siteDemoDocument=C.copy(documentData);
       demoInputFiles.splice(0,demoInputFiles.length,...documentData.assets.map(item=>({
         path:item.source?.path||'',name:item.name,kind:item.kind,
@@ -81,12 +103,14 @@
       })));
       loadDocument(siteDemoDocument);
       app.dataset.demoSource=siteDemoPath;
+      app.dataset.demoAiSource=siteDemoAiPath;
+      app.dataset.demoAiVersion='skill-authored-demo';
       app.dataset.demoClipCount=String(state.clips.length);
       app.dataset.demoAssetCount=String(state.assetIds.length);
       // Enable controls for visual QA; no actual inference will run here.
       aiConfig={previewOnly:true};renderAiControls();
       title='特瑞 · 荒星三镜头';
-      toast('已载入验收工作流：3 个片段、7 张参考图；本页只演示 UI。');
+      toast('已载入 3 段 H3 Skill 静态增强稿；保留原始提示词，可切换标签对比。');
       return documentData;
     }catch(error){
       console.error('[TerryDirector Demo] Failed to load acceptance workflow:',error);
@@ -116,7 +140,7 @@
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
       <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前 AI 增强</span></label></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
-      <div class="top-actions">${embedded?'':`<span class="prototype">静态演示 · 3 段 / 7 素材</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
+      <div class="top-actions">${embedded?'':`<span class="prototype">H3 Skill · 静态增强稿</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
       <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
@@ -209,8 +233,13 @@
       const old=!!c?.aiPrompt&&!!meta.sourcePrompt&&(
         meta.sourcePrompt!==c.prompt ||
         meta.sourceGlobalPrompt!==(c.useGlobalPrompt===false?'':state.globalPrompt));
-      warning.textContent=old?'原文已更新 · AI 结果未重新增强':c?.aiPrompt?'AI 结果已保存':'';
-      warning.title=old?'仅修改 AI Seed 或手动增强会重新生成，修改原文不会自动重跑。':'';
+      if(!embedded&&meta.provenance==='skill-authored-demo'){
+        warning.textContent=aiSelected?'H3 Skill 静态示例 · 非模型实测输出':'已提供 H3 Skill 静态增强示例';
+        warning.title='仅供网站展示双提示词 UI。原始工作流的 aiPrompt 仍为空，真实运行必须调用 Qwen 增强。';
+      }else{
+        warning.textContent=old?'原文已更新 · AI 结果未重新增强':c?.aiPrompt?'AI 结果已保存':'';
+        warning.title=old?'仅修改 AI Seed 或手动增强会重新生成，修改原文不会自动重跑。':'';
+      }
     }
     renderAiControls();
   }
