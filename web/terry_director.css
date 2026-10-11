@@ -1220,7 +1220,7 @@
 .td-output-memory-card.is-loop-check {
   border-color: rgba(155,120,255,.21);
   background: rgba(21,24,32,.94);
-  padding: 10px 12px 9px;
+  padding: 9px 12px 8px;
 }
 
 .td-output-check-row {
@@ -1228,7 +1228,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  margin: 6px 0 0 24px;
+  margin: 5px 0 0 24px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1245,6 +1245,9 @@
   color: #e8e3ec;
   text-align: right;
   overflow-wrap: anywhere;
+}
+.td-output-check-row.is-warning > strong {
+  color: #ffc18b;
 }
 
 .td-output-check-help {
