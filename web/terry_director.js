@@ -2915,6 +2915,28 @@ const LLAMA_MODE_BYPASS = 4;
 let tdAiConfigWatchTimer = null;
 let tdAiConfigSignature = "";
 
+function staticStringInputValue(node, inputName, fallback = "") {
+  const widgetValue = node?.widgets?.find(widget => widget.name === inputName)?.value;
+  const local = typeof widgetValue === "string" ? widgetValue : String(fallback ?? "");
+  const source = linkedOutputForInput(node, inputName);
+  if (!source?.node) return local;
+
+  const parent = source.node;
+  const slot = Number(source.outputIndex);
+  if (!Number.isSafeInteger(slot) || slot < 0) return local;
+
+  // Manual editor AI jobs do not execute the Comfy graph. Resolve the common
+  // static STRING sources directly; Queue auto-enhancement still receives the
+  // actual evaluated upstream value through the Python node execution.
+  const names = ["value", "text", "string", "prompt", "system_prompt"];
+  for (const name of names) {
+    const candidate = parent.widgets?.find(widget => widget.name === name)?.value;
+    if (typeof candidate === "string") return candidate;
+  }
+  const stringWidget = parent.widgets?.find(widget => typeof widget.value === "string");
+  return typeof stringWidget?.value === "string" ? stringWidget.value : local;
+}
+
 function directorLlamaState(node) {
   const linked = linkedNodeForInput(node, "llama_config");
   if (linked?.comfyClass !== "TerryDirectorLlamaConfig") {
@@ -2935,6 +2957,7 @@ function directorLlamaState(node) {
     version: 1,
     model: String(value("model", "")),
     vision_model: String(value("vision_model", "None")),
+    system_prompt: staticStringInputValue(linked, "system_prompt", ""),
     seed: Number(value("seed", 8888)),
     think_mode: !!value("think_mode", false),
     n_ctx: Number(value("n_ctx", 16384)),
