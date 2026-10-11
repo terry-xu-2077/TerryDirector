@@ -675,6 +675,8 @@ function pushActivity(node, { fullRender = false } = {}) {
     renderNode(node);
   }
 
+  if (node?.comfyClass === LOOP_NODE_CLASS) refreshLoopConditionCards(node);
+
   if (!frameReady || activeNode !== node || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
     { type: "terrydirector:activity", activity: activityPayload(node) },
@@ -1749,6 +1751,182 @@ function refreshAllOutputMemoryInfo() {
     if (node?.comfyClass === OUTPUT_NODE_CLASS ||
         node?.comfyClass === LOOP_END_NODE_CLASS) renderOutputMemoryInfo(node);
   }
+}
+
+function loopConditionLooper(node) {
+  if (node?.comfyClass !== LOOP_CONDITION_NODE_CLASS) return null;
+  const info = linkedNodeForInput(node, "segment_data");
+  if (info?.comfyClass !== LOOP_INFO_NODE_CLASS) return null;
+  const looper = linkedNodeForInput(info, "loop_context");
+  return looper?.comfyClass === LOOP_NODE_CLASS ? looper : null;
+}
+
+function loopConditionSnapshot(node) {
+  const looper = loopConditionLooper(node);
+  if (!looper) return { state: "disconnected" };
+
+  const doc = readConfig(looper).document;
+  const clips = (doc.clips || []).filter(clip => !clip.suspended);
+  const activity = ensureActivity(looper);
+  const records = clips.map(clip => activity[String(clip.id)] || {
+    status: RUN_IDLE, progress: 0, elapsedSeconds: 0,
+  });
+
+  let index = records.findIndex(record => record.status === RUN_RUNNING);
+  let state = "idle";
+  if (index >= 0) {
+    state = "running";
+  } else if (records.some(record => record.status === RUN_ERROR)) {
+    index = records.findIndex(record => record.status === RUN_ERROR);
+    state = "error";
+  } else if (clips.length && records.every(record => record.status === RUN_COMPLETED)) {
+    index = clips.length - 1;
+    state = "completed";
+  } else {
+    index = records.findIndex(record => record.status !== RUN_COMPLETED);
+    if (index < 0) index = clips.length ? 0 : -1;
+  }
+
+  const clip = index >= 0 ? clips[index] : null;
+  const record = index >= 0 ? records[index] : null;
+  const transition = clip
+    ? normalizeTransitionMode(clip.transitionMode, "tail_reference")
+    : "tail_reference";
+  const transitionLabel = transition === "tail_continuation"
+    ? "尾帧续接"
+    : transition === "independent"
+      ? "独立"
+      : "尾帧参考";
+  const contextLabel = !clip
+    ? "—"
+    : index === 0
+      ? "首段"
+      : transition === "independent"
+        ? "独立"
+        : transition === "tail_continuation"
+          ? "上一片段续接"
+          : "上一片段尾帧";
+  const seed = looper.widgets?.find(widget => widget.name === "seed")?.value;
+  const frames = clip ? Math.max(1, Number(clip.end) - Number(clip.start)) : 0;
+
+  return {
+    state,
+    looper,
+    clip,
+    index,
+    total: clips.length,
+    transitionLabel,
+    contextLabel,
+    seed: Number.isFinite(Number(seed)) ? String(seed) : "—",
+    seconds: frames > 0 ? frames / FPS : 0,
+    progress: record ? clamp01(record.progress) : 0,
+    elapsedSeconds: Number(record?.elapsedSeconds) || 0,
+  };
+}
+
+function renderLoopConditionCard(node) {
+  const root = node?.__tdLoopConditionRoot;
+  if (!root) return;
+  const data = loopConditionSnapshot(node);
+  node.__tdLoopOwnerId = data.looper ? String(data.looper.id) : null;
+
+  if (data.state === "disconnected") {
+    root.className = "td-loop-condition-card is-idle";
+    root.innerHTML =
+      '<div class="td-loop-condition-title"><strong>当前片段</strong>' +
+      '<span>等待连接</span></div>' +
+      '<div class="td-loop-condition-empty">连接循环信息的「片段数据」后显示执行状态。</div>';
+    return;
+  }
+
+  const clipName = data.clip?.name || "暂无片段";
+  const number = data.total ? (data.index + 1) + " / " + data.total : "—";
+  const duration = data.seconds > 0
+    ? Number(data.seconds.toFixed(data.seconds % 1 ? 2 : 0)) + "s"
+    : "—";
+  const percent = Math.round(data.progress * 100);
+  const stateLabel = data.state === "running"
+    ? "生成中 " + percent + "%"
+    : data.state === "completed"
+      ? "✓ 已完成"
+      : data.state === "error"
+        ? "生成失败"
+        : "等待执行";
+
+  root.className = "td-loop-condition-card is-" + data.state;
+  root.innerHTML =
+    '<div class="td-loop-condition-title"><strong>当前片段</strong><span>' +
+      escapeHtml(stateLabel) + '</span></div>' +
+    '<div class="td-loop-condition-row"><span>片段</span><strong>' +
+      escapeHtml(number) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>名称</span><strong title="' +
+      escapeHtml(clipName) + '">' + escapeHtml(clipName) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>时长</span><strong>' +
+      escapeHtml(duration) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>衔接</span><strong>' +
+      escapeHtml(data.transitionLabel) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>连续性上下文</span><strong>' +
+      escapeHtml(data.contextLabel) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>Seed</span><strong>' +
+      escapeHtml(data.seed) + '</strong></div>' +
+    '<div class="td-loop-condition-progress"><i style="width:' +
+      (data.state === "completed" ? 100 : percent) + '%"></i></div>';
+}
+
+function refreshLoopConditionCards(looper = null) {
+  const graph = looper?.graph || app.graph;
+  for (const node of graph?._nodes || []) {
+    if (node?.comfyClass !== LOOP_CONDITION_NODE_CLASS || !node.__tdLoopConditionRoot) continue;
+    if (looper) {
+      const owner = loopConditionLooper(node);
+      if (!owner || String(owner.id) !== String(looper.id)) continue;
+    }
+    renderLoopConditionCard(node);
+  }
+}
+
+function mountLoopConditionNode(node) {
+  if (!node || node.comfyClass !== LOOP_CONDITION_NODE_CLASS) return;
+  if (node.__tdLoopConditionRoot) {
+    renderLoopConditionCard(node);
+    return;
+  }
+
+  const root = document.createElement("div");
+  root.className = "td-loop-condition-card is-idle";
+  root.addEventListener("pointerdown", event => event.stopPropagation());
+  root.addEventListener("wheel", event => event.stopPropagation(), { passive: true });
+
+  const widget = node.addDOMWidget(
+    "terrydirector_loop_condition_info",
+    "terrydirector_loop_condition_info",
+    root,
+    {
+      hideOnZoom: false,
+      getMinHeight: () => 158,
+      getMaxHeight: () => 178,
+      margin: 5,
+    }
+  );
+  widget.serialize = false;
+  widget.options.serialize = false;
+  node.__tdLoopConditionRoot = root;
+  node.__tdLoopConditionWidget = widget;
+
+  if (!node.__tdLoopConditionLinkBound) {
+    const previous = node.onConnectionsChange;
+    node.onConnectionsChange = function(...args) {
+      const result = previous?.apply(this, args);
+      queueMicrotask(() => renderLoopConditionCard(this));
+      return result;
+    };
+    node.__tdLoopConditionLinkBound = true;
+  }
+
+  const width = Math.max(Number(node.size?.[0]) || 330, 330);
+  const computed = node.computeSize?.();
+  node.setSize?.([width, Math.max(Number(computed?.[1]) || 0, 300)]);
+  renderLoopConditionCard(node);
 }
 
 function mountOutputNode(node) {
@@ -3045,6 +3223,8 @@ app.registerExtension({
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
+    } else if (node.comfyClass === LOOP_CONDITION_NODE_CLASS) {
+      queueMicrotask(() => mountLoopConditionNode(node));
     } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
                node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
@@ -3057,6 +3237,8 @@ app.registerExtension({
       queueMicrotask(() => mountNode(node));
     } else if (node.comfyClass === CONFIG_NODE_CLASS) {
       queueMicrotask(() => applyConfigAdvancedVisibility(node));
+    } else if (node.comfyClass === LOOP_CONDITION_NODE_CLASS) {
+      queueMicrotask(() => mountLoopConditionNode(node));
     } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
                node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
