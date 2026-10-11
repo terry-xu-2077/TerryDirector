@@ -21,6 +21,8 @@ from comfy_extras.nodes_loop import StartLoop
 from comfy_extras.nodes_minimax_h3 import MiniMaxH3AddGuide
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
+from .director_ai import prepare_document_for_queue
+from .director_ai_node import LlamaConfigData
 from .director_loop_adapters import (
     DEFAULT_LOOP_ADAPTER,
     adapter_from_segment,
@@ -102,12 +104,16 @@ def _load_image(asset):
 def _plan_items(
     config_data, seed, tail_reference_prompt, loop_id,
     adapter_id=DEFAULT_LOOP_ADAPTER,
+    llama_config=None,
 ):
     # Fail before creating any cache directory if the model has no adapter.
     adapter = get_loop_adapter(adapter_id)
     config = normalize_config(config_data)
+    document = prepare_document_for_queue(
+        config["document"], llama_config, str(loop_id)
+    )
     plan = adapter.compile_plan(
-        config["document"], tail_reference_prompt,
+        document, tail_reference_prompt,
         compiler=compile_timeline,
     )
     run_signature = uuid.uuid4().hex
@@ -361,6 +367,9 @@ class TerryDirectorLooper(StartLoop):
             enable_expand=True,
             description="按时间线逐段执行外部视频生成节点组；通过循环上下文传递当前片段与上一轮状态。",
             inputs=[
+                LlamaConfigData.Input(
+                    "llama_config", display_name="Llama 配置", optional=True,
+                ),
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
                     max=0xFFFFFFFFFFFFFFFF, control_after_generate=True,
@@ -384,11 +393,20 @@ class TerryDirectorLooper(StartLoop):
         )
 
     @classmethod
-    def execute(cls, seed, config_json,
-                tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT):
+    def execute(
+        cls,
+        seed,
+        config_json,
+        tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
+        llama_config=None,
+    ):
         loop_id = str(_one(cls.hidden.unique_id))
         items = _plan_items(
-            _one(config_json), _one(seed), _one(tail_reference_prompt), loop_id
+            _one(config_json),
+            _one(seed),
+            _one(tail_reference_prompt),
+            loop_id,
+            llama_config=_one(llama_config),
         )
         dynprompt = cls.hidden.dynprompt
         execution_list = cls.hidden.execution_list
