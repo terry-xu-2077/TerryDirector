@@ -68,9 +68,12 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
     ? loopDiskHeadroom(budget, disk.freeBytes)
     : "unknown";
 
+  const resolutionText = ready
+    ? estimate.width + "×" + estimate.height +
+      (estimate.resolutionLabel ? " · " + estimate.resolutionLabel : "")
+    : "分辨率待确定";
   const spec = (Number(seconds.toFixed(1))) + " 秒 · " +
-    (ready ? estimate.width + "×" + estimate.height : "分辨率待确定") +
-    " · 24 帧/秒";
+    resolutionText + " · 24 帧/秒";
 
   // Windows: show only the drive letter, not a private absolute directory.
   const drive = /^[A-Za-z]:$/.test(String(disk?.drive || ""))
