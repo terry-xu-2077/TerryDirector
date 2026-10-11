@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import math
 import re
+import sys
+import types
 from pathlib import Path
 
 
@@ -28,6 +31,26 @@ SEGMENT_PROMPT_MARKERS = [
     ["“剩余电量”", "电弧短路", "再撑一段。"],
     ["“蚂蚱”载具", "“ORC”", "呼啸的荒原风声"],
 ]
+
+
+def _compile_offline(document: dict) -> dict:
+    """Exercise actual production compiler without importing ComfyUI or GPU."""
+    root = Path(__file__).resolve().parents[1]
+    pkg = "_terrydirector_example_static_preflight"
+    if pkg not in sys.modules:
+        package = types.ModuleType(pkg)
+        package.__path__ = [str(root)]
+        sys.modules[pkg] = package
+    for name in ("director_core", "director_compile"):
+        module_name = f"{pkg}.{name}"
+        if module_name in sys.modules:
+            continue
+        spec = importlib.util.spec_from_file_location(module_name, root / f"{name}.py")
+        assert spec and spec.loader
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = mod
+        spec.loader.exec_module(mod)
+    return sys.modules[f"{pkg}.director_compile"].compile_timeline(document)
 
 
 def verify(workflow: dict) -> dict:
@@ -104,6 +127,23 @@ def verify(workflow: dict) -> dict:
     assert node("CLIPLoader")["widgets_values_named"]["clip_name"] == (
         "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
     )
+    # Check semantics, not just the string `transitionMode`: the actual
+    # compiler must add a fresh tail reference slot to clips 2 and 3.
+    plan = _compile_offline(doc)
+    compiled = plan["segments"]
+    assert len(compiled) == 3
+    assert [c["output_frames"] for c in compiled] == [96, 72, 120]
+    assert [c["h3_frames"] for c in compiled] == [107, 73, 124]
+    assert [len(c["assets"]["images"]) for c in compiled] == [7, 7, 7]
+    assert [c["continuity"]["kind"] for c in compiled] == [
+        "independent", "tail_reference", "tail_reference"
+    ]
+    assert [compiled[1]["continuity"]["source_segment_id"],
+            compiled[2]["continuity"]["source_segment_id"]] == ["clip-1", "clip-2"]
+    assert [compiled[1]["continuity"]["picture_number"],
+            compiled[2]["continuity"]["picture_number"]] == [8, 8]
+    assert "<Picture 8>" not in compiled[0]["prompt"]
+    assert all("<Picture 8>" in c["prompt"] for c in compiled[1:])
 
     pairs = {(by_id[s]["type"], by_id[d]["type"], by_id[d]["inputs"][i]["name"])
              for _, s, _, d, i, _ in links}
@@ -136,6 +176,9 @@ def verify(workflow: dict) -> dict:
             "images": len(doc["assets"]),
             "image_paths": REFERENCE_FILES,
             "transition_modes": [c["transitionMode"] for c in doc["clips"]],
+            "compiled_continuity": [c["continuity"]["kind"] for c in compiled],
+            "compiled_static_image_counts": [len(c["assets"]["images"]) for c in compiled],
+            "compiled_tail_picture_slots": [c["continuity"].get("picture_number") for c in compiled],
             "effective_tail_reference_on": [2, 3]}
 
 
