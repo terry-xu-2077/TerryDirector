@@ -128,17 +128,17 @@
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
   function resetActivity(){activity.clear();}
   if(!embedded)resetActivity();else activity.clear();
-  let state={globalPrompt:'',autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]},history=new C.History();
+  let state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]},history=new C.History();
   let resolutionEditBefore=null;
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
-  let promptEditor=null,globalPromptEditor=null,transitionMenu=null;
+  let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
   let aiConfig=null,aiJob=null,aiPolling=false,aiSeen=new Set();
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前 AI 增强</span></label></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前自动AI增强提示</span></label></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">H3 Skill · 静态增强稿</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
@@ -169,6 +169,8 @@
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
   const clipLocalPrompt=c=>(c?.promptMode==='ai'&&String(c.aiPrompt||'').trim())?c.aiPrompt:(c?.prompt||'');
+  const effectiveGlobalPrompt=()=>state.globalPromptMode==='ai'&&String(state.aiGlobalPrompt||'').trim()
+    ?state.aiGlobalPrompt:state.globalPrompt;
   const editablePrompt=c=>c?.promptMode==='ai'?(c?.aiPrompt||''):(c?.prompt||'');
   const canEnhance=()=>!!aiConfig&&!hostReadonly&&!aiJob;
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
@@ -232,7 +234,7 @@
       const meta=c?.aiMetadata||{};
       const old=!!c?.aiPrompt&&!!meta.sourcePrompt&&(
         meta.sourcePrompt!==c.prompt ||
-        meta.sourceGlobalPrompt!==(c.useGlobalPrompt===false?'':state.globalPrompt));
+        meta.sourceGlobalPrompt!==(c.useGlobalPrompt===false?'':effectiveGlobalPrompt()));
       if(!embedded&&meta.provenance==='skill-authored-demo'){
         warning.textContent=aiSelected?'H3 Skill 静态示例 · 非模型实测输出':'已提供 H3 Skill 静态增强示例';
         warning.title='仅供网站展示双提示词 UI。原始工作流的 aiPrompt 仍为空，真实运行必须调用 Qwen 增强。';
@@ -338,7 +340,7 @@
   function effectiveReferences(clip,entries=poolEntries()){
     if(!clip)return [];
     const ids=new Set(referencesIn(clipLocalPrompt(clip),entries));
-    if(clip.useGlobalPrompt!==false)for(const id of referencesIn(state.globalPrompt,entries))ids.add(id);
+    if(clip.useGlobalPrompt!==false)for(const id of referencesIn(effectiveGlobalPrompt(),entries))ids.add(id);
     return [...ids];
   }
 
@@ -372,7 +374,7 @@
 
   function referenceBudgetForClip(clip,{
     localPrompt=clipLocalPrompt(clip),
-    globalPrompt=state.globalPrompt,
+    globalPrompt=effectiveGlobalPrompt(),
     useGlobal=clip?.useGlobalPrompt!==false,
     transitionMode=clip?.transitionMode,
     entries=poolEntries(),
@@ -469,7 +471,7 @@
   function syncAllReferences(){const entries=poolEntries();state.clips.forEach(c=>syncReferences(c,entries));}
   function refreshAssetUsage(){
     const c=current(),entries=poolEntries();
-    const globalRefs=new Set(referencesIn(state.globalPrompt,entries));
+    const globalRefs=new Set(referencesIn(effectiveGlobalPrompt(),entries));
     const currentLocalRefs=new Set(c?referencesIn(clipLocalPrompt(c),entries):[]);
     for(const tile of $('#references').querySelectorAll('[data-reference]')){
       const id=tile.dataset.reference;
@@ -587,6 +589,7 @@
     if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
     const cancel=$('[data-action=ai-cancel]');
     if(cancel){cancel.hidden=!busy;cancel.disabled=!busy;}
+    globalModal?.updateBusy?.();
     const raw=$('#promptText'),visual=$('#promptVisual');
     if(raw)raw.readOnly=hostReadonly||busy;
     if(visual)visual.contentEditable=(hostReadonly||busy||!current())?'false':'true';
@@ -748,7 +751,7 @@
   function deleteAsset(id){
     const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
     finishPromptEdit();
-    const entries=poolEntries(),globalUsed=referencesIn(state.globalPrompt,entries).includes(id);
+    const entries=poolEntries(),globalUsed=referencesIn(effectiveGlobalPrompt(),entries).includes(id);
     const users=state.clips.filter(c=>effectiveReferences(c,entries).includes(id));
     const detail=globalUsed
       ? `它被全局提示词引用，并会作用于 ${users.length} 个启用全局提示词的片段。确认后会同时移除全局与片段提示词中的对应引用标签。`
@@ -760,6 +763,7 @@
         state.assetIds=state.assetIds.filter(x=>x!==id);
         const key=mediaKey(mediaNames[asset.kind],asset.number),removeTag=(prompt)=>String(prompt||'').replace(mediaPattern(),(raw,kind,number)=>mediaKey(kind,number)===key?'':raw);
         state.globalPrompt=removeTag(state.globalPrompt);
+        state.aiGlobalPrompt=removeTag(state.aiGlobalPrompt);
         for(const clip of state.clips){clip.prompt=removeTag(clip.prompt);clip.aiPrompt=removeTag(clip.aiPrompt);}
       });
       // Retain the cached media URL for undo and any active simulation snapshot.
@@ -961,6 +965,9 @@
         fps:Number(raw.fps)||C.FPS,
         selected:raw.selected||raw.clips[0]?.id||null,
         globalPrompt:String(raw.globalPrompt||''),
+        aiGlobalPrompt:String(raw.aiGlobalPrompt||''),
+        globalPromptMode:raw.globalPromptMode==='ai'?'ai':'user',
+        globalAiMetadata:raw.globalAiMetadata&&typeof raw.globalAiMetadata==='object'?C.copy(raw.globalAiMetadata):{},
         autoAiEnhance:raw.autoAiEnhance===true,
         clips:raw.clips,
         assets:Array.isArray(raw.assets)?raw.assets:[]
@@ -1041,7 +1048,12 @@
         refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
         useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
     });
-    state={globalPrompt:String(raw.globalPrompt||''),autoAiEnhance:raw.autoAiEnhance===true,clips,selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),assetIds:assets.map(a=>a.id)};
+    state={globalPrompt:String(raw.globalPrompt||''),aiGlobalPrompt:String(raw.aiGlobalPrompt||''),
+      globalPromptMode:raw.globalPromptMode==='ai'?'ai':'user',
+      globalAiMetadata:raw.globalAiMetadata&&typeof raw.globalAiMetadata==='object'?C.copy(raw.globalAiMetadata):{},
+      autoAiEnhance:raw.autoAiEnhance===true,clips,
+      selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),
+      assetIds:assets.map(a=>a.id)};
     history=new C.History();assetGridKey='';activity.clear();
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
@@ -1050,7 +1062,9 @@
   }
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
-    return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,autoAiEnhance:!!state.autoAiEnhance,
+    return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
+      aiGlobalPrompt:state.aiGlobalPrompt||'',globalPromptMode:state.globalPromptMode==='ai'?'ai':'user',
+      globalAiMetadata:state.globalAiMetadata||{},autoAiEnhance:!!state.autoAiEnhance,
       clips:state.clips.map(({id,name,start,end,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
@@ -1153,7 +1167,9 @@
     suspend:()=>{if(current())mutate(()=>{current().suspended=!current().suspended;});},
     reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(false);
       if(!embedded&&siteDemoDocument){loadDocument(C.copy(siteDemoDocument));aiConfig={previewOnly:true};renderAiControls();return;}
-      state={globalPrompt:'',autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]};renderAll();timeline.fit();timeline.setFrame(0);}
+      state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},
+        autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]};
+      renderAll();timeline.fit();timeline.setFrame(0);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');
