@@ -92,7 +92,7 @@ jobs:
           sleep 1
           "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
             --disable-gpu --virtual-time-budget=4500 \
-            --dump-dom "http://127.0.0.1:8766/index.html?global-ai=1" >/tmp/td-global-dom.html 2>/tmp/td-global-browser.log
+            --dump-dom "http://127.0.0.1:8766/index.html?global-ai=1&show-ai-global=1" >/tmp/td-global-dom.html 2>/tmp/td-global-browser.log
           python - <<'PY'
           from pathlib import Path
           html = Path("/tmp/td-global-dom.html").read_text(encoding="utf-8")
@@ -110,7 +110,7 @@ jobs:
           "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
             --disable-gpu --virtual-time-budget=4500 --window-size=1400,960 \
             --screenshot="website-preview/td-demo-global-ai.png" \
-            "http://127.0.0.1:8766/index.html?global-ai=1" >/dev/null 2>/dev/null
+            "http://127.0.0.1:8766/index.html?global-ai=1&show-ai-global=1" >/dev/null 2>/dev/null
       - name: Attach website browser screenshots
         if: always()
         uses: actions/upload-artifact@v4
