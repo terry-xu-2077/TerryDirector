@@ -48,6 +48,8 @@ Base / Advanced 多一个可选的 `llama_config` 输入。`director_ai_node.py`
 `llama-cpp-python` 加载、H3 Skill、多模态资产编码、结果校验以及按片段保存 Queue 增强结果，
 `director_ai_jobs.py` 与 `server_routes.py` 负责编辑器独立 HTTP Job、进度与取消。
 
+全局提示词的原始文本、AI 文本和当前选择独立保存为 `globalPrompt`、`aiGlobalPrompt` 和 `globalPromptMode`；编译器与片段 AI 增强读取同一个 effective 全局版本。全局手动增强使用独立 `scope=global` HTTP Job，加载一次 Qwen/VLM 检查原始参考标签，不经过 ComfyUI Queue；其结果为跨片段约束，不包含单段的六节 Ref2VA 镜头结构。全局结果只由手动增强刷新，现有自动增强开关不自动重写全局内容。
+
 Queue 自动模式先统一执行 `prepare_document_for_queue()`，冻结本次片段 AI 文本后才调用
 原来的 `compile_timeline()`；不修改 `director_h3.py`、Self-Lift、重叠或尾帧上下文的执行规则。
 `config_json` 保存 `autoAiEnhance`、片段 `aiPrompt`、`promptMode`、`aiMetadata`。
@@ -57,7 +59,7 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 依赖在真正增强时才延迟导入；不改写全局 ComfyUI 模型卸载函数、不引入第二个
 自定义 Llama 节点包。显存回收先于 H3 执行，且在批量任务期间复用同一 GGUF 实例。
-本分支尚未完成真实 Windows / RTX3090 / ComfyUI 运行验证。
+原三段 Base AI→H3 链路已通过 Windows / RTX 3090 实机验收（见 `docs/AI_PROMPT_ENHANCEMENT_ACCEPTANCE_REPORT.md`）；新增的全局增强请求需要独立的实机回归。
 
 ## Self-Lift 边界
 
