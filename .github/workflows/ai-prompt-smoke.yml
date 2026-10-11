@@ -58,7 +58,7 @@ jobs:
           )
           for item in required:
               assert item in dom, f"Static demo did not render: {item}"
-          assert dom.count('class="reference-tile"') == 7, "Expected seven reference tiles"
+          assert dom.count('class="reference-tile ') == 7, "Expected seven reference tiles"
           print("PASS: 3 authentic clips and 7 references loaded in the browser")
           PY
           mkdir -p .website-preview
