@@ -72,38 +72,26 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
     ? estimate.width + "×" + estimate.height +
       (estimate.resolutionLabel ? " · " + estimate.resolutionLabel : "")
     : "分辨率待确定";
-  const spec = (Number(seconds.toFixed(1))) + " 秒 · " +
+  const spec = count + "段 · " + (Number(seconds.toFixed(1))) + " 秒 · " +
     resolutionText + " · 24 帧/秒";
 
-  // Windows: show only the drive letter, not a private absolute directory.
-  const drive = /^[A-Za-z]:$/.test(String(disk?.drive || ""))
-    ? String(disk.drive).toUpperCase() + " · " : "";
   const free = disk
-    ? drive + formatLoopDiskSpace(disk.freeBytes)
+    ? formatLoopDiskSpace(disk.freeBytes)
     : diskState.failed ? "暂无法读取" : "正在检查…";
-  const need = budget == null ? "暂无法估算" :
-    "约 " + formatLoopDiskSpace(budget);
-
-  const note = status === "critical"
-    ? "临时磁盘空间不足，建议先清理磁盘再生成。"
-    : status === "warning"
-      ? "临时磁盘剩余空间不多，建议多留一些空间。"
-      : !ready
-        ? (estimate.hint || "当前无法确定分辨率，请检查上游生成节点。")
-        : "视频保存成功后，临时文件会自动清理。";
+  const need = budget == null ? "暂无法估算" : formatLoopDiskSpace(budget);
+  const diskSummary = "预计使用 " + need + " / 磁盘剩余 " + free;
 
   const title = '<div class="td-output-memory-title">' +
     '<span class="td-output-memory-icon">' +
     (status === "critical" ? "!" : "i") + '</span>' +
     '<strong>视频输出检查</strong></div>';
   const warning = status === "critical" || status === "warning";
-  const noteClass = 'td-output-check-help' + (warning ? ' is-warning' : '');
+  const diskExtra = warning
+    ? ' class="is-warning" title="临时磁盘空间偏紧，请预留足够空间。"'
+    : ' title="预计使用量包含余量；不是最终视频文件大小。"';
   const html = title +
     row("视频规格", spec) +
-    row("生成片段", count + " 段") +
-    row("预计临时空间", need, ' title="包含一定余量；这不是最终视频文件的大小。"') +
-    row("临时磁盘剩余", free) +
-    '<div class="' + noteClass + '">' + plainText(note) + '</div>';
+    row("磁盘临时空间", diskSummary, diskExtra);
   return {
     className: "td-output-memory-card is-loop-check" +
       (status === "critical" ? " is-space-low" :
