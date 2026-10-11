@@ -39,7 +39,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector 循环开始** | 按时间线驱动普通视频生成节点组 |
 | **TerryDirector 循环信息** | 输出提示词、采样帧数、Seed、片段数据与参考图片 |
 | **TerryDirector 循环条件** | 将前一段实际画面／声音应用于当前段的 H3 条件 |
-| **TerryDirector 循环结束** | 收集分段缓存，输出流式 VIDEO 和可选分段 LATENT |
+| **TerryDirector 循环结束** | 接收已解码 IMAGE/AUDIO，收集分段缓存并输出流式 VIDEO |
 
 部分内部节点会自动注册供执行图使用，不需要手动添加到画布。
 
@@ -73,21 +73,25 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
                                           ├─ 提示词 / 采样帧数 / Seed / 图片
                                           └─ 片段数据
                                                   ↓
-                             官方 H3 生成节点组 + TerryDirector 循环条件
-                                                  │ 采样结果
+                           H3 / Self-Lift / 自定义采样链
+                                                  │
                                                   ▼
+                                      用户自己的解码节点
+                                      ├─ IMAGE ─────────┐
+                                      └─ AUDIO ───────┐ │
+                                                      ▼ ▼
                                        TerryDirector 循环结束
-                                       ├─ 视频 VIDEO ─→ 官方 SaveVideo
-                                       └─ 分段潜变量（可选）
+                                                  │
+                                                  └─ VIDEO → 官方 SaveVideo
 ```
 
-循环器直接输出 **VIDEO**，无需再连接 CreateVideo。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。当前循环信息可对接 H3 图片参考，**不支持直接将其他模型采样结果接入并期望自动解码**。
+循环器直接输出 **VIDEO**，无需再连接 CreateVideo。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO，不再接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
 
 ## 时间线与编辑
 
 点击节点内的迷你时间线，即可在当前 ComfyUI 页面打开导演编辑窗口；编辑片段、提示词与共享素材后「保存并退出」。挂起片段保留在创作时间线里，但不会提交采样。尾帧参考／续接／独立等行为可在片段接缝处调整，并可在 ComfyUI 的 TerryDirector 设置里配置默认衔接方式。
 
-开发分支的 [在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/feat%2Fai-prompt-enhancement/index.html) 可直接查看最新编辑器布局：网站从 [AI 验收工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**，不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。网站「AI 增强提示词」标签另加载 [H3 Skill 六段式英文增强示例](examples/TerryDirector_AI_3clips_demo_prompts.json)，可与未修改的三段中文原文切换对比；这些文字是**依据内置官方 Skill 手工编写的静态展示稿，不是实际 Qwen 推理输出**。示例仅注入网页显示层，不修改 [GPU 验收用工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 中刻意保留为空的 `aiPrompt`。链接经只读静态代理预览当前开发分支，正式 GitHub Pages 站点在合并主分支之前可能仍显示旧版。
+[在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/main/index.html) 可直接查看最新编辑器布局：网站从 [AI 验收工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**，不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。网站「AI 增强提示词」标签另加载 [H3 Skill 六段式英文增强示例](examples/TerryDirector_AI_3clips_demo_prompts.json)，可与未修改的三段中文原文切换对比；这些文字是**依据内置官方 Skill 手工编写的静态展示稿，不是实际 Qwen 推理输出**。示例仅注入网页显示层，不修改 [GPU 验收用工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 中刻意保留为空的 `aiPrompt`。链接经只读静态代理预览当前主分支。
 
 ## 使用边界
 
