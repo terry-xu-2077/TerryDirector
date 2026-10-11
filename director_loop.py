@@ -29,7 +29,7 @@ from .director_internal import (
     prepare_base_run_cache,
 )
 
-CATEGORY = "MiniMax H3/TerryDirector/循环"
+CATEGORY = "TerryDirector/循环"
 IMAGE_SLOTS = 9
 LOOP_CONTEXT_KIND = "terrydirector.loop_context"
 SEGMENT_DATA_KIND = "terrydirector.segment_data"
@@ -135,7 +135,7 @@ class TerryDirectorLoopFrame(io.ComfyNode):
         return io.Schema(
             node_id="TerryDirectorLoopFrame",
             display_name="TerryDirector Loop Frame (Internal)",
-            category="MiniMax H3/TerryDirector/Internal",
+            category="TerryDirector/循环/内部",
             is_dev_only=True,
             inputs=[
                 io.AnyType.Input("segment"),
@@ -317,7 +317,7 @@ class TerryDirectorLooper(StartLoop):
             loop_boundary="start",
             is_input_list=True,
             enable_expand=True,
-            description="按时间线逐段执行外部 H3 工作流；循环上下文包含当前片段与上一轮状态，由循环信息节点提取片段数据。",
+            description="按时间线逐段执行外部视频生成节点组；通过循环上下文传递当前片段与上一轮状态。",
             inputs=[
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
@@ -387,13 +387,13 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             node_id="TerryDirectorLoopInfo",
             display_name="TerryDirector 循环信息",
             category=CATEGORY,
-            description="当前片段 Prompt / 时长 / 参考图自动映射到官方 H3 Reference to Video。",
+            description="解析循环上下文，输出提示词、采样帧数、随机种子、片段数据和图片素材。",
             inputs=[
                 LoopContextData.Input("loop_context", display_name="循环上下文"),
             ],
             outputs=[
                 io.String.Output(display_name="提示词"),
-                io.Int.Output(display_name="H3帧数"),
+                io.Int.Output(display_name="采样帧数"),
                 io.Int.Output(display_name="Seed"),
                 SegmentData.Output(display_name="片段数据"),
                 *[
@@ -421,10 +421,10 @@ class TerryDirectorLoopInfo(io.ComfyNode):
                 raise ValueError("尾帧参考需要上一片段生成的真实尾帧")
             slot = int(segment["continuity"]["picture_number"]) - 1
             if slot != len(images):
-                raise ValueError("尾帧参考编号与 H3 图片槽位不一致")
+                raise ValueError("尾帧参考序号与参考图输入位置不一致")
             images.append(previous[-1:].clone())
         if len(images) > IMAGE_SLOTS:
-            raise ValueError("官方 H3 最多接受 9 张参考图片")
+            raise ValueError("当前循环信息节点最多提供 9 个参考图片输入")
         images.extend([None] * (IMAGE_SLOTS - len(images)))
         # A flat generation packet, distinct from the complete loop envelope.
         # Downstream conditioning and cache nodes accept only this type.
@@ -452,6 +452,7 @@ class TerryDirectorLoopCondition(io.ComfyNode):
             node_id="TerryDirectorLoopCondition",
             display_name="TerryDirector 循环条件",
             category=CATEGORY,
+            description="处理前后片段的生成条件；当前承接实现使用 MiniMax H3 Guide，其他模型需要对应适配器。",
             inputs=[
                 io.Conditioning.Input("positive", display_name="正向条件"),
                 io.Latent.Input("latent", display_name="潜变量"),
@@ -519,11 +520,11 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return io.Schema(
             node_id="TerryDirectorLoopCache",
             display_name="TerryDirector 循环缓存",
-            category="MiniMax H3/TerryDirector/Internal",
+            category="TerryDirector/循环/内部",
             is_dev_only=True,
             description="内部无损分段缓存与紧凑连续性上下文。",
             inputs=[
-                io.Latent.Input("samples", display_name="H3采样结果"),
+                io.Latent.Input("samples", display_name="采样结果"),
                 io.Vae.Input("vae", display_name="视频VAE"),
                 io.Vae.Input("audio_vae", display_name="音频VAE"),
                 SegmentData.Input("segment_data", display_name="片段数据"),
@@ -593,7 +594,7 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                 "视频/音频原始分段保存在无损 .pt 中，保存时逐段编码。"
             ),
             inputs=[
-                io.Latent.Input("samples", display_name="H3采样结果", optional=True),
+                io.Latent.Input("samples", display_name="采样结果", optional=True),
                 io.Vae.Input("vae", display_name="视频VAE", optional=True),
                 io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据", optional=True),

@@ -12,6 +12,30 @@ const LOOP_NODE_CLASS = "TerryDirectorLooper";
 const LOOP_END_NODE_CLASS = "TerryDirectorLoopEnd";
 const LOOP_INFO_NODE_CLASS = "TerryDirectorLoopInfo";
 const H3_CONDITION_NODE_CLASS = "MiniMaxH3ReferenceToVideo";
+/**
+ * Workflow JSON may store the old visible slot labels. Synchronize the
+ * new model-neutral presentation without touching input IDs or link indices.
+ */
+function syncLoopSocketLabels(node) {
+  if (node?.comfyClass === LOOP_INFO_NODE_CLASS) {
+    const slot = node.outputs?.[1];
+    if (slot && (slot.name === "H3帧数" || slot.name === "采样帧数")) {
+      slot.name = "采样帧数";
+      slot.localized_name = "采样帧数";
+      if (slot.label === "H3帧数") slot.label = "采样帧数";
+    }
+  } else if (node?.comfyClass === LOOP_END_NODE_CLASS) {
+    const slot = node.inputs?.find(item => item.name === "samples");
+    if (slot) {
+      slot.localized_name = "采样结果";
+      if (slot.label === "H3采样结果") slot.label = "采样结果";
+    }
+  } else {
+    return;
+  }
+  node.setDirtyCanvas?.(true, true);
+}
+
 const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   LOOP_NODE_CLASS, LOOP_INFO_NODE_CLASS, H3_CONDITION_NODE_CLASS,
   "TerryDirectorLoopCondition", "BasicGuider", "SamplerCustomAdvanced",
@@ -2792,6 +2816,7 @@ app.registerExtension({
     bindLoopSegmentActivity();
   },
   nodeCreated(node) {
+    syncLoopSocketLabels(node);
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
@@ -2803,6 +2828,7 @@ app.registerExtension({
     }
   },
   loadedGraphNode(node) {
+    syncLoopSocketLabels(node);
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));

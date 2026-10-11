@@ -52,7 +52,7 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
     className: "td-output-memory-card is-loop-check is-idle",
     html: '<div class="td-output-memory-title"><span class="td-output-memory-icon">i</span>' +
       '<strong>视频输出检查</strong></div>' +
-      '<div class="td-output-check-help">连接循环信息和 H3 生成节点后显示输出检查。</div>',
+      '<div class="td-output-check-help">连接循环信息和生成节点后显示输出检查。</div>',
     status: "disconnected",
   };
 

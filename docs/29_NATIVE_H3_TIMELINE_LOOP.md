@@ -1,4 +1,4 @@
-# TerryDirector 原生 H3 时间线循环器 · 流式视频输出
+# TerryDirector 时间线循环器 · 流式视频输出（当前 H3 适配）
 
 > 整合测试分支：integrate/selflift-native-h3-loop。基于 ComfyUI 0.39.0 原生循环、原 Base 无损 .pt 分段缓存；尚待用户 RTX 3090 实际视频生成验收。原 Base/Advanced/SelfLift 采样逻辑保持不变。
 
@@ -7,13 +7,36 @@
 TerryDirector 循环开始 → 【循环上下文】→ TerryDirector 循环信息
 → 【片段数据】→ TerryDirector 循环条件、TerryDirector 循环结束
 → 官方 MiniMaxH3ReferenceToVideo / BasicGuider / SamplerCustomAdvanced
-→ TerryDirector 循环结束（接收 H3采样结果、两个 VAE、片段数据）
+→ TerryDirector 循环结束（接收采样结果、两个 VAE、片段数据）
 → 【视频 VIDEO】直接连接官方 SaveVideo
 → 【分段潜变量 LATENT 列表】仅在需要时连接其他节点
 
-循环开始保留同一套时间线和编辑窗口；片段信息节点输出原来的 Prompt、H3 帧数、Seed、最多 9 张参考图。循环上下文类型 TERRYDIRECTOR_LOOP_CONTEXT 和片段数据类型 TERRYDIRECTOR_SEGMENT_DATA 仍然区分，无法混接。
+循环开始保留同一套时间线和编辑窗口；循环信息节点输出提示词、采样帧数、Seed、片段数据与最多 9 张参考图。循环上下文类型 TERRYDIRECTOR_LOOP_CONTEXT 和片段数据类型 TERRYDIRECTOR_SEGMENT_DATA 仍然区分，无法混接。
 
 循环结束仅有两个输出：**视频 VIDEO（输出0）**和**分段潜变量 LATENT 列表（输出1）**。不再有合并 IMAGE/AUDIO，不需要 CreateVideo，也不提供 A/B 模式切换或合并开关。无需兼容旧版循环结束工作流。
+
+
+## 模型中立接口与当前适配边界
+
+对外用户界面统一使用模型中立名称：
+
+| 节点 / 位置 | 对外名称 | 含义 |
+| --- | --- | --- |
+| 循环开始 → 循环信息 | 循环上下文 | 当前片段、上一轮上下文与循环状态 |
+| 循环信息 → 视频生成链 | 采样帧数 | 当前生成节点需要采样的帧数，不等于剪辑后的最终输出帧数 |
+| 循环信息 → 循环条件 / 循环结束 | 片段数据 | 处理过的片段参数与承接上下文 |
+| 循环结束 ← 采样节点 | 采样结果 | 上游视频生成器的潜变量结果 |
+| 循环结束 → SaveVideo | 视频 | 低内存流式 VIDEO 输出 |
+
+循环节点统一位于 \`TerryDirector/循环\` 分类，隐藏内部适配节点位于 \`TerryDirector/循环/内部\`。**类别与接口不再附带固定 H3 前缀。** 但当前 H3 测试工作流中的原生 MiniMaxH3ReferenceToVideo 等模型专属节点仍保留它们本来的名称。
+
+**注意：对外接口名称通用，不等于任意模型已自动兼容。** 当前版本这些内部环节仍是 H3 适配实现：
+
+- \`director_compile.py\` 使用 H3 的 5+17n 帧数对齐与 Guide 规则，循环信息输出的「采样帧数」目前来自 \`h3_frames\`。
+- \`TerryDirectorLoopInfo\` 以最多 9 张图片参考槽位组织 H3 素材，其他模型可能需要不同的输入组织方式。
+- \`TerryDirectorLoopCondition\` 的尾帧续接 / 重叠条件调用 \`MiniMaxH3AddGuide\`，不能直接代替 LTX 的条件构造。
+- \`TerryDirectorLoopCache\` 复用 H3 联合音视频 LATENT 解码与 Base 缓存；其他模型必须先适配各自的潜变量、视频和音频解码。
+- 「循环开始 / 结束」的动态 GraphBuilder、无损文件化缓存与 VIDEO 保存机制可作为模型间复用的底层基础。若需 LTX 2.5，下一步应单独实现帧数规划、素材/条件构造和解码适配，并对其原生节点链做本机验证。
 
 ## VIDEO 的真正低内存实现
 

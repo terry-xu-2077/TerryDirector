@@ -1,5 +1,12 @@
 # 内置 Self-Lift 主分支与原生 H3 循环器整合验收
 
+## 模型中立接口命名（2026-10-11）
+
+循环器的对外命名不再绑定 H3：目录改为 \`TerryDirector/循环\`，隐藏节点归到 \`TerryDirector/循环/内部\`；「H3帧数」改成「采样帧数」，「H3采样结果」改成「采样结果」。循环开始、循环信息、循环条件、循环结束保持原名称。前端在创建和加载现有节点时同步旧显示标签，不改变连接 ID 或底层采样数据。
+
+当前 \`director_compile.py\` 的 5+17n 帧数规则、\`MiniMaxH3AddGuide\`、H3 图片引用和联合音视频解码仍为 H3 专用适配。这里仅完成**产品级接口命名去模型前缀**，不宣称 LTX 2.5 现已可直接运行；未来需要模型适配层。详细对应见 [循环器文档](29_NATIVE_H3_TIMELINE_LOOP.md)。
+
+
 ## 最终精简输出协议（2026-10-11）
 
 用户明确决定取消 A/B 模式与旧工作流兼容，仅保留「视频 VIDEO（输出0）」和「分段潜变量 LATENT 列表（输出1）」。循环结束不再输出 IMAGE/AUDIO，也不需要 CreateVideo，VIDEO 直接连官方 SaveVideo。默认24fps，bit_depth=auto、color_space=sRGB 置于高级输入，格式/编码/文件名仍由 SaveVideo 控制。
