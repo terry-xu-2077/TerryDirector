@@ -193,6 +193,44 @@ function hullBounds(points) {
   return [left, top, Math.max(1, right - left), Math.max(1, bottom - top)];
 }
 
+function polygonCentroid(points, fallbackBounds = null) {
+  if (!points?.length) {
+    if (!fallbackBounds) return null;
+    return [
+      fallbackBounds[0] + fallbackBounds[2] / 2,
+      fallbackBounds[1] + fallbackBounds[3] / 2,
+    ];
+  }
+  if (points.length < 3) {
+    const bounds = fallbackBounds || hullBounds(points);
+    return bounds
+      ? [bounds[0] + bounds[2] / 2, bounds[1] + bounds[3] / 2]
+      : points[0].slice();
+  }
+
+  let twiceArea = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const [x0, y0] = points[index];
+    const [x1, y1] = points[(index + 1) % points.length];
+    const cross = x0 * y1 - x1 * y0;
+    twiceArea += cross;
+    cx += (x0 + x1) * cross;
+    cy += (y0 + y1) * cross;
+  }
+  if (Math.abs(twiceArea) < 1e-6) {
+    const bounds = fallbackBounds || hullBounds(points);
+    return bounds
+      ? [bounds[0] + bounds[2] / 2, bounds[1] + bounds[3] / 2]
+      : points[0].slice();
+  }
+  return [
+    cx / (3 * twiceArea),
+    cy / (3 * twiceArea),
+  ];
+}
+
 function buildRegionGeometry(graph, region, scale) {
   let graphCache = geometryCache.get(graph);
   if (!graphCache) {
@@ -309,25 +347,14 @@ function drawLoopRegion(ctx, canvas, graph, region, visibleArea) {
     ctx.stroke();
   }
 
-  const [left, top] = geometry.bounds;
-  const labelX = left + 10 / scale;
-  const labelY = top + 8 / scale;
-  const labelHeight = 22 / scale;
-  const labelWidth = 132 / scale;
-
-  ctx.fillStyle = "rgba(229, 154, 78, 0.105)";
-  ctx.beginPath();
-  ctx.roundRect(labelX, labelY, labelWidth, labelHeight, 8 / scale);
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(242, 218, 193, 0.80)";
-  ctx.font = `600 ${12 / scale}px Inter, Arial, sans-serif`;
-  ctx.textBaseline = "middle";
-  ctx.fillText(
-    "TerryDirector 循环域",
-    labelX + 10 / scale,
-    labelY + labelHeight / 2
-  );
+  const center = polygonCentroid(geometry.hull, geometry.bounds);
+  if (center) {
+    ctx.fillStyle = "rgba(242, 218, 193, 0.14)";
+    ctx.font = `600 ${18 / scale}px Inter, Arial, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("TerryDirector循环域", center[0], center[1]);
+  }
 
   ctx.restore();
 }
