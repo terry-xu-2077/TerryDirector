@@ -81,7 +81,7 @@ Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢�
 
 `director_loop_adapters.py` 目前登记 `minimax_h3`（默认、可运行）与 `ltx_2_5`（预留、`ready=False`）。
 
-适配器负责：`compile_plan`、`sampling_frames`、`reference_images`、`apply_continuity`。这些职责只处理模型特定的帧数、参考图和连续性 Guide；解码不属于适配器或 LoopEnd，而是用户可编辑的循环体。
+适配器负责：`compile_plan`、`sampling_frames`、`reference_media`、`apply_continuity`。MiniMax H3 的 `reference_media` 对齐官方参考额度：9 图片、3 视频、3 独立音频；视频资产在循环信息阶段解码为 24 fps IMAGE 帧序列。生成结果的最终解码不属于适配器或 LoopEnd，而是用户可编辑的循环体。
 
 **LTX 2.5 尚不能运行。** 新增适配器必须先满足自己的合法帧数、参考输入与连续性条件构造，再允许注册为可用；未知模型不能静默复用 H3 Guide 语义。
 
