@@ -15,7 +15,6 @@ export function findLoopMemorySources(loopEnd, upstream) {
   }
 
   const pending = [
-    upstream(loopEnd, "samples"),
     upstream(loopEnd, "images"),
   ].filter(Boolean);
   const visited = new Set();
