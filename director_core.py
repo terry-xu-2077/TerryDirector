@@ -18,6 +18,7 @@ def default_document() -> dict[str, Any]:
         "fps": FPS,
         "selected": "clip-1",
         "globalPrompt": "",
+        "autoAiEnhance": False,
         "clips": [
             {
                 "id": "clip-1",
@@ -25,6 +26,10 @@ def default_document() -> dict[str, Any]:
                 "start": 0,
                 "end": 10 * FPS,
                 "prompt": "",
+                "aiPrompt": "",
+                "promptMode": "user",
+                "aiOptOut": False,
+                "aiMetadata": {},
                 "refs": [],
                 "useGlobalPrompt": True,
                 "transitionMode": "tail_reference",
@@ -78,6 +83,10 @@ def normalize_document(value: Any) -> dict[str, Any]:
             "start": start,
             "end": end,
             "prompt": str(raw.get("prompt") or ""),
+            "aiPrompt": str(raw.get("aiPrompt") or ""),
+            "promptMode": "ai" if raw.get("promptMode") == "ai" else "user",
+            "aiOptOut": raw.get("aiOptOut") is True,
+            "aiMetadata": dict(raw["aiMetadata"]) if isinstance(raw.get("aiMetadata"), dict) else {},
             "refs": refs,
             "useGlobalPrompt": raw.get("useGlobalPrompt") is not False,
             "transitionMode": raw.get("transitionMode") if raw.get("transitionMode") in {"tail_reference", "tail_continuation", "independent"} else "tail_continuation",
@@ -121,6 +130,7 @@ def normalize_document(value: Any) -> dict[str, Any]:
         "fps": FPS,
         "selected": selected,
         "globalPrompt": str(value.get("globalPrompt") or ""),
+        "autoAiEnhance": value.get("autoAiEnhance") is True,
         "clips": clips,
         "assets": assets,
     }

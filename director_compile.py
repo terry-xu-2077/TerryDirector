@@ -147,7 +147,11 @@ def _append_tail_reference_prompt(prompt: str, template: str, picture_number: in
 
 def _effective_prompt(document: dict[str, Any], clip: dict[str, Any]) -> str:
     """Build the exact prompt H3 receives for one segment."""
-    segment_prompt = str(clip.get("prompt") or "")
+    segment_prompt = (
+        str(clip.get("aiPrompt") or "")
+        if clip.get("promptMode") == "ai" and str(clip.get("aiPrompt") or "").strip()
+        else str(clip.get("prompt") or "")
+    )
     if clip.get("useGlobalPrompt") is False:
         return segment_prompt
 
