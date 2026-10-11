@@ -494,6 +494,20 @@
   align-self: center;
 }
 
+.td-mini-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.td-mini-brand {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  display: block;
+  object-fit: contain;
+}
+
 .td-node-shell-director .td-mini-stats {
   top: 50%;
   transform: translate(-50%, -50%);
