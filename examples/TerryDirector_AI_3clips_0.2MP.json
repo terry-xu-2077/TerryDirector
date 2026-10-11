@@ -1,0 +1,610 @@
+{
+  "id": "be283d7b-b482-4518-976d-c881d559f6e6",
+  "revision": 0,
+  "last_node_id": 10,
+  "last_link_id": 10,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        -1130,
+        -470
+      ],
+      "size": [
+        430,
+        112
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "minimax_h3_fl2va_bf16.safetensors",
+        "default"
+      ],
+      "widgets_values_named": {
+        "unet_name": "minimax_h3_fl2va_bf16.safetensors",
+        "weight_dtype": "default"
+      },
+      "title": "H3 模型 · 选用本机已安装权重"
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "pos": [
+        -1130,
+        -305
+      ],
+      "size": [
+        430,
+        135
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "MiniMax-H3\\qwen3vl_32b_minimax_h3_ultra_uncensored_heretic_int8_convrot.safetensors",
+        "minimax",
+        "default"
+      ],
+      "widgets_values_named": {
+        "clip_name": "MiniMax-H3\\qwen3vl_32b_minimax_h3_ultra_uncensored_heretic_int8_convrot.safetensors",
+        "type": "minimax",
+        "device": "default"
+      },
+      "title": "H3 文本编码器"
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        -1130,
+        -120
+      ],
+      "size": [
+        430,
+        110
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "MiniMax-H3\\minimax_h3_video_vae_fp16.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "MiniMax-H3\\minimax_h3_video_vae_fp16.safetensors"
+      },
+      "title": "H3 视频 VAE"
+    },
+    {
+      "id": 4,
+      "type": "VAELoader",
+      "pos": [
+        -1130,
+        45
+      ],
+      "size": [
+        430,
+        110
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            4
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "MiniMax-H3\\minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "widgets_values_named": {
+        "vae_name": "MiniMax-H3\\minimax_h3_audio_vae_fp32.safetensors"
+      },
+      "title": "H3 音频 VAE"
+    },
+    {
+      "id": 5,
+      "type": "TerryDirectorConfig",
+      "pos": [
+        -620,
+        -230
+      ],
+      "size": [
+        364,
+        485
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        },
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 4
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": null,
+          "widget": {
+            "name": "sampler"
+          }
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": null,
+          "widget": {
+            "name": "sigmas"
+          }
+        },
+        {
+          "name": "second_pass_config",
+          "type": "TERRYDIRECTOR_SECOND_PASS_CONFIG",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "导演配置",
+          "type": "TERRYDIRECTOR_CONFIG",
+          "links": [
+            5
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirectorConfig"
+      },
+      "widgets_values": [
+        "16:9 (Widescreen)",
+        0.2,
+        32,
+        "res_multistep",
+        "simple",
+        8,
+        1,
+        "match"
+      ],
+      "widgets_values_named": {
+        "aspect_ratio": "16:9 (Widescreen)",
+        "megapixels": 0.2,
+        "multiple": 32,
+        "sampler": "res_multistep",
+        "sigmas": "simple",
+        "sigmas_steps": 8,
+        "sigmas_denoise": 1,
+        "ref_image_size": "match"
+      }
+    },
+    {
+      "id": 6,
+      "type": "TerryDirectorLlamaConfig",
+      "pos": [
+        -630,
+        380
+      ],
+      "size": [
+        385,
+        375
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "Llama 配置",
+          "type": "TERRYDIRECTOR_LLAMA_CONFIG",
+          "links": [
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirectorLlamaConfig"
+      },
+      "widgets_values": [
+        "Qwen3.8/Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf",
+        "Qwen3.8/mmproj-F16.gguf",
+        8888,
+        "fixed",
+        false,
+        16384,
+        8192,
+        0.7,
+        0.8,
+        -1
+      ],
+      "widgets_values_named": {
+        "model": "Qwen3.8/Huihui-Qwen3.8-27B-abliterated-Q4_K.gguf",
+        "vision_model": "Qwen3.8/mmproj-F16.gguf",
+        "seed": 8888,
+        "control_after_generate": "fixed",
+        "think_mode": false,
+        "n_ctx": 16384,
+        "max_tokens": 8192,
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "gpu_layers": -1
+      }
+    },
+    {
+      "id": 7,
+      "type": "TerryDirector",
+      "pos": [
+        -110,
+        -160
+      ],
+      "size": [
+        420,
+        270
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "director_config",
+          "type": "TERRYDIRECTOR_CONFIG",
+          "link": 5
+        },
+        {
+          "name": "llama_config",
+          "type": "TERRYDIRECTOR_LLAMA_CONFIG",
+          "link": 6,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "导演输出",
+          "type": "TERRYDIRECTOR_OUTPUT",
+          "links": [
+            7
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirector"
+      },
+      "widgets_values": [
+        9,
+        "fixed",
+        "{\"version\":4,\"document\":{\"version\":2,\"fps\":24,\"selected\":\"clip-1\",\"globalPrompt\":\"写实真人实景，真实电影摄影，准确的材质与自然光照，摄影机运动克制且有现场观察感。只保留环境声与动作声；全程没有背景音乐，没有字幕与旁白。\",\"autoAiEnhance\":true,\"clips\":[{\"id\":\"clip-1\",\"name\":\"01 · 雨后的街道\",\"start\":0,\"end\":96,\"prompt\":\"雨后傍晚的城市街口，路面映出温暖的灯光。写实实拍广角镜头缓缓推进一家街角咖啡馆的门面。细小水滴从遮阳棚滴落，能听见远处汽车经过和雨滴落地的声音。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-2\",\"name\":\"02 · 咖啡放上桌\",\"start\":96,\"end\":168,\"prompt\":\"咖啡馆室内的木桌近景，暖色桌灯，窗外的街景在背景中自然虚化。一只手缓慢把白色瓷咖啡杯放在桌面上，热气上升。镜头轻微侧移，听见瓷器与桌面接触的清脆轻响。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-3\",\"name\":\"03 · 窗边的夜色\",\"start\":168,\"end\":288,\"prompt\":\"咖啡馆内靠窗的一名年轻人安静地望向雨后街道，窗上有细小雨痕，橙色路灯在玻璃上形成层次丰富的倒影。摄影机从人物肩后缓慢拉远，街道声音透过窗户显得柔和。结束时维持画面自然呼吸感。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false}],\"assets\":[]}}",
+        "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。"
+      ],
+      "widgets_values_named": {
+        "seed": 9,
+        "control_after_generate": "fixed",
+        "config_json": "{\"version\":4,\"document\":{\"version\":2,\"fps\":24,\"selected\":\"clip-1\",\"globalPrompt\":\"写实真人实景，真实电影摄影，准确的材质与自然光照，摄影机运动克制且有现场观察感。只保留环境声与动作声；全程没有背景音乐，没有字幕与旁白。\",\"autoAiEnhance\":true,\"clips\":[{\"id\":\"clip-1\",\"name\":\"01 · 雨后的街道\",\"start\":0,\"end\":96,\"prompt\":\"雨后傍晚的城市街口，路面映出温暖的灯光。写实实拍广角镜头缓缓推进一家街角咖啡馆的门面。细小水滴从遮阳棚滴落，能听见远处汽车经过和雨滴落地的声音。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-2\",\"name\":\"02 · 咖啡放上桌\",\"start\":96,\"end\":168,\"prompt\":\"咖啡馆室内的木桌近景，暖色桌灯，窗外的街景在背景中自然虚化。一只手缓慢把白色瓷咖啡杯放在桌面上，热气上升。镜头轻微侧移，听见瓷器与桌面接触的清脆轻响。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false},{\"id\":\"clip-3\",\"name\":\"03 · 窗边的夜色\",\"start\":168,\"end\":288,\"prompt\":\"咖啡馆内靠窗的一名年轻人安静地望向雨后街道，窗上有细小雨痕，橙色路灯在玻璃上形成层次丰富的倒影。摄影机从人物肩后缓慢拉远，街道声音透过窗户显得柔和。结束时维持画面自然呼吸感。\",\"aiPrompt\":\"\",\"promptMode\":\"user\",\"aiOptOut\":false,\"aiMetadata\":{},\"refs\":[],\"useGlobalPrompt\":true,\"transitionMode\":\"independent\",\"suspended\":false}],\"assets\":[]}}",
+        "tail_reference_prompt": "[镜头连续性参考]\n{picture} 为上一镜头最终帧。仅参考人物与场景状态、色彩、光线和整体基调；当前镜头按照本段描述重新构图与运镜。"
+      }
+    },
+    {
+      "id": 8,
+      "type": "TerryDirectorOutput",
+      "pos": [
+        375,
+        -90
+      ],
+      "size": [
+        310,
+        135
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "director_output",
+          "type": "TERRYDIRECTOR_OUTPUT",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "分段潜变量",
+          "type": "LATENT",
+          "links": null
+        },
+        {
+          "name": "合并画面",
+          "type": "IMAGE",
+          "links": [
+            8
+          ]
+        },
+        {
+          "name": "合并音频",
+          "type": "AUDIO",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirectorOutput"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 9,
+      "type": "CreateVideo",
+      "pos": [
+        760,
+        -90
+      ],
+      "size": [
+        255,
+        150
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 8
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 9,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            10
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ],
+      "widgets_values_named": {
+        "fps": 24,
+        "bit_depth": "auto",
+        "color_space": "sRGB",
+        "codec": "none"
+      },
+      "title": "24 FPS · 创建视频"
+    },
+    {
+      "id": 10,
+      "type": "SaveVideo",
+      "pos": [
+        1090,
+        -90
+      ],
+      "size": [
+        325,
+        180
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "video/TerryDirector_AI_3clips_0p2MP",
+        "auto",
+        "auto",
+        "auto"
+      ],
+      "widgets_values_named": {
+        "filename_prefix": "video/TerryDirector_AI_3clips_0p2MP",
+        "format": "auto",
+        "format.codec": "auto",
+        "codec": "auto"
+      },
+      "title": "保存 0.2MP 三段视频"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      5,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      5,
+      1,
+      "CLIP"
+    ],
+    [
+      3,
+      3,
+      0,
+      5,
+      2,
+      "VAE"
+    ],
+    [
+      4,
+      4,
+      0,
+      5,
+      3,
+      "VAE"
+    ],
+    [
+      5,
+      5,
+      0,
+      7,
+      0,
+      "TERRYDIRECTOR_CONFIG"
+    ],
+    [
+      6,
+      6,
+      0,
+      7,
+      1,
+      "TERRYDIRECTOR_LLAMA_CONFIG"
+    ],
+    [
+      7,
+      7,
+      0,
+      8,
+      0,
+      "TERRYDIRECTOR_OUTPUT"
+    ],
+    [
+      8,
+      8,
+      1,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      9,
+      8,
+      2,
+      9,
+      1,
+      "AUDIO"
+    ],
+    [
+      10,
+      9,
+      0,
+      10,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "frontendVersion": "1.53.10",
+    "td_acceptance": {
+      "name": "TerryDirector AI three clips 0.2MP",
+      "model": "MiniMax H3",
+      "director": "TerryDirector",
+      "selflift": false,
+      "resolution": [
+        608,
+        352
+      ],
+      "fps": 24,
+      "total_frames": 288,
+      "total_seconds": 12,
+      "clip_lengths_frames": [
+        96,
+        72,
+        120
+      ],
+      "ai_seed": 8888,
+      "video_seed": 9,
+      "auto_ai": true,
+      "prompt_mode_initial": "user"
+    }
+  },
+  "version": 0.4
+}
