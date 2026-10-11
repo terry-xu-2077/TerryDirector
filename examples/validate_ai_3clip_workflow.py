@@ -4,10 +4,30 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 
 
 DEFAULT = Path(__file__).with_name("TerryDirector_AI_3clips_0.2MP.json")
+
+# Grounded in the previously tested 9-clip official H3 looper workflow.
+# The original prompt text and image paths must NOT be replaced by placeholders.
+SOURCE_WORKFLOW = "TerryDirector_循环器_官方H3_示例工作流.json"
+REFERENCE_FILES = [
+    "00_特瑞_Terry.jpeg",
+    "Generate_vehicle_multi-view_images_2K_202608132251.jpeg",
+    "开场遗迹.png",
+    "荒星地貌.jpeg",
+    "codex_9ea39e8314544c10aa7c0e140ba871d5.png",
+    "Designing_custom_coin_grid_2K_202608170722.jpeg",
+    "地下虫群-个体 拷贝.jpg",
+]
+SEGMENT_NAMES = ["特瑞的面部与粗糙的手", "破损的电子屏幕", "“蚂蚱”载具驶入"]
+SEGMENT_PROMPT_MARKERS = [
+    ["特瑞脸颊带有轻微油污", "黄色的工业绝缘胶带", "Foley 音效"],
+    ["“剩余电量”", "电弧短路", "再撑一段。"],
+    ["“蚂蚱”载具", "“ORC”", "呼啸的荒原风声"],
+]
 
 
 def verify(workflow: dict) -> dict:
@@ -50,14 +70,40 @@ def verify(workflow: dict) -> dict:
     assert lw["control_after_generate"] == dw["control_after_generate"] == "fixed"
     doc = json.loads(dw["config_json"])["document"]
     assert doc["fps"] == 24 and doc["autoAiEnhance"] is True
-    assert doc["assets"] == [] and len(doc["clips"]) == 3
+    assert len(doc["assets"]) == 7 and len(doc["clips"]) == 3
     assert [(x["start"], x["end"]) for x in doc["clips"]] == [
         (0, 96), (96, 168), (168, 288)]
+    assert [c["name"] for c in doc["clips"]] == SEGMENT_NAMES
     assert all(x["prompt"] and x["aiPrompt"] == ""
                and x["promptMode"] == "user" and not x["aiMetadata"]
                and not x["aiOptOut"] and not x["suspended"]
-               and x["transitionMode"] == "independent" and not x["refs"]
+               and x["transitionMode"] == "tail_reference" and not x["refs"]
                for x in doc["clips"])
+    for clip, markers in zip(doc["clips"], SEGMENT_PROMPT_MARKERS):
+        assert all(marker in clip["prompt"] for marker in markers), (
+            f"Source prompt was changed: {clip['name']}"
+        )
+    assert [a["source"]["path"] for a in doc["assets"]] == REFERENCE_FILES
+    assert [a["number"] for a in doc["assets"]] == list(range(1, 8))
+    assert all(a["kind"] == "image" and a["source"]["type"] == "comfy-input"
+               for a in doc["assets"])
+    assert re.findall(r"<Picture\\s+(\\d+)>", doc["globalPrompt"]) == [
+        "4", "1", "2", "3", "5", "6", "7"
+    ], "All seven original asset references must remain in the global prompt"
+    assert "特瑞在极端荒原生存" in doc["globalPrompt"]
+    assert "Sony Venice 2" in doc["globalPrompt"]
+    assert "2.39:1" in doc["globalPrompt"]
+    assert len(doc["assets"]) + 1 <= 9, "Tail frame requires a spare image slot"
+    assert workflow.get("extra", {}).get("td_acceptance", {}).get("source_workflow") == SOURCE_WORKFLOW
+    # First clip has no previous tail; the next two must receive the preceding
+    # generated frame at runtime, not through the AI prompt enhancer.
+    assert workflow["extra"]["td_acceptance"]["tail_reference_from_clip"] == 2
+    assert node("UNETLoader")["widgets_values_named"]["unet_name"] == (
+        "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+    )
+    assert node("CLIPLoader")["widgets_values_named"]["clip_name"] == (
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors"
+    )
 
     pairs = {(by_id[s]["type"], by_id[d]["type"], by_id[d]["inputs"][i]["name"])
              for _, s, _, d, i, _ in links}
@@ -85,7 +131,12 @@ def verify(workflow: dict) -> dict:
             "clip_frames": [96, 72, 120],
             "h3_aligned_frames": [107, 73, 124],
             "selflift": False, "ai_seed": 8888,
-            "video_seed": 9, "auto_enhance": True}
+            "video_seed": 9, "auto_enhance": True,
+            "source_workflow": SOURCE_WORKFLOW,
+            "images": len(doc["assets"]),
+            "image_paths": REFERENCE_FILES,
+            "transition_modes": [c["transitionMode"] for c in doc["clips"]],
+            "effective_tail_reference_on": [2, 3]}
 
 
 if __name__ == "__main__":
