@@ -105,6 +105,10 @@
         skill:'h3-prompt-writing-global',sourcePrompt:documentData.globalPrompt
       };
       siteDemoDocument=C.copy(documentData);
+      // Only the ?global-ai=1&show-ai-global=1 screenshot route defaults
+      // to the enhanced tab. Normal website visits still show the original.
+      if(new URLSearchParams(location.search).get('show-ai-global')==='1')
+        siteDemoDocument.globalPromptMode='ai';
       demoInputFiles.splice(0,demoInputFiles.length,...documentData.assets.map(item=>({
         path:item.source?.path||'',name:item.name,kind:item.kind,
         src:siteDemoThumbnail(item.number),number:item.number,id:item.id
