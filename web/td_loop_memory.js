@@ -5,36 +5,51 @@
  * changing values remain unknown instead of reusing overridden H3 widgets.
  */
 export function findLoopMemorySources(loopEnd, upstream) {
-  const info = upstream?.(loopEnd, "segment_data");
-  if (info?.comfyClass !== "TerryDirectorLoopInfo") {
-    return { looper: null, h3: null };
-  }
-  const looper = upstream(info, "loop_context");
-  if (looper?.comfyClass !== "TerryDirectorLooper") {
-    return { looper: null, h3: null };
-  }
-
   const pending = [
-    upstream(loopEnd, "images"),
+    upstream?.(loopEnd, "images"),
+    upstream?.(loopEnd, "audio"),
+    upstream?.(loopEnd, "dependency"),
   ].filter(Boolean);
+
   const visited = new Set();
   const references = new Set();
-  while (pending.length && visited.size < 256) {
+  const loopers = new Set();
+
+  while (pending.length && visited.size < 384) {
     const node = pending.shift();
     if (!node || visited.has(node)) continue;
     visited.add(node);
+
     if (node.comfyClass === "MiniMaxH3ReferenceToVideo") {
       references.add(node);
+    }
+
+    if (node.comfyClass === "TerryDirectorLoopInfo") {
+      const looper = upstream?.(node, "loop_context");
+      if (looper?.comfyClass === "TerryDirectorLooper") {
+        loopers.add(looper);
+      }
+    }
+
+    if (node.comfyClass === "TerryDirectorLooper") {
+      loopers.add(node);
       continue;
     }
-    if (node.comfyClass === "TerryDirectorLooper") continue;
+
+    // Keep walking through H3, sampler, condition, decode and utility nodes.
+    // LoopEnd no longer exposes segment_data, so the loop owner must be
+    // discovered from the actual media-generation graph.
     for (const input of node.inputs || []) {
-      const parent = upstream(node, input.name);
+      const parent = upstream?.(node, input.name);
       if (parent && !visited.has(parent)) pending.push(parent);
     }
   }
-  // Multiple H3 sources may not use the same canvas. Do not guess.
-  return { looper, h3: references.size === 1 ? [...references][0] : null };
+
+  // Multiple loop owners or H3 sources are ambiguous; never guess.
+  return {
+    looper: loopers.size === 1 ? [...loopers][0] : null,
+    h3: references.size === 1 ? [...references][0] : null,
+  };
 }
 
 function inputPort(node, name) {
