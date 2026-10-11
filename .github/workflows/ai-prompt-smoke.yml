@@ -29,4 +29,6 @@ jobs:
           node --input-type=module --check < web/terry_director.js
       - name: Existing JS unit tests
         run: |
-          node --test tests/core.test.cjs tests/timeline.test.cjs tests/h3-syntax.test.cjs
+          for test_file in tests/core.test.cjs tests/timeline.test.cjs tests/h3-syntax.test.cjs; do
+            node --test "$test_file"
+          done
