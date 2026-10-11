@@ -85,6 +85,10 @@ Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢�
 
 **LTX 2.5 尚不能运行。** 新增适配器必须先满足自己的合法帧数、参考输入与连续性条件构造，再允许注册为可用；未知模型不能静默复用 H3 Guide 语义。
 
+## TerryTools 总线互操作
+
+TerryDirector 前端的静态上游追踪会识别 TerryTools `TerryWireBusUnpack` / `TerryWirelessBusUnpack` 的虚拟输出解析接口。分辨率等静态参数即使经过 TerryTools 总线，也应回溯到真实来源节点（例如 `ResolutionSelector`），而不是在 Bus-Out 处停止。TerryTools 对 Bus-Out 暴露版本化的 `__terryBusResolveOutput(slot)` 接口；TerryDirector 同时保留对通用 `resolveVirtualOutput(slot)` 的兼容。总线重新接线时会触发循环输出检查刷新。
+
 ## 兼容与维护
 
 已实测的环境、默认采样数值、原始工作流 SHA 与可信提交基线汇总在 [STABLE_BASELINES.md](STABLE_BASELINES.md)。原 Base、Advanced 与 Self-Lift 的已验收行为是后续重构时必须保持的契约；循环器是否兼容更多模型，以相应适配器的独立实测为准。
