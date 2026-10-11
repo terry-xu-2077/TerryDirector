@@ -87,7 +87,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
 
 点击节点内的迷你时间线，即可在当前 ComfyUI 页面打开导演编辑窗口；编辑片段、提示词与共享素材后「保存并退出」。挂起片段保留在创作时间线里，但不会提交采样。尾帧参考／续接／独立等行为可在片段接缝处调整，并可在 ComfyUI 的 TerryDirector 设置里配置默认衔接方式。
 
-静态编辑器演示仍可通过仓库根目录的 [index.html](index.html) 查看；它只是编辑界面预览，不执行 ComfyUI 生成任务。
+开发分支的 [在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/feat%2Fai-prompt-enhancement/index.html) 可直接查看最新编辑器布局：网站从 [AI 验收工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**，不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。链接经只读静态代理预览当前开发分支，正式 GitHub Pages 站点在合并主分支之前可能仍显示旧版。
 
 ## 使用边界
 
