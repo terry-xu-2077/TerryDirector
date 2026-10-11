@@ -243,10 +243,16 @@ async def terrydirector_ai_enhance(request: web.Request) -> web.Response:
             raise ValueError("请求体必须是 JSON 对象")
         config = require_ai_config(payload.get("llama_config"))
         document = normalize_document(payload.get("document"))
-        ids = payload.get("clip_ids")
-        if not isinstance(ids, list) or not ids or len(ids) > 64:
-            raise ValueError("需要选择 1–64 个片段")
-        job_id = AI_JOBS.submit(config, document, [str(x) for x in ids])
+        scope = payload.get("scope", "clips")
+        if scope == "global":
+            job_id = AI_JOBS.submit_global(config, document)
+        elif scope == "clips":
+            ids = payload.get("clip_ids")
+            if not isinstance(ids, list) or not ids or len(ids) > 64:
+                raise ValueError("需要选择 1–64 个片段")
+            job_id = AI_JOBS.submit(config, document, [str(x) for x in ids])
+        else:
+            raise ValueError("无效的 AI 增强范围")
         return web.json_response({"job_id": job_id}, status=202)
     except (ValueError, TypeError, RuntimeError) as exc:
         return web.json_response({"error": str(exc)}, status=409 if isinstance(exc, RuntimeError) else 400)

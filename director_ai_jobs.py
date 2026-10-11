@@ -70,6 +70,41 @@ class AIJobService:
             worker.start()
             return job_id
 
+
+    def submit_global(self, config: dict, document: dict) -> str:
+        """Submit one independent global prompt task; never touches ComfyUI Queue."""
+        config = require_ai_config(config)
+        if not str(document.get("globalPrompt") or "").strip():
+            raise ValueError("全局提示词为空，无法增强")
+        with self._lock:
+            if AI_MANAGER.busy or any(j.status in {"queued", "running"} for j in self._jobs.values()):
+                raise RuntimeError("另一个 AI 增强任务正在运行")
+            job_id = uuid.uuid4().hex
+            job = AIJob(job_id, ["__global__"], total=1)
+            self._jobs[job_id] = job
+            self._cleanup_jobs()
+            worker = threading.Thread(
+                target=self._run_global, args=(job, config, copy.deepcopy(document)),
+                name=f"TerryDirector-GlobalAI-{job_id[:8]}", daemon=True,
+            )
+            worker.start()
+            return job_id
+
+    def _run_global(self, job: AIJob, config: dict, document: dict):
+        job.status = "running"
+        try:
+            result = AI_MANAGER.enhance_global(config, document, cancel=job.cancel_event)
+            with self._lock:
+                job.results.append(result)
+                job.current = "__global__"
+                job.done = 1
+            job.status = "cancelled" if job.cancel_event.is_set() else "completed"
+        except CancelledAI:
+            job.status = "cancelled"
+        except Exception as exc:
+            job.error = f"{type(exc).__name__}: {exc}"
+            job.status = "error"
+
     def _cleanup_jobs(self):
         if len(self._jobs) <= MAX_JOBS:
             return
