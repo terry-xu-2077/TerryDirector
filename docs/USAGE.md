@@ -80,9 +80,29 @@ TerryDirector 循环信息
 
 循环结束对外固定只有 **视频 VIDEO（第一个输出）** 与 **分段潜变量 LATENT 列表（第二个输出）**。它不输出完整 IMAGE/AUDIO，也无需 A/B 模式或 CreateVideo。视频下游直接连官方 SaveVideo。分段潜变量只在输出端被下游使用时额外缓存。
 
+循环结束支持两种闭环。旧工作流继续连接「采样结果 + 视频VAE + 音频VAE + 片段数据」；自定义解码工作流可以改为直接连接「已解码画面 + 已解码音频 + 片段数据」。一旦已解码 IMAGE/AUDIO 同时接入，循环器优先使用这组媒体写入无损缓存和生成下一段连续性上下文，不再由 TerryDirector 再执行普通视频 VAE 解码。
+
+对于 **Self-Lift + 2X VAE** 工作流，推荐接线如下：
+
+```text
+SelfLift / H3 采样 LATENT
+        ├─→ LTXVSeparateAVLatent → 清理节点 → MiniMax H3 VAE Decode (fast)
+        │                                      │ IMAGE
+        │                                      ├────────→ TerryDirector 循环结束 · 已解码画面
+        │                                      └────────→ VHS Video Combine（可选，每段独立保存）
+        │
+        └─→ VAEDecodeAudio ─────────────────────────────→ TerryDirector 循环结束 · 已解码音频
+
+TerryDirector 循环信息 · 片段数据 ───────────────────────→ TerryDirector 循环结束 · 片段数据
+```
+
+此模式下，2X VAE（例如 `MiniMax-H3-X2-Detail-v1.safetensors`）只接 `MiniMax H3 VAE Decode (fast)`，循环结束的普通「视频VAE / 音频VAE」输入可以不接。如果还需要第二输出的「分段潜变量」，再额外把采样 LATENT 接到循环结束的「采样结果」；否则可以不接。
+
+外部解码后的真实 IMAGE/AUDIO 同时也是下一轮的连续性来源，因此「尾帧参考」会取 **fast decode 后的真实尾帧**。如果希望最终得到一个个独立视频而不是整条时间线，保留循环体内的 `VHS Video Combine` 即可让每轮分别保存文件；循环结束的流式 VIDEO 可以不再接 SaveVideo。反过来，如果仍想要一条最终视频，也可以继续保存循环结束的 VIDEO，此时它同样来自 fast decode 的分段缓存。
+
 循环结束的「视频输出检查」可以查看预计临时缓存空间及该磁盘剩余容量。保存视频成功后，无损片段临时文件会自动清理；异常中断可能保留缓存供排查。这里显示的占用是**无损片段缓存预测**，不是最终 MP4 文件大小。
 
-**当前范围**：默认适配器是 MiniMax H3；最多 9 个图片参考输入。LTX 2.5 虽有预留适配器，但未接通生成、条件和解码，因此不可用。循环体不自动沿用主导演 Self-Lift 配置。
+**当前范围**：默认适配器是 MiniMax H3；最多 9 个图片参考输入。LTX 2.5 虽有预留适配器，但未接通生成、条件和解码，因此不可用。循环体不自动沿用主导演 Self-Lift 配置；Self-Lift、2X VAE、锐化/放大等节点仍由用户在循环体中自由搭建。
 
 ## 6. 片段与素材
 
