@@ -1,11 +1,11 @@
 """Model-specific policies for TerryDirector's *external-node* timeline loop.
 
 Only this file owns loop-only decisions about H3 frame grids, reference
-images, conditioning continuity and sampled LATENT decoding. The independent
-native loop engine, timeline editor and streamed VIDEO output remain shared.
+images and conditioning continuity. Decoding is deliberately outside the
+adapter contract: the user graph supplies final IMAGE/AUDIO to LoopEnd.
 
 LTX 2.5 is deliberately a registered, unavailable placeholder. Do not silently
-run LTX inputs through the H3 guide or H3 audio decoder.
+run LTX inputs through the H3 guide.
 """
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ class LoopModelAdapter:
     """Boundary between one creative timeline and a generator's native graph.
 
     No ComfyUI imports live in this base contract. The existing nodes pass
-    their official compiler, guide node, image loader and cache decoder in.
-    That lets H3 retain its exact behaviour without modifying Base/Advanced.
+    their official compiler, guide node and image loader in. Decoding stays
+    editable in the external ComfyUI graph.
     """
 
     info: LoopAdapterInfo
@@ -51,10 +51,6 @@ class LoopModelAdapter:
                          audio_vae, *, guide_node):
         raise NotImplementedError
 
-    def cache_segment(self, segment: dict, samples, vae, audio_vae, *,
-                      cache_node):
-        raise NotImplementedError
-
 
 class MiniMaxH3LoopAdapter(LoopModelAdapter):
     """Preserve all currently shipped loop-specific H3 semantics."""
@@ -63,7 +59,7 @@ class MiniMaxH3LoopAdapter(LoopModelAdapter):
         adapter_id=DEFAULT_LOOP_ADAPTER,
         display_name="MiniMax H3",
         ready=True,
-        description="当前已接入的 H3 帧数、图片、Guide 与音画缓存适配。",
+        description="当前已接入的 H3 帧数、图片与 Guide 适配。",
     )
 
     def compile_plan(self, document, tail_reference_prompt, *, compiler):
@@ -141,27 +137,6 @@ class MiniMaxH3LoopAdapter(LoopModelAdapter):
             )[0]
         return result
 
-    def cache_segment(self, segment: dict, samples, vae, audio_vae, *,
-                      cache_node):
-        loop = segment["_loop"]
-        assembly = segment["assembly"]
-        # The Base cache itself remains untouched and retains its already
-        # verified H3 AV decode, overlap trim and compact next-step context.
-        return cache_node.execute(
-            samples=samples,
-            vae=vae,
-            audio_vae=audio_vae,
-            cache_key=loop["cache_key"],
-            run_signature=loop["run_signature"],
-            segment_id=segment["id"],
-            signature=loop["signature"],
-            output_frames=int(segment["output_frames"]),
-            trim_head_frames=int(assembly["trim_head_frames"]),
-            gap_frames=int(assembly["gap_before_frames"]),
-            gap_after_frames=int(assembly["gap_after_frames"]),
-            context_frames=int(loop["context_frames"]),
-            fps=24,
-        )
 
 
 class LTX25ReservedAdapter(LoopModelAdapter):
@@ -172,8 +147,8 @@ class LTX25ReservedAdapter(LoopModelAdapter):
         display_name="LTX 2.5（预留）",
         ready=False,
         description=(
-            "尚未适配 LTX 2.5 的 8n+1 帧数规则、图片/潜变量条件、"
-            "联合音视频解码及逐段缓存；不可用于生成。"
+            "尚未适配 LTX 2.5 的 8n+1 帧数规则、图片/潜变量条件"
+            "与连续性 Guide；不可用于生成。"
         ),
     )
 
