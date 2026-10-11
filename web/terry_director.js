@@ -16,6 +16,12 @@ const LOOP_NODE_CLASS = "TerryDirectorLooper";
 const LOOP_END_NODE_CLASS = "TerryDirectorLoopEnd";
 const LOOP_INFO_NODE_CLASS = "TerryDirectorLoopInfo";
 const H3_CONDITION_NODE_CLASS = "MiniMaxH3ReferenceToVideo";
+const LOOP_CONDITION_NODE_CLASS = "TerryDirectorLoopCondition";
+const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
+function timelineTitleHtml(label = "时间线") {
+  return '<span class="td-mini-title"><img class="td-mini-brand" src="' +
+    BRAND_MARK_URL + '" alt="" aria-hidden="true"><span>' + label + '</span></span>';
+}
 /**
  * Workflow JSON may store the old visible slot labels. Synchronize the
  * new model-neutral presentation without touching input IDs or link indices.
@@ -1409,7 +1415,7 @@ function renderNode(node) {
   root.innerHTML = `<div class="td-node-card td-node-card-director">
     <div class="td-mini-wrap td-mini-wrap-director">
       <div class="td-mini-head">
-        <strong>时间线</strong>
+        <strong>${timelineTitleHtml()}</strong>
         <span class="td-mini-stats">
           总时长：<b>${totalSeconds}</b>s
           <i></i>
@@ -2199,7 +2205,7 @@ function renderAdvancedNode(node) {
       <label class="td-adv-preview-toggle"><input type="checkbox" data-adv="preview-enabled" ${previewEnabled ? "checked" : ""}/>启用预览</label><button type="button" class="td-mini-edit td-adv-locate" data-adv="follow" title="定位当前播放头">⌖ 定位</button>
     </div>
     <div class="td-adv-timeline-panel">
-      <div class="td-mini-head td-adv-head"><strong>时间线</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
+      <div class="td-mini-head td-adv-head"><strong>${timelineTitleHtml()}</strong><span class="td-mini-stats">总时长：<b>${Number(totalSeconds.toFixed(2))}</b>s <i></i> 片段数：<b>${clips.length}</b> <i></i> 导入资产：<b>${doc.assets.length}</b></span><span class="td-node-spacer"></span><button class="td-mini-edit" data-action="edit">✦ 编辑</button></div>
       <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="自适应时间线">
         <div class="td-adv-track" data-min-track-width="${minTimelineTrackWidth}" style="width:100%;min-width:${minTimelineTrackWidth}px;box-sizing:border-box">
           ${rulerHtml}
