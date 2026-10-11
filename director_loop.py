@@ -21,6 +21,11 @@ from comfy_extras.nodes_loop import StartLoop
 from comfy_extras.nodes_minimax_h3 import MiniMaxH3AddGuide
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
+from .director_loop_adapters import (
+    DEFAULT_LOOP_ADAPTER,
+    adapter_from_segment,
+    get_loop_adapter,
+)
 from .director_core import config_json, normalize_config
 from .director_loop_video import TerryDirectorStreamVideo
 from .director_internal import (
@@ -94,10 +99,16 @@ def _load_image(asset):
     return torch.from_numpy(array).float().div_(255.0).unsqueeze(0)
 
 
-def _plan_items(config_data, seed, tail_reference_prompt, loop_id):
+def _plan_items(
+    config_data, seed, tail_reference_prompt, loop_id,
+    adapter_id=DEFAULT_LOOP_ADAPTER,
+):
+    # Fail before creating any cache directory if the model has no adapter.
+    adapter = get_loop_adapter(adapter_id)
     config = normalize_config(config_data)
-    plan = compile_timeline(
-        config["document"], tail_reference_prompt=tail_reference_prompt
+    plan = adapter.compile_plan(
+        config["document"], tail_reference_prompt,
+        compiler=compile_timeline,
     )
     run_signature = uuid.uuid4().hex
     cache_key = f"loop-{loop_id}"
@@ -115,17 +126,19 @@ def _plan_items(config_data, seed, tail_reference_prompt, loop_id):
         )
         item = dict(segment)
         item["_loop"] = {
+            "adapter_id": adapter.info.adapter_id,
             "seed": int(seed),
             "cache_key": cache_key,
             "run_signature": run_signature,
             "context_frames": context_frames,
-            "signature": f"{run_signature}:{segment['id']}:{segment['h3_frames']}",
+            "signature": (
+                f"{run_signature}:{segment['id']}:"
+                f"{adapter.sampling_frames(segment)}"
+            ),
             "loop_id": str(loop_id),
         }
         items.append(item)
     return items
-
-
 
 class TerryDirectorLoopFrame(io.ComfyNode):
     """Hidden adapter: combine the current item and carried context into one port."""
@@ -406,28 +419,16 @@ class TerryDirectorLoopInfo(io.ComfyNode):
     @classmethod
     def execute(cls, loop_context):
         segment, previous_context = _require_loop_context(loop_context)
-        assets = segment["assets"]
-        if assets.get("videos") or assets.get("audios"):
-            raise ValueError(
-                "循环信息当前版本支持图片参考；视频/音频资产适配尚未实现，"
-                "请先使用图片参考工作流测试。"
-            )
+        adapter = adapter_from_segment(segment)
         _notify(segment["_loop"]["loop_id"], segment["id"], "running")
-        images = [_load_image(a) for a in assets["images"]]
-        kind = segment["continuity"]["kind"]
-        if kind == "tail_reference":
-            previous = (previous_context or {}).get("images")
-            if previous is None or previous.shape[0] < 1:
-                raise ValueError("尾帧参考需要上一片段生成的真实尾帧")
-            slot = int(segment["continuity"]["picture_number"]) - 1
-            if slot != len(images):
-                raise ValueError("尾帧参考序号与参考图输入位置不一致")
-            images.append(previous[-1:].clone())
+        images = adapter.reference_images(
+            segment, previous_context, load_image=_load_image
+        )
+        # The current schema remains the H3 image-slot contract; adapters
+        # with a different interface must implement their own future mapping.
         if len(images) > IMAGE_SLOTS:
             raise ValueError("当前循环信息节点最多提供 9 个参考图片输入")
         images.extend([None] * (IMAGE_SLOTS - len(images)))
-        # A flat generation packet, distinct from the complete loop envelope.
-        # Downstream conditioning and cache nodes accept only this type.
         segment_data = {
             **segment,
             "_type": SEGMENT_DATA_KIND,
@@ -436,12 +437,11 @@ class TerryDirectorLoopInfo(io.ComfyNode):
         }
         return io.NodeOutput(
             segment["prompt"],
-            int(segment["h3_frames"]),
+            adapter.sampling_frames(segment),
             int(segment["_loop"]["seed"]),
             segment_data,
             *images,
         )
-
 
 class TerryDirectorLoopCondition(io.ComfyNode):
     """Conditionally apply official MiniMaxH3AddGuide to real prior context."""
@@ -466,51 +466,12 @@ class TerryDirectorLoopCondition(io.ComfyNode):
     @classmethod
     def execute(cls, positive, latent, vae, audio_vae, segment_data):
         segment = _require_segment_data(segment_data)
-        previous_context = segment["previous_context"]
-        continuity = segment["continuity"]
-        kind = continuity["kind"]
-        if kind in ("independent", "gap", "tail_reference"):
-            return io.NodeOutput(positive)
-        previous = previous_context or {}
-        images = previous.get("images")
-        audio = previous.get("audio")
-        if images is None or audio is None:
-            raise ValueError(f"{kind} 承接需要上一片段的真实 IMAGE/AUDIO")
-        if kind == "tail_frame":
-            return MiniMaxH3AddGuide.execute(
-                positive=positive, latent=latent, vae=vae,
-                image=images[-1:], frame_idx=0,
-            )
-        if kind != "overlap":
-            raise ValueError(f"无法识别的循环条件模式: {kind}")
-        frames = int(continuity["frames"])
-        if images.shape[0] < frames:
-            raise ValueError("上一片段保留的重叠图像帧不足")
-        waveform = audio["waveform"]
-        rate = int(audio["sample_rate"])
-        samples = round(frames * rate / 24)
-        if waveform.shape[-1] < samples:
-            raise ValueError("上一片段保留的重叠音频不足")
-        overlap_audio = {
-            "waveform": waveform[..., -samples:].clone(),
-            "sample_rate": rate,
-        }
-        image_frames = int(continuity["video_guide_frames"])
-        result = MiniMaxH3AddGuide.execute(
-            positive=positive, latent=latent,
-            audio_vae=audio_vae, audio=overlap_audio,
-            vae=vae if image_frames else None,
-            image=images[-frames:][:image_frames] if image_frames else None,
-            frame_idx=0,
-        )[0]
-        boundary_frame = continuity.get("boundary_target_frame")
-        if boundary_frame is not None:
-            result = MiniMaxH3AddGuide.execute(
-                positive=result, latent=latent, vae=vae,
-                image=images[-1:], frame_idx=int(boundary_frame),
-            )[0]
+        adapter = adapter_from_segment(segment)
+        result = adapter.apply_continuity(
+            segment, positive, latent, vae, audio_vae,
+            guide_node=MiniMaxH3AddGuide,
+        )
         return io.NodeOutput(result)
-
 
 class TerryDirectorLoopCache(io.ComfyNode):
     """Run the existing lossless Base decoder/cache after each H3 sampling."""
@@ -543,22 +504,11 @@ class TerryDirectorLoopCache(io.ComfyNode):
     @classmethod
     def execute(cls, samples, vae, audio_vae, segment_data, store_latents=False):
         segment = _require_segment_data(segment_data)
+        adapter = adapter_from_segment(segment)
         loop = segment["_loop"]
-        assembly = segment["assembly"]
-        result = TerryDirectorDecodeSegmentToCache.execute(
-            samples=samples,
-            vae=vae,
-            audio_vae=audio_vae,
-            cache_key=loop["cache_key"],
-            run_signature=loop["run_signature"],
-            segment_id=segment["id"],
-            signature=loop["signature"],
-            output_frames=int(segment["output_frames"]),
-            trim_head_frames=int(assembly["trim_head_frames"]),
-            gap_frames=int(assembly["gap_before_frames"]),
-            gap_after_frames=int(assembly["gap_after_frames"]),
-            context_frames=int(loop["context_frames"]),
-            fps=24,
+        result = adapter.cache_segment(
+            segment, samples, vae, audio_vae,
+            cache_node=TerryDirectorDecodeSegmentToCache,
         )
         descriptor = json.loads(result[0])
         if bool(store_latents):
@@ -568,8 +518,6 @@ class TerryDirectorLoopCache(io.ComfyNode):
             json.dumps(descriptor, ensure_ascii=False),
             {"images": result[1], "audio": result[2]},
         )
-
-
 
 class TerryDirectorLoopEnd(io.ComfyNode):
     """Low-memory video wrapper and optional segment LATENT outputs.

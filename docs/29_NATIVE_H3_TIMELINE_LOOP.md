@@ -47,6 +47,37 @@ TerryDirector 循环开始 → 【循环上下文】→ TerryDirector 循环信�
 5. 分段潜变量按需生成：只有输出1连接下游时，才在每轮将完整原始 H3 AV LATENT 存为 CPU .latent.pt 并于结束时加载为列表；正常仅输出 VIDEO 时不消耗额外 LATENT 缓存。
 6. 循环结束内嵌卡片改成**「视频输出检查」**，显示时长、上游真实分辨率、24 fps、启用片段数，以及按原始 RGB float32 画面与音频估算的临时缓存空间（加约 25% 余量），而不是抽象地强调节省了多少内存。ComfyUI 通过只读接口 GET /terrydirector/api/temp-space 查询实际临时目录所在磁盘的剩余容量，只返回可用字节与盘符，不泄露完整本地路径。空间接近不足时用日常中文提示清理磁盘；保存成功自动清理缓存。此处**不是最终 MP4 大小预测**。
 
+## 模型适配层基础架构（H3 可运行 / LTX 2.5 预留）
+
+新增 \`director_loop_adapters.py\`。这是循环器的 Python 策略注册层，不是 ComfyUI 采样节点，也不会添加新的可见 UI 控件。统一的节点名称、时间线编辑器、动态 GraphBuilder、无损缓存存储与 VIDEO → SaveVideo 输出路径保持不变。
+
+| 适配器 ID | 当前状态 | 适配范围 |
+| --- | --- | --- |
+| \`minimax_h3\` | **已接入（默认）** | 原帧数编译、图片引用、H3 Guide 条件和已验收的 Base H3 联合音视频解码缓存 |
+| \`ltx_2_5\` | **预留，明确不可运行** | 未来实现 8n+1 帧数、LTX 参考图/潜变量条件、LTX 视频/音频解码与缓存 |
+
+模型适配器现在有五个稳定职责：
+
+1. \`compile_plan\`：解释相同的创作时间线，编译出某模型合法的片段计划；
+2. \`sampling_frames\`：返回真实采样帧数；目前 H3 仍采用 \`h3_frames\`；
+3. \`reference_images\`：处理该模型的参考素材和尾帧参考规则；
+4. \`apply_continuity\`：构建片段之间的首尾帧、Guide 与重叠条件；
+5. \`cache_segment\`：调用模型对应的 VAE/音频解码与无损片段缓存。
+
+**当前调用确实经过适配层：** \`_plan_items\` 先解析适配器并将 \`adapter_id\` 写入每个片段的 \`_loop\`；\`循环信息\`、\`循环条件\`、隐藏的 \`循环缓存\` 都根据这个 ID 分发到 H3 适配器。老的 \`director_compile.py\`、\`director_internal.py\` 和 Base / Advanced / SelfLift 源码没有修改。
+
+LTX 2.5 仅有独立的 \`LTX25ReservedAdapter\`，通过 \`loop_adapter_catalog()\` 可以看到 \`ready=False\`；调用 \`get_loop_adapter("ltx_2_5")\` 会在创建运行缓存之前抛出明确的 \`LoopAdapterNotReadyError\`，绝不能悄悄退回 H3。为避免出现无法使用的选项，本阶段不向时间线 UI 暴露 LTX 选择控件；只有在真实采样、素材条件、解码都通过验收后才开放选择。
+
+可独立执行 CPU 检查：
+
+\`\`\`shell
+python -m unittest discover -s tests -p "test_loop_adapters.py" -v
+python -m unittest discover -s tests -p "test_director_loop.py" -v
+python -m unittest discover -s tests -p "test_loop_integration_contract.py" -v
+\`\`\`
+
+后续开发 LTX 2.5 时，先验证官方单阶段工作流，再实现 \`LTX25LoopAdapter\` 的五项职责与 LTX 对应的 ComfyUI 普通节点链。届时还需评估当前循环信息固定的九个图片槽位是否适用于 LTX、跨片段上下文格式是否需扩展，不能仅把 \`ready\` 改成 \`True\`。
+
 ## 参数位置和职责
 
 - 帧率为时间线固定的 24 fps，不增加普通控件。

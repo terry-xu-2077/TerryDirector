@@ -1,5 +1,12 @@
 # 内置 Self-Lift 主分支与原生 H3 循环器整合验收
 
+## 阶段 0：模型适配层骨架（LTX 2.5 仅预留）
+
+本次整合分支新增 \`director_loop_adapters.py\`，以 \`minimax_h3\` 为默认可运行适配器，\`ltx_2_5\` 为尚未实现的明确预留。循环器的 \`_plan_items\`、循环信息、循环条件、内部缓存都实际委托适配器进行模型特定的帧数、参考图、Guide、解码缓存处理；通用时间线、LoopStart / LoopEnd、低内存 VIDEO/SaveVideo 不受影响。
+
+适配器支持 \`compile_plan / sampling_frames / reference_images / apply_continuity / cache_segment\` 五个职责。H3 逻辑在新适配器内复用原编译函数、原 MiniMaxH3AddGuide 与原 Base 无损缓存接口，保持原默认行为。LTX 2.5 的条目 \`ready=False\`，被请求运行时在清理或创建缓存之前明确拒绝，避免使用 H3 音画解码错误处理 LTX 结果。本阶段**不增加不可用的 UI 切换选项**。详情见 [循环器文档](29_NATIVE_H3_TIMELINE_LOOP.md)。
+
+
 ## 模型中立接口命名（2026-10-11）
 
 循环器的对外命名不再绑定 H3：目录改为 \`TerryDirector/循环\`，隐藏节点归到 \`TerryDirector/循环/内部\`；「H3帧数」改成「采样帧数」，「H3采样结果」改成「采样结果」。循环开始、循环信息、循环条件、循环结束保持原名称。前端在创建和加载现有节点时同步旧显示标签，不改变连接 ID 或底层采样数据。

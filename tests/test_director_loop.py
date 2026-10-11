@@ -3,13 +3,31 @@
 python -m unittest discover -s tests -p "test_director_loop.py" -v
 """
 import ast
+import importlib.util
 import json
 from pathlib import Path
+import sys
 import types
 import unittest
 import uuid
 
-SOURCE = Path(__file__).resolve().parents[1] / "director_loop.py"
+ROOT = Path(__file__).resolve().parents[1]
+SOURCE = ROOT / "director_loop.py"
+ADAPTER_SOURCE = ROOT / "director_loop_adapters.py"
+
+
+def _load_adapter_module():
+    """Load the real CPU-only adapter without importing the ComfyUI plugin."""
+    key = "_td_loop_adapters_cpu_test"
+    if key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(key, ADAPTER_SOURCE)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[key] = module  # dataclasses requires this registration
+        spec.loader.exec_module(module)
+    return sys.modules[key]
+
+
+ADAPTERS = _load_adapter_module()
 
 
 class FakeNodeOutput:
@@ -33,6 +51,9 @@ def load_functions(*names, context=None):
         "io": io, "uuid": uuid,
         "LOOP_CONTEXT_KIND": "terrydirector.loop_context",
         "SEGMENT_DATA_KIND": "terrydirector.segment_data",
+        "DEFAULT_LOOP_ADAPTER": ADAPTERS.DEFAULT_LOOP_ADAPTER,
+        "get_loop_adapter": ADAPTERS.get_loop_adapter,
+        "adapter_from_segment": ADAPTERS.adapter_from_segment,
         **(context or {}),
     }
     code = compile(ast.fix_missing_locations(ast.Module(body=wanted, type_ignores=[])), str(SOURCE), "exec")
@@ -56,7 +77,15 @@ class DirectorLoopTests(unittest.TestCase):
         self.assertIn('TerryDirectorLoopFrame', text)
         self.assertIn('loop_boundary="start"', text)
         self.assertIn('loop_boundary="end"', text)
-        self.assertIn('TerryDirectorDecodeSegmentToCache.execute(', text)
+        self.assertIn('adapter.cache_segment(', text)
+        self.assertIn('adapter.compile_plan(', text)
+        self.assertIn('adapter.reference_images(', text)
+        self.assertIn('adapter.apply_continuity(', text)
+        self.assertIn('adapter.sampling_frames(segment)', text)
+        self.assertIn('from .director_loop_adapters import (', text)
+        adapter_text = ADAPTER_SOURCE.read_text(encoding="utf-8")
+        self.assertIn('cache_node.execute(', adapter_text)
+        self.assertIn('guide_node.execute(', adapter_text)
         self.assertIn('io.Video.Output(display_name="视频")', text)
         self.assertIn('io.Latent.Output(display_name="分段潜变量", is_output_list=True)', text)
         self.assertNotIn('io.Image.Output(display_name="合并画面")', text)
@@ -86,12 +115,27 @@ class DirectorLoopTests(unittest.TestCase):
         compiled = fn('{"fps":24}', 9, "template", 22)
         self.assertEqual([x["_loop"]["context_frames"] for x in compiled], [12, 1, 1])
         self.assertEqual([x["_loop"]["seed"] for x in compiled], [9, 9, 9])
+        self.assertEqual(
+            [x["_loop"]["adapter_id"] for x in compiled],
+            ["minimax_h3"] * 3,
+        )
         self.assertEqual(calls[0][0], "loop-22")
         self.assertEqual(len(calls), 1)
         self.assertEqual(
             compiled[0]["_loop"]["run_signature"],
             compiled[2]["_loop"]["run_signature"],
         )
+
+    def test_unimplemented_ltx_adapter_rejects_before_cache_creation(self):
+        calls = []
+        fn = load_functions("_plan_items", context={
+            "normalize_config": lambda v: {"document": {}},
+            "compile_timeline": lambda *args, **kwargs: {"segments": []},
+            "prepare_base_run_cache": lambda *args: calls.append(args),
+        })["_plan_items"]
+        with self.assertRaisesRegex(ADAPTERS.LoopAdapterNotReadyError, "LTX 2.5"):
+            fn("{}", 7, "tail", 29, adapter_id="ltx_2_5")
+        self.assertEqual(calls, [])
 
     def test_media_reference_position_and_tail(self):
         import torch
