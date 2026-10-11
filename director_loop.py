@@ -232,7 +232,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
     graph = GraphBuilder()
     end = dynprompt.get_node(close_id)
     end_inputs = end["inputs"]
-    required = ("segment_data", "images", "audio")
+    required = ("images", "audio")
     for name in required:
         if not is_link(end_inputs.get(name)):
             raise ValueError(f"循环结束必须连接 {name}")
@@ -295,7 +295,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
         # The user-facing End node is not cloned. The loop boundary only
         # accepts media that the user's generation graph has already decoded.
         cache_inputs = {
-            "segment_data": copied_link(end_inputs["segment_data"]),
+            "loop_context": frame.out(0),
             "images": copied_link(end_inputs["images"]),
             "audio": copied_link(end_inputs["audio"]),
         }
@@ -540,10 +540,10 @@ class TerryDirectorLoopCache(io.ComfyNode):
             is_dev_only=True,
             description="内部无损分段缓存与紧凑连续性上下文。",
             inputs=[
+                LoopContextData.Input("loop_context", display_name="循环上下文"),
                 io.Image.Input("images", display_name="已解码画面"),
                 io.Audio.Input("audio", display_name="已解码音频"),
                 io.AnyType.Input("dependency", display_name="循环结束依赖", optional=True),
-                SegmentData.Input("segment_data", display_name="片段数据"),
             ],
             outputs=[
                 io.String.Output(display_name="分段缓存"),
@@ -556,8 +556,8 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, images, audio, segment_data, dependency=None):
-        segment = _require_segment_data(segment_data)
+    def execute(cls, loop_context, images, audio, dependency=None):
+        segment, _previous_context = _require_loop_context(loop_context)
         loop = segment["_loop"]
         assembly = segment["assembly"]
         result = TerryDirectorDecodeSegmentToCache.execute(
@@ -598,10 +598,9 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             is_output_node=True,
             description=(
                 "接收循环体已经解码完成的 IMAGE/AUDIO，写入无损分段缓存并输出低内存流式 VIDEO。"
-                "循环结束不再负责 VAE 解码，也不输出分段潜变量。"
+                "片段元数据由循环器内部注入；循环结束不再要求手动连接片段数据。"
             ),
             inputs=[
-                SegmentData.Input("segment_data", display_name="片段数据", optional=True),
                 io.Image.Input(
                     "images", display_name="已解码画面", optional=True,
                     tooltip="连接循环体最终画面，例如 MiniMax H3 VAE Decode (fast) 的 IMAGE 输出。",
