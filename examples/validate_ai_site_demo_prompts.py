@@ -43,6 +43,18 @@ def validate() -> dict:
     assert demo["skill"] == "h3-prompt-writing" and demo["mode"] == "Ref2VA"
     assert "not an actual Qwen model output" in demo["provenance"]
     assert demo["workflow"] == "examples/" + WORKFLOW.name
+    assert demo["globalMode"] == "global-constraints-only"
+    global_ai = demo["globalAiPrompt"]
+    assert all(key in global_ai for key in (
+        "[Global direction]", "[Visual language]", "[Lighting and palette]",
+        "[Shared reference definitions]", "Sony Venice 2", "2.39:1",
+    ))
+    assert re.findall(r"<Picture\\s+(\\d+)>", global_ai) == [
+        str(i) for i in range(1, 8)
+    ]
+    assert "<Picture 8>" not in global_ai
+    assert "tail_reference" not in global_ai
+    assert all(field + ":" not in global_ai for field in SECTIONS)
     assert "[\"skill\"]" not in doc  # Not a real AI engine output
     assert len(doc["clips"]) == len(demo["clips"]) == 3
     assert [c["id"] for c in doc["clips"]] == [c["id"] for c in demo["clips"]]
@@ -100,6 +112,7 @@ def validate() -> dict:
         "real_ai_results_in_workflow": False,
         "source_clips": len(doc["clips"]),
         "source_images": len(doc["assets"]),
+        "global_ai_demo": True,
         "details": prompts,
     }
 
