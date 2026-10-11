@@ -1189,7 +1189,13 @@
         ...options,value:options?.value??currentField().text
       }),
       onBeforeChange:()=>{if(currentField().before===null)currentField().before=currentField().text;},
-      onChange:text=>{currentField().text=text;$('#globalPromptCount').textContent=text.length+' 字';},
+      onChange:text=>{
+        currentField().text=text;
+        $('#globalPromptCount').textContent=text.length+' 字';
+        updateBusy();
+        if(version==='user'&&fields.ai.text&&metadata.sourcePrompt&&metadata.sourcePrompt!==text)
+          $('#globalAiStatus').textContent='原文已更新 · AI 全局结果未重新增强';
+      },
       onCommit:commitDraft,
       onHistory:isRedo=>{
         commitDraft();const field=currentField();
@@ -1429,7 +1435,21 @@
   $('#scrollBar').addEventListener('pointermove',e=>{if(scrollDrag)timeline.setScroll(scrollDrag.initial+(e.clientX-scrollDrag.x)*scrollDrag.scale);});for(const event of ['pointerup','pointercancel','lostpointercapture'])$('#scrollBar').addEventListener(event,()=>scrollDrag=null);
   window.TerryDirectorDemo={getState:()=>C.copy(state),getAssets:()=>C.copy(poolEntries()),getDocument:()=>C.copy(documentPayload()),loadDocument,getActivity:id=>C.copy(activityFor({id})),timeline,editor:promptEditor,applyTheme:palette=>{for(const [key,value] of Object.entries(palette)){if(/^--td-(neutral|violet|warm|ink)-[a-z-]+$/.test(key)&&CSS.supports('color',value))document.body.style.setProperty(key,value);}timeline.readTheme();timeline.invalidate();},reset:()=>actions.reset()};
   $('#dialog').addEventListener('close',()=>{stopDialogMedia();if($('#dialog').dataset.mode==='media')$('#dialogBody').replaceChildren();});
-  $('#dialog').addEventListener('click',e=>{if(e.target!==e.currentTarget)return;const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.currentTarget.close();});
+  $('#dialog').addEventListener('cancel',event=>{
+    if($('#dialog').dataset.mode==='global-prompt'&&aiJob){
+      event.preventDefault();toast('全局 AI 增强仍在进行，请完成或取消后关闭');
+    }
+  });
+  $('#dialog').addEventListener('click',e=>{
+    if(e.target!==e.currentTarget)return;
+    const r=e.currentTarget.getBoundingClientRect();
+    if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){
+      if(e.currentTarget.dataset.mode==='global-prompt'&&aiJob){
+        toast('全局 AI 增强仍在进行，请先取消');return;
+      }
+      e.currentTarget.close();
+    }
+  });
   window.addEventListener('pointerdown',e=>{if(transitionMenu&&!transitionMenu.contains(e.target))closeTransitionMenu();},true);
   if(embedded){
     window.addEventListener('message',event=>{
