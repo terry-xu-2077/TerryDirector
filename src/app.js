@@ -500,6 +500,21 @@
     renderResolutionResult();
   }
 
+  function applyHostAiPatch(records){
+    if(!records||typeof records!=='object')return;
+    let changed=false;
+    for(const clip of state.clips){
+      const patch=records[String(clip.id)];
+      if(!patch?.aiPrompt||!patch?.aiMetadata)continue;
+      const nextSeed=Number(patch.aiMetadata.seed);
+      if(clip.aiPrompt&&Number(clip.aiMetadata?.seed)===nextSeed)continue;
+      clip.aiPrompt=String(patch.aiPrompt);
+      clip.aiMetadata=C.copy(patch.aiMetadata);
+      if(!clip.aiOptOut)clip.promptMode='ai';
+      changed=true;
+    }
+    if(changed){renderAll();}
+  }
   function renderAiControls(){
     const connected=!!aiConfig,busy=!!aiJob;
     const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
@@ -526,7 +541,7 @@
       const payload=await response.json();
       if(!response.ok)throw new Error(payload.error||'无法启动 AI 增强');
       aiJob=payload.job_id;aiSeen=new Set();
-      renderAiControls();toast('正在使用本地 Qwen 增强提示词');
+      markEdited();renderAiControls();toast('正在使用本地 Qwen 增强提示词');
       void pollAiJob();
     }catch(error){aiJob=null;renderAiControls();toast(error?.message||'启动 AI 增强失败');}
   }
@@ -994,6 +1009,7 @@
     refresh();if(!d.open)d.showModal();
   }
   function confirmCloseEditor(){
+    if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}
     promptEditor?.closeMenu();stopDialogMedia();
     const d=$('#dialog');
     d.dataset.mode='confirm-close';
@@ -1041,7 +1057,7 @@
     'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
     'save-close':saveToHost,
     'queue-workflow':queueWorkflow,
-    'close-editor':()=>{if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
+    'close-editor':()=>{if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     undo:()=>{finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
     redo:()=>{finishPromptEdit();timeline.cancel();const next=history.redo(state);if(next){state=next;renderAll();markEdited();}},
@@ -1148,6 +1164,7 @@
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
       else if(message.type==='terrydirector:ai-config'){aiConfig=message.config||null;renderAiControls();}
+      else if(message.type==='terrydirector:ai-patch')applyHostAiPatch(message.clips);
       else if(message.type==='terrydirector:preferences')defaultTransitionMode=normalizeTransitionMode(message.defaultTransitionMode,'tail_reference');
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
       else if(message.type==='terrydirector:request-save')saveToHost();
