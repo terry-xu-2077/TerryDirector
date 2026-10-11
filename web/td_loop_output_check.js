@@ -89,7 +89,7 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
     : status === "warning"
       ? "临时磁盘剩余空间不多，建议多留一些空间。"
       : !ready
-        ? "当前无法确定分辨率，请检查上游生成节点。"
+        ? (estimate.hint || "当前无法确定分辨率，请检查上游生成节点。")
         : "视频保存成功后，临时文件会自动清理。";
 
   const title = '<div class="td-output-memory-title">' +
