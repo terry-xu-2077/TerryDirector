@@ -146,7 +146,7 @@
   let resolutionEditBefore=null;
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
-  let aiConfig=null,aiJob=null,aiPolling=false,aiSeen=new Set();
+  let aiConfig=null,aiConfigStatus='disconnected',aiJob=null,aiPolling=false,aiSeen=new Set();
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
   app.innerHTML=`
@@ -187,6 +187,11 @@
     ?state.aiGlobalPrompt:state.globalPrompt;
   const editablePrompt=c=>c?.promptMode==='ai'?(c?.aiPrompt||''):(c?.prompt||'');
   const canEnhance=()=>!!aiConfig&&!hostReadonly&&!aiJob;
+  const aiUnavailableReason=()=>aiConfigStatus==='bypassed'
+    ?'TerryDirector Llama 配置已 Bypass'
+    :aiConfigStatus==='muted'
+      ?'TerryDirector Llama 配置已禁用'
+      :'请先连接 TerryDirector Llama 配置节点';
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
   function closeTransitionMenu(){
@@ -597,10 +602,17 @@
     if(changed){renderAll();}
   }
   function renderAiControls(){
-    const connected=!!aiConfig,busy=!!aiJob;
+    const connected=!!aiConfig,busy=!!aiJob,unavailable=aiUnavailableReason();
     const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
-    if(single){single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';single.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':'调用本地 Llama 增强片段';}
-    if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
+    if(single){
+      single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();
+      single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';
+      single.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':connected?'调用本地 Llama 增强片段':unavailable;
+    }
+    if(all){
+      all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());
+      all.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':connected?'全部片段按原文重新增强':unavailable;
+    }
     const cancel=$('[data-action=ai-cancel]');
     if(cancel){cancel.hidden=!busy;cancel.disabled=!busy;}
     globalModal?.updateBusy?.();
@@ -608,7 +620,11 @@
     if(raw)raw.readOnly=hostReadonly||busy;
     if(visual)visual.contentEditable=(hostReadonly||busy||!current())?'false':'true';
     const checkbox=$('#autoAiEnhance');
-    if(checkbox){checkbox.checked=!!state.autoAiEnhance;checkbox.disabled=!connected||hostReadonly||busy;checkbox.title=connected?'Queue 时先完成批量 AI 增强，再执行 H3':'请先连接 TerryDirector Llama 配置节点';}
+    if(checkbox){
+      checkbox.checked=!!state.autoAiEnhance;
+      checkbox.disabled=!connected||hostReadonly||busy;
+      checkbox.title=connected?'Queue 时先完成批量 AI 增强，再执行 H3':unavailable;
+    }
   }
   function switchPromptMode(mode){
     if(hostReadonly||!current()||aiJob)return;
@@ -617,7 +633,7 @@
   }
   async function startAiEnhance(all){
     if(!embedded){toast('网站只展示创作界面，不会启动 Qwen 或 ComfyUI Queue。');return;}
-    if(!canEnhance()){toast('请先连接 TerryDirector Llama 配置节点');return;}
+    if(!canEnhance()){toast(aiUnavailableReason());return;}
     const clips=(all?state.clips:[current()]).filter(c=>c&&!c.suspended&&c.prompt?.trim());
     if(!clips.length){toast('没有可增强的片段');return;}
     finishPromptEdit();
@@ -1145,7 +1161,7 @@
       if(enhance){
         enhance.disabled=!active||!fields.user.text.trim();
         enhance.title=!embedded?'查看静态 H3 Skill 全局提示词示例':
-          !aiConfig?'请先连接 TerryDirector Llama 配置节点':'使用本地 Qwen 增强全局提示词';
+          !aiConfig?aiUnavailableReason():'使用本地 Qwen 增强全局提示词';
         enhance.textContent=isBusy()?'正在增强全局提示词…':'✦ AI 提示增强';
       }
       const cancel=$('#globalAiCancelButton');
@@ -1456,7 +1472,11 @@
       if(event.origin!==hostOrigin||event.source!==window.parent)return;
       const message=event.data||{};
       if(message.type==='terrydirector:load')loadDocument(message.document);
-      else if(message.type==='terrydirector:ai-config'){aiConfig=message.config||null;renderAiControls();}
+      else if(message.type==='terrydirector:ai-config'){
+        aiConfig=message.config||null;
+        aiConfigStatus=String(message.status||(aiConfig?'active':'disconnected'));
+        renderAiControls();
+      }
       else if(message.type==='terrydirector:ai-patch')applyHostAiPatch(message.clips);
       else if(message.type==='terrydirector:preferences')defaultTransitionMode=normalizeTransitionMode(message.defaultTransitionMode,'tail_reference');
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
