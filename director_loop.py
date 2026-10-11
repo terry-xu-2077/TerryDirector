@@ -300,6 +300,8 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
         cache_inputs = {
             "segment_data": copied_link(end_inputs["segment_data"]),
         }
+        if is_link(end_inputs.get("dependency")):
+            cache_inputs["dependency"] = copied_link(end_inputs["dependency"])
         if decoded_mode:
             cache_inputs["images"] = copied_link(end_inputs["images"])
             cache_inputs["audio"] = copied_link(end_inputs["audio"])
@@ -398,7 +400,7 @@ class TerryDirectorLooper(StartLoop):
         )
         end = dynprompt.get_node(end_id)
         remaining_inputs = end["inputs"].copy()
-        for key in ("samples", "vae", "audio_vae", "images", "audio", "segment_data"):
+        for key in ("samples", "vae", "audio_vae", "images", "audio", "segment_data", "dependency"):
             remaining_inputs.pop(key, None)
         execution_list.add_node(end_id)
         execution_list.add_external_block(end_id)
@@ -517,6 +519,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
                 io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
                 io.Image.Input("images", display_name="已解码画面", optional=True),
                 io.Audio.Input("audio", display_name="已解码音频", optional=True),
+                io.AnyType.Input("dependency", display_name="循环副作用依赖", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据"),
                 io.Boolean.Input("store_latents", default=False, socketless=True),
             ],
@@ -540,6 +543,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
         audio_vae=None,
         images=None,
         audio=None,
+        dependency=None,
     ):
         segment = _require_segment_data(segment_data)
         adapter = adapter_from_segment(segment)
@@ -618,6 +622,10 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                 io.Audio.Input(
                     "audio", display_name="已解码音频", optional=True,
                     tooltip="与已解码画面配套的分段音频。",
+                ),
+                io.AnyType.Input(
+                    "dependency", display_name="循环副作用依赖", optional=True,
+                    tooltip="可接 VHS Video Combine 等每段必须执行的输出节点结果，用于把副作用链闭合在循环内。",
                 ),
                 io.Combo.Input(
                     "bit_depth", display_name="bit_depth",
