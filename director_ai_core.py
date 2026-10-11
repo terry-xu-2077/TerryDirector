@@ -26,7 +26,7 @@ def require_ai_config(value: Any) -> dict[str, Any]:
     result["model"] = model
     result["vision_model"] = str(value.get("vision_model") or "None")
     result["seed"] = int(value.get("seed", 0))
-    result["n_ctx"] = max(1024, int(value.get("n_ctx", 8192)))
+    result["n_ctx"] = max(1024, int(value.get("n_ctx", 16384)))
     result["max_tokens"] = max(256, int(value.get("max_tokens", 8192)))
     result["gpu_layers"] = int(value.get("gpu_layers", -1))
     result["think_mode"] = bool(value.get("think_mode", False))

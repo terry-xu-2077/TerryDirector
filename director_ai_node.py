@@ -42,7 +42,7 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
                 io.Int.Input("seed", display_name="AI Seed", default=8888, min=0, max=0xFFFFFFFFFFFFFFFF,
                              step=1, control_after_generate=True),
                 io.Boolean.Input("think_mode", display_name="思考模式", default=False),
-                io.Int.Input("n_ctx", display_name="上下文长度", default=8192, min=1024, max=131072, step=1024),
+                io.Int.Input("n_ctx", display_name="上下文长度", default=16384, min=1024, max=131072, step=1024),
                 io.Int.Input("max_tokens", display_name="最大输出 Token", default=8192, min=256, max=32768, step=256),
                 io.Float.Input("temperature", display_name="温度", default=0.7, min=0.0, max=2.0, step=0.05),
                 io.Float.Input("top_p", display_name="Top P", default=0.8, min=0.0, max=1.0, step=0.05),

@@ -45,3 +45,21 @@ def test_output_selection_and_deterministic_clip_seed():
     assert core.effective_local_prompt(item) == "first"
     assert core.clip_seed(10, "a") == core.clip_seed(10, "a")
     assert core.clip_seed(10, "a") != core.clip_seed(11, "a")
+
+
+def test_document_round_trip_keeps_ai_metadata_and_auto_flag():
+    import runpy
+    values = runpy.run_path(str(module_path.with_name("director_core.py")))
+    defaults = values["default_document"]()
+    defaults["autoAiEnhance"] = True
+    defaults["clips"][0].update({
+        "prompt": "source", "aiPrompt": "enhanced",
+        "promptMode": "ai", "aiOptOut": False,
+        "aiMetadata": {"seed": 8888, "sourcePrompt": "source"},
+    })
+    doc = values["normalize_document"](defaults)
+    assert doc["autoAiEnhance"] is True
+    assert doc["clips"][0]["prompt"] == "source"
+    assert doc["clips"][0]["aiPrompt"] == "enhanced"
+    assert doc["clips"][0]["promptMode"] == "ai"
+    assert doc["clips"][0]["aiMetadata"]["seed"] == 8888

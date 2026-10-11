@@ -2687,7 +2687,7 @@ function directorLlamaConfig(node) {
     vision_model: String(value("vision_model", "None")),
     seed: Number(value("seed", 8888)),
     think_mode: !!value("think_mode", false),
-    n_ctx: Number(value("n_ctx", 8192)),
+    n_ctx: Number(value("n_ctx", 16384)),
     max_tokens: Number(value("max_tokens", 8192)),
     temperature: Number(value("temperature", 0.7)),
     top_p: Number(value("top_p", 0.8)),

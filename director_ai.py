@@ -168,6 +168,11 @@ class _LlamaSession:
             from llama_cpp import Llama
         except ImportError as exc:
             raise RuntimeError("AI 增强需要 llama-cpp-python。请安装适合本机 Python/CUDA 的 Qwen3.8 兼容版本。") from exc
+        # The video model must be off GPU before constructing the multimodal
+        # projector: some chat-handler constructors allocate native VRAM.
+        import comfy.model_management as mm
+        mm.unload_all_models()
+        mm.soft_empty_cache()
         model = _resolve_gguf(self.config["model"])
         projector = self.config["vision_model"]
         if projector != "None":
@@ -180,10 +185,6 @@ class _LlamaSession:
                 enable_thinking=self.config["think_mode"],
                 verbose=False,
             )
-        # Free ComfyUI's currently loaded video weights before loading the LLM.
-        import comfy.model_management as mm
-        mm.unload_all_models()
-        mm.soft_empty_cache()
         try:
             self.llm = Llama(
                 model_path=str(model),
@@ -345,8 +346,12 @@ def prepare_document_for_queue(document: dict, config: dict | None, node_id: str
     for clip in updated.get("clips", []):
         cache = saved.get(str(clip["id"]), {})
         if not clip.get("aiPrompt") and isinstance(cache, dict):
-            clip["aiPrompt"] = str(cache.get("aiPrompt") or "")
-            clip["aiMetadata"] = cache.get("aiMetadata") if isinstance(cache.get("aiMetadata"), dict) else {}
+            cached_meta = cache.get("aiMetadata") if isinstance(cache.get("aiMetadata"), dict) else {}
+            # Disk persistence bridges Queue results into the editor, but must
+            # never resurrect an old take for an explicitly cleared/new clip.
+            if cached_meta.get("sourcePrompt") == str(clip.get("prompt") or ""):
+                clip["aiPrompt"] = str(cache.get("aiPrompt") or "")
+                clip["aiMetadata"] = cached_meta
     targets = ai_targets(updated, seed)
     if targets:
         def on_result(result, index, total):
