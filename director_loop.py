@@ -12,10 +12,11 @@ import folder_paths
 import numpy as np
 import torch
 from PIL import Image, ImageOps
-from comfy_api.latest import io
+from comfy_api.latest import io, InputImpl
 from comfy_execution.graph_utils import GraphBuilder, is_link
 from comfy_extras.nodes_loop import StartLoop
 from comfy_extras.nodes_minimax_h3 import MiniMaxH3AddGuide
+from comfy_extras.nodes_audio import load as load_audio_file
 
 from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
 from .director_ai import prepare_document_for_queue
@@ -34,6 +35,8 @@ from .director_internal import (
 
 CATEGORY = "TerryDirector/循环"
 IMAGE_SLOTS = 9
+VIDEO_SLOTS = 3
+AUDIO_SLOTS = 3
 LOOP_CONTEXT_KIND = "terrydirector.loop_context"
 SEGMENT_DATA_KIND = "terrydirector.segment_data"
 LoopContextData = io.Custom("TERRYDIRECTOR_LOOP_CONTEXT")
@@ -95,6 +98,51 @@ def _load_image(asset):
         image = ImageOps.exif_transpose(opened).convert("RGB")
         array = np.array(image, dtype=np.uint8, copy=True)
     return torch.from_numpy(array).float().div_(255.0).unsqueeze(0)
+
+
+def _asset_input_path(asset, label):
+    source = asset.get("source") or {}
+    if source.get("type") != "comfy-input":
+        raise ValueError(f"循环信息仅接受已上传到 ComfyUI input 的{label}")
+    name = source.get("path")
+    if not name or not folder_paths.exists_annotated_filepath(name):
+        raise FileNotFoundError(f"循环信息找不到 ComfyUI input {label}: {name}")
+    return folder_paths.get_annotated_filepath(name)
+
+
+def _resample_video_24fps(images, source_fps):
+    if not isinstance(images, torch.Tensor) or images.ndim != 4 or images.shape[0] < 1:
+        raise ValueError("参考视频没有可用画面帧")
+    fps = float(source_fps)
+    if not np.isfinite(fps) or fps <= 0:
+        raise ValueError(f"参考视频帧率无效: {source_fps}")
+    if abs(fps - 24.0) < 1e-6:
+        return images
+    duration = images.shape[0] / fps
+    target_frames = max(1, int(round(duration * 24.0)))
+    positions = torch.arange(target_frames, dtype=torch.float64)
+    indices = torch.floor(positions * fps / 24.0).to(torch.long)
+    indices = indices.clamp_(0, images.shape[0] - 1)
+    return images.index_select(0, indices.to(images.device))
+
+
+def _load_video(asset):
+    path = _asset_input_path(asset, "视频")
+    source = InputImpl.VideoFromFile(path)
+    components = source.get_components()
+    return _resample_video_24fps(
+        components.images,
+        components.frame_rate,
+    )
+
+
+def _load_audio(asset):
+    path = _asset_input_path(asset, "音频")
+    waveform, sample_rate = load_audio_file(path)
+    return {
+        "waveform": waveform.unsqueeze(0),
+        "sample_rate": int(sample_rate),
+    }
 
 
 def _plan_items(
@@ -383,7 +431,10 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             node_id="TerryDirectorLoopInfo",
             display_name="TerryDirector 循环信息",
             category=CATEGORY,
-            description="解析循环上下文，输出提示词、采样帧数、随机种子、片段数据和图片素材。",
+            description=(
+                "解析循环上下文，输出提示词、采样帧数、随机种子、片段数据，"
+                "以及 H3 官方支持的图片/视频/音频参考素材。"
+            ),
             inputs=[
                 LoopContextData.Input("loop_context", display_name="循环上下文"),
             ],
@@ -396,6 +447,14 @@ class TerryDirectorLoopInfo(io.ComfyNode):
                     io.Image.Output(display_name=f"image_{index}")
                     for index in range(IMAGE_SLOTS)
                 ],
+                *[
+                    io.Image.Output(display_name=f"video_{index}")
+                    for index in range(VIDEO_SLOTS)
+                ],
+                *[
+                    io.Audio.Output(display_name=f"audio_{index}")
+                    for index in range(AUDIO_SLOTS)
+                ],
             ],
         )
 
@@ -404,14 +463,25 @@ class TerryDirectorLoopInfo(io.ComfyNode):
         segment, previous_context = _require_loop_context(loop_context)
         adapter = adapter_from_segment(segment)
         _notify(segment["_loop"]["loop_id"], segment["id"], "running")
-        images = adapter.reference_images(
-            segment, previous_context, load_image=_load_image
+        media = adapter.reference_media(
+            segment,
+            previous_context,
+            load_image=_load_image,
+            load_video=_load_video,
+            load_audio=_load_audio,
         )
-        # The current schema remains the H3 image-slot contract; adapters
-        # with a different interface must implement their own future mapping.
+        images = list(media["images"])
+        videos = list(media["videos"])
+        audios = list(media["audios"])
         if len(images) > IMAGE_SLOTS:
             raise ValueError("当前循环信息节点最多提供 9 个参考图片输入")
+        if len(videos) > VIDEO_SLOTS:
+            raise ValueError("当前循环信息节点最多提供 3 个参考视频输入")
+        if len(audios) > AUDIO_SLOTS:
+            raise ValueError("当前循环信息节点最多提供 3 个参考音频输入")
         images.extend([None] * (IMAGE_SLOTS - len(images)))
+        videos.extend([None] * (VIDEO_SLOTS - len(videos)))
+        audios.extend([None] * (AUDIO_SLOTS - len(audios)))
         segment_data = {
             **segment,
             "_type": SEGMENT_DATA_KIND,
@@ -424,6 +494,8 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             int(segment["_loop"]["seed"]),
             segment_data,
             *images,
+            *videos,
+            *audios,
         )
 
 class TerryDirectorLoopCondition(io.ComfyNode):
