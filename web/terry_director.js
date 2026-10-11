@@ -1542,16 +1542,19 @@ function loopEndMemoryEstimate(node) {
   const documentData = readConfig(looper).document;
   const frames = effectiveTimelineFrames(documentData);
   const activeClips = (documentData.clips || []).filter(clip => !clip.suspended).length;
+  const externalDecoded = Boolean(linkedNodeForInput(node, "images"));
   const summary = {
     state: "summary",
     frames,
     seconds: frames / FPS,
     activeClips,
     hint: frames > 0
-      ? "分辨率来自动态或暂不支持的上游计算；请以生成时的实际尺寸为准。"
+      ? externalDecoded
+        ? "当前使用外部解码 IMAGE；缓存分辨率以实际解码结果为准，避免按 H3 生成尺寸低估 2X/放大后的临时空间。"
+        : "分辨率来自动态或暂不支持的上游计算；请以生成时的实际尺寸为准。"
       : "当前没有启用的片段。",
   };
-  if (frames < 1) return summary;
+  if (frames < 1 || externalDecoded) return summary;
   const resolution = readH3Resolution(h3, linkedOutputForInput);
   if (!resolution) return summary;
   return {
