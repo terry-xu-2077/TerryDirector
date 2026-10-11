@@ -1833,21 +1833,16 @@ function renderLoopConditionCard(node) {
         : "等待执行";
 
   root.className = "td-loop-condition-card is-" + data.state;
+  const clipSummary = number + " · " + clipName + " · " + duration;
+  const continuitySummary = data.transitionLabel + " · " +
+    data.contextLabel + " · Seed " + data.seed;
   root.innerHTML =
     '<div class="td-loop-condition-title"><strong>当前片段</strong><span>' +
       escapeHtml(stateLabel) + '</span></div>' +
-    '<div class="td-loop-condition-row"><span>片段</span><strong>' +
-      escapeHtml(number) + '</strong></div>' +
-    '<div class="td-loop-condition-row"><span>名称</span><strong title="' +
-      escapeHtml(clipName) + '">' + escapeHtml(clipName) + '</strong></div>' +
-    '<div class="td-loop-condition-row"><span>时长</span><strong>' +
-      escapeHtml(duration) + '</strong></div>' +
-    '<div class="td-loop-condition-row"><span>衔接</span><strong>' +
-      escapeHtml(data.transitionLabel) + '</strong></div>' +
-    '<div class="td-loop-condition-row"><span>连续性上下文</span><strong>' +
-      escapeHtml(data.contextLabel) + '</strong></div>' +
-    '<div class="td-loop-condition-row"><span>Seed</span><strong>' +
-      escapeHtml(data.seed) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>片段</span><strong title="' +
+      escapeHtml(clipSummary) + '">' + escapeHtml(clipSummary) + '</strong></div>' +
+    '<div class="td-loop-condition-row"><span>衔接</span><strong title="' +
+      escapeHtml(continuitySummary) + '">' + escapeHtml(continuitySummary) + '</strong></div>' +
     '<div class="td-loop-condition-progress"><i style="width:' +
       (data.state === "completed" ? 100 : percent) + '%"></i></div>';
 }
@@ -1882,8 +1877,8 @@ function mountLoopConditionNode(node) {
     root,
     {
       hideOnZoom: false,
-      getMinHeight: () => 158,
-      getMaxHeight: () => 178,
+      getMinHeight: () => 88,
+      getMaxHeight: () => 104,
       margin: 5,
     }
   );
@@ -1904,7 +1899,7 @@ function mountLoopConditionNode(node) {
 
   const width = Math.max(Number(node.size?.[0]) || 330, 330);
   const computed = node.computeSize?.();
-  node.setSize?.([width, Math.max(Number(computed?.[1]) || 0, 300)]);
+  node.setSize?.([width, Math.max(Number(computed?.[1]) || 0, 250)]);
   renderLoopConditionCard(node);
 }
 
@@ -2957,6 +2952,7 @@ function directorLlamaState(node) {
     version: 1,
     model: String(value("model", "")),
     vision_model: String(value("vision_model", "None")),
+    system_prompt_preset: String(value("system_prompt_preset", "H3 Skill")),
     system_prompt: staticStringInputValue(linked, "system_prompt", ""),
     seed: Number(value("seed", 8888)),
     think_mode: !!value("think_mode", false),
