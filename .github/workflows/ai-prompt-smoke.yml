@@ -23,6 +23,9 @@ jobs:
                   test()
                   print("PASS", name)
           PY
+      - name: Website H3 Skill sample text contract
+        run: |
+          python examples/validate_ai_site_demo_prompts.py
       - name: JavaScript syntax
         run: |
           node --check src/app.js
@@ -50,6 +53,10 @@ jobs:
           required = (
               'data-demo-clip-count="3"',
               'data-demo-asset-count="7"',
+              'data-demo-ai-version="skill-authored-demo"',
+              'data-demo-ai-source="examples/TerryDirector_AI_3clips_demo_prompts.json"',
+              'subject_definitions:',
+              'non_diegetic_music:',
               '00_特瑞_Terry.jpeg',
               'Generate_vehicle_multi-view_images_2K_202608132251.jpeg',
               'Picture 7',
