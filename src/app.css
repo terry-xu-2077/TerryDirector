@@ -929,3 +929,198 @@ body.td-run-readonly .timeline-panel {
 
 .ai-prompt-actions { display:flex; align-items:center; gap:6px; }
 .ai-cancel-button:not([hidden]) { color:var(--td-ink-soft,#b3b3be); }
+
+
+/* 2026-10-11: responsive editor action hierarchy.
+ * Use the floating editor's OWN width (not the outer ComfyUI viewport).
+ * No absolute centre placement: groups may never overlap the elapsed time. */
+#app { container: td-editor-shell / inline-size; }
+#app > .topbar {
+  display: grid;
+  grid-template-areas: "brand leading duration actions";
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 8px;
+  height: auto;
+  min-height: 56px;
+  padding: 8px 18px;
+}
+body.td-embedded #app > .topbar {
+  display: grid;
+  height: auto;
+  min-height: 52px;
+  column-gap: 12px;
+  row-gap: 8px;
+  padding: 8px 18px;
+}
+#app > .topbar .brand {
+  grid-area: brand;
+  min-width: 0;
+  white-space: nowrap;
+}
+#app > .topbar .top-timeline-leading {
+  grid-area: leading;
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 0;
+}
+#app > .topbar .top-timeline-duration {
+  grid-area: duration;
+  position: static;
+  inset: auto;
+  transform: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  justify-self: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+#app > .topbar .top-actions {
+  grid-area: actions;
+  margin-left: 0;
+  min-width: 0;
+  justify-self: end;
+}
+#app > .topbar .top-timeline-leading > .button {
+  flex: none;
+}
+#app > .topbar .ai-auto-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 0 4px;
+  white-space: nowrap;
+}
+#app > .topbar .ai-auto-label input { flex: none; }
+
+/* At normal floating-window sizes use two real header rows. */
+@container td-editor-shell (max-width: 1500px) {
+  #app > .topbar {
+    grid-template-areas:
+      "brand duration actions"
+      "leading leading leading";
+    grid-template-columns: minmax(150px, 1fr) auto minmax(330px, 1fr);
+  }
+  #app > .topbar .brand { justify-self: start; }
+  #app > .topbar .top-timeline-duration { justify-self: center; }
+  #app > .topbar .top-timeline-leading {
+    justify-self: stretch;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+  }
+}
+
+/* On smaller shells give all primary controls their own flow rows. */
+@container td-editor-shell (max-width: 930px) {
+  #app > .topbar {
+    grid-template-areas:
+      "brand actions"
+      "duration duration"
+      "leading leading";
+    grid-template-columns: minmax(0, 1fr) max-content;
+    padding-inline: 12px;
+  }
+  #app > .topbar .top-timeline-duration { justify-self: center; }
+  #app > .topbar .top-timeline-leading { gap: 6px 8px; }
+}
+
+/* At phone-width shells, wrap instead of shrinking button labels to illegibility. */
+@container td-editor-shell (max-width: 640px) {
+  #app > .topbar {
+    grid-template-areas:
+      "brand"
+      "duration"
+      "actions"
+      "leading";
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 12px;
+    gap: 7px;
+  }
+  #app > .topbar .top-actions {
+    justify-self: stretch;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #app > .topbar .top-timeline-duration { justify-self: start; }
+  #app > .topbar .top-timeline-leading > .button {
+    min-height: 30px;
+    padding-inline: 8px;
+  }
+}
+
+/* The clip title, duration and prompt-mode controls have a narrower *local*
+ * container than the editor. They must break independently of the topbar. */
+#app .prompt-panel { container: td-prompt-panel / inline-size; }
+@container td-prompt-panel (max-width: 630px) {
+  #app .composer-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(165px, 195px);
+    grid-template-areas: "identity duration" "global view";
+    align-items: center;
+    gap: 6px 10px;
+    padding-block: 7px;
+  }
+  #app .composer-heading .clip-identity {
+    grid-area: identity;
+    min-width: 0;
+  }
+  #app .composer-heading .clip-duration-control {
+    grid-area: duration;
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+  #app .composer-heading .clip-global-toggle {
+    grid-area: global;
+    justify-self: start;
+  }
+  #app .composer-heading .prompt-view-switch {
+    grid-area: view;
+    justify-self: end;
+  }
+  #app .ai-prompt-toolbar {
+    padding-inline: 0;
+    gap: 6px;
+  }
+}
+@container td-prompt-panel (max-width: 360px) {
+  #app .composer-heading {
+    grid-template-areas: "identity" "duration" "global" "view";
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #app .composer-heading .prompt-view-switch { justify-self: start; }
+}
+
+/* Asset add/import buttons similarly wrap inside their own narrow panel. */
+#app .reference-panel { container: td-reference-panel / inline-size; }
+@container td-reference-panel (max-width: 410px) {
+  #app .reference-heading,
+  body.td-embedded #app .reference-heading {
+    height: auto;
+    min-height: 78px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: center;
+    gap: 6px;
+    padding-block: 7px;
+  }
+  #app .reference-heading .reference-actions {
+    width: 100%;
+    margin: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  #app .reference-heading .reference-actions .button {
+    flex: 1 1 auto;
+    padding-inline: 7px;
+  }
+}
