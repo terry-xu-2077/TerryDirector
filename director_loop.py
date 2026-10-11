@@ -6,7 +6,6 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 
 from __future__ import annotations
 
-import json
 import uuid
 
 import folder_paths
