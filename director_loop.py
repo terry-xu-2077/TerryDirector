@@ -402,7 +402,7 @@ class TerryDirectorLooper(StartLoop):
         )
         end = dynprompt.get_node(end_id)
         remaining_inputs = end["inputs"].copy()
-        for key in ("images", "audio", "segment_data", "dependency"):
+        for key in ("images", "audio", "dependency"):
             remaining_inputs.pop(key, None)
         execution_list.add_node(end_id)
         execution_list.add_external_block(end_id)
