@@ -36,6 +36,20 @@ class CancelledAI(RuntimeError):
     pass
 
 
+def _check_cancel(
+    cancel: threading.Event | None = None,
+    *,
+    comfy_interrupt: bool = False,
+) -> None:
+    if cancel and cancel.is_set():
+        raise CancelledAI("AI 增强已取消")
+    if comfy_interrupt:
+        # Queue auto-enhancement runs synchronously inside ComfyUI execution.
+        # Honor the same global Stop/Interrupt flag as samplers and encoders.
+        import comfy.model_management as model_management
+        model_management.throw_exception_if_processing_interrupted()
+
+
 def _resolve_gguf(name: str) -> Path:
     root = LLM_ROOT.resolve()
     candidate = (root / str(name)).resolve()
@@ -342,11 +356,19 @@ class _LlamaSession:
             raise
         return self
 
-    def chat(self, messages: list[dict], seed: int, cancel: threading.Event | None = None) -> str:
+    def chat(
+        self,
+        messages: list[dict],
+        seed: int,
+        cancel: threading.Event | None = None,
+        *,
+        comfy_interrupt: bool = False,
+    ) -> str:
         # Stream even when the UI only wants a final result: cancellation can
         # interrupt token generation instead of merely hiding the progress bar.
         # Multimodal Qwen leaves image positions in the native KV cache after a
         # completion. Clear them before the next clip while keeping GGUF loaded.
+        _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
         self.llm._ctx.memory_clear(True)
         self.llm.reset()
         chunks = []
@@ -358,8 +380,7 @@ class _LlamaSession:
             top_p=self.config["top_p"],
             stream=True,
         ):
-            if cancel and cancel.is_set():
-                raise CancelledAI("AI 增强已取消")
+            _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
             for choice in event.get("choices", ()):
                 piece = choice.get("delta", {}).get("content")
                 if piece:
@@ -398,6 +419,7 @@ class AIManager:
     def enhance_global(
         self, config: dict, document: dict, *,
         cancel: threading.Event | None = None,
+        comfy_interrupt: bool = False,
     ) -> dict:
         """Explicit editor action. Does NOT run as part of Queue auto-enhancement."""
         config = require_ai_config(config)
@@ -415,11 +437,16 @@ class AIManager:
                 for p in (msg.get("content") if isinstance(msg.get("content"), list) else [])
             ):
                 raise ValueError("全局提示词引用了图片，请在 Llama 配置中选择 mmproj")
-            if cancel and cancel.is_set():
-                raise CancelledAI("AI 增强已取消")
+            _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
             with _LlamaSession(config) as session:
+                _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
                 prompt = _validate_output(
-                    session.chat(messages, clip_seed(config["seed"], "__global__"), cancel),
+                    session.chat(
+                        messages,
+                        clip_seed(config["seed"], "__global__"),
+                        cancel,
+                        comfy_interrupt=comfy_interrupt,
+                    ),
                     required, required,
                 )
             original = str(document.get("globalPrompt") or "")
@@ -447,6 +474,7 @@ class AIManager:
         self, config: dict, document: dict, clips: list[dict], *,
         on_result: Callable[[dict, int, int], None] | None = None,
         cancel: threading.Event | None = None,
+        comfy_interrupt: bool = False,
     ) -> list[dict]:
         config = require_ai_config(config)
         if not clips:
@@ -457,8 +485,7 @@ class AIManager:
             results = []
             with _LlamaSession(config) as session:
                 for index, clip in enumerate(clips, 1):
-                    if cancel and cancel.is_set():
-                        raise CancelledAI("AI 增强已取消")
+                    _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
                     messages, allowed = _make_messages(
                         clip,
                         document,
@@ -471,8 +498,14 @@ class AIManager:
                     ):
                         raise ValueError("当前片段含图片/视频视觉参考，请在 Llama 配置中选择 mmproj")
                     required = {(t.lower(), int(n)) for t, n in MEDIA_TAG.findall(str(clip.get("prompt") or ""))}
+                    _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
                     prompt = _validate_output(
-                        session.chat(messages, clip_seed(config["seed"], clip["id"]), cancel),
+                        session.chat(
+                            messages,
+                            clip_seed(config["seed"], clip["id"]),
+                            cancel,
+                            comfy_interrupt=comfy_interrupt,
+                        ),
                         allowed, required,
                     )
                     result = {
@@ -571,7 +604,13 @@ def prepare_document_for_queue(document: dict, config: dict | None, node_id: str
             _save_ai_results(node_id, updated)
             print(f"[TerryDirector AI] 已增强 {index}/{total}: {clip['name']}", flush=True)
 
-        AI_MANAGER.enhance_batch(config, updated, targets, on_result=on_result)
+        AI_MANAGER.enhance_batch(
+            config,
+            updated,
+            targets,
+            on_result=on_result,
+            comfy_interrupt=True,
+        )
     for clip in updated.get("clips", []):
         if not clip.get("suspended") and not clip.get("aiOptOut") and clip.get("aiPrompt"):
             clip["promptMode"] = "ai"
