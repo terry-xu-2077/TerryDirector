@@ -30,3 +30,50 @@ jobs:
       - name: Acceptance example workflow contract
         run: |
           python examples/validate_ai_3clip_workflow.py
+      - name: Verify website demo in headless browser
+        run: |
+          BROWSER="$(command -v google-chrome || command -v chromium || true)"
+          if [ -z "$BROWSER" ]; then
+            echo "::warning::Browser unavailable; JavaScript syntax and JSON contract still checked"
+            exit 0
+          fi
+          python -m http.server 8765 --bind 127.0.0.1 > /tmp/td-site-http.log 2>&1 &
+          WEB_PID=$!
+          trap 'kill "$WEB_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --virtual-time-budget=4500 --window-size=1440,950 \
+            --dump-dom http://127.0.0.1:8765/index.html > /tmp/td-site-dom.html 2>/tmp/td-site-browser.log
+          python - <<'PY'
+          from pathlib import Path
+          dom = Path("/tmp/td-site-dom.html").read_text(encoding="utf-8")
+          required = (
+              'data-demo-clip-count="3"',
+              'data-demo-asset-count="7"',
+              '00_特瑞_Terry.jpeg',
+              'Generate_vehicle_multi-view_images_2K_202608132251.jpeg',
+              'Picture 7',
+              'data-action="prompt-ai"',
+              'data-demo-width="680"',
+          )
+          for item in required:
+              assert item in dom, f"Static demo did not render: {item}"
+          assert dom.count('class="reference-tile"') == 7, "Expected seven reference tiles"
+          print("PASS: 3 authentic clips and 7 references loaded in the browser")
+          PY
+          mkdir -p .website-preview
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
+            --window-size=1440,950 --screenshot=".website-preview/td-demo-wide.png" \
+            http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
+          "$BROWSER" --headless=new --no-sandbox --disable-dev-shm-usage \
+            --disable-gpu --hide-scrollbars --virtual-time-budget=4500 \
+            --window-size=940,950 --screenshot=".website-preview/td-demo-narrow.png" \
+            http://127.0.0.1:8765/index.html >/dev/null 2>/dev/null
+      - name: Attach website browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrydirector-ai-website-preview
+          path: .website-preview/
+          if-no-files-found: ignore
