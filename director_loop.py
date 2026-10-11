@@ -537,7 +537,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
                 io.Vae.Input("audio_vae", display_name="音频VAE", optional=True),
                 io.Image.Input("images", display_name="已解码画面", optional=True),
                 io.Audio.Input("audio", display_name="已解码音频", optional=True),
-                io.AnyType.Input("dependency", display_name="循环副作用依赖", optional=True),
+                io.AnyType.Input("dependency", display_name="循环结束依赖", optional=True),
                 SegmentData.Input("segment_data", display_name="片段数据"),
                 io.Boolean.Input("store_latents", default=False, socketless=True),
             ],
@@ -642,8 +642,8 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                     tooltip="与已解码画面配套的分段音频。",
                 ),
                 io.AnyType.Input(
-                    "dependency", display_name="循环副作用依赖", optional=True,
-                    tooltip="可接 VHS Video Combine 等每段必须执行的输出节点结果，用于把副作用链闭合在循环内。",
+                    "dependency", display_name="循环结束依赖", optional=True,
+                    tooltip="可接 VHS Video Combine 等每段必须执行的输出节点结果，用于确保该分支完成后再结束当前循环。",
                 ),
                 io.Combo.Input(
                     "bit_depth", display_name="bit_depth",
