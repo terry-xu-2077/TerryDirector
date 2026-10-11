@@ -1435,6 +1435,9 @@ function renderNode(node) {
   root.querySelectorAll('[data-action="edit"]').forEach(button => {
     button.addEventListener("click", () => openEditor(node, button));
   });
+  if (node.comfyClass === LOOP_NODE_CLASS) {
+    queueMicrotask(() => refreshLoopConditionCards(node));
+  }
 }
 
 
