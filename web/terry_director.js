@@ -7,6 +7,7 @@ import {
   readLoopOutputResolution,
 } from "./td_loop_memory.js";
 import { createLoopOutputCheckCard } from "./td_loop_output_check.js";
+import { installLoopRegionOverlay } from "./td_loop_region.js";
 
 const NODE_CLASS = "TerryDirector";
 const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
@@ -3025,6 +3026,7 @@ app.registerExtension({
   async setup() {
     ensureCss();
     ensureEditorOverlay();
+    installLoopRegionOverlay(app);
     bindDirectorPartialQueueGuard();
     bindExecutionActivity();
     bindLoopSegmentActivity();
