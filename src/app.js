@@ -35,22 +35,62 @@
   const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',snap:'吸附',chain:'后续联动',duplicate:'复制',delete:'删除',suspend:'挂起','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
   function ib(action,name,title,active='',pressed=null){return `<button class="icon-button ${active}" data-action="${action}" title="${title}" aria-label="${title}"${pressed===null?'':` aria-pressed="${pressed}"`}>${icon(name)}<span>${esc(actionNames[action]||title)}</span></button>`;}
   const launch=window.TDStills.launch;
-  // Tiny authored starfield placeholder, not a model output.
-  const stars=`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450"><defs><radialGradient id="g"><stop stop-color="#46415a"/><stop offset="1" stop-color="#202432"/></radialGradient></defs><rect width="800" height="450" fill="url(#g)"/>${Array.from({length:88},(_,i)=>`<circle cx="${(i*137.2)%800}" cy="${(i*71.13)%450}" r="${i%13?'.7':'1.5'}" fill="#ded9e8" opacity="${.25+(i%7)/10}"/>`).join('')}<ellipse cx="350" cy="225" rx="150" ry="5" fill="#dca5a6" opacity=".12" transform="rotate(-24 350 225)"/></svg>`;
-  const sampleAssets=[{id:'launch-wide',name:'发射场 · 全景',kind:'image',src:launch,detail:'640 × 427 · 示例静帧'},{id:'launch-detail',name:'塔架 · 局部',kind:'image',src:launch,detail:'画面参考 · 同一原图'},{id:'stars',name:'星空 · 视觉占位',kind:'image',src:'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(stars),detail:'程序绘制 · 视觉占位'}];
-  // Static input examples, never a listing of the user's disk. Source identity
-  // is separate from the project's stable Picture/Video/Audio number.
-  const demoInputFiles=[
-    {path:'demo_launch.jpg',name:'发射场 · 全景',kind:'image',src:launch,sampleId:'launch-wide'},
-    {path:'references/demo_tower.jpg',name:'塔架 · 局部',kind:'image',src:launch,sampleId:'launch-detail'},
-    {path:'references/demo_stars.svg',name:'星空 · 视觉占位',kind:'image',src:sampleAssets[2].src,sampleId:'stars'},
-    {path:'references/demo_launch_alt.jpg',name:'发射场 · 备选示例',kind:'image',src:launch}
-  ];
-  sampleAssets.forEach(asset=>{asset.source={type:'demo-input',path:demoInputFiles.find(file=>file.sampleId===asset.id).path};});
-  // Media objects live once per page. The project stores active asset IDs, so
-  // import/delete undo does not copy blobs or invalidate a restored Object URL.
-  sampleAssets.forEach((asset,index)=>asset.number=index+1);
-  let assets=embedded?[]:sampleAssets.slice(),nextPoolNumber=embedded?{image:1,video:1,audio:1}:{image:4,video:1,audio:1};
+  // The stand-alone website uses the exact three-clip acceptance workflow.
+  // Embedded ComfyUI nodes still receive their live documents from the host.
+  const sampleAssets=[];
+  const demoInputFiles=[];
+  const demoInitial=[];
+  const initial=[];
+  let assets=[],nextPoolNumber={image:1,video:1,audio:1};
+  let siteDemoDocument=null;
+  const siteDemoPath='examples/TerryDirector_AI_3clips_0.2MP.json';
+  const siteDemoLabels=['人物参考','载具参考','场景遗迹','荒星地貌','避难所','货币道具','地下虫群'];
+  function siteDemoThumbnail(number){
+    // Explicit placeholder: the seven original source images are NOT in Git.
+    const n=Math.max(1,Math.min(7,Math.floor(Number(number)||1)));
+    const colors=['#716451','#626c79','#70637e','#5e617b','#687586','#83767c','#62727f'];
+    const shade=colors[n-1];
+    const label=siteDemoLabels[n-1];
+    const svg='<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240">'
+      +'<defs><linearGradient id="g" x2="0.8" y2="1"><stop stop-color="'+shade+'"/><stop offset="1" stop-color="#242834"/></linearGradient></defs>'
+      +'<rect width="240" height="240" fill="url(#g)"/>'
+      +'<rect x="19" y="19" width="202" height="202" rx="8" fill="none" stroke="#d4c6dc" stroke-opacity=".15"/>'
+      +'<circle cx="120" cy="79" r="29" fill="#c9c0d9" fill-opacity=".08" stroke="#dfd9eb" stroke-opacity=".26"/>'
+      +'<path d="M108 79h24m-12-12v24" stroke="#e4dcec" stroke-opacity=".45" stroke-width="2"/>'
+      +'<text x="120" y="138" text-anchor="middle" fill="#f1eafa" font-size="18" font-family="sans-serif">'
+      +label+'</text>'
+      +'<text x="120" y="163" text-anchor="middle" fill="#d5d1dd" font-size="11" font-family="sans-serif">PREVIEW UNAVAILABLE</text>'
+      +'<text x="120" y="187" text-anchor="middle" fill="#c8c0d0" font-size="11" font-family="sans-serif">Picture '+n+'</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+  }
+  async function loadSiteDemo(){
+    try{
+      const response=await fetch(new URL(siteDemoPath,document.baseURI),{cache:'no-store'});
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      const workflow=await response.json();
+      const node=workflow.nodes?.find(item=>item.type==='TerryDirector');
+      const serialized=node?.widgets_values_named?.config_json;
+      if(typeof serialized!=='string')throw new Error('找不到 TerryDirector 时间线');
+      const documentData=JSON.parse(serialized).document;
+      if(!Array.isArray(documentData?.clips)||!Array.isArray(documentData?.assets))
+        throw new Error('示例文件缺少片段或资产');
+      siteDemoDocument=C.copy(documentData);
+      demoInputFiles.splice(0,demoInputFiles.length,...documentData.assets.map(item=>({
+        path:item.source?.path||'',name:item.name,kind:item.kind,
+        src:siteDemoThumbnail(item.number),number:item.number,id:item.id
+      })));
+      loadDocument(siteDemoDocument);
+      // Enable controls for visual QA; no actual inference will run here.
+      aiConfig={previewOnly:true};renderAiControls();
+      title='特瑞 · 荒星三镜头';
+      toast('已载入验收工作流：3 个片段、7 张参考图；本页只演示 UI。');
+      return documentData;
+    }catch(error){
+      console.error('[TerryDirector Demo] Failed to load acceptance workflow:',error);
+      toast('无法加载示例工作流，请从网页服务器或分支在线预览链接打开。');
+      return null;
+    }
+  }
   let assetGridKey='';
   const mediaNames={image:'Picture',video:'Video',audio:'Audio'};
   const mediaPattern=()=>/<(Picture|Video|Audio)\s+(\d+)>/gi;
@@ -67,11 +107,11 @@
   const initial=embedded?[]:demoInitial;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
   const activityFor=c=>activity.get(c?.id)||emptyActivity;
-  function resetActivity(){activity.clear();for(const [id,seconds] of [['clip-1',300],['clip-2',186]])activity.set(id,{status:'completed',progress:1,elapsedSeconds:seconds,completedAt:'2026-09-28T07:00:00Z',example:true});}
+  function resetActivity(){activity.clear();}
   if(!embedded)resetActivity();else activity.clear();
-  let state={globalPrompt:'',clips:C.copy(initial),selected:embedded?null:'clip-2',assetIds:embedded?[]:sampleAssets.map(a=>a.id)},history=new C.History();
+  let state={globalPrompt:'',autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]},history=new C.History();
   let resolutionEditBefore=null;
-  let title='远航之前',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
+  let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,transitionMenu=null;
   let aiConfig=null,aiJob=null,aiPolling=false,aiSeen=new Set();
   const app=$('#app');
@@ -81,7 +121,7 @@
       <div class="brand"><span class="brand-mark">${icon('film')}</span>TerryDirector</div>
       <div class="top-timeline-leading"><button class="button ghost" data-action="new">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前 AI 增强</span></label></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
-      <div class="top-actions">${embedded?'':`<span class="prototype">交互 DEMO · 06.11 EDITOR</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
+      <div class="top-actions">${embedded?'':`<span class="prototype">静态演示 · 3 段 / 7 素材</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
       <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：移动或调整片段尾部时，后方所有片段跟随；头部裁剪不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
@@ -463,6 +503,7 @@
     media.addEventListener('error',()=>{if(!media.isConnected||!d.open)return;wrap.replaceChildren();wrap.textContent='浏览器无法预览此格式，素材仍可作为参考保留。';});
     wrap.append(media);body.append(wrap);media.src=asset.src;
     const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='comfy-input'?'ComfyUI input/'+asset.source.path:asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
+    if(!embedded)note.textContent='站点仅用占位缩略图展示原参考图位置。真正的图片文件仍在本机 ComfyUI/input，不在公开仓库中。';
     if(!d.open)d.showModal();
   }
   function resolutionFromControls(){
@@ -518,8 +559,8 @@
   function renderAiControls(){
     const connected=!!aiConfig,busy=!!aiJob;
     const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
-    if(single){single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';}
-    if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
+    if(single){single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();single.textContent=busy?'AI 增强中…':'✦ AI 提示增强';single.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':'调用本地 Llama 增强片段';}
+    if(all){all.disabled=!connected||hostReadonly||busy||!state.clips.some(c=>!c.suspended&&c.prompt?.trim());all.title=!embedded?'仅展示界面；真实增强请在 ComfyUI 中执行':connected?'全部片段按原文重新增强':'请先连接 TerryDirector Llama 配置节点';}
     const cancel=$('[data-action=ai-cancel]');
     if(cancel){cancel.hidden=!busy;cancel.disabled=!busy;}
     const raw=$('#promptText'),visual=$('#promptVisual');
@@ -534,7 +575,8 @@
     mutate(()=>{const c=current();c.promptMode=mode;c.aiOptOut=mode==='user'&&!!c.aiPrompt;});
   }
   async function startAiEnhance(all){
-    if(!canEnhance()||!embedded){toast('请先连接 TerryDirector Llama 配置节点');return;}
+    if(!embedded){toast('网站只展示创作界面，不会启动 Qwen 或 ComfyUI Queue。');return;}
+    if(!canEnhance()){toast('请先连接 TerryDirector Llama 配置节点');return;}
     const clips=(all?state.clips:[current()]).filter(c=>c&&!c.suspended&&c.prompt?.trim());
     if(!clips.length){toast('没有可增强的片段');return;}
     finishPromptEdit();
@@ -808,7 +850,7 @@
   function pickDemoInputAssets(){
     finishResolutionEdit();finishPromptEdit();
     const selected=new Set();
-    const inPool=path=>poolEntries().some(a=>a.source?.type==='demo-input'&&a.source.path===path);
+    const inPool=path=>poolEntries().some(a=>a.source?.path===path);
     modal('从 ComfyUI input 选取',`
       <p class="input-demo-note"><strong>示例目录 · 尚未连接 ComfyUI</strong><br>这里只演示选取流程，没有读取你本地的 input，也不会上传或复制文件。</p>
       <div class="input-picker-location">${icon('folder')}<span>ComfyUI / input</span><span class="subtle">演示</span></div>
@@ -821,10 +863,10 @@
           for(const file of files){
             // Reuse the cached entry after pool deletion / undo; never upload or
             // allocate a second project entry for the same input-relative path.
-            let asset=assets.find(a=>a.source?.type==='demo-input'&&a.source.path===file.path);
+            let asset=assets.find(a=>a.source?.path===file.path);
             if(!asset){
               asset={id:'input-demo-'+nextAsset++,name:file.name,kind:file.kind,src:file.src,
-                number:nextPoolNumber[file.kind]++,source:{type:'demo-input',path:file.path}};
+                number:nextPoolNumber[file.kind]++,source:{type:'comfy-input',path:file.path}};
               assets.push(asset);
             }
             if(!state.assetIds.includes(asset.id))state.assetIds.push(asset.id);
@@ -869,7 +911,7 @@
     nextPoolNumber={image:withSamples?4:1,video:1,audio:1};assetGridKey='';
   }
   function showHome(){finishPromptEdit();promptEditor.closeMenu();stopDialogMedia();timeline.stop();$('#workspace').hidden=true;$('#timelineResize').hidden=true;$('#timelinePanel').hidden=true;$('#projectHome').hidden=false;
-    $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:url('${esc(launch)}')"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
+    $('#projectHome').innerHTML=`<div class="home-heading"><div><div class="eyebrow">YOUR CREATIVE SPACE</div><h1>每一个故事，从这里开始。</h1><p>打开项目，回到创作。</p></div><button class="button" data-action="project-new">${icon('plus')}新建项目</button></div><div class="project-grid"><div class="tsd-project-folder-item"><button class="tsd-project-folder-card has-cover" data-action="open-project"><div class="tsd-project-folder-sheet tsd-project-folder-paper"></div><div class="tsd-project-folder-sheet tsd-project-folder-paper-middle"></div><div class="tsd-project-folder-sheet tsd-project-folder-cover" style="background-image:none"></div><div class="tsd-project-folder-front"><div class="tsd-project-folder-tab">当前演示项目</div><h3>${esc(title)}</h3><p>镜头、提示词与参考资产。</p><footer><span>${state.clips.length} 个片段</span><span>${state.assetIds.length} 个素材</span></footer></div></button></div></div><p class="home-foot">项目仅在当前页面暂存，刷新会还原。可导出配置保留本次编排。</p>`;
   }
   function openProject(){ $('#projectHome').hidden=true;$('#workspace').hidden=false;$('#timelineResize').hidden=false;$('#timelinePanel').hidden=false;timeline.resize();}
   function exportTimelineData(){
@@ -928,7 +970,9 @@
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;
     return {id:String(raw.id||`asset-${index+1}`),name:String(raw.name||path.split('/').at(-1)||path),kind,
-      number:Math.max(1,Number.parseInt(raw.number,10)||1),src:inputPreviewUrl(path),source:{type:'comfy-input',path}};
+      number:Math.max(1,Number.parseInt(raw.number,10)||1),
+      src:embedded?inputPreviewUrl(path):siteDemoThumbnail(raw.number),
+      source:{type:'comfy-input',path}};
   }
   function applyHostActivity(payload){
     if(!embedded)return;
@@ -978,7 +1022,7 @@
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
     renderAll();timeline.fit();timeline.setFrame(current()?.start||0);
-    window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
+    if(embedded)window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
   }
   function documentPayload(){
     finishPromptEdit();syncAllReferences();
@@ -1083,7 +1127,9 @@
     delete:()=>{if(!current())return;timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
     suspend:()=>{if(current())mutate(()=>{current().suspended=!current().suspended;});},
-    reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(true);state={globalPrompt:'',clips:C.copy(initial),selected:'clip-2',assetIds:sampleAssets.map(a=>a.id)};renderAll();timeline.fit();timeline.setFrame(192);}
+    reset:()=>{setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(false);
+      if(!embedded&&siteDemoDocument){loadDocument(C.copy(siteDemoDocument));aiConfig={previewOnly:true};renderAiControls();return;}
+      state={globalPrompt:'',autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]};renderAll();timeline.fit();timeline.setFrame(0);}
   };
   app.addEventListener('click',e=>{
     const target=e.target,button=target.closest('[data-action]');
@@ -1186,6 +1232,7 @@
     });
     window.parent.postMessage({type:'terrydirector:ready'},hostOrigin);
   }
+  if(!embedded)window.TerryDirectorDemo.ready=loadSiteDemo();
   window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();});
   window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));});
 })();
