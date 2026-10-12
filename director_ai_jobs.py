@@ -71,6 +71,47 @@ class AIJobService:
             return job_id
 
 
+    def submit_prompt(self, config: dict, prompt: str) -> str:
+        """Submit one standalone H3 prompt enhancement task."""
+        config = require_ai_config(config)
+        text = str(prompt or "").strip()
+        if not text:
+            raise ValueError("H3 提示词为空，无法增强")
+        with self._lock:
+            if AI_MANAGER.busy or any(j.status in {"queued", "running"} for j in self._jobs.values()):
+                raise RuntimeError("另一个 AI 增强任务正在运行")
+            job_id = uuid.uuid4().hex
+            job = AIJob(job_id, ["__prompt__"], total=1)
+            self._jobs[job_id] = job
+            self._cleanup_jobs()
+            worker = threading.Thread(
+                target=self._run_prompt,
+                args=(job, config, text),
+                name=f"TerryDirector-PromptAI-{job_id[:8]}",
+                daemon=True,
+            )
+            worker.start()
+            return job_id
+
+    def _run_prompt(self, job: AIJob, config: dict, prompt: str):
+        job.status = "running"
+        try:
+            result = AI_MANAGER.enhance_prompt(
+                config,
+                prompt,
+                cancel=job.cancel_event,
+            )
+            with self._lock:
+                job.results.append(result)
+                job.current = "__prompt__"
+                job.done = 1
+            job.status = "cancelled" if job.cancel_event.is_set() else "completed"
+        except CancelledAI:
+            job.status = "cancelled"
+        except Exception as exc:
+            job.error = f"{type(exc).__name__}: {exc}"
+            job.status = "error"
+
     def submit_global(self, config: dict, document: dict) -> str:
         """Submit one independent global prompt task; never touches ComfyUI Queue."""
         config = require_ai_config(config)
