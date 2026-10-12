@@ -44,7 +44,7 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 
 用户界面中的 **TerryDirector Llama** 是共享 AI 推理能力提供节点：它集中声明 GGUF / VLM、系统提示词、AI Seed 与采样参数，Base / Advanced / 循环开始以及其它 Terry 系列编辑器通过其输出获得同一套 AI Runtime 能力。内部类型和输入名仍使用 `TerryDirectorLlamaConfig` / `llama_config` 作为实现标识，但它们不代表产品层只是“配置文件节点”。
 
-节点本身不在普通 `execute()` 阶段长期持有一个 Llama 模型对象；真正的模型加载、会话复用、推理锁、流式 token、中断和结果校验统一由 `director_ai.py` / `AIManager` 管理。这样多个消费者不会各自复制或重复加载一套 Llama 后端。`TerryDirectorLlamaConfig` 同时提供系统提示词预设与可连接的多行自定义 system prompt：自定义值会先 `strip()`，非空时完整替换 system role；空白值回退到预设，默认预设为 H3 Skill。`director_ai_node.py` 负责能力节点定义，
+节点本身不在普通 `execute()` 阶段长期持有一个 Llama 模型对象；真正的模型加载、会话复用、推理锁、流式 token、中断和结果校验统一由 `director_ai.py` / `AIManager` 管理。这样多个消费者不会各自复制或重复加载一套 Llama 后端。**TerryDirector 提示词增强编辑器**是第一个通用消费者：Python 节点本身只透传 STRING，前端 ✦ 按钮通过共享 `globalThis.TerryDirectorAI` provider 调用同一个 HTTP Job / AIManager；后续其它 Terry 编辑器应复用该 provider，而不是复制 GGUF 加载逻辑。`TerryDirectorLlamaConfig` 同时提供系统提示词预设与可连接的多行自定义 system prompt：自定义值会先 `strip()`，非空时完整替换 system role；空白值回退到预设，默认预设为 H3 Skill。`director_ai_node.py` 负责能力节点定义，
 `director_ai_core.py` 负责 AI Seed 独占的自动重做规则，`director_ai.py` 负责本地
 `llama-cpp-python` 加载、系统提示词选择、多模态资产编码、结果校验以及 Queue / 编辑器增强运行，
 `director_ai_jobs.py` 与 `server_routes.py` 负责编辑器独立 HTTP Job、进度与取消。
