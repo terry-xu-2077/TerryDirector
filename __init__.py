@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .director_selflift_node import TerryDirectorSelfLiftSampler
-from .director_ai_node import TerryDirectorLlamaConfig
+from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
 
 from typing_extensions import override
 
@@ -45,6 +45,7 @@ class TerryDirectorExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         node_classes = [
             TerryDirectorLlamaConfig,
+            TerryDirectorPromptEnhancer,
             TerryDirectorSecondPassConfig,
             TerryDirectorSelfLiftSampler,
             TerryDirectorConfig,
