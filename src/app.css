@@ -811,6 +811,62 @@ body.td-embedded .top-timeline-duration {
   outline-offset: 1px;
 }
 
+.clip-seed-control {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  flex:none;
+  min-width:150px;
+  height:28px;
+  padding:0 5px 0 8px;
+  border:1px solid var(--td-border);
+  border-radius:7px;
+  background:var(--td-bg-inset);
+  color:var(--td-text-muted);
+  font-size:10px;
+  white-space:nowrap;
+}
+.clip-seed-control > span { flex:none; }
+.clip-seed-control > input {
+  width:92px;
+  min-width:0;
+  height:24px;
+  padding:0 3px;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:var(--td-text-main);
+  font:11px/1 Consolas,monospace;
+  text-align:right;
+}
+.clip-seed-control > input::placeholder {
+  color:var(--td-text-muted);
+  opacity:.55;
+}
+.clip-seed-control > button {
+  display:grid;
+  place-items:center;
+  width:23px;
+  height:23px;
+  flex:0 0 23px;
+  padding:0;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:var(--td-text-muted);
+  cursor:pointer;
+}
+.clip-seed-control > button svg { width:14px;height:14px; }
+.clip-seed-control > button:hover:not(:disabled) {
+  color:var(--td-effect);
+  background:var(--td-bg-hover);
+}
+.clip-seed-control:focus-within {
+  border-color:var(--td-border-focus);
+}
+.clip-seed-control > input:disabled,
+.clip-seed-control > button:disabled { opacity:.45;cursor:default; }
+
 .prompt-editor-footer {
   justify-content: flex-start;
 }
@@ -1065,7 +1121,7 @@ body.td-embedded #app > .topbar {
   #app .composer-heading {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(165px, 195px);
-    grid-template-areas: "identity duration" "global view";
+    grid-template-areas: "identity duration" "seed global" ". view";
     align-items: center;
     gap: 6px 10px;
     padding-block: 7px;
@@ -1079,6 +1135,12 @@ body.td-embedded #app > .topbar {
     min-width: 0;
     max-width: 100%;
     width: 100%;
+  }
+  #app .composer-heading .clip-seed-control {
+    grid-area: seed;
+    min-width: 0;
+    width: min(100%, 195px);
+    justify-self: start;
   }
   #app .composer-heading .clip-global-toggle {
     grid-area: global;
@@ -1095,7 +1157,7 @@ body.td-embedded #app > .topbar {
 }
 @container td-prompt-panel (max-width: 360px) {
   #app .composer-heading {
-    grid-template-areas: "identity" "duration" "global" "view";
+    grid-template-areas: "identity" "duration" "seed" "global" "view";
     grid-template-columns: minmax(0, 1fr);
   }
   #app .composer-heading .prompt-view-switch { justify-self: start; }
