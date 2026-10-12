@@ -33,9 +33,9 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
         mmproj = next((v for v in projectors if "mmproj" in v.lower()), "None")
         return io.Schema(
             node_id="TerryDirectorLlamaConfig",
-            display_name="TerryDirector Llama 配置",
+            display_name="TerryDirector Llama",
             category="MiniMax H3/TerryDirector",
-            description="传递本地 GGUF / VLM、系统提示词预设、自定义系统提示词与 AI Seed；点击增强时才加载 Llama。",
+            description="提供 TerryDirector 共享的本地 Llama 推理能力：GGUF / VLM、系统提示词、AI Seed 与采样参数；由接入的编辑器或导演节点按需调用。",
             inputs=[
                 io.Combo.Input("model", display_name="GGUF 模型", options=models, default=preferred),
                 io.Combo.Input("vision_model", display_name="视觉投影器", options=projectors, default=mmproj),
@@ -67,7 +67,7 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
                 io.Float.Input("top_p", display_name="Top P", default=0.8, min=0.0, max=1.0, step=0.05),
                 io.Int.Input("gpu_layers", display_name="GPU 层数（-1 全部）", default=-1, min=-1, max=999, step=1),
             ],
-            outputs=[LlamaConfigData.Output(display_name="Llama 配置")],
+            outputs=[LlamaConfigData.Output(display_name="Llama")],
         )
 
     @classmethod
