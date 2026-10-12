@@ -28,6 +28,7 @@ def default_document() -> dict[str, Any]:
                 "name": "片段 01",
                 "start": 0,
                 "end": 10 * FPS,
+                "seed": None,
                 "prompt": "",
                 "aiPrompt": "",
                 "promptMode": "user",
@@ -63,6 +64,21 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def _normalize_seed(value: Any) -> str | None:
+    """Keep authored 64-bit seeds as decimal strings so browser JSON never loses precision."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        seed = int(text, 10)
+    except (TypeError, ValueError):
+        return None
+    seed = max(0, min(0xFFFFFFFFFFFFFFFF, seed))
+    return str(seed)
+
+
 def normalize_document(value: Any) -> dict[str, Any]:
     base = default_document()
     if not isinstance(value, dict):
@@ -85,6 +101,7 @@ def normalize_document(value: Any) -> dict[str, Any]:
             "name": str(raw.get("name") or f"片段 {index + 1:02d}")[:120],
             "start": start,
             "end": end,
+            "seed": _normalize_seed(raw.get("seed")),
             "prompt": str(raw.get("prompt") or ""),
             "aiPrompt": str(raw.get("aiPrompt") or ""),
             "promptMode": "ai" if raw.get("promptMode") == "ai" else "user",
