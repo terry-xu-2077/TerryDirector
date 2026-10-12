@@ -179,6 +179,7 @@ def _plan_items(
         effective_seed = int(seed) if segment_seed is None else int(segment_seed)
         item["_loop"] = {
             "adapter_id": adapter.info.adapter_id,
+            "index": int(position),
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
             "cache_key": cache_key,
             "run_signature": run_signature,
@@ -434,13 +435,14 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             display_name="TerryDirector 循环信息",
             category=CATEGORY,
             description=(
-                "解析循环上下文，输出提示词、采样帧数、随机种子、片段数据，"
+                "解析循环上下文，输出 0 基循环 index、提示词、采样帧数、随机种子、片段数据，"
                 "以及 H3 官方支持的图片/视频/音频参考素材。"
             ),
             inputs=[
                 LoopContextData.Input("loop_context", display_name="循环上下文"),
             ],
             outputs=[
+                io.Int.Output(display_name="index"),
                 io.String.Output(display_name="提示词"),
                 io.Int.Output(display_name="采样帧数"),
                 io.Int.Output(display_name="Seed"),
@@ -491,6 +493,7 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             "previous_context": previous_context,
         }
         return io.NodeOutput(
+            int(segment["_loop"]["index"]),
             segment["prompt"],
             adapter.sampling_frames(segment),
             int(segment["_loop"]["seed"]),
