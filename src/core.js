@@ -82,6 +82,39 @@
     }
     return result;
   }
+  // Drag sorting uses the original heads as insertion slots; the new order
+  // inherits those slots. Nudge later heads only when the swapped durations
+  // would violate H3's chronological or two-way-overlap invariants.
+  function reorderClips(clips, id, targetIndex) {
+    const from = clips.findIndex(c => c.id === id);
+    if (from < 0 || clips.length < 2 || !Number.isFinite(targetIndex)) return clips;
+    const to = clamp(Math.trunc(targetIndex), 0, clips.length - 1);
+    if (from === to) return clips;
+    const slots = clips.map(c => c.start), ordered = clips.slice();
+    ordered.splice(to, 0, ordered.splice(from, 1)[0]);
+    const arranged = [];
+    for (let i = 0; i < ordered.length; i++) {
+      const clip = ordered[i], duration = clip.end - clip.start;
+      const prev = arranged[i - 1], prev2 = arranged[i - 2];
+      const start = Math.max(slots[i], prev ? prev.start + 1 : 0,
+        prev ? prev.end - duration + 1 : 0, prev2 ? prev2.end : 0);
+      arranged.push({ ...clip, start, end: start + duration });
+    }
+    return arranged;
+  }
+  // Head crossing changes the rank. A later clip can take the first slot
+  // at frame zero even though negative timeline positions are impossible.
+  function reorderIndex(clips, id, frame) {
+    if (!Number.isFinite(frame)) return -1;
+    const from = clips.findIndex(c => c.id === id);
+    if (from < 0) return -1;
+    let rank = 0;
+    clips.forEach((clip, index) => {
+      if (index === from) return;
+      if (frame > clip.start || (frame === clip.start && frame !== 0 && from > index)) rank++;
+    });
+    return rank;
+  }
   function bounds(clips, id, mode) {
     const i = clips.findIndex(c => c.id === id), c = clips[i];
     if (!c) return { min: 0, max: 0 };
@@ -106,31 +139,31 @@
   function editClip(clips, id, mode, frame) {
     const c = clips.find(x => x.id === id);
     if (!c || !Number.isFinite(frame)) return clips;
-    // Moving and head trimming may pass another clip's start. The original
-    // bounds are still used for trailing-edge trimming.
-    const b = mode === 'move' ? { min: 0, max: Infinity }
-      : mode === 'left' ? { min: 0, max: c.end - FPS }
-      : bounds(clips, id, mode);
-    if (b.min > b.max) return clips;
-    const next = clamp(Math.round(frame), b.min, b.max);
-    const edited = clips.map(x => {
+    const b = bounds(clips, id, mode), next = clamp(Math.round(frame), b.min, b.max);
+    return clips.map(x => {
       if (x.id !== id) return x;
       if (mode === 'left') return { ...x, start: next };
       if (mode === 'right') return { ...x, end: next };
       return { ...x, start: next, end: next + x.end - x.start };
     });
-    return mode === 'move' || mode === 'left' ? orderClips(edited, id) : edited;
   }
   function moveFollowing(clips, id, frame) {
     const index = clips.findIndex(c => c.id === id), head = clips[index];
     if (!head || !Number.isFinite(frame)) return clips;
-    // Move the original suffix as a group, but permit crossing the fixed
-    // prefix's heads; the sorted list reflects the resulting generation order.
-    const delta = Math.max(0, Math.round(frame)) - head.start;
+    const prev = clips[index - 1], prev2 = clips[index - 2], next = clips[index + 1];
+    const duration = head.end - head.start;
+    // The moving suffix keeps all internal gaps and overlaps. Only its boundary
+    // with the fixed prefix can change; do not clamp against its own followers.
+    const min = Math.max(0,
+      prev ? prev.start + 1 : 0,
+      prev ? prev.end - duration + 1 : 0,
+      prev2 ? prev2.end : 0,
+      prev && next ? prev.end - (next.start - head.start) : 0);
+    const delta = Math.max(min, Math.round(frame)) - head.start;
     if (!delta) return clips;
-    return orderClips(clips.map((clip, i) => i < index ? clip : {
+    return clips.map((clip, i) => i < index ? clip : {
       ...clip, start: clip.start + delta, end: clip.end + delta
-    }), id);
+    });
   }
   function trimEndFollowing(clips, id, frame) {
     const index = clips.findIndex(c => c.id === id), head = clips[index];
@@ -172,7 +205,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, orderClips, settleClips, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, orderClips, settleClips, reorderClips, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
