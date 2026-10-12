@@ -251,6 +251,8 @@ async def terrydirector_ai_enhance(request: web.Request) -> web.Response:
             if not isinstance(ids, list) or not ids or len(ids) > 64:
                 raise ValueError("需要选择 1–64 个片段")
             job_id = AI_JOBS.submit(config, document, [str(x) for x in ids])
+        elif scope == "prompt":
+            job_id = AI_JOBS.submit_prompt(config, str(payload.get("prompt") or ""))
         else:
             raise ValueError("无效的 AI 增强范围")
         return web.json_response({"job_id": job_id}, status=202)
