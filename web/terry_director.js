@@ -3317,9 +3317,9 @@ function applyAiResultsWithoutReset(node, records) {
   for (const clip of current.document.clips || []) {
     const patch = records[String(clip.id)];
     if (!patch?.aiPrompt || !patch?.aiMetadata) continue;
-    const seed = Number(patch.aiMetadata.seed);
-    if (!Number.isFinite(seed)) continue;
-    if (clip.aiPrompt && Number(clip.aiMetadata?.seed) === seed) continue;
+    const seed = String(patch.aiMetadata.seed ?? "").trim();
+    if (!/^\d+$/.test(seed)) continue;
+    if (clip.aiPrompt && String(clip.aiMetadata?.seed ?? "").trim() === seed) continue;
     clip.aiPrompt = String(patch.aiPrompt);
     clip.aiMetadata = clone(patch.aiMetadata);
     if (!clip.aiOptOut) clip.promptMode = "ai";
