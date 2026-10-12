@@ -683,7 +683,7 @@ class TerryDirector(io.ComfyNode):
             ),
             inputs=[
                 DirectorConfigData.Input("director_config", display_name="导演配置"),
-                LlamaConfigData.Input("llama_config", display_name="Llama 配置", optional=True),
+                LlamaConfigData.Input("llama_config", display_name="Llama", optional=True),
                 io.Int.Input(
                     "seed",
                     display_name="Seed",
@@ -773,7 +773,7 @@ class TerryDirectorAdvanced(TerryDirector):
             description="增强版导演节点：视频审片、原生保存、分段 LATENT 缓存与选中片段局部重跑。",
             inputs=[
                 DirectorConfigData.Input("director_config", display_name="导演配置"),
-                LlamaConfigData.Input("llama_config", display_name="Llama 配置", optional=True),
+                LlamaConfigData.Input("llama_config", display_name="Llama", optional=True),
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
                     max=0xFFFFFFFFFFFFFFFF, control_after_generate=True,
