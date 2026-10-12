@@ -112,23 +112,36 @@
       const d=this.drag;
       if(d.mode==='pan'){this.scroll=d.scroll+d.origin.x-p.x;this.clampScroll();this.invalidate();return;}
       if(d.mode==='seek'){this.setFrame(this.frameAt(p.x));return;}
-      d.last=p;this.updateDrag(e.altKey);
+      d.last=p;this.updateDrag(e.altKey,e.shiftKey);
     }
-    updateDrag(alt=false) {
+    updateDrag(alt=false,solo=false) {
       const d=this.drag;if(!d||!d.original)return;
       const delta=Math.round((d.last.x-d.origin.x)/this.ppf);
       const initial=d.mode==='right'?d.end:d.start;
       let value=initial+delta;this.snapFrame=null;
+      // Preserve chain movement normally. When the dragged head passes another
+      // original head, freeze followers in place and continue independently.
+      // This makes reorder work in both directions even with chaining enabled.
+      if(d.mode==='move'&&d.follow&&!solo&&!d.reorderBase){
+        const target=Math.max(0,value);
+        const crossed=d.original.some(c=>c.id!==d.id&&(
+          (d.start<c.start&&target>c.start)||
+          (d.start>c.start&&(target<c.start||(target===0&&c.start===0)))
+        ));
+        if(crossed)d.reorderBase=C.copy(this.clips);
+      }
+      const source=d.reorderBase||d.original;
+      const follow=d.follow&&!solo&&!d.reorderBase;
       if(this.snapEnabled&&!alt){
-        // Followers move with the head: their old edges are not stationary snap targets.
-        const fixed=d.follow?d.original.slice(0,d.original.findIndex(c=>c.id===d.id)):d.original.filter(c=>c.id!==d.id);
+        // Original follower edges are not snap targets while the suffix moves.
+        const fixed=follow?source.slice(0,source.findIndex(c=>c.id===d.id)):source.filter(c=>c.id!==d.id);
         const targets=[0,this.frame,...fixed.flatMap(c=>[c.start,c.end])];
         const offsets=d.mode==='move'?[0,d.end-d.start]:[0];
         const result=C.snap(value,offsets,targets,7/this.ppf);value=result.value;this.snapFrame=result.target;
       }
-      this.clips=d.follow&&d.mode==='right'?C.trimEndFollowing(d.original,d.id,value)
-        :d.follow&&d.mode==='move'?C.moveFollowing(d.original,d.id,value)
-        :C.editClip(d.original,d.id,d.mode,value);
+      this.clips=follow&&d.mode==='right'?C.trimEndFollowing(source,d.id,value)
+        :follow&&d.mode==='move'?C.moveFollowing(source,d.id,value)
+        :C.editClip(source,d.id,d.mode,value);
       const edited=this.clips.find(c=>c.id===d.id);if(!edited)return;const actual=d.mode==='right'?edited.end:edited.start;
       if(Math.abs(actual-value)>.5)this.snapFrame=null;
       this.options.onPreview?.(this.clips);this.invalidate();
@@ -138,7 +151,10 @@
       const d=this.drag;this.drag=null;this.snapFrame=null;
       if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);
       this.overlay.style.cursor=this.hand?'grab':'default';
-      if(d.original){this.options.onCommit?.(this.clips,d.original);this.options.onDragEnd?.();}
+      if(d.original){
+        if(d.mode==='move'||d.mode==='left')this.clips=C.settleClips(this.clips,d.id);
+        this.options.onCommit?.(this.clips,d.original);this.options.onDragEnd?.();
+      }
       this.clampScroll();this.invalidate();
     }
     cancel() {
@@ -165,7 +181,10 @@
       ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.ruler;
       ctx.fillText('片段',20,this.y()+this.trackHeight/2);
       ctx.save();ctx.beginPath();ctx.rect(this.inset,30,w-this.inset,h);ctx.clip();
-      this.clips.forEach((c,i)=>{
+      const paintOrder=this.clips.map((c,i)=>({c,i}));
+      if(this.drag?.mode==='move')
+        paintOrder.sort((a,b)=>Number(a.c.id===this.drag.id)-Number(b.c.id===this.drag.id));
+      paintOrder.forEach(({c,i})=>{
         const x=this.x(c.start),width=(c.end-c.start)*this.ppf,y=this.y(),ch=this.trackHeight;
         if(x+width<this.inset-10||x>w+10)return;
         const selected=c.id===this.selected,suspended=!!c.suspended;
