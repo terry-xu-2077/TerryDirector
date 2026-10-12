@@ -2910,26 +2910,67 @@ const LLAMA_MODE_BYPASS = 4;
 let tdAiConfigWatchTimer = null;
 let tdAiConfigSignature = "";
 
-function staticStringInputValue(node, inputName, fallback = "") {
+function staticBooleanInputValue(node, inputName, fallback = false, seen = new Set()) {
   const widgetValue = node?.widgets?.find(widget => widget.name === inputName)?.value;
-  const local = typeof widgetValue === "string" ? widgetValue : String(fallback ?? "");
+  const local = typeof widgetValue === "boolean" ? widgetValue : !!fallback;
   const source = linkedOutputForInput(node, inputName);
   if (!source?.node) return local;
 
   const parent = source.node;
   const slot = Number(source.outputIndex);
   if (!Number.isSafeInteger(slot) || slot < 0) return local;
+  const key = "bool:" + String(parent.id) + ":" + slot;
+  if (seen.has(key)) return local;
+  seen.add(key);
 
-  // Manual editor AI jobs do not execute the Comfy graph. Resolve the common
-  // static STRING sources directly; Queue auto-enhancement still receives the
-  // actual evaluated upstream value through the Python node execution.
-  const names = ["value", "text", "string", "prompt", "system_prompt"];
-  for (const name of names) {
+  for (const name of ["value", "boolean", "switch"]) {
+    const candidate = parent.widgets?.find(widget => widget.name === name)?.value;
+    if (typeof candidate === "boolean") return candidate;
+  }
+  return local;
+}
+
+function staticStringOutputValue(source, fallback = "", seen = new Set()) {
+  if (!source?.node) return String(fallback ?? "");
+  const parent = source.node;
+  const slot = Number(source.outputIndex);
+  if (!Number.isSafeInteger(slot) || slot < 0) return String(fallback ?? "");
+
+  const key = "string:" + String(parent.id) + ":" + slot;
+  if (seen.has(key)) return String(fallback ?? "");
+  seen.add(key);
+
+  // The native If/Else node is lazy at Queue time. Manual editor AI jobs do
+  // not execute the graph, so mirror its selected branch here. This is the
+  // common setup for switching between e.g. Chinese and English system prompts.
+  if (parent.comfyClass === "ComfySwitchNode" ||
+      parent.comfyClass === "ComfySoftSwitchNode") {
+    const enabled = staticBooleanInputValue(parent, "switch", false, seen);
+    const selected = enabled ? "on_true" : "on_false";
+    return staticStringInputValue(parent, selected, fallback, seen);
+  }
+
+  // Common static text/primitive nodes expose their payload as a widget.
+  for (const name of ["value", "text", "string", "prompt", "system_prompt"]) {
     const candidate = parent.widgets?.find(widget => widget.name === name)?.value;
     if (typeof candidate === "string") return candidate;
   }
   const stringWidget = parent.widgets?.find(widget => typeof widget.value === "string");
-  return typeof stringWidget?.value === "string" ? stringWidget.value : local;
+  return typeof stringWidget?.value === "string"
+    ? stringWidget.value
+    : String(fallback ?? "");
+}
+
+function staticStringInputValue(node, inputName, fallback = "", seen = new Set()) {
+  const widgetValue = node?.widgets?.find(widget => widget.name === inputName)?.value;
+  const local = typeof widgetValue === "string" ? widgetValue : String(fallback ?? "");
+  const source = linkedOutputForInput(node, inputName);
+  if (!source?.node) return local;
+
+  // Queue auto-enhancement receives the evaluated upstream STRING through the
+  // Python Llama-config node. The editor-owned manual AI path has to resolve
+  // static upstream text itself because it does not execute the Comfy graph.
+  return staticStringOutputValue(source, local, seen);
 }
 
 function directorLlamaState(node) {
