@@ -3209,6 +3209,76 @@ function directorLlamaState(node) {
   };
 }
 
+async function startStandalonePromptEnhancement(node, prompt) {
+  const state = directorLlamaState(node);
+  if (state.status !== "active" || !state.config) {
+    const reason = state.status === "bypassed"
+      ? "TerryDirector Llama 当前为 Bypassed"
+      : state.status === "muted"
+        ? "TerryDirector Llama 当前为 Never"
+        : "请先连接 TerryDirector Llama";
+    throw new Error(reason);
+  }
+
+  const text = String(prompt || "").trim();
+  if (!text) throw new Error("提示词为空，无法增强");
+
+  const response = await api.fetchApi("/terrydirector/api/ai-enhance", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      scope: "prompt",
+      llama_config: state.config,
+      prompt: text,
+    }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "无法启动 AI 增强");
+
+  const jobId = String(payload.job_id || "");
+  if (!jobId) throw new Error("AI 增强任务未返回有效 ID");
+
+  let cancelled = false;
+  const cancel = async () => {
+    if (cancelled) return;
+    cancelled = true;
+    try {
+      await api.fetchApi(
+        "/terrydirector/api/ai-jobs/" + encodeURIComponent(jobId) + "/cancel",
+        { method: "POST" }
+      );
+    } catch {}
+  };
+
+  const result = async () => {
+    for (;;) {
+      const statusResponse = await api.fetchApi(
+        "/terrydirector/api/ai-jobs/" + encodeURIComponent(jobId),
+        { cache: "no-store" }
+      );
+      if (!statusResponse.ok) throw new Error("AI 增强任务状态不可用");
+      const job = await statusResponse.json();
+      if (job.status === "completed") {
+        const record = Array.isArray(job.results) ? job.results.at(-1) : null;
+        const enhanced = String(record?.prompt || "").trim();
+        if (!enhanced) throw new Error("AI 增强未返回有效提示词");
+        return { prompt: enhanced, metadata: record?.metadata || {}, job };
+      }
+      if (job.status === "cancelled") throw new Error("AI 增强已取消");
+      if (job.status === "error") throw new Error(job.error || "AI 增强失败");
+      await new Promise(resolve => setTimeout(resolve, 450));
+    }
+  };
+
+  return { jobId, result, cancel };
+}
+
+globalThis.TerryDirectorAI = {
+  ...(globalThis.TerryDirectorAI || {}),
+  resolveLlamaState: directorLlamaState,
+  startPromptEnhancement: startStandalonePromptEnhancement,
+};
+
 function pushAiConfig(node=activeNode, force=false) {
   if (!frameReady || !frame?.contentWindow || !node) return;
   const state = directorLlamaState(node);
