@@ -139,7 +139,10 @@
   const transitionLabels={tail_reference:'尾帧参考',tail_continuation:'尾帧续接',independent:'独立'};
   const normalizeTransitionMode=(value,fallback='tail_continuation')=>Object.hasOwn(transitionLabels,value)?value:fallback;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
-  const activityFor=c=>activity.get(c?.id)||emptyActivity;
+  const aiEnhanceActivity={status:'ai-enhancing',progress:0,elapsedSeconds:0,completedAt:null};
+  let aiClipIds=[];
+  const activeAiClipId=()=>aiJob?aiClipIds.find(id=>!aiSeen.has(id))||null:null;
+  const activityFor=c=>c?.id===activeAiClipId()?aiEnhanceActivity:(activity.get(c?.id)||emptyActivity);
   function resetActivity(){activity.clear();}
   if(!embedded)resetActivity();else activity.clear();
   let state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]},history=new C.History();
@@ -644,10 +647,10 @@
       });
       const payload=await response.json();
       if(!response.ok)throw new Error(payload.error||'无法启动 AI 增强');
-      aiJob=payload.job_id;aiSeen=new Set();
-      markEdited();renderAiControls();toast('正在使用本地 Qwen 增强提示词');
+      aiJob=payload.job_id;aiSeen=new Set();aiClipIds=clips.map(c=>String(c.id));
+      markEdited();renderAiControls();timeline?.invalidate();toast('正在使用本地 Qwen 增强提示词');
       void pollAiJob();
-    }catch(error){aiJob=null;renderAiControls();toast(error?.message||'启动 AI 增强失败');}
+    }catch(error){aiJob=null;aiClipIds=[];timeline?.invalidate();renderAiControls();toast(error?.message||'启动 AI 增强失败');}
   }
   async function cancelAiJob(){
     if(!aiJob)return;
@@ -676,11 +679,14 @@
         });
       }
       if(['completed','error','cancelled'].includes(job.status)){
-        aiJob=null;renderAll();
+        aiJob=null;aiClipIds=[];renderAll();
         if(job.status==='completed')toast('AI 增强完成 '+job.done+'/'+job.total);
         else toast(job.error||'AI 增强已取消，已完成片段得到保留');
-      }else{$('#aiStatus').textContent='正在增强 '+job.done+'/'+job.total+' 个片段';}
-    }catch(error){aiJob=null;toast(error?.message||'AI 增强连接失败');}
+      }else{
+        $('#aiStatus').textContent='正在增强 '+job.done+'/'+job.total+' 个片段';
+        timeline?.invalidate();
+      }
+    }catch(error){aiJob=null;aiClipIds=[];timeline?.invalidate();toast(error?.message||'AI 增强连接失败');}
     finally{
       aiPolling=false;
       if(aiJob===targetJob)setTimeout(()=>void pollAiJob(),650);
@@ -1275,7 +1281,7 @@
         });
         const payload=await response.json();
         if(!response.ok)throw new Error(payload.error||'无法启动全局 AI 增强');
-        aiJob=payload.job_id;renderAiControls();
+        aiJob=payload.job_id;aiClipIds=[];timeline?.invalidate();renderAiControls();
         $('#globalAiStatus').textContent='正在增强全局提示词…';
         void pollGlobalEnhancement(aiJob);
       }catch(error){aiJob=null;renderAiControls();toast(error?.message||'无法增强全局提示词');}
