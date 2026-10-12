@@ -515,7 +515,7 @@ class AIManager:
                 for msg in messages
                 for p in (msg.get("content") if isinstance(msg.get("content"), list) else [])
             ):
-                raise ValueError("全局提示词引用了图片，请在 Llama 配置中选择 mmproj")
+                raise ValueError("全局提示词引用了图片，请在 TerryDirector Llama 中选择 mmproj")
             _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
             with _LlamaSession(config) as session:
                 _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
@@ -575,7 +575,7 @@ class AIManager:
                         part.get("type") == "image_url"
                         for msg in messages for part in (msg.get("content") if isinstance(msg.get("content"), list) else [])
                     ):
-                        raise ValueError("当前片段含图片/视频视觉参考，请在 Llama 配置中选择 mmproj")
+                        raise ValueError("当前片段含图片/视频视觉参考，请在 TerryDirector Llama 中选择 mmproj")
                     required = {(t.lower(), int(n)) for t, n in MEDIA_TAG.findall(str(clip.get("prompt") or ""))}
                     _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
                     prompt = _validate_output(
@@ -659,7 +659,7 @@ def prepare_document_for_queue(document: dict, config: dict | None, node_id: str
     if not updated.get("autoAiEnhance", False):
         return updated
     if config is None:
-        raise ValueError("已开启生成前 AI 增强，请连接 TerryDirector Llama 配置节点")
+        raise ValueError("已开启生成前 AI 增强，请连接 TerryDirector Llama 节点")
     config = require_ai_config(config)
     seed = config["seed"]
     saved = load_saved_ai(node_id).get("clips", {})
