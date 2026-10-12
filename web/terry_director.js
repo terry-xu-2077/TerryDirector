@@ -1098,6 +1098,8 @@ function defaultDocument() {
         name: "片段 01",
         start: 0,
         end: FPS * 10,
+        seed: null,
+        aiSeed: null,
         prompt: "",
         aiPrompt: "",
         promptMode: "user",
@@ -1118,6 +1120,19 @@ function defaultConfig() {
     version: 4,
     document: defaultDocument(),
   };
+}
+
+function normalizeAuthoredSeed(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text || !/^\d+$/.test(text)) return null;
+  try {
+    const max = (1n << 64n) - 1n;
+    const parsed = BigInt(text);
+    return String(parsed > max ? max : parsed);
+  } catch {
+    return null;
+  }
 }
 
 function normalizeConfig(value) {
@@ -1151,6 +1166,8 @@ function normalizeConfig(value) {
           name: String(raw?.name || `片段 ${String(index + 1).padStart(2, "0")}`),
           start,
           end,
+          seed: normalizeAuthoredSeed(raw?.seed),
+          aiSeed: normalizeAuthoredSeed(raw?.aiSeed),
           prompt: String(raw?.prompt || ""),
           aiPrompt: String(raw?.aiPrompt || ""),
           promptMode: raw?.promptMode === "ai" ? "ai" : "user",
