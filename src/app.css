@@ -1404,6 +1404,7 @@ dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
   }
   #app > .topbar .top-timeline-leading > * { flex-shrink: 0; }
   #app > .topbar .top-actions { min-width: 0; }
+  #app > .topbar .prototype { display: none; }
   #app > .topbar .top-data-actions { gap: 4px; }
   #app > .topbar .top-data-button { padding-inline: 8px; }
 }

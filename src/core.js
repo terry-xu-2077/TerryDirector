@@ -67,21 +67,6 @@
       return a.index - b.index;
     }).map(item => item.clip);
   }
-  // Before saving, preserve order and duration while moving collided clips
-  // forward just enough for H3's strict chronological compiler constraints.
-  // This also prevents three-way overlaps in the single-row timeline.
-  function settleClips(clips, movingId = null) {
-    const result = [];
-    for (const clip of orderClips(clips, movingId)) {
-      const prev = result.at(-1), prev2 = result.at(-2);
-      const duration = clip.end - clip.start;
-      const minimum = Math.max(0, prev ? prev.start + 1 : 0,
-        prev ? prev.end - duration + 1 : 0, prev2 ? prev2.end : 0);
-      const delta = Math.max(0, minimum - clip.start);
-      result.push(delta ? { ...clip, start: clip.start + delta, end: clip.end + delta } : clip);
-    }
-    return result;
-  }
   // Drag sorting uses the original heads as insertion slots; the new order
   // inherits those slots. Nudge later heads only when the swapped durations
   // would violate H3's chronological or two-way-overlap invariants.
@@ -205,7 +190,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, orderClips, settleClips, reorderClips, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, orderClips, reorderClips, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

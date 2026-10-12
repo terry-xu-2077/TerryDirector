@@ -124,3 +124,10 @@ test('narrow editor and nested prompt panel have independent breakpoints',()=>{
  assert.match(css,/@container td-editor-shell \(max-width: 760px\)/);
  assert.match(css,/@container td-prompt-panel \(max-width: 630px\)/);
 });
+
+test('sorting action remains present, separate from pointer and pan',()=>{
+ const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+ assert.match(app,/ib\('sort','reorder'/);
+ assert.match(app,/sort:\(\)=>setSortEnabled\(!timeline\.sortMode\)/);
+ assert.match(app,/sortButton\.disabled=hostReadonly/);
+});
