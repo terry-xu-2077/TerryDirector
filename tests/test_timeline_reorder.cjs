@@ -1,62 +1,126 @@
-/* node --test tests/test_timeline_reorder.cjs */
-const test=require('node:test'), assert=require('node:assert/strict'), fs=require('node:fs'), vm=require('node:vm'), path=require('node:path');
-const C=require('../src/core.js');
-const sandbox={window:{TDCore:C}};
+/* Run: node --test tests/test_timeline_reorder.cjs */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const C = require('../src/core.js');
+const sandbox = { window: { TDCore:C } };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../src/timeline.js'),'utf8'),sandbox);
-const Timeline=sandbox.window.TDTimeline;
-const samples=[
-{id:'a',start:240,end:528,seed:'18446744073709551615',prompt:'A'},
-{id:'b',start:624,end:864,seed:'42',aiSeed:'800',refs:['asset-3'],prompt:'B'},
-{id:'c',start:864,end:1104,seed:'87',prompt:'C'}];
-function drag(id,start,end,to,follow=true,solo=false){
- const tl=Object.create(Timeline.prototype);tl.ppf=1;tl.frame=0;tl.snapEnabled=false;
- tl.clips=C.copy(samples);tl.invalidate=()=>{};tl.options={onPreview(){}};
- tl.drag={mode:'move',id,origin:{x:0},last:{x:to-start},start,end,original:C.copy(samples),follow};
- tl.updateDrag(false,solo);return tl;
+const Timeline = sandbox.window.TDTimeline;
+const clips = [
+ {id:'a',name:'First',start:0,end:288,seed:'18446744073709551615',prompt:'A'},
+ {id:'b',name:'Second',start:336,end:576,seed:'42',aiSeed:'900',refs:['asset-3'],prompt:'B',transitionMode:'tail_reference'},
+ {id:'c',name:'Third',start:624,end:864,seed:'43',prompt:'C'}
+];
+function timeline(sortMode,input=clips){
+ const events={previews:[],commits:[]},tl=Object.create(Timeline.prototype);
+ Object.assign(tl,{
+  clips:C.copy(input),sortMode,sortPositions:new Map(),sortAnimStamp:0,sortAnimating:false,
+  chainEnabled:true,snapEnabled:false,selected:'a',ppf:1,scroll:0,inset:70,ruler:32,
+  width:1600,height:180,hand:false,playing:false,snapFrame:null,callouts:[],frame:0,
+  host:{getBoundingClientRect(){return {left:0,top:0};}},
+  overlay:{style:{},focus(){},setPointerCapture(){},hasPointerCapture(){return false;},releasePointerCapture(){}},
+  options:{readonly(){return false;},onPreview(c){events.previews.push(C.copy(c));},
+   onCommit(c,b){events.commits.push({after:C.copy(c),before:C.copy(b)});},onSelect(){},onView(){}},
+  invalidate(){},clampScroll(){}
+ });
+ return {tl,events};
 }
-test('cross heads left: reorder and retain identity, seeds, assets',()=>{
- const tl=drag('b',624,864,224);
+function start(tl,id,offset=16){
+ const c=tl.clips.find(x=>x.id===id);
+ const e={button:0,pointerId:17,clientX:tl.clipX(c)+offset,clientY:tl.y()+24,preventDefault(){}};
+ tl.down(e);assert.ok(tl.drag);return e;
+}
+function move(tl,e,frame,shift=false){
+ tl.move({...e,clientX:e.clientX+(frame-tl.drag.start)*tl.ppf,shiftKey:shift,altKey:false});
+}
+test('normal movement does not reorder despite large negative drag',()=>{
+ const {tl}=timeline(false),e=start(tl,'b');assert.equal(tl.drag.mode,'move');move(tl,e,0);
+ assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);assert.ok(tl.clips[1].start>tl.clips[0].start);
+});
+test('normal head trim obeys original bounds',()=>{
+ const c=C.editClip(clips,'b','left',0);
+ assert.deepEqual(c.map(x=>x.id),['a','b','c']);assert.ok(c[1].start>0);
+});
+test('sort mode uses entire clip as drag handle, including its edges',()=>{
+ const {tl}=timeline(true);start(tl,'b',2);assert.equal(tl.drag.mode,'sort');
+});
+test('second clip becomes first and keeps seed, prompt, transition and asset IDs',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'b');
+ move(tl,e,0);assert.deepEqual(tl.clips.map(c=>c.id),['b','a','c']);
+ const b=tl.clips[0];assert.equal(b.seed,'42');assert.equal(b.aiSeed,'900');
+ assert.deepEqual(b.refs,['asset-3']);assert.equal(b.prompt,'B');assert.equal(b.transitionMode,'tail_reference');
+ tl.up(e);assert.equal(events.commits.length,1);assert.equal(events.commits[0].after[0].id,'b');
+});
+test('first clip moves right past second clip to reverse pair',()=>{
+ const {tl}=timeline(true),e=start(tl,'a');move(tl,e,337);
  assert.deepEqual(tl.clips.map(c=>c.id),['b','a','c']);
- assert.equal(tl.clips[0].start,224);assert.equal(tl.clips[0].seed,'42');
- assert.equal(tl.clips[0].aiSeed,'800');assert.deepEqual(tl.clips[0].refs,['asset-3']);
- assert.equal(tl.clips[0].prompt,'B');
 });
-test('cross heads right even when chaining is on',()=>{
- assert.deepEqual(drag('a',240,528,700).clips.map(c=>c.id),['b','a','c']);
+test('three-way sort updates indices live and permits returning to original slot',()=>{
+ const {tl}=timeline(true),e=start(tl,'c');move(tl,e,0);
+ assert.deepEqual(tl.clips.map(c=>c.id),['c','a','b']);
+ move(tl,e,320);assert.deepEqual(tl.clips.map(c=>c.id),['a','c','b']);
+ move(tl,e,624);assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
 });
-test('incremental drag crosses a moving follower without chasing it',()=>{
- const tl=drag('a',240,528,600);
- assert.equal(tl.clips.find(c=>c.id==='b').start,984);
- tl.drag.last={x:625-240};tl.updateDrag(false,false);
- assert.deepEqual(tl.clips.map(c=>c.id),['b','a','c']);
- assert.equal(tl.clips.find(c=>c.id==='b').start,624);
- assert.equal(tl.drag.reordering,true);
- tl.drag.last={x:700-240};tl.updateDrag(false,false);
- assert.equal(tl.clips.find(c=>c.id==='b').start,624);
- const reverse=drag('b',624,864,300);
- reverse.drag.last={x:239-624};reverse.updateDrag(false,false);
- assert.equal(reverse.clips[0].id,'b');
- assert.equal(reverse.clips.find(c=>c.id==='c').start,864);
+test('spring moves displaced clips but keeps actual frames integral',()=>{
+ const {tl}=timeline(true),e=start(tl,'b');move(tl,e,0);
+ const initial=tl.sortPositions.get('a').frame;
+ for(let i=1;i<25;i++)tl.advanceSortAnimation(i*16.67);
+ assert.ok(tl.sortPositions.get('a').frame>initial);
+ assert.equal(tl.clips.find(c=>c.id==='a').start,336);tl.up(e);
 });
-test('shift solo bypasses chain and normal movement still follows',()=>{
- assert.equal(drag('a',240,528,700,true,true).clips.find(c=>c.id==='b').start,624);
- assert.equal(drag('b',624,864,600).clips.find(c=>c.id==='c').start,840);
+test('no-op sort does not write history',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'b');tl.up(e);assert.equal(events.commits.length,0);
 });
-test('head trim reorders and frame-zero tie enables swapping the first clip',()=>{
- assert.equal(C.editClip(samples,'b','left',220)[0].id,'b');
- const atZero=[{id:'a',start:0,end:288},{id:'b',start:300,end:540}];
- assert.equal(C.editClip(atZero,'b','move',0)[0].id,'b');
- assert.deepEqual(C.editClip(samples,'b','move',800).map(c=>c.id),['a','b','c']);
+test('pointer cancellation restores original clips',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'b');move(tl,e,0);tl.cancel();
+ assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);assert.equal(events.commits.length,0);
 });
-test('drop settlement preserves execution order and valid overlaps',()=>{
- const result=C.settleClips(C.editClip(samples,'b','move',10),'b');
- assert.deepEqual(result.map(c=>c.id),['b','a','c']);
- for(let i=1;i<result.length;i++){
-  assert.ok(result[i].start>result[i-1].start&&result[i].end>result[i-1].end);
-  if(i>1)assert.ok(result[i].start>=result[i-2].end);
+test('disabling sort cancels a gesture and clears visual spring state',()=>{
+ const {tl}=timeline(true),e=start(tl,'b');move(tl,e,0);tl.setSortMode(false);
+ assert.equal(tl.sortMode,false);assert.equal(tl.sortPositions.size,0);
+ assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
+});
+test('all permutations preserve durations and compiler chronology',()=>{
+ for(const clip of clips)for(let index=0;index<clips.length;index++){
+  const changed=C.reorderClips(clips,clip.id,index);
+  for(let i=1;i<changed.length;i++){
+   assert.ok(changed[i].start>changed[i-1].start);
+   assert.ok(changed[i].end>changed[i-1].end);
+   if(i>1)assert.ok(changed[i].start>=changed[i-2].end);
+  }
+  for(const source of clips){
+   const c=changed.find(item=>item.id===source.id);
+   assert.equal(c.end-c.start,source.end-source.start);
+  }
  }
- assert.equal(result[0].end-result[0].start,240);
 });
-test('right trim retains original bounds',()=>{
- assert.equal(C.editClip(samples,'b','right',900).find(c=>c.id==='b').end,900);
+test('unequal clip durations do not break overlaps',()=>{
+ const uneven=[{id:'x',start:0,end:360},{id:'y',start:361,end:420},{id:'z',start:420,end:500}];
+ const out=C.reorderClips(uneven,'z',0);
+ assert.deepEqual(out.map(c=>c.id),['z','x','y']);
+ for(let i=1;i<out.length;i++){
+  assert.ok(out[i].start>out[i-1].start);assert.ok(out[i].end>out[i-1].end);
+  if(i>1)assert.ok(out[i].start>=out[i-2].end);
+ }
+});
+test('reordered data survives history undo and redo',()=>{
+ const next=C.reorderClips(clips,'b',0),history=new C.History();
+ assert.ok(history.push(clips,next));
+ const undone=history.undo(next);
+ assert.deepEqual(undone.map(c=>c.id),['a','b','c']);
+ const redone=history.redo(undone);
+ assert.deepEqual(redone.map(c=>c.id),['b','a','c']);assert.equal(redone[0].aiSeed,'900');
+});
+test('short floating-window layout keeps editor scrollable',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../src/app.css'),'utf8');
+ assert.match(css,/@media \(max-height: 720px\)/);
+ assert.match(css,/body\.td-embedded #app\s*\{\s*overflow-x:\s*hidden;\s*overflow-y:\s*auto;/);
+ assert.match(css,/body\.td-embedded #app > \.workspace\s*\{\s*flex:\s*0 0 auto;\s*min-height:\s*330px;/);
+});
+test('narrow editor and nested prompt panel have independent breakpoints',()=>{
+ const css=fs.readFileSync(path.join(__dirname,'../src/app.css'),'utf8');
+ assert.match(css,/@container td-editor-shell \(max-width: 760px\)/);
+ assert.match(css,/@container td-prompt-panel \(max-width: 630px\)/);
 });
