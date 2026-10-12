@@ -167,7 +167,7 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><div class="clip-seed-control" title="留空时跟随 TerryDirector 节点 Seed；填写后仅当前片段使用此 Seed"><span>Seed</span><input id="clipSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 Seed" placeholder="跟随"><button id="clipSeedRandom" type="button" title="随机当前片段 Seed" aria-label="随机当前片段 Seed">${icon('dice')}</button></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
         <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
@@ -185,6 +185,25 @@
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
     <svg width="0" height="0" aria-hidden="true" style="position:absolute;pointer-events:none"><defs><clipPath id="folder-outline" clipPathUnits="objectBoundingBox"><path d="M0 .15 Q0 0 .06 0 H.32 C.36 0 .36 .13 .42 .13 H.94 Q1 .13 1 .27 V.87 Q1 1 .94 1 H.06 Q0 1 0 .87 Z"/></clipPath></defs></svg>`;
   const current=()=>state.clips.find(c=>c.id===state.selected);
+  function normalizeClipSeedValue(value){
+    if(value===null||value===undefined)return null;
+    const text=String(value).trim();
+    if(!text)return null;
+    if(!/^\d+$/.test(text))return null;
+    try{
+      const max=(1n<<64n)-1n;
+      const parsed=BigInt(text);
+      return String(parsed>max?max:parsed);
+    }catch(_){return null;}
+  }
+  function randomClipSeed(){
+    try{
+      const words=new Uint32Array(2);crypto.getRandomValues(words);
+      return String((BigInt(words[0])<<32n)|BigInt(words[1]));
+    }catch(_){
+      return String(Math.floor(Math.random()*0x100000000));
+    }
+  }
   const clipLocalPrompt=c=>(c?.promptMode==='ai'&&String(c.aiPrompt||'').trim())?c.aiPrompt:(c?.prompt||'');
   const effectiveGlobalPrompt=()=>state.globalPromptMode==='ai'&&String(state.aiGlobalPrompt||'').trim()
     ?state.aiGlobalPrompt:state.globalPrompt;
@@ -292,9 +311,21 @@
     if(control)control.title=hint;
     number.title=hint;range.title=hint;
   }
+  function renderClipSeed(clips=state.clips){
+    const c=clips.find(x=>x.id===state.selected);
+    const input=$('#clipSeedInput'),random=$('#clipSeedRandom');
+    if(!input||!random)return;
+    input.disabled=!c||hostReadonly;
+    random.disabled=!c||hostReadonly;
+    input.value=c?.seed==null?'':String(c.seed);
+    input.title=c?.seed==null
+      ? '当前片段跟随 TerryDirector 节点 Seed'
+      : '当前片段独立 Seed：'+String(c.seed);
+  }
   function renderTiming(clips=state.clips){
     renderTimelineDuration(clips);
     renderClipDuration(clips);
+    renderClipSeed(clips);
   }
   function renderRunProgress(){
     const bar=$('#timelineRunProgress');
@@ -759,7 +790,7 @@
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},seed:null,audio:true,guide:'画面参考',refs:[],suspended:false};
     if(template)Object.assign(c,{aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{}});
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
@@ -1082,7 +1113,7 @@
         start,end,prompt:String(clip?.prompt||''),aiPrompt:String(clip?.aiPrompt||''),promptMode:clip?.promptMode==='ai'?'ai':'user',
         aiOptOut:clip?.aiOptOut===true,aiMetadata:clip?.aiMetadata&&typeof clip.aiMetadata==='object'?C.copy(clip.aiMetadata):{},
         refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
-        useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:0,audio:true,guide:'画面参考'};
+        useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:normalizeClipSeedValue(clip?.seed),audio:true,guide:'画面参考'};
     });
     state={globalPrompt:String(raw.globalPrompt||''),aiGlobalPrompt:String(raw.aiGlobalPrompt||''),
       globalPromptMode:raw.globalPromptMode==='ai'?'ai':'user',
@@ -1101,7 +1132,7 @@
     return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
       aiGlobalPrompt:state.aiGlobalPrompt||'',globalPromptMode:state.globalPromptMode==='ai'?'ai':'user',
       globalAiMetadata:state.globalAiMetadata||{},autoAiEnhance:!!state.autoAiEnhance,
-      clips:state.clips.map(({id,name,start,end,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
+      clips:state.clips.map(({id,name,start,end,seed,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,seed:normalizeClipSeedValue(seed),prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
@@ -1413,6 +1444,24 @@
   durationNumber.addEventListener('change',finishDurationEdit);
   durationNumber.addEventListener('blur',finishDurationEdit);
   durationNumber.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishDurationEdit();e.target.blur();}});
+  const clipSeedInput=$('#clipSeedInput'),clipSeedRandom=$('#clipSeedRandom');
+  clipSeedInput.addEventListener('input',e=>{
+    e.target.value=String(e.target.value||'').replace(/\D+/g,'').slice(0,20);
+  });
+  clipSeedInput.addEventListener('change',e=>{
+    const clip=current();if(!clip||hostReadonly)return;
+    const raw=String(e.target.value||'').trim();
+    if(raw&&!/^\d+$/.test(raw)){renderClipSeed();toast('Seed 只能填写 0 到 18446744073709551615 的整数');return;}
+    const value=normalizeClipSeedValue(raw);
+    mutate(()=>{clip.seed=value;});
+  });
+  clipSeedInput.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();e.target.blur();}
+  });
+  clipSeedRandom.addEventListener('click',()=>{
+    const clip=current();if(!clip||hostReadonly)return;
+    mutate(()=>{clip.seed=randomClipSeed();});
+  });
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
   $('#timelineImportInput').addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file)void importTimelineFile(file);});
   $('#zoomRange').addEventListener('input',e=>{timeline.zoom((.22*Math.pow(24/.22,Number(e.target.value)/100))/timeline.ppf);});
