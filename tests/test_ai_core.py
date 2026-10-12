@@ -10,8 +10,8 @@ spec.loader.exec_module(core)
 
 def _clip():
     return dict(id="clip-a", prompt="first", aiPrompt="enhanced", promptMode="ai",
-                aiMetadata={"seed": 8888, "sourceHash": "old"}, start=0, end=240,
-                suspended=False, aiOptOut=False)
+                aiMetadata={"seed": "8888", "sourceHash": "old"}, start=0, end=240,
+                aiSeed=None, suspended=False, aiOptOut=False)
 
 
 def test_ai_seed_alone_decides_refresh():
@@ -30,6 +30,37 @@ def test_missing_result_triggers_once():
     core.assign_ai_result(item, {"prompt": "fresh", "metadata": {"seed": 8888}})
     assert not core.needs_enhancement(item, 8888)
     assert item["prompt"] == "first"
+
+
+def test_clip_ai_seed_overrides_global_seed():
+    item = _clip()
+    item["aiSeed"] = "12345678901234567890"
+    item["aiMetadata"]["seed"] = "12345678901234567890"
+    assert core.effective_ai_seed(item, 8888) == 12345678901234567890
+    assert not core.needs_enhancement(item, 8888)
+
+    item["aiSeed"] = "12345678901234567891"
+    assert core.needs_enhancement(item, 8888)
+
+    item["aiSeed"] = None
+    item["aiMetadata"]["seed"] = "8888"
+    assert core.effective_ai_seed(item, 8888) == 8888
+    assert not core.needs_enhancement(item, 8888)
+
+
+def test_ai_targets_respect_each_clip_seed():
+    first = _clip()
+    second = _clip() | {
+        "id": "clip-b",
+        "aiSeed": "99",
+        "aiMetadata": {"seed": "99", "sourceHash": "old"},
+    }
+    third = _clip() | {
+        "id": "clip-c",
+        "aiSeed": "100",
+        "aiMetadata": {"seed": "99", "sourceHash": "old"},
+    }
+    assert [x["id"] for x in core.ai_targets({"clips": [first, second, third]}, 8888)] == ["clip-c"]
 
 
 def test_skips_explicit_user_and_suspended():
@@ -55,14 +86,16 @@ def test_document_round_trip_keeps_ai_metadata_and_auto_flag():
     defaults["clips"][0].update({
         "prompt": "source", "aiPrompt": "enhanced",
         "promptMode": "ai", "aiOptOut": False,
-        "aiMetadata": {"seed": 8888, "sourcePrompt": "source"},
+        "aiSeed": "18446744073709551615",
+        "aiMetadata": {"seed": "18446744073709551615", "sourcePrompt": "source"},
     })
     doc = values["normalize_document"](defaults)
     assert doc["autoAiEnhance"] is True
     assert doc["clips"][0]["prompt"] == "source"
     assert doc["clips"][0]["aiPrompt"] == "enhanced"
     assert doc["clips"][0]["promptMode"] == "ai"
-    assert doc["clips"][0]["aiMetadata"]["seed"] == 8888
+    assert doc["clips"][0]["aiSeed"] == "18446744073709551615"
+    assert doc["clips"][0]["aiMetadata"]["seed"] == "18446744073709551615"
 
 
 def test_global_ai_version_round_trip_and_clip_seed_is_unchanged():
