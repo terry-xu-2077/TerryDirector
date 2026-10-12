@@ -55,7 +55,8 @@ function directorMinWidth(node) {
 
 function applyNewLoopDefaultSize(node) {
   if (![LOOP_NODE_CLASS, LOOP_END_NODE_CLASS].includes(node?.comfyClass)) return;
-  node.__tdUseLoopDefaultSize = true;
+  // nodeCreated runs before saved workflow geometry is configured, so this is
+  // only the constructor default. Loaded/pasted geometry can overwrite it.
   node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
 }
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
@@ -1725,19 +1726,15 @@ function renderOutputMemoryInfo(node) {
 
   queueMicrotask(() => {
     try {
-      if (isLoopEnd && node.__tdUseLoopDefaultSize) {
-        node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
-        node.__tdUseLoopDefaultSize = false;
-      } else {
-        const computed = node.computeSize?.();
-        const width = Math.max(Number(node.size?.[0]) || 320, 320);
-        const height = Math.max(
-          Number(computed?.[1]) || 0,
-          isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 205) :
-            (estimate?.state === "ready" ? 205 : 185)
-        );
-        node.setSize?.([width, height]);
-      }
+      const computed = node.computeSize?.();
+      const width = Math.max(Number(node.size?.[0]) || 320, 320);
+      const height = Math.max(
+        Number(node.size?.[1]) || 0,
+        Number(computed?.[1]) || 0,
+        isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 205) :
+          (estimate?.state === "ready" ? 205 : 185)
+      );
+      node.setSize?.([width, height]);
     } catch {}
     node.setDirtyCanvas?.(true, true);
   });
@@ -1959,8 +1956,11 @@ function mountOutputNode(node) {
     const computed = node.computeSize?.();
     node.setSize?.([
       width,
-      Math.max(Number(computed?.[1]) || 0,
-        node.comfyClass === LOOP_END_NODE_CLASS ? 205 : 185),
+      Math.max(
+        Number(node.size?.[1]) || 0,
+        Number(computed?.[1]) || 0,
+        node.comfyClass === LOOP_END_NODE_CLASS ? 205 : 185
+      ),
     ]);
   }
 
@@ -2905,10 +2905,7 @@ function mountNode(node) {
     advancedStoredPreviewHeight(node);
     bindAdvancedResizeGestureTracking(node);
   } else if (isLoopStart) {
-    if (node.__tdUseLoopDefaultSize) {
-      node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
-      node.__tdUseLoopDefaultSize = false;
-    } else if ((node.size?.[0] || 0) < minWidth) {
+    if ((node.size?.[0] || 0) < minWidth) {
       node.setSize?.([minWidth, node.size?.[1] || defaultHeight]);
     }
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
