@@ -119,19 +119,20 @@
       const delta=Math.round((d.last.x-d.origin.x)/this.ppf);
       const initial=d.mode==='right'?d.end:d.start;
       let value=initial+delta;this.snapFrame=null;
-      // Preserve chain movement normally. When the dragged head passes another
-      // original head, freeze followers in place and continue independently.
-      // This makes reorder work in both directions even with chaining enabled.
-      if(d.mode==='move'&&d.follow&&!solo&&!d.reorderBase){
+      // Preserve ordinary chain moves. After crossing another original head,
+      // switch this gesture to independent motion using the untouched baseline.
+      // Followers take their original slots, so continuous pointer movement
+      // reorders both directions without chasing a moving neighbor.
+      if(d.mode==='move'&&d.follow&&!solo&&!d.reordering){
         const target=Math.max(0,value);
         const crossed=d.original.some(c=>c.id!==d.id&&(
           (d.start<c.start&&target>c.start)||
           (d.start>c.start&&(target<c.start||(target===0&&c.start===0)))
         ));
-        if(crossed)d.reorderBase=C.copy(this.clips);
+        if(crossed)d.reordering=true;
       }
-      const source=d.reorderBase||d.original;
-      const follow=d.follow&&!solo&&!d.reorderBase;
+      const source=d.original;
+      const follow=d.follow&&!solo&&!d.reordering;
       if(this.snapEnabled&&!alt){
         // Original follower edges are not snap targets while the suffix moves.
         const fixed=follow?source.slice(0,source.findIndex(c=>c.id===d.id)):source.filter(c=>c.id!==d.id);

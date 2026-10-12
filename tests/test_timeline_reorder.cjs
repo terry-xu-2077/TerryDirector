@@ -24,6 +24,20 @@ test('cross heads left: reorder and retain identity, seeds, assets',()=>{
 test('cross heads right even when chaining is on',()=>{
  assert.deepEqual(drag('a',240,528,700).clips.map(c=>c.id),['b','a','c']);
 });
+test('incremental drag crosses a moving follower without chasing it',()=>{
+ const tl=drag('a',240,528,600);
+ assert.equal(tl.clips.find(c=>c.id==='b').start,984);
+ tl.drag.last={x:625-240};tl.updateDrag(false,false);
+ assert.deepEqual(tl.clips.map(c=>c.id),['b','a','c']);
+ assert.equal(tl.clips.find(c=>c.id==='b').start,624);
+ assert.equal(tl.drag.reordering,true);
+ tl.drag.last={x:700-240};tl.updateDrag(false,false);
+ assert.equal(tl.clips.find(c=>c.id==='b').start,624);
+ const reverse=drag('b',624,864,300);
+ reverse.drag.last={x:239-624};reverse.updateDrag(false,false);
+ assert.equal(reverse.clips[0].id,'b');
+ assert.equal(reverse.clips.find(c=>c.id==='c').start,864);
+});
 test('shift solo bypasses chain and normal movement still follows',()=>{
  assert.equal(drag('a',240,528,700,true,true).clips.find(c=>c.id==='b').start,624);
  assert.equal(drag('b',624,864,600).clips.find(c=>c.id==='c').start,840);
