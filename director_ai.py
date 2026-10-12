@@ -179,6 +179,44 @@ def _message_list(system: str, user: list[dict]) -> list[dict]:
     return messages
 
 
+def _make_standalone_prompt_messages(
+    prompt: str,
+    system_prompt: str = "",
+    system_prompt_preset: str = "H3 Skill",
+) -> tuple[list[dict], set[tuple[str, int]]]:
+    text = str(prompt or "").strip()
+    if not text:
+        raise ValueError("H3 提示词为空，无法增强")
+
+    required = {(t.lower(), int(n)) for t, n in MEDIA_TAG.findall(text)}
+    picture_count = sum(1 for kind, _ in required if kind == "picture")
+    mode = "ref2va" if (
+        picture_count > 0 or
+        any(kind in {"video", "audio"} for kind, _ in required)
+    ) else "t2va"
+
+    builtin = _skill_text(mode) + """
+
+# TerryDirector standalone H3 editor task
+Enhance exactly ONE standalone MiniMax H3 prompt from the H3 Prompt Editor.
+Return only the final H3 prompt. No explanations, JSON wrappers or markdown fences.
+Preserve the intended story, camera, subjects, exact user dialogue, visible text and specified silence.
+Preserve every existing <Picture N>, <Video N> and <Audio N> tag verbatim.
+Do not invent, renumber, omit or swap reference tags.
+No separate timeline, global prompt or continuity context is available; do not invent any.
+Reference media pixels are not attached to this standalone editor request, so do not claim visual facts that are absent from the source prompt.
+"""
+    system = _resolve_system_prompt(system_prompt, system_prompt_preset, builtin)
+    user = [{
+        "type": "text",
+        "text": (
+            "Enhance this standalone MiniMax H3 prompt while preserving its meaning and all reference tags:\n\n"
+            + text
+        ),
+    }]
+    return _message_list(system, user), required
+
+
 def _make_messages(
     clip: dict,
     document: dict,
@@ -415,6 +453,47 @@ class AIManager:
     def busy(self) -> bool:
         return self._lock.locked()
 
+
+    def enhance_prompt(
+        self,
+        config: dict,
+        prompt: str,
+        *,
+        cancel: threading.Event | None = None,
+    ) -> dict:
+        """Editor-owned enhancement for one standalone H3 prompt."""
+        config = require_ai_config(config)
+        if not self._lock.acquire(blocking=False):
+            raise RuntimeError("另一个 AI 增强任务正在运行")
+        try:
+            messages, required = _make_standalone_prompt_messages(
+                prompt,
+                config.get("system_prompt", ""),
+                config.get("system_prompt_preset", "H3 Skill"),
+            )
+            with _LlamaSession(config) as session:
+                enhanced = _validate_output(
+                    session.chat(
+                        messages,
+                        clip_seed(config["seed"], "__h3_editor__"),
+                        cancel,
+                    ),
+                    required,
+                    required,
+                )
+            return {
+                "id": "__prompt__",
+                "prompt": enhanced,
+                "metadata": {
+                    "seed": int(config["seed"]),
+                    "sourcePrompt": str(prompt or ""),
+                    "model": config["model"],
+                    "skill": "h3-prompt-writing-standalone",
+                    "generatedAt": datetime.now(timezone.utc).isoformat(),
+                },
+            }
+        finally:
+            self._lock.release()
 
     def enhance_global(
         self, config: dict, document: dict, *,
