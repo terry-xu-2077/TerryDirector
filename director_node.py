@@ -96,12 +96,15 @@ def _execution_signature(runtime, plan, seed) -> str:
         prompt_hash = hashlib.sha1(
             str(segment.get("prompt", "")).encode("utf-8")
         ).hexdigest()[:10]
+        authored_seed = segment.get("seed")
+        effective_seed = int(seed) if authored_seed is None else int(authored_seed)
         segments.append({
             "id": str(segment.get("id")),
             "start": int(segment.get("start_frame", 0)),
             "end": int(segment.get("end_frame", 0)),
             "out": int(segment.get("output_frames", 0)),
             "h3": int(segment.get("h3_frames", 0)),
+            "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
             "transition": str(segment.get("transition_mode", "")),
             "continuity": str(segment.get("continuity", {}).get("kind", "")),
             "images": len(refs.get("images", [])),
@@ -134,21 +137,24 @@ def _execution_signature(runtime, plan, seed) -> str:
     return digest
 
 
-def _segment_cache_signatures(runtime, plan) -> list[str]:
+def _segment_cache_signatures(runtime, plan, default_seed: int) -> list[str]:
     second = runtime.get("params", {}).get("second_pass", {})
     second_hash = (
         str(second.get("cache_signature") or "selflift")
         if isinstance(second, dict) and second.get("method") == "selflift"
         else "none"
     )
-    return [
-        (
-            f"v2:{int(runtime['width'])}x{int(runtime['height'])}:"
+    signatures = []
+    for segment in plan.get("segments", []):
+        authored_seed = segment.get("seed")
+        effective_seed = int(default_seed) if authored_seed is None else int(authored_seed)
+        effective_seed = max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed))
+        signatures.append(
+            f"v3:{int(runtime['width'])}x{int(runtime['height'])}:"
             f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}:"
-            f"sp={second_hash}"
+            f"seed={effective_seed}:sp={second_hash}"
         )
-        for segment in plan.get("segments", [])
-    ]
+    return signatures
 
 
 def _require_director_output(value):
@@ -894,7 +900,7 @@ class TerryDirectorAdvanced(TerryDirector):
             )
 
         segment_ids = [str(segment["id"]) for segment in plan["segments"]]
-        segment_signatures = _segment_cache_signatures(runtime, plan)
+        segment_signatures = _segment_cache_signatures(runtime, plan, seed)
         reuse_cached_segment_ids: set[str] = set()
         finish_state_mode = "complete"
 
