@@ -210,10 +210,10 @@
   const editablePrompt=c=>c?.promptMode==='ai'?(c?.aiPrompt||''):(c?.prompt||'');
   const canEnhance=()=>!!aiConfig&&!hostReadonly&&!aiJob;
   const aiUnavailableReason=()=>aiConfigStatus==='bypassed'
-    ?'TerryDirector Llama 配置已 Bypass'
+    ?'TerryDirector Llama 已 Bypass'
     :aiConfigStatus==='muted'
-      ?'TerryDirector Llama 配置已禁用'
-      :'请先连接 TerryDirector Llama 配置节点';
+      ?'TerryDirector Llama 已禁用'
+      :'请先连接 TerryDirector Llama 节点';
   const getImage=c=>assets.find(a=>effectiveReferences(c).includes(a.id)&&a.kind==='image')?.src||'';
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3000);}
   function closeTransitionMenu(){
