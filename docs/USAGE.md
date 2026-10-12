@@ -127,7 +127,7 @@ ComfyUI → Settings → TerryDirector → 时间线 中可调整默认镜头衔
 
 1. 将 GGUF 主模型及 `mmproj` 放在 `ComfyUI/models/LLM/`（可使用子文件夹），重启 ComfyUI。
 2. 在运行 ComfyUI 的**同一个 Python 环境**中安装与本机系统/Python/CUDA 匹配的 `llama-cpp-python`。Qwen3.8 视觉功能需要支持 `Qwen35ChatHandler` 的构建，可参考 [JamePeng 发布包](https://github.com/JamePeng/llama-cpp-python/releases)；不要在已有 cu130 环境直接覆盖 torch。
-3. 添加 **TerryDirector Llama 配置** 节点，选择 GGUF、mmproj、AI Seed（与视频 Seed 独立）。「系统提示词预设」下拉框默认选择 **H3 Skill**；「系统提示词」多行编辑区同时保留 STRING 插口，可直接编辑或从外部文本节点接入。
+3. 添加 **TerryDirector Llama 配置** 节点，选择 GGUF、mmproj、AI Seed（与视频 Seed 独立）。「系统提示词预设」下拉框默认选择 **H3 Skill**；「系统提示词」多行编辑区同时保留 STRING 插口，可直接编辑或从外部文本节点接入。编辑器手动 AI 增强会静态解析常见文本源以及 ComfyUI 原生 If/Else Switch 的当前分支，因此可用开关在多套系统提示词之间切换；Queue 自动增强则直接使用 ComfyUI 实际执行后的 STRING 值。
 4. 系统提示词采用“**自定义文本优先、预设兜底**”规则：只要「系统提示词」去除首尾空白后仍有内容，就完全使用用户文本作为 system role，不再追加 H3 Skill 或 TerryDirector 内置 system/binding 规则；若为空、只有空格／换行／Tab，则视为没有内容，改用下拉框预设。选择「无」且文本也为空时，不发送 system role。连接「Llama 配置」到 **TerryDirector**、**TerryDirector Advanced** 或 **TerryDirector 循环开始** 后，手动增强、全局增强、批量增强和 Queue 前自动增强都遵循同一规则。若 Llama 配置节点处于 **Bypassed / Never** 状态，编辑器会将其视为不可用配置并禁用 AI 增强相关按钮；恢复启用后自动恢复。
 5. 片段的「AI 提示增强」与「一键增强所有提示词」走 ComfyUI 本地 HTTP Job，**不提交 Queue**；片段原文和增强稿分别保存。
 6. 在「全局提示词」弹窗也可切换「用户提示词 / AI 增强提示词」，点击「AI 提示增强」仅增强**全局人物设定、参考素材关系、摄影/视觉/声音约束**。全局内容不属于一个固定时长的片段，因此输出为适用于所有片段的英文约束说明，而非六节 Ref2VA 镜头输出。原文保留；保存时当前选中的全局版本参与时间线编译以及片段 AI 提示增强。
