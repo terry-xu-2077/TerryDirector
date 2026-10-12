@@ -2910,24 +2910,141 @@ const LLAMA_MODE_BYPASS = 4;
 let tdAiConfigWatchTimer = null;
 let tdAiConfigSignature = "";
 
+function staticNodeType(node) {
+  return String(
+    node?.comfyClass ||
+    node?.type ||
+    node?.constructor?.comfyClass ||
+    node?.constructor?.type ||
+    ""
+  );
+}
+
+function staticWidgetValue(node, names) {
+  for (const name of names) {
+    const widget = node?.widgets?.find(item => item?.name === name);
+    if (widget?.value !== undefined) return widget.value;
+  }
+  return undefined;
+}
+
+function staticBooleanOutputValue(source, fallback = false, seen = new Set()) {
+  if (!source?.node) return !!fallback;
+  const node = source.node;
+  const slot = Number(source.outputIndex);
+  if (!Number.isSafeInteger(slot) || slot < 0) return !!fallback;
+
+  const key = "bool-out:" + String(node.id) + ":" + slot;
+  if (seen.has(key)) return !!fallback;
+  seen.add(key);
+
+  const type = staticNodeType(node);
+  const lower = type.toLowerCase();
+
+  if ((lower === "reroute" || lower.endsWith("reroute")) && node.inputs?.[0]) {
+    return staticBooleanInputValue(node, node.inputs[0].name, fallback, seen);
+  }
+
+  const runtime = node.__terryRuntimeBool ?? node.properties?.terry_bool_switch_state;
+  if (runtime !== undefined) return Boolean(runtime);
+
+  const value = staticWidgetValue(
+    node,
+    ["value", "boolean", "bool", "switch", "enabled"]
+  );
+  return value !== undefined ? Boolean(value) : !!fallback;
+}
+
 function staticBooleanInputValue(node, inputName, fallback = false, seen = new Set()) {
-  const widgetValue = node?.widgets?.find(widget => widget.name === inputName)?.value;
+  const widgetValue = staticWidgetValue(node, [inputName]);
   const local = typeof widgetValue === "boolean" ? widgetValue : !!fallback;
   const source = linkedOutputForInput(node, inputName);
   if (!source?.node) return local;
+  return staticBooleanOutputValue(source, local, seen);
+}
 
-  const parent = source.node;
+function staticIntegerOutputValue(source, fallback = 1, seen = new Set()) {
+  if (!source?.node) return Number(fallback) || 1;
+  const node = source.node;
   const slot = Number(source.outputIndex);
-  if (!Number.isSafeInteger(slot) || slot < 0) return local;
-  const key = "bool:" + String(parent.id) + ":" + slot;
-  if (seen.has(key)) return local;
+  if (!Number.isSafeInteger(slot) || slot < 0) return Number(fallback) || 1;
+
+  const key = "int-out:" + String(node.id) + ":" + slot;
+  if (seen.has(key)) return Number(fallback) || 1;
   seen.add(key);
 
-  for (const name of ["value", "boolean", "switch"]) {
-    const candidate = parent.widgets?.find(widget => widget.name === name)?.value;
-    if (typeof candidate === "boolean") return candidate;
+  const type = staticNodeType(node).toLowerCase();
+  if ((type === "reroute" || type.endsWith("reroute")) && node.inputs?.[0]) {
+    return staticIntegerInputValue(node, node.inputs[0].name, fallback, seen);
   }
-  return local;
+
+  const runtime = node.__terryRuntimeIndex ?? node.properties?.terry_line_switch_index;
+  if (Number.isFinite(Number(runtime))) return Number(runtime);
+
+  const value = staticWidgetValue(
+    node,
+    ["value", "index", "integer", "number", "select", "route"]
+  );
+  return Number.isFinite(Number(value)) ? Number(value) : (Number(fallback) || 1);
+}
+
+function staticIntegerInputValue(node, inputName, fallback = 1, seen = new Set()) {
+  const widgetValue = staticWidgetValue(node, [inputName]);
+  const local = Number.isFinite(Number(widgetValue)) ? Number(widgetValue) : (Number(fallback) || 1);
+  const source = linkedOutputForInput(node, inputName);
+  if (!source?.node) return local;
+  return staticIntegerOutputValue(source, local, seen);
+}
+
+function staticRouteInputs(node) {
+  return (node?.inputs || [])
+    .filter(input => {
+      const name = String(input?.name || "");
+      return (
+        /^routes\./.test(name) ||
+        /^route[_\.\-]?\d+$/i.test(name) ||
+        /^input[_\.\-]?\d+$/i.test(name)
+      );
+    })
+    .sort((a, b) => {
+      const number = input => {
+        const match = String(input?.name || "").match(/(\d+)(?!.*\d)/);
+        return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+      };
+      return number(a) - number(b);
+    });
+}
+
+function staticTwoWayBranchNames(node) {
+  const names = new Set((node?.inputs || []).map(input => String(input?.name || "")));
+  for (const pair of [
+    ["on_false", "on_true"],
+    ["input_false", "input_true"],
+    ["false", "true"],
+  ]) {
+    if (names.has(pair[0]) && names.has(pair[1])) return pair;
+  }
+  return null;
+}
+
+function staticSwitchBoolean(node, fallback = false, seen = new Set()) {
+  for (const name of ["switch", "enabled", "condition", "boolean", "bool"]) {
+    if (node?.inputs?.some(input => input?.name === name) ||
+        node?.widgets?.some(widget => widget?.name === name)) {
+      return staticBooleanInputValue(node, name, fallback, seen);
+    }
+  }
+  return !!fallback;
+}
+
+function staticSwitchIndex(node, fallback = 1, seen = new Set()) {
+  for (const name of ["index", "route", "select", "selected"]) {
+    if (node?.inputs?.some(input => input?.name === name) ||
+        node?.widgets?.some(widget => widget?.name === name)) {
+      return staticIntegerInputValue(node, name, fallback, seen);
+    }
+  }
+  return Number(fallback) || 1;
 }
 
 function staticStringOutputValue(source, fallback = "", seen = new Set()) {
@@ -2936,18 +3053,73 @@ function staticStringOutputValue(source, fallback = "", seen = new Set()) {
   const slot = Number(source.outputIndex);
   if (!Number.isSafeInteger(slot) || slot < 0) return String(fallback ?? "");
 
-  const key = "string:" + String(parent.id) + ":" + slot;
+  const key = "string-out:" + String(parent.id) + ":" + slot;
   if (seen.has(key)) return String(fallback ?? "");
   seen.add(key);
 
-  // The native If/Else node is lazy at Queue time. Manual editor AI jobs do
-  // not execute the graph, so mirror its selected branch here. This is the
-  // common setup for switching between e.g. Chinese and English system prompts.
-  if (parent.comfyClass === "ComfySwitchNode" ||
-      parent.comfyClass === "ComfySoftSwitchNode") {
-    const enabled = staticBooleanInputValue(parent, "switch", false, seen);
-    const selected = enabled ? "on_true" : "on_false";
-    return staticStringInputValue(parent, selected, fallback, seen);
+  const type = staticNodeType(parent);
+  const lower = type.toLowerCase();
+
+  // Reroute-style nodes are pure passthroughs.
+  if ((lower === "reroute" || lower.endsWith("reroute")) && parent.inputs?.[0]) {
+    return staticStringInputValue(parent, parent.inputs[0].name, fallback, seen);
+  }
+
+  // Native ComfyUI If/Else plus TerryXu two-way flow control. The generic
+  // branch-name fallback also covers common third-party boolean switches.
+  const branchPair = staticTwoWayBranchNames(parent);
+  if (
+    type === "ComfySwitchNode" ||
+    type === "ComfySoftSwitchNode" ||
+    type === "TerryXuBoolSwitch" ||
+    (branchPair && lower.includes("switch"))
+  ) {
+    const [offName, onName] = branchPair || (
+      type === "TerryXuBoolSwitch"
+        ? ["input_false", "input_true"]
+        : ["on_false", "on_true"]
+    );
+    const enabled = staticSwitchBoolean(parent, false, seen);
+    return staticStringInputValue(parent, enabled ? onName : offName, fallback, seen);
+  }
+
+  // TerryXu multi-line switch plus conventional route/index switches.
+  const routes = staticRouteInputs(parent);
+  if (
+    type === "TerryXuLineSwitch" ||
+    (routes.length > 1 && lower.includes("switch"))
+  ) {
+    if (!routes.length) return String(fallback ?? "");
+    const requested = Math.trunc(staticSwitchIndex(parent, 1, seen));
+    const selected = Math.max(1, Math.min(Number.isFinite(requested) ? requested : 1, routes.length));
+    return staticStringInputValue(parent, routes[selected - 1].name, fallback, seen);
+  }
+
+  // Future TerryXu / third-party frontend nodes can expose their own static
+  // resolver without requiring TerryDirector to know their class name.
+  const resolver =
+    typeof parent.__terryResolveStaticOutput === "function"
+      ? parent.__terryResolveStaticOutput
+      : typeof parent.resolveStaticOutput === "function"
+        ? parent.resolveStaticOutput
+        : null;
+  if (resolver) {
+    try {
+      const resolved = resolver.call(parent, slot);
+      if (typeof resolved === "string") return resolved;
+      if (resolved?.node) {
+        return staticStringOutputValue(
+          { node: resolved.node, outputIndex: Number(resolved.slot ?? resolved.outputIndex ?? 0) },
+          fallback,
+          seen
+        );
+      }
+      if (resolved?.inputName) {
+        return staticStringInputValue(parent, String(resolved.inputName), fallback, seen);
+      }
+    } catch {
+      // Fall through to ordinary static widget resolution.
+    }
   }
 
   // Common static text/primitive nodes expose their payload as a widget.
@@ -2968,8 +3140,8 @@ function staticStringInputValue(node, inputName, fallback = "", seen = new Set()
   if (!source?.node) return local;
 
   // Queue auto-enhancement receives the evaluated upstream STRING through the
-  // Python Llama-config node. The editor-owned manual AI path has to resolve
-  // static upstream text itself because it does not execute the Comfy graph.
+  // Python Llama-config node. Editor-owned manual AI jobs do not execute the
+  // Comfy graph, so resolve static routing nodes recursively here.
   return staticStringOutputValue(source, local, seen);
 }
 
