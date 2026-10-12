@@ -21,7 +21,7 @@ from typing import Callable
 import folder_paths
 
 from .director_ai_core import (
-    ai_targets, assign_ai_result, clip_seed, effective_global_prompt,
+    ai_targets, assign_ai_result, clip_seed, effective_ai_seed, effective_global_prompt,
     needs_enhancement, require_ai_config, source_signature,
 )
 
@@ -578,10 +578,11 @@ class AIManager:
                         raise ValueError("当前片段含图片/视频视觉参考，请在 TerryDirector Llama 中选择 mmproj")
                     required = {(t.lower(), int(n)) for t, n in MEDIA_TAG.findall(str(clip.get("prompt") or ""))}
                     _check_cancel(cancel, comfy_interrupt=comfy_interrupt)
+                    resolved_ai_seed = effective_ai_seed(clip, config["seed"])
                     prompt = _validate_output(
                         session.chat(
                             messages,
-                            clip_seed(config["seed"], clip["id"]),
+                            clip_seed(resolved_ai_seed, clip["id"]),
                             cancel,
                             comfy_interrupt=comfy_interrupt,
                         ),
@@ -591,7 +592,7 @@ class AIManager:
                         "id": str(clip["id"]),
                         "prompt": prompt,
                         "metadata": {
-                            "seed": int(config["seed"]),
+                            "seed": str(resolved_ai_seed),
                             "sourceHash": source_signature(
                                 clip, effective_global_prompt(document),
                                 _referenced_assets(clip, effective_global_prompt(document),
