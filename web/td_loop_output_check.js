@@ -1,3 +1,5 @@
+const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
+
 /**
  * A practical output check for TerryDirector's always-streamed LoopEnd.
  * The generated MP4 size cannot be inferred from duration or resolution;
@@ -45,12 +47,17 @@ function row(label, value, extra) {
     plainText(value) + '</strong></div>';
 }
 
+function brandMark() {
+  return '<img class="td-mini-brand" src="' + BRAND_MARK_URL +
+    '" alt="" aria-hidden="true">';
+}
+
 /** Return node card data, no DOM dependencies or network calls. */
 export function createLoopOutputCheckCard(estimate, diskState = {}) {
   const connected = estimate && estimate.state !== "disconnected";
   if (!connected) return {
     className: "td-output-memory-card is-loop-check is-idle",
-    html: '<div class="td-output-memory-title"><span class="td-output-memory-icon">i</span>' +
+    html: '<div class="td-output-memory-title">' + brandMark() +
       '<strong>视频输出检查</strong></div>' +
       '<div class="td-output-check-help">连接循环信息和生成节点后显示输出检查。</div>',
     status: "disconnected",
@@ -82,8 +89,7 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
   const diskSummary = "预计使用 " + need + " / 磁盘剩余 " + free;
 
   const title = '<div class="td-output-memory-title">' +
-    '<span class="td-output-memory-icon">' +
-    (status === "critical" ? "!" : "i") + '</span>' +
+    brandMark() +
     '<strong>视频输出检查</strong></div>';
   const warning = status === "critical" || status === "warning";
   const diskExtra = warning
