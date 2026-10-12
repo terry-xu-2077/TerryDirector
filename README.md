@@ -34,6 +34,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector 配置** | 汇集模型、CLIP、视频／音频 VAE、分辨率和普通采样参数 |
 | **TerryDirector 二采配置** | 配置内置 Self-Lift；可选连接到导演配置 |
 | **TerryDirector Llama** | 共享本地 Llama / VLM 推理能力，供导演与其它 Terry 编辑器调用 AI 提示增强 |
+| **TerryDirector 提示词增强编辑器** | 简易多行 STRING 编辑器；连接 TerryDirector Llama 后可用编辑框角落的 ✦ 直接增强当前提示词 |
 | **TerryDirector** | 基础时间线生成节点，提供导演输出 |
 | **TerryDirector Advanced** | 高级生成、视频审片、无损分段缓存、局部重跑与中断恢复 |
 | **TerryDirector 输出** | 将基础导演输出转换为分段 LATENT、合并 IMAGE、合并 AUDIO |
