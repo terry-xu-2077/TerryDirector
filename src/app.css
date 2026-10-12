@@ -1548,8 +1548,8 @@ dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
   body.td-embedded #app > .topbar { flex: 0 0 auto; }
   body.td-embedded #app > .timeline-panel {
     flex: 0 0 auto;
-    height: min(var(--timeline-height), 160px);
-    min-height: 148px;
+    height: min(var(--timeline-height), 140px);
+    min-height: 140px;
   }
   body.td-embedded #app > .timeline-panel .timeline-body { min-height: 82px; }
   body.td-embedded #app > #timelineResize { flex: 0 0 5px; }
@@ -1568,8 +1568,8 @@ dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
  * can scroll, and prompt/source panels remain reachable below the timeline. */
 @media (max-height: 480px) {
   body.td-embedded #app > .timeline-panel {
-    height: 134px;
-    min-height: 134px;
+    height: 120px;
+    min-height: 120px;
   }
   body.td-embedded #app > .timeline-panel .timeline-body { min-height: 62px; }
 }
