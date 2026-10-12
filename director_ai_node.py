@@ -1,4 +1,4 @@
-"""Configuration-only node for TerryDirector's optional native llama.cpp backend."""
+"""Shared TerryDirector Llama provider and lightweight prompt-enhancement nodes."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -88,3 +88,38 @@ class TerryDirectorLlamaConfig(io.ComfyNode):
             "top_p": float(top_p),
             "gpu_layers": int(gpu_layers),
         })
+
+
+
+class TerryDirectorPromptEnhancer(io.ComfyNode):
+    """Simple multiline STRING editor that can call the shared TerryDirector Llama runtime."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="TerryDirectorPromptEnhancer",
+            display_name="TerryDirector 提示词增强编辑器",
+            category="MiniMax H3/TerryDirector",
+            description=(
+                "简易多行提示词编辑器。连接 TerryDirector Llama 后，"
+                "可直接在编辑框内点击星光按钮调用共享 AI Runtime 增强当前文本；"
+                "节点执行时只输出当前编辑后的 STRING。"
+            ),
+            inputs=[
+                LlamaConfigData.Input("llama_config", display_name="Llama", optional=True),
+                io.String.Input(
+                    "prompt",
+                    display_name="提示词",
+                    default="",
+                    multiline=True,
+                    dynamic_prompts=False,
+                ),
+            ],
+            outputs=[
+                io.String.Output("prompt", display_name="提示词"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, prompt, llama_config=None):
+        return io.NodeOutput(str(prompt or ""))
