@@ -345,17 +345,26 @@ def _decode_segment(
 
 
 
-def _cache_signature(runtime: dict[str, Any], segment: dict[str, Any]) -> str:
+def _effective_segment_seed(segment: dict[str, Any], default_seed: int) -> int:
+    value = segment.get("seed")
+    seed = int(default_seed) if value is None else int(value)
+    return max(0, min(0xFFFFFFFFFFFFFFFF, seed))
+
+
+def _cache_signature(
+    runtime: dict[str, Any], segment: dict[str, Any], default_seed: int
+) -> str:
     second = runtime.get("params", {}).get("second_pass", {})
     second_signature = (
         str(second.get("cache_signature") or "selflift")
         if isinstance(second, dict) and second.get("method") == "selflift"
         else "none"
     )
+    segment_seed = _effective_segment_seed(segment, default_seed)
     return (
-        f"v2:{int(runtime['width'])}x{int(runtime['height'])}:"
+        f"v3:{int(runtime['width'])}x{int(runtime['height'])}:"
         f"h3={int(segment['h3_frames'])}:out={int(segment['output_frames'])}:"
-        f"sp={second_signature}"
+        f"seed={segment_seed}:sp={second_signature}"
     )
 
 
@@ -402,7 +411,9 @@ def build_timeline_graph(
     advanced_segment_caches: list[Any] = []
     base_segment_caches: list[Any] = []
     segment_ids = [str(segment["id"]) for segment in plan["segments"]]
-    cache_signatures = [_cache_signature(runtime, segment) for segment in plan["segments"]]
+    cache_signatures = [
+        _cache_signature(runtime, segment, seed) for segment in plan["segments"]
+    ]
     segment_ids_json = json.dumps(segment_ids, ensure_ascii=False)
     segment_signatures_json = json.dumps(cache_signatures, ensure_ascii=False)
     run_signature = str(
@@ -471,7 +482,11 @@ def build_timeline_graph(
                 prefix_id,
                 compact_previous=previous_is_compact,
             )
-            segment_seed = rerun_seed if rerun_segment_id is not None else int(seed)
+            segment_seed = (
+                rerun_seed
+                if rerun_segment_id is not None
+                else _effective_segment_seed(segment, seed)
+            )
             segment_runtime = runtime
             if preview_override is not None:
                 preview_model = graph.node(
