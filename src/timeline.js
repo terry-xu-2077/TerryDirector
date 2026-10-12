@@ -155,6 +155,8 @@
     label(ctx,text,x,y,max) { if(max<=0)return;let str=text;while(str.length>1&&ctx.measureText(str).width>max)str=str.slice(0,-1);if(str!==text)str=str.slice(0,-1)+'…';ctx.fillText(str,x,y); }
     drawContent() {
       const ctx=this.ctx,t=this.theme,w=this.width,h=this.height;
+      this.busySpinners=[];
+      this.busyAnimating=false;
       ctx.clearRect(0,0,w,h);ctx.fillStyle=t.bg;ctx.fillRect(0,0,w,h);
       const intervals=[1,2,4,6,12,24,48,72,120,240,480,960];const step=intervals.find(n=>n*this.ppf>=72)||1920;
       const start=Math.floor(this.frameAt(this.inset)/step)*step;
@@ -198,13 +200,21 @@
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=t.muted;
         this.label(ctx,c.name,descriptionX,titleY,width-(descriptionX-x)-12);
         const activity=this.options.getActivity?.(c)||{status:'idle',progress:0};
+        const enhancing=!suspended&&activity.status==='ai-enhancing';
         const running=!suspended&&activity.status==='running',done=!suspended&&activity.status==='completed',failed=!suspended&&activity.status==='error';
         const seconds=Number((activity.elapsedSeconds||0).toFixed(1)),progress=C.clamp(activity.progress||0,0,1),percent=Math.round(progress*100);
         const progressDone=running&&percent>=100,visualDone=done||progressDone;
-        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';ctx.fillStyle=failed?t.warning:visualDone?t.success:running?t.progress:t.ruler;
-        ctx.beginPath();ctx.arc(x+16,statusY,2.5,0,Math.PI*2);ctx.fill();
-        ctx.fillStyle=failed?t.warning:t.muted;
+        ctx.font='10px "Segoe UI","Microsoft YaHei",sans-serif';
+        if(enhancing){
+          this.busyAnimating=true;
+          this.busySpinners.push({x:x+16,y:statusY,color:t.effect||t.progress});
+        }else{
+          ctx.fillStyle=failed?t.warning:visualDone?t.success:running?t.progress:t.ruler;
+          ctx.beginPath();ctx.arc(x+16,statusY,2.5,0,Math.PI*2);ctx.fill();
+        }
+        ctx.fillStyle=enhancing?(t.effect||t.progress):failed?t.warning:t.muted;
         const text=suspended?'已挂起 · 编译为空白'
+          :enhancing?'AI增强中'
           :failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
           :visualDone?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
           :running?(activity.real?(percent>0?`生成中 ${percent}% · 已用 ${seconds}s`:`准备中 · 已用 ${seconds}s`):`模拟生成 ${percent}% · 已用 ${seconds}s`)
@@ -303,11 +313,26 @@
       const x=this.x(this.frame);
       if(x>=this.inset&&x<=w){ctx.strokeStyle=t.playhead;ctx.lineWidth=1.3;ctx.beginPath();ctx.moveTo(x+.5,27);ctx.lineTo(x+.5,h-3);ctx.stroke();this.rect(ctx,x-5,24,10,3,1.5,t.playhead);ctx.font='10px Consolas,monospace';const label=C.timecode(this.frame).slice(3);const tw=ctx.measureText(label).width+12;const bx=C.clamp(x-tw/2,this.inset,w-tw-2);this.rect(ctx,bx,2,tw,18,4,t.bg,t.playhead);ctx.fillStyle=t.playhead;ctx.textBaseline='middle';ctx.fillText(label,bx+6,11);}
     }
+    drawBusySpinners(now=performance.now()) {
+      if(!this.busySpinners?.length)return;
+      const ctx=this.ox;
+      for(const spinner of this.busySpinners){
+        const phase=(now*.006)%(Math.PI*2);
+        ctx.save();
+        ctx.strokeStyle=spinner.color;
+        ctx.lineWidth=1.7;
+        ctx.lineCap='round';
+        ctx.beginPath();
+        ctx.arc(spinner.x,spinner.y,4.1,phase,phase+Math.PI*1.42);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
     paint(now) {
       this.raf=0;
       if(this.playing){const next=this.playFrame+Math.floor((now-this.playStart)*C.FPS/1000);this.frame=Math.min(this.total,next);this.options.onFrame?.(this.frame);if(this.frame>=this.total){this.playing=false;this.options.onPlay?.(false);}else if(this.x(this.frame)>this.width-25){this.scroll+=this.width*.45;this.clampScroll();this.dirty=true;}}
-      if(this.dirty){this.drawContent();this.dirty=false;}this.drawOverlay();
-      if(this.playing)this.invalidate(false);
+      if(this.dirty){this.drawContent();this.dirty=false;}this.drawOverlay();this.drawBusySpinners(now);
+      if(this.playing||this.busyAnimating)this.invalidate(false);
     }
     destroy() { this.abort.abort();this.resizeObserver.disconnect();cancelAnimationFrame(this.raf);this.images.clear(); }
   }
