@@ -323,10 +323,19 @@ def compile_timeline(
             )
         trim_tail = generated_frames - output_frames
 
+        clip_seed = clip.get("seed")
+        try:
+            clip_seed_value = None if clip_seed in (None, "") else max(
+                0, min(0xFFFFFFFFFFFFFFFF, int(str(clip_seed), 10))
+            )
+        except (TypeError, ValueError):
+            clip_seed_value = None
+
         segment = {
             "index": index,
             "id": str(clip["id"]),
             "name": str(clip["name"]),
+            "seed": clip_seed_value,
             "start_frame": start,
             "end_frame": end,
             "output_frames": output_frames,
