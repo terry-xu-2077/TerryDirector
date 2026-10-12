@@ -168,7 +168,7 @@
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
         <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><div class="clip-seed-control" title="留空时跟随 TerryDirector 节点 Seed；填写后仅当前片段使用此 Seed"><span>Seed</span><input id="clipSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 Seed" placeholder="跟随"><button id="clipSeedRandom" type="button" title="随机当前片段 Seed" aria-label="随机当前片段 Seed">${icon('dice')}</button></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
-        <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
+        <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><div class="clip-ai-seed-control" title="留空时跟随 TerryDirector Llama 的全局 AI Seed；填写后仅当前片段 AI 增强使用此 Seed"><span>AI Seed</span><input id="clipAiSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 AI Seed" placeholder="跟随"><button id="clipAiSeedRandom" type="button" title="随机当前片段 AI Seed" aria-label="随机当前片段 AI Seed">${icon('dice')}</button></div><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
       </section>
@@ -273,15 +273,21 @@
     const warning=$('#aiStatus');
     if(warning){
       const meta=c?.aiMetadata||{};
-      const old=!!c?.aiPrompt&&!!meta.sourcePrompt&&(
+      const sourceChanged=!!c?.aiPrompt&&!!meta.sourcePrompt&&(
         meta.sourcePrompt!==c.prompt ||
         meta.sourceGlobalPrompt!==(c.useGlobalPrompt===false?'':effectiveGlobalPrompt()));
+      const expectedSeed=effectiveClipAiSeed(c);
+      const savedSeed=meta.seed===undefined||meta.seed===null?null:normalizeClipSeedValue(meta.seed);
+      const seedChanged=!!c?.aiPrompt&&expectedSeed!==null&&savedSeed!==expectedSeed;
       if(!embedded&&meta.provenance==='skill-authored-demo'){
         warning.textContent=aiSelected?'H3 Skill 静态示例 · 非模型实测输出':'已提供 H3 Skill 静态增强示例';
         warning.title='仅供网站展示双提示词 UI。原始工作流的 aiPrompt 仍为空，真实运行必须调用 Qwen 增强。';
       }else{
-        warning.textContent=old?'原文已更新 · AI 结果未重新增强':c?.aiPrompt?'AI 结果已保存':'';
-        warning.title=old?'仅修改 AI Seed 或手动增强会重新生成，修改原文不会自动重跑。':'';
+        warning.textContent=seedChanged?'AI Seed 已变化 · AI 结果未重新增强'
+          :sourceChanged?'原文已更新 · AI 结果未重新增强'
+          :c?.aiPrompt?'AI 结果已保存':'';
+        warning.title=seedChanged?'当前片段 AI Seed 与保存结果不一致；手动增强或 Queue 自动增强会按新 Seed 重新生成。'
+          :sourceChanged?'修改原文不会自动重跑；手动增强可重新生成。':'';
       }
     }
     renderAiControls();
@@ -620,14 +626,33 @@
     renderResolutionResult();
   }
 
+  function effectiveClipAiSeed(c){
+    const local=normalizeClipSeedValue(c?.aiSeed);
+    if(local!==null)return local;
+    if(aiConfig?.seed===undefined||aiConfig?.seed===null)return null;
+    return normalizeClipSeedValue(aiConfig.seed);
+  }
+  function renderClipAiSeed(){
+    const c=current(),input=$('#clipAiSeedInput'),random=$('#clipAiSeedRandom');
+    if(!input||!random)return;
+    const busy=!!aiJob;
+    input.disabled=!c||hostReadonly||busy;
+    random.disabled=!c||hostReadonly||busy;
+    input.value=c?.aiSeed==null?'':String(c.aiSeed);
+    const globalSeed=aiConfig?.seed===undefined||aiConfig?.seed===null?null:String(aiConfig.seed);
+    input.title=c?.aiSeed==null
+      ? (globalSeed===null?'留空：跟随 TerryDirector Llama 的全局 AI Seed':'留空：跟随全局 AI Seed '+globalSeed)
+      : '当前片段独立 AI Seed：'+String(c.aiSeed);
+  }
+
   function applyHostAiPatch(records){
     if(!records||typeof records!=='object')return;
     let changed=false;
     for(const clip of state.clips){
       const patch=records[String(clip.id)];
       if(!patch?.aiPrompt||!patch?.aiMetadata)continue;
-      const nextSeed=Number(patch.aiMetadata.seed);
-      if(clip.aiPrompt&&Number(clip.aiMetadata?.seed)===nextSeed)continue;
+      const nextSeed=String(patch.aiMetadata.seed ?? '');
+      if(clip.aiPrompt&&String(clip.aiMetadata?.seed ?? '')===nextSeed)continue;
       clip.aiPrompt=String(patch.aiPrompt);
       clip.aiMetadata=C.copy(patch.aiMetadata);
       if(!clip.aiOptOut)clip.promptMode='ai';
@@ -637,6 +662,7 @@
   }
   function renderAiControls(){
     const connected=!!aiConfig,busy=!!aiJob,unavailable=aiUnavailableReason();
+    renderClipAiSeed();
     const single=$('[data-action=ai-enhance]'),all=$('[data-action=enhance-all]');
     if(single){
       single.disabled=!connected||hostReadonly||busy||!current()?.prompt?.trim();
@@ -790,7 +816,7 @@
   function newClip(){appendClip('新的片段');}
   function appendClip(name,template){mutate(()=>{
     const prev=state.clips.at(-1),prev2=state.clips.at(-2),start=prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0;
-    const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},seed:null,audio:true,guide:'画面参考',refs:[],suspended:false};
+    const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},seed:null,aiSeed:null,audio:true,guide:'画面参考',refs:[],suspended:false};
     if(template)Object.assign(c,{aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{}});
     const duration=template?template.end-template.start:10*C.FPS;
     Object.assign(c,{id:'clip-'+nextId++,name,start,end:Math.max(start+duration,prev?prev.end+1:0)});state.clips.push(c);state.selected=c.id;
@@ -1113,7 +1139,7 @@
         start,end,prompt:String(clip?.prompt||''),aiPrompt:String(clip?.aiPrompt||''),promptMode:clip?.promptMode==='ai'?'ai':'user',
         aiOptOut:clip?.aiOptOut===true,aiMetadata:clip?.aiMetadata&&typeof clip.aiMetadata==='object'?C.copy(clip.aiMetadata):{},
         refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
-        useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:normalizeClipSeedValue(clip?.seed),audio:true,guide:'画面参考'};
+        useGlobalPrompt:clip?.useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(clip?.transitionMode,'tail_continuation'),suspended:clip?.suspended===true,resolution:{...R.DEFAULT},seed:normalizeClipSeedValue(clip?.seed),aiSeed:normalizeClipSeedValue(clip?.aiSeed),audio:true,guide:'画面参考'};
     });
     state={globalPrompt:String(raw.globalPrompt||''),aiGlobalPrompt:String(raw.aiGlobalPrompt||''),
       globalPromptMode:raw.globalPromptMode==='ai'?'ai':'user',
@@ -1132,7 +1158,7 @@
     return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
       aiGlobalPrompt:state.aiGlobalPrompt||'',globalPromptMode:state.globalPromptMode==='ai'?'ai':'user',
       globalAiMetadata:state.globalAiMetadata||{},autoAiEnhance:!!state.autoAiEnhance,
-      clips:state.clips.map(({id,name,start,end,seed,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,seed:normalizeClipSeedValue(seed),prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
+      clips:state.clips.map(({id,name,start,end,seed,aiSeed,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,seed:normalizeClipSeedValue(seed),aiSeed:normalizeClipSeedValue(aiSeed),prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         source:{type:'comfy-input',path:a.source.path}}))};
   }
@@ -1461,6 +1487,24 @@
   clipSeedRandom.addEventListener('click',()=>{
     const clip=current();if(!clip||hostReadonly)return;
     mutate(()=>{clip.seed=randomClipSeed();});
+  });
+  const clipAiSeedInput=$('#clipAiSeedInput'),clipAiSeedRandom=$('#clipAiSeedRandom');
+  clipAiSeedInput.addEventListener('input',e=>{
+    e.target.value=String(e.target.value||'').replace(/\D+/g,'').slice(0,20);
+  });
+  clipAiSeedInput.addEventListener('change',e=>{
+    const clip=current();if(!clip||hostReadonly||aiJob)return;
+    const raw=String(e.target.value||'').trim();
+    if(raw&&!/^\d+$/.test(raw)){renderClipAiSeed();toast('AI Seed 只能填写 0 到 18446744073709551615 的整数');return;}
+    const value=normalizeClipSeedValue(raw);
+    mutate(()=>{clip.aiSeed=value;});
+  });
+  clipAiSeedInput.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();e.target.blur();}
+  });
+  clipAiSeedRandom.addEventListener('click',()=>{
+    const clip=current();if(!clip||hostReadonly||aiJob)return;
+    mutate(()=>{clip.aiSeed=randomClipSeed();});
   });
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
   $('#timelineImportInput').addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file)void importTimelineFile(file);});
