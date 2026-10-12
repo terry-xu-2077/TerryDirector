@@ -1800,7 +1800,10 @@ function loopConditionSnapshot(node) {
         : transition === "tail_continuation"
           ? "上一片段续接"
           : "上一片段尾帧";
-  const seed = looper.widgets?.find(widget => widget.name === "seed")?.value;
+  const fallbackSeed = looper.widgets?.find(widget => widget.name === "seed")?.value;
+  const seed = clip?.seed != null && String(clip.seed).trim() !== ""
+    ? String(clip.seed)
+    : fallbackSeed;
   const frames = clip ? Math.max(1, Number(clip.end) - Number(clip.start)) : 0;
 
   return {
