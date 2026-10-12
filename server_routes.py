@@ -242,11 +242,12 @@ async def terrydirector_ai_enhance(request: web.Request) -> web.Response:
         if not isinstance(payload, dict):
             raise ValueError("请求体必须是 JSON 对象")
         config = require_ai_config(payload.get("llama_config"))
-        document = normalize_document(payload.get("document"))
         scope = payload.get("scope", "clips")
         if scope == "global":
+            document = normalize_document(payload.get("document"))
             job_id = AI_JOBS.submit_global(config, document)
         elif scope == "clips":
+            document = normalize_document(payload.get("document"))
             ids = payload.get("clip_ids")
             if not isinstance(ids, list) or not ids or len(ids) > 64:
                 raise ValueError("需要选择 1–64 个片段")
