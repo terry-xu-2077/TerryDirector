@@ -175,9 +175,11 @@ def _plan_items(
             if next_continuity.get("kind") == "overlap" else 1
         )
         item = dict(segment)
+        segment_seed = segment.get("seed")
+        effective_seed = int(seed) if segment_seed is None else int(segment_seed)
         item["_loop"] = {
             "adapter_id": adapter.info.adapter_id,
-            "seed": int(seed),
+            "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
             "cache_key": cache_key,
             "run_signature": run_signature,
             "context_frames": context_frames,
