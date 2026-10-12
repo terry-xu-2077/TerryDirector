@@ -44,7 +44,20 @@ const CONFIG_ADVANCED_WIDGETS = new Set([
 ]);
 const FPS = 24;
 const DIRECTOR_MIN_WIDTH = 460;
+const LOOP_DEFAULT_WIDTH = 360;
+const LOOP_DEFAULT_HEIGHT = 220;
+const LOOP_MIN_WIDTH = 320;
 const ADVANCED_NODE_MIN_HEIGHT = 620;
+
+function directorMinWidth(node) {
+  return node?.comfyClass === LOOP_NODE_CLASS ? LOOP_MIN_WIDTH : DIRECTOR_MIN_WIDTH;
+}
+
+function applyNewLoopDefaultSize(node) {
+  if (![LOOP_NODE_CLASS, LOOP_END_NODE_CLASS].includes(node?.comfyClass)) return;
+  node.__tdUseLoopDefaultSize = true;
+  node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
+}
 const ADVANCED_PREVIEW_BASE_WIDTH = 440;
 const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 40;
 const OUTPUT_MEMORY_NOTICE_GIB = 4;
@@ -1712,14 +1725,19 @@ function renderOutputMemoryInfo(node) {
 
   queueMicrotask(() => {
     try {
-      const computed = node.computeSize?.();
-      const width = Math.max(Number(node.size?.[0]) || 320, 320);
-      const height = Math.max(
-        Number(computed?.[1]) || 0,
-        isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 205) :
-          (estimate?.state === "ready" ? 205 : 185)
-      );
-      node.setSize?.([width, height]);
+      if (isLoopEnd && node.__tdUseLoopDefaultSize) {
+        node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
+        node.__tdUseLoopDefaultSize = false;
+      } else {
+        const computed = node.computeSize?.();
+        const width = Math.max(Number(node.size?.[0]) || 320, 320);
+        const height = Math.max(
+          Number(computed?.[1]) || 0,
+          isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 205) :
+            (estimate?.state === "ready" ? 205 : 185)
+        );
+        node.setSize?.([width, height]);
+      }
     } catch {}
     node.setDirtyCanvas?.(true, true);
   });
@@ -2752,6 +2770,7 @@ function applyConfigAdvancedVisibility(node) {
 
 function mountNode(node) {
   ensureActivity(node);
+  const minWidth = directorMinWidth(node);
   if (!node.__tdAiLinkBound) {
     const previous = node.onConnectionsChange;
     node.onConnectionsChange = function(...args) {
@@ -2766,8 +2785,9 @@ function mountNode(node) {
   if (!node.__tdMinWidthBound) {
     const originalOnResize = node.onResize;
     node.onResize = function(size) {
-      if (Array.isArray(size) && size[0] < DIRECTOR_MIN_WIDTH) {
-        size[0] = DIRECTOR_MIN_WIDTH;
+      const resizeMinWidth = directorMinWidth(this);
+      if (Array.isArray(size) && size[0] < resizeMinWidth) {
+        size[0] = resizeMinWidth;
       }
       if (
         Array.isArray(size) &&
@@ -2786,8 +2806,8 @@ function mountNode(node) {
     };
     node.__tdMinWidthBound = true;
   }
-  if (Array.isArray(node.size) && node.size[0] < DIRECTOR_MIN_WIDTH) {
-    node.size[0] = DIRECTOR_MIN_WIDTH;
+  if (Array.isArray(node.size) && node.size[0] < minWidth) {
+    node.size[0] = minWidth;
   }
   if (node.__tdRoot) {
     if (
@@ -2870,7 +2890,10 @@ function mountNode(node) {
     });
   };
 
-  const width = Math.max(DIRECTOR_MIN_WIDTH, Math.min(520, node.size?.[0] || 470));
+  const isLoopStart = node.comfyClass === LOOP_NODE_CLASS;
+  const defaultWidth = isLoopStart ? LOOP_DEFAULT_WIDTH : 470;
+  const defaultHeight = isLoopStart ? LOOP_DEFAULT_HEIGHT : 245;
+  const width = Math.max(minWidth, Math.min(520, node.size?.[0] || defaultWidth));
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     if ((node.size?.[1] || 0) < ADVANCED_NODE_MIN_HEIGHT) {
       node.setSize?.([node.size?.[0] || width, ADVANCED_NODE_MIN_HEIGHT]);
@@ -2881,10 +2904,17 @@ function mountNode(node) {
     ];
     advancedStoredPreviewHeight(node);
     bindAdvancedResizeGestureTracking(node);
+  } else if (isLoopStart) {
+    if (node.__tdUseLoopDefaultSize) {
+      node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
+      node.__tdUseLoopDefaultSize = false;
+    } else if ((node.size?.[0] || 0) < minWidth) {
+      node.setSize?.([minWidth, node.size?.[1] || defaultHeight]);
+    }
   } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
-    node.setSize?.([width, 245]);
-  } else if ((node.size?.[0] || 0) < DIRECTOR_MIN_WIDTH) {
-    node.setSize?.([DIRECTOR_MIN_WIDTH, node.size?.[1] || 245]);
+    node.setSize?.([width, defaultHeight]);
+  } else if ((node.size?.[0] || 0) < minWidth) {
+    node.setSize?.([minWidth, node.size?.[1] || defaultHeight]);
   }
 
   renderNode(node);
@@ -3428,6 +3458,7 @@ app.registerExtension({
     bindAiResultsSync();
   },
   nodeCreated(node) {
+    applyNewLoopDefaultSize(node);
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
