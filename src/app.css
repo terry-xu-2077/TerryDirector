@@ -984,7 +984,58 @@ body.td-run-readonly .timeline-panel {
   opacity:.4; cursor:not-allowed;
 }
 
-.ai-prompt-actions { display:flex; align-items:center; gap:6px; }
+.ai-prompt-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-wrap:wrap; }
+.clip-ai-seed-control {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  height:30px;
+  padding:0 4px 0 8px;
+  border:1px solid var(--td-border);
+  border-radius:7px;
+  background:var(--td-bg-inset);
+  color:var(--td-text-muted);
+  font-size:10px;
+  white-space:nowrap;
+}
+.clip-ai-seed-control > span { flex:none; }
+.clip-ai-seed-control > input {
+  width:78px;
+  min-width:0;
+  height:26px;
+  padding:0 3px;
+  border:0;
+  outline:0;
+  background:transparent;
+  color:var(--td-text-main);
+  font:11px/1 Consolas,monospace;
+  text-align:right;
+}
+.clip-ai-seed-control > input::placeholder {
+  color:var(--td-text-muted);
+  opacity:.55;
+}
+.clip-ai-seed-control > button {
+  display:grid;
+  place-items:center;
+  width:23px;
+  height:23px;
+  flex:0 0 23px;
+  padding:0;
+  border:0;
+  border-radius:5px;
+  background:transparent;
+  color:var(--td-text-muted);
+  cursor:pointer;
+}
+.clip-ai-seed-control > button svg { width:14px;height:14px; }
+.clip-ai-seed-control > button:hover:not(:disabled) {
+  color:var(--td-effect);
+  background:var(--td-bg-hover);
+}
+.clip-ai-seed-control:focus-within { border-color:var(--td-border-focus); }
+.clip-ai-seed-control > input:disabled,
+.clip-ai-seed-control > button:disabled { opacity:.45;cursor:default; }
 .ai-cancel-button:not([hidden]) { color:var(--td-ink-soft,#b3b3be); }
 
 
@@ -1153,6 +1204,12 @@ body.td-embedded #app > .topbar {
   #app .ai-prompt-toolbar {
     padding-inline: 0;
     gap: 6px;
+  }
+  #app .ai-prompt-actions {
+    min-width:0;
+  }
+  #app .clip-ai-seed-control {
+    max-width:100%;
   }
 }
 @container td-prompt-panel (max-width: 360px) {
