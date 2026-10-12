@@ -352,7 +352,7 @@ class TerryDirectorLooper(StartLoop):
             description="按时间线逐段执行外部视频生成节点组；通过循环上下文传递当前片段与上一轮状态。",
             inputs=[
                 LlamaConfigData.Input(
-                    "llama_config", display_name="Llama 配置", optional=True,
+                    "llama_config", display_name="Llama", optional=True,
                 ),
                 io.Int.Input(
                     "seed", display_name="Seed", default=0, min=0,
