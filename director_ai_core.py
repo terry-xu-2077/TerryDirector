@@ -58,6 +58,18 @@ def source_signature(clip: dict, global_prompt: str = "", assets: list | None = 
     return hashlib.sha256(json.dumps(source, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:20]
 
 
+def effective_ai_seed(clip: dict, global_seed: int) -> int:
+    """Per-clip AI Seed overrides the TerryDirector Llama seed; blank follows global."""
+    value = clip.get("aiSeed")
+    if value is None or not str(value).strip():
+        return max(0, min(0xFFFFFFFFFFFFFFFF, int(global_seed)))
+    try:
+        seed = int(str(value).strip(), 10)
+    except (TypeError, ValueError):
+        seed = int(global_seed)
+    return max(0, min(0xFFFFFFFFFFFFFFFF, seed))
+
+
 def needs_enhancement(clip: dict, seed: int) -> bool:
     """No source-hash, model, skill or duration check belongs here."""
     if not str(clip.get("aiPrompt") or "").strip():
@@ -66,7 +78,7 @@ def needs_enhancement(clip: dict, seed: int) -> bool:
     if not isinstance(metadata, dict):
         return True
     try:
-        return int(metadata.get("seed")) != int(seed)
+        return int(metadata.get("seed")) != effective_ai_seed(clip, seed)
     except (TypeError, ValueError):
         return True
 
