@@ -275,7 +275,9 @@
         this.invalidate();return;
       }
       if(d.original){
-        if(d.mode!=='sort'||JSON.stringify(d.original)!==JSON.stringify(this.clips))
+        // Selecting a clip without dragging must not write an undo entry or
+        // mark the node dirty. This applies to both normal and sort modes.
+        if(JSON.stringify(d.original)!==JSON.stringify(this.clips))
           this.options.onCommit?.(this.clips,d.original);
         this.options.onDragEnd?.();
       }
