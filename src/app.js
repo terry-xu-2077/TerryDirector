@@ -149,6 +149,8 @@
   let resolutionEditBefore=null;
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
+  // Sort mode temporarily owns the timeline; restore this preference on exit.
+  let chainBeforeSort=null;
   let aiConfig=null,aiConfigStatus='disconnected',aiJob=null,aiPolling=false,aiSeen=new Set();
   const app=$('#app');
   if(embedded)document.body.classList.add('td-embedded');
@@ -160,7 +162,7 @@
       <div class="top-actions">${embedded?'':`<span class="prototype">H3 Skill · 静态增强稿</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
-      <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('sort','reorder','排序模式：拖动片段在松手位置固定，其他片段即时让位','',false)}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：普通移动或调整片段尾部时后方片段跟随；排序模式中不联动','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
+      <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('sort','reorder','排序模式：拖动片段在松手位置固定，其他片段即时让位','',false)}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：普通移动或调整片段尾部时后方片段跟随；排序模式会自动暂停，退出后恢复原状态','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
       <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。普通模式拖动片段移动或裁剪；开启排序后拖动片段保持实际落点，其他片段即时让位。左右键步进，Ctrl Z 撤销。"></canvas></div>
       <div class="timeline-bottom"><div class="timeline-run-progress" id="timelineRunProgress" hidden><i></i></div><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div></div>
     </section>
@@ -774,6 +776,7 @@
       sortButton.classList.toggle('is-active',!!timeline?.sortMode);
       sortButton.setAttribute('aria-pressed',String(!!timeline?.sortMode));
     }
+    refreshChainButton();
     renderPrompt();renderTiming();renderRunProgress();renderReferences();updateHistory();
     if(timeline){timeline.setClips(state.clips);timeline.select(state.selected);}
   }
@@ -1107,33 +1110,59 @@
       modal('导入失败',`<p>${esc(error?.message||'无法读取该 JSON 文件。')}</p>`);
     }
   }
+  function refreshChainButton(){
+    const button=$('[data-action=chain]');
+    if(!button||!timeline)return;
+    const sorting=!!timeline.sortMode;
+    const enabled=!!timeline.chainEnabled&&!sorting;
+    // Sorting must never appear to run in linked mode, even after a
+    // renderAll/selection/undo refresh or while the editor is read-only.
+    button.disabled=hostReadonly||sorting;
+    button.classList.toggle('is-active',enabled);
+    button.setAttribute('aria-pressed',String(enabled));
+    button.title=sorting
+      ?'排序模式下已暂停后续联动；退出排序后恢复此前状态'
+      :enabled
+        ?'后续联动已开启：移动或调整片段尾部时后方片段跟随'
+        :'后续联动已关闭：普通移动与裁剪只影响当前片段';
+    button.setAttribute('aria-label',button.title);
+  }
   function setSortEnabled(enabled){
-    if(hostReadonly&&enabled)return;
-    timeline?.setSortMode(!!enabled);
-    if(enabled&&timeline){
+    if(!timeline||(hostReadonly&&enabled))return;
+    const sorting=!!enabled;
+    if(sorting!==timeline.sortMode){
+      if(sorting){
+        chainBeforeSort=!!timeline.chainEnabled;
+        timeline.chainEnabled=false;
+      }
+      timeline.setSortMode(sorting);
+      if(!sorting&&chainBeforeSort!==null){
+        timeline.chainEnabled=chainBeforeSort;
+        chainBeforeSort=null;
+      }
+    }
+    if(sorting){
       timeline.hand=false;
       $('[data-action=pointer]').classList.add('is-active');
       $('[data-action=hand]').classList.remove('is-active');
     }
+    refreshChainButton();
     const button=$('[data-action=sort]');
     if(button){
-      button.classList.toggle('is-active',!!enabled);
-      button.setAttribute('aria-pressed',String(!!enabled));
-      const title=enabled
-        ?'排序模式已开启：拖动整个片段跨过其他片段起点，被拖动片段留在松手位置，其他片段让位；再次点击关闭'
-        :'开启排序模式：只有此模式允许片段换序；普通模式保持重叠边界、裁剪和后续联动';
+      button.classList.toggle('is-active',sorting);
+      button.setAttribute('aria-pressed',String(sorting));
+      const title=sorting
+        ?'排序模式已开启：后续联动暂时关闭，片段在松手位置固定，其他片段让位；再次点击退出并恢复联动状态'
+        :'开启排序模式：片段可换序，期间暂停后续联动，退出后恢复原状态';
       button.title=title;button.setAttribute('aria-label',title);
     }
   }
   function setChainEnabled(enabled){
+    if(!timeline||hostReadonly||timeline.sortMode)return;
     timeline.cancel();timeline.chainEnabled=!!enabled;
-    const button=$('[data-action=chain]');
-    button.classList.toggle('is-active',timeline.chainEnabled);
-    button.setAttribute('aria-pressed',String(timeline.chainEnabled));
-    button.title=timeline.chainEnabled?'后续联动已开启：普通模式移动或调整尾部时后方片段跟随；排序模式不联动':'后续联动已关闭：普通模式移动与裁剪只影响当前片段；排序需单独开启';
-    button.setAttribute('aria-label',button.title);
+    refreshChainButton();
   }
-  function help(){modal('时间线编排 Demo','<p>工具栏的「排序」默认关闭。开启时可拖动片段按松手位置固定，其他片段移动让位（无弹动动画）；关闭后恢复普通移动/裁剪和后续联动的原始边界约束。</p><p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>全局提示词通过顶栏按钮在浮窗中编辑；新建片段默认启用“使用全局”。编译时先拼接全局提示词，再拼接片段提示词，并从合并后的 Prompt 扫描实际引用素材。</p><p>时间线接缝会显示生成语义：重叠 = 连续生成；存在空隙 = 独立生成；首尾贴合时可在“尾帧参考 / 尾帧续接 / 独立”之间下拉切换。新建片段默认值来自 ComfyUI Settings 的 TerryDirector → 时间线 → 默认镜头衔接。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
+  function help(){modal('时间线编排 Demo','<p>工具栏的「排序」默认关闭。开启时自动暂停后续联动（按钮置灰），片段按松手位置固定、其他片段移动让位（无弹动动画）；退出排序后恢复之前的后续联动开关状态及普通移动/裁剪的边界约束。</p><p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>全局提示词通过顶栏按钮在浮窗中编辑；新建片段默认启用“使用全局”。编译时先拼接全局提示词，再拼接片段提示词，并从合并后的 Prompt 扫描实际引用素材。</p><p>时间线接缝会显示生成语义：重叠 = 连续生成；存在空隙 = 独立生成；首尾贴合时可在“尾帧参考 / 尾帧续接 / 独立”之间下拉切换。新建片段默认值来自 ComfyUI Settings 的 TerryDirector → 时间线 → 默认镜头衔接。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
   function assetFromDocument(raw,index){
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;

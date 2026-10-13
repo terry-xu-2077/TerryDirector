@@ -45,7 +45,7 @@ input,textarea { min-width:0; }
 .top-data-button svg { width:14px;height:14px; }
 .prototype { color:var(--td-text-muted);font-size:10px;letter-spacing:1px; }
 .icon-button { display:inline-flex;align-items:center;justify-content:center;flex:none;width:auto;height:29px;gap:5px;white-space:nowrap;font-size:11px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--td-text-secondary);padding:0 7px; }
-.icon-button:hover { background:var(--td-bg-hover);color:var(--td-text-main); }
+.icon-button:hover:not(:disabled) { background:var(--td-bg-hover);color:var(--td-text-main); }
 .icon-button.is-active { color:var(--td-effect);border-color:var(--td-border);background:var(--td-accent-soft); }
 .button { display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:0 12px;border:1px solid var(--td-border);border-radius:7px;background:var(--td-bg-surface);font-size:12px;white-space:nowrap; }
 .button:hover:not(:disabled) { background:var(--td-bg-hover);border-color:var(--td-border-focus); }

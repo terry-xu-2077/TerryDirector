@@ -174,3 +174,111 @@ test('sorting action remains present, separate from pointer and pan',()=>{
  assert.match(app,/sort:\(\)=>setSortEnabled\(!timeline\.sortMode\)/);
  assert.match(app,/sortButton\.disabled=hostReadonly/);
 });
+
+function modeControls(initialChain=true,initialReadonly=false){
+ const app=fs.readFileSync(path.join(__dirname,'../src/app.js'),'utf8');
+ const begin=app.indexOf('  function refreshChainButton()');
+ const end=app.indexOf('  function help()',begin);
+ assert.ok(begin>=0&&end>begin,'production mode controller found');
+ const code=app.slice(begin,end);
+ const button=()=>{
+  const classes=new Set();
+  return {
+   classes,disabled:false,title:'',attributes:{},
+   classList:{
+    add(name){classes.add(name);},
+    remove(name){classes.delete(name);},
+    toggle(name,value){if(value)classes.add(name);else classes.delete(name);}
+   },
+   setAttribute(key,value){this.attributes[key]=String(value);}
+  };
+ };
+ const buttons=Object.fromEntries(['sort','chain','pointer','hand'].map(key=>[key,button()]));
+ const timeline={
+  sortMode:false,chainEnabled:initialChain,hand:false,cancels:0,
+  cancel(){this.cancels++;},
+  setSortMode(enabled){this.cancel();this.sortMode=!!enabled;}
+ };
+ const controls=new Function('timeline','$','initialReadonly',`
+  let hostReadonly=initialReadonly,chainBeforeSort=null;
+  ${code}
+  return {
+   setSortEnabled,setChainEnabled,refreshChainButton,
+   setReadonly(value){hostReadonly=!!value;},
+   getSavedChain(){return chainBeforeSort;}
+  };
+ `)(timeline,selector=>{
+  const key=selector.match(/^\\[data-action=(.+)\\]$/)?.[1];
+  return buttons[key]||null;
+ },initialReadonly);
+ controls.refreshChainButton();
+ return {timeline,buttons,controls};
+}
+test('sort mode suspends enabled chain and restores on exit',()=>{
+ const {timeline,buttons,controls}=modeControls();
+ assert.equal(timeline.chainEnabled,true);
+ controls.setSortEnabled(true);
+ assert.equal(timeline.sortMode,true);
+ assert.equal(timeline.chainEnabled,false);
+ assert.equal(buttons.chain.disabled,true);
+ assert.equal(buttons.chain.attributes['aria-pressed'],'false');
+ assert.equal(buttons.chain.classes.has('is-active'),false);
+ assert.match(buttons.chain.title,/暂停后续联动/);
+ controls.setSortEnabled(false);
+ assert.equal(timeline.sortMode,false);
+ assert.equal(timeline.chainEnabled,true);
+ assert.equal(buttons.chain.disabled,false);
+ assert.equal(buttons.chain.attributes['aria-pressed'],'true');
+ assert.equal(buttons.chain.classes.has('is-active'),true);
+});
+test('sort preserves pre-existing disabled chain instead of enabling it on exit',()=>{
+ const {timeline,buttons,controls}=modeControls(false);
+ controls.setSortEnabled(true);
+ controls.setSortEnabled(false);
+ assert.equal(timeline.chainEnabled,false);
+ assert.equal(buttons.chain.disabled,false);
+ assert.equal(buttons.chain.attributes['aria-pressed'],'false');
+});
+test('re-entering sort cannot clobber saved chain setting',()=>{
+ const {timeline,controls}=modeControls(true);
+ controls.setSortEnabled(true);
+ controls.setSortEnabled(true);
+ assert.equal(controls.getSavedChain(),true);
+ controls.setSortEnabled(false);
+ assert.equal(timeline.chainEnabled,true);
+});
+test('cannot activate chain even programmatically while sorting',()=>{
+ const {timeline,buttons,controls}=modeControls();
+ controls.setSortEnabled(true);
+ controls.setChainEnabled(true);
+ controls.refreshChainButton();
+ assert.equal(timeline.chainEnabled,false);
+ assert.equal(buttons.chain.disabled,true);
+ assert.equal(buttons.chain.attributes['aria-pressed'],'false');
+});
+test('render refresh and read-only exit respect chain control state',()=>{
+ const {timeline,buttons,controls}=modeControls();
+ controls.setSortEnabled(true);
+ controls.refreshChainButton();
+ assert.equal(buttons.chain.disabled,true);
+ controls.setReadonly(true);
+ controls.setSortEnabled(false);
+ controls.refreshChainButton();
+ assert.equal(timeline.chainEnabled,true);
+ assert.equal(buttons.chain.disabled,true);
+ controls.setReadonly(false);
+ controls.refreshChainButton();
+ assert.equal(buttons.chain.disabled,false);
+ assert.equal(buttons.chain.classes.has('is-active'),true);
+});
+test('normal manual chain toggle remains functional outside sort',()=>{
+ const {timeline,controls}=modeControls();
+ controls.setChainEnabled(false);
+ assert.equal(timeline.chainEnabled,false);
+ controls.setChainEnabled(true);
+ assert.equal(timeline.chainEnabled,true);
+ const before=timeline.cancels;
+ controls.setSortEnabled(true);
+ controls.setSortEnabled(false);
+ assert.equal(timeline.cancels,before+2);
+});
