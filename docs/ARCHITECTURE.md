@@ -96,3 +96,5 @@ TerryDirector 前端的静态上游追踪会识别 TerryTools `TerryWireBusUnpac
 已实测的环境、默认采样数值、原始工作流 SHA 与可信提交基线汇总在 [STABLE_BASELINES.md](STABLE_BASELINES.md)。原 Base、Advanced 与 Self-Lift 的已验收行为是后续重构时必须保持的契约；循环器是否兼容更多模型，以相应适配器的独立实测为准。
 
 界面配色、间距和时间线渲染以当前 `src/` 与 `web/` 代码为准；如需追溯恢复，时间线早期 UI 的固定提交基线为 `408395e7620fe368775515ca515d04fae7a8daed`。
+
+诊断报告：`director_loop_report.py` 在循环执行旁路采集逐片段时间、原生节点/步数事件和 RAM/VRAM 时序，`director_loop_logmetrics.py` 在循环结束时按真实时间戳关联 Self-Lift 低清、升采样、高清与模型加载日志。自动导出同名 Markdown 和 JSON；不注入采样器、不额外解码 LATENT。报告不记录原始提示词/资产路径，未观测的数据明确显示未采集。

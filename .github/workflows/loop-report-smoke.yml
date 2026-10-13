@@ -7,6 +7,7 @@ on:
     paths:
       - director_loop.py
       - director_loop_report.py
+      - director_loop_logmetrics.py
       - tests/test_loop_report.py
       - .github/workflows/loop-report-smoke.yml
   workflow_dispatch:
@@ -17,6 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
-        run: python -m py_compile director_loop.py director_loop_report.py tests/test_loop_report.py
+        run: python -m py_compile director_loop.py director_loop_report.py director_loop_logmetrics.py tests/test_loop_report.py
       - name: Report regression tests
         run: python -m unittest discover -s tests -p test_loop_report.py -v
