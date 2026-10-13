@@ -151,7 +151,8 @@
         if(!readonly)this.options.onTransitionMenu?.(seamControl,{clientX:e.clientX,clientY:e.clientY});
         this.overlay.style.cursor=readonly?'default':'pointer';this.invalidate();return;
       }
-      if(p.y<this.y()||p.y>this.y()+this.trackHeight)return;
+      // The empty lane above/below the cards is also a marquee surface.
+      // This matters when every clip is touching and no empty card gap exists.
       const c=this.hitTest(p),toggle=!!(e.ctrlKey||e.metaKey);
       if(!readonly&&(e.shiftKey||!c)){
         // Blank-track drag or Shift+drag on a clip starts box selection.
