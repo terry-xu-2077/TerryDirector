@@ -121,8 +121,13 @@ def read_current_run_logs(clips):
             events.sort(key=lambda e: e["at"])
             # Reading multiple rotated logs should not duplicate the same line.
             seen = set()
-            events[:] = [event for event in events
-                         if not (tuple(sorted(event.items())) in seen or seen.add(tuple(sorted(event.items())))]
+            unique = []
+            for event in events:
+                key = tuple(sorted(event.items()))
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(event)
+            events[:] = unique
         return {
             "status": ("已关联 Self-Lift/模型/缓存日志" if any(result)
                        else "找到日志，但本轮没有可关联的性能记录"),
