@@ -30,10 +30,13 @@ function timeline(sortMode,input=clips){
 function start(tl,id,offset=16){
  const c=tl.clips.find(x=>x.id===id);
  const e={button:0,pointerId:17,clientX:tl.clipX(c)+offset,clientY:tl.y()+24,preventDefault(){}};
+ e.originClientX=e.clientX;
  tl.down(e);assert.ok(tl.drag);return e;
 }
 function move(tl,e,frame,shift=false){
- tl.move({...e,clientX:e.clientX+(frame-tl.drag.start)*tl.ppf,shiftKey:shift,altKey:false});
+ const x=e.originClientX+(frame-tl.drag.start)*tl.ppf;
+ e.clientX=x; // pointerup must use the same final mouse coordinate
+ tl.move({...e,shiftKey:shift,altKey:false});
 }
 test('normal movement does not reorder despite large negative drag',()=>{
  const {tl}=timeline(false),e=start(tl,'b');assert.equal(tl.drag.mode,'move');move(tl,e,0);
@@ -73,7 +76,7 @@ test('displaced clips render immediately while the dragged clip stays at the pre
  assert.equal(tl.clipX(b),tl.x(100));
  assert.equal(tl.clipX(a),tl.x(a.start));
  assert.equal(Timeline.prototype.advanceSortAnimation,undefined);
- tl.up({...e,clientX:e.clientX-236});
+ tl.up(e);
  assert.equal(tl.clips.find(c=>c.id==='b').start,100);
  assert.equal(events.commits.at(-1).after.find(c=>c.id==='b').start,100);
 });
@@ -83,7 +86,7 @@ test('dragging first clip past second preserves exact drop frame and moves other
  assert.deepEqual(tl.clips.map(c=>c.id),['b','a','c']);
  assert.equal(tl.clips.find(c=>c.id==='a').start,337);
  assert.equal(tl.clips.find(c=>c.id==='b').start,0);
- tl.up({...e,clientX:e.clientX+337});
+ tl.up(e);
  assert.equal(events.commits[0].after.find(c=>c.id==='a').start,337);
 });
 test('sorting can reposition without crossing another clip head',()=>{
@@ -91,7 +94,7 @@ test('sorting can reposition without crossing another clip head',()=>{
  move(tl,e,355);
  assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
  assert.equal(tl.clips.find(c=>c.id==='b').start,355);
- tl.up({...e,clientX:e.clientX+19});
+ tl.up(e);
  assert.equal(events.commits.length,1);
  assert.equal(events.commits[0].after[1].start,355);
 });
