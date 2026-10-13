@@ -2,6 +2,7 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
+import { effectiveClipLayout } from "./td_timeline_projection.js";
 import {
   findLoopMemorySources,
   readLoopOutputResolution,
@@ -1262,12 +1263,15 @@ function referencedAssetIds(prompt, assets) {
   return ids;
 }
 
-function authoredAssetIds(documentData) {
+function authoredAssetIds(documentData, activeClips = effectiveClipLayout(documentData.clips)) {
   const assets = documentData.assets || [];
   const globalPrompt = documentData.globalPromptMode === "ai" && documentData.aiGlobalPrompt
     ? documentData.aiGlobalPrompt : documentData.globalPrompt;
-  const ids = referencedAssetIds(globalPrompt, assets);
-  for (const clip of documentData.clips || []) {
+  // Suspended clips cannot consume a reference. Global prompt images only
+  // count if an active clip actually enables the global prompt.
+  const ids = activeClips.some(clip => clip.useGlobalPrompt !== false)
+    ? referencedAssetIds(globalPrompt, assets) : new Set();
+  for (const clip of activeClips) {
     const activePrompt = clip.promptMode === "ai" && clip.aiPrompt ? clip.aiPrompt : clip.prompt;
     for (const id of referencedAssetIds(activePrompt, assets)) ids.add(id);
   }
@@ -1359,13 +1363,17 @@ function miniRulerHtml(totalFrames) {
   return `<div class="td-mini-ruler" aria-hidden="true">${ticks.join("")}</div>`;
 }
 
-function timelineHtml(documentData, activity = {}) {
-  const clips = documentData.clips || [];
+function timelineHtml(documentData, activity = {}, activeClips = effectiveClipLayout(documentData.clips)) {
+  // This is the generated-video preview, not the editing canvas. Muted
+  // segments must not occupy labels, time, empty gaps, or visual slots.
+  const clips = activeClips;
   if (!clips.length) {
-    return '<div class="td-mini-empty">尚无片段 · 点击编辑</div>';
+    return documentData.clips?.length
+      ? '<div class="td-mini-empty">所有片段均已挂起 · 点击编辑恢复</div>'
+      : '<div class="td-mini-empty">尚无片段 · 点击编辑</div>';
   }
 
-  const total = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
+  const total = Math.max(1, clips[clips.length - 1].end);
   const clipHtml = clips
     .map((clip, index) => {
       const left = Math.max(0, Math.min(100, (clip.start / total) * 100));
@@ -1374,15 +1382,14 @@ function timelineHtml(documentData, activity = {}) {
         Math.min(100 - left, ((clip.end - clip.start) / total) * 100)
       );
       const record = activity?.[clip.id] || {};
-      const running = !clip.suspended && record.status === RUN_RUNNING;
-      const completed = !clip.suspended && record.status === RUN_COMPLETED;
-      const failed = !clip.suspended && record.status === RUN_ERROR;
+      const running = record.status === RUN_RUNNING;
+      const completed = record.status === RUN_COMPLETED;
+      const failed = record.status === RUN_ERROR;
       const progress = completed ? 1 : running ? clamp01(record.progress) : 0;
       const percent = Math.round(progress * 100);
       const progressDone = running && percent >= 100;
       const visualCompleted = completed || progressDone;
       const durationFrames = Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0));
-      const suspended = clip.suspended ? " is-suspended" : "";
       const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
       const duration = timeText(Math.max(0, durationFrames));
       const samplingSteps = Number(record.samplingSteps);
@@ -1401,7 +1408,7 @@ function timelineHtml(documentData, activity = {}) {
         ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
         : "";
 
-      return `<div class="td-mini-clip${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : index + 1}" title="${escapeHtml(title)}"><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
+      return `<div class="td-mini-clip${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : index + 1}" title="${escapeHtml(title)}"><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
     })
     .join("");
 
@@ -1415,8 +1422,9 @@ function renderNode(node) {
 
   const config = readConfig(node);
   const doc = config.document;
-  const total = Math.max(0, ...doc.clips.map(clip => clip.end || 0));
-  const usedAssetIds = authoredAssetIds(doc);
+  const activeClips = effectiveClipLayout(doc.clips);
+  const total = activeClips.at(-1)?.end || 0;
+  const usedAssetIds = authoredAssetIds(doc, activeClips);
   const usedAssets = doc.assets.filter(asset => usedAssetIds.has(asset.id)).length;
   const activity = ensureActivity(node);
   const totalSeconds = Number((total / FPS).toFixed((total / FPS) % 1 ? 2 : 0));
@@ -1428,14 +1436,14 @@ function renderNode(node) {
         <span class="td-mini-stats">
           总时长：<b>${totalSeconds}</b>s
           <i></i>
-          片段数：<b>${doc.clips.length}</b>
+          片段数：<b>${activeClips.length}</b>
           <i></i>
           导入资产：<b>${doc.assets.length}</b><em>（<b>${usedAssets}</b> 个被使用）</em>
         </span>
         <span class="td-node-spacer"></span>
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
-      <div class="td-mini-timeline" data-action="edit" title="打开时间线编辑器">${timelineHtml(doc, activity)}</div>
+      <div class="td-mini-timeline" data-action="edit" title="预览实际生成的有效片段，点击打开编辑器">${timelineHtml(doc, activity, activeClips)}</div>
     </div>
   </div>`;
 
@@ -1521,36 +1529,8 @@ function linkedNodeForInput(node, inputName) {
 }
 
 function effectiveTimelineFrames(documentData) {
-  const clips = Array.isArray(documentData?.clips) ? documentData.clips : [];
-  let previousActiveOriginal = null;
-  let previousEffectiveEnd = 0;
-  let suspendedSinceActive = false;
-  let lastEffectiveEnd = 0;
-
-  for (const clip of clips) {
-    const start = Math.max(0, Number(clip?.start) || 0);
-    const end = Math.max(start + 1, Number(clip?.end) || start + 1);
-    if (clip?.suspended === true) {
-      suspendedSinceActive = true;
-      continue;
-    }
-
-    let effectiveStart;
-    if (!previousActiveOriginal) {
-      effectiveStart = suspendedSinceActive ? 0 : start;
-    } else if (suspendedSinceActive) {
-      effectiveStart = previousEffectiveEnd;
-    } else {
-      effectiveStart = previousEffectiveEnd + (start - Number(previousActiveOriginal.end || 0));
-    }
-
-    lastEffectiveEnd = effectiveStart + (end - start);
-    previousEffectiveEnd = lastEffectiveEnd;
-    previousActiveOriginal = clip;
-    suspendedSinceActive = false;
-  }
-
-  return Math.max(0, Math.round(lastEffectiveEnd));
+  // Exactly the same projection drives the video preview and memory estimate.
+  return effectiveClipLayout(documentData?.clips).at(-1)?.end || 0;
 }
 
 function directorResolution(node) {
@@ -2290,8 +2270,8 @@ function renderAdvancedNode(node) {
   const root = node.__tdRoot;
   if (!root) return;
   const doc = readConfig(node).document;
-  const clips = (doc.clips || []).filter(clip => !clip.suspended);
-  const totalFrames = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
+  const clips = effectiveClipLayout(doc.clips);
+  const totalFrames = clips.at(-1)?.end || 0;
   const totalSeconds = totalFrames / FPS;
   const state = node.__tdReview ||= { selected: doc.selected, time: 0, manualScroll: false };
   state.rerunSeedCustom ||= {};
@@ -2319,14 +2299,14 @@ function renderAdvancedNode(node) {
       } catch {}
     }
   }
+  state.time = Math.max(0, Math.min(totalSeconds, Number(state.time) || 0));
   const format = seconds => {
     const value = Math.max(0, seconds || 0);
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
   };
-  const shortestFrames = Math.max(
-    1,
-    Math.min(...clips.map(clip => Math.max(1, Number(clip.end) - Number(clip.start))))
-  );
+  const shortestFrames = clips.length
+    ? Math.min(...clips.map(clip => Math.max(1, Number(clip.end) - Number(clip.start))))
+    : 1;
   const minTimelineTrackWidth = Math.max(
     1,
     Math.ceil(totalFrames / shortestFrames * ADVANCED_TIMELINE_MIN_CLIP_WIDTH)
@@ -2354,7 +2334,7 @@ function renderAdvancedNode(node) {
     const completed = record.status === RUN_COMPLETED;
     const failed = record.status === RUN_ERROR;
     const percent = completed ? 100 : Math.round(clamp01(record.progress) * 100);
-    const classes = [clip.suspended ? "is-suspended" : "", running ? "is-running" : "", completed ? "is-completed" : "", failed ? "is-error" : "", clip.id === state.selected ? "is-selected" : ""].filter(Boolean).join(" ");
+    const classes = [running ? "is-running" : "", completed ? "is-completed" : "", failed ? "is-error" : "", clip.id === state.selected ? "is-selected" : ""].filter(Boolean).join(" ");
     return `<button type="button" class="td-mini-clip td-adv-clip ${classes}" style="left:${left}%;width:${width}%" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
       <div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${timeText(Number(clip.end)-Number(clip.start))}</span></div>
       <span class="td-mini-label">${escapeHtml(clip.name)}</span>
@@ -2399,7 +2379,7 @@ function renderAdvancedNode(node) {
       <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="自适应时间线">
         <div class="td-adv-track" data-min-track-width="${minTimelineTrackWidth}" style="width:100%;min-width:${minTimelineTrackWidth}px;box-sizing:border-box">
           ${rulerHtml}
-          ${clipHtml}
+          ${clipHtml || '<div class="td-mini-empty">所有片段均已挂起 · 点击编辑恢复</div>'}
           <div class="td-adv-playhead" style="left:${Math.max(0,Math.min(100,state.time/Math.max(totalSeconds,1)*100))}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
         </div>
       </div>

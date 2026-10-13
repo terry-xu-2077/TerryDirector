@@ -293,10 +293,12 @@
     renderAiControls();
   }
   function renderTimelineDuration(clips){
-    const frames=C.arrangementFrames(clips),output=$('#timelineDuration');
+    // The edit canvas still shows muted clips for recovery; duration reflects
+    // what the backend will actually render, without placeholder gaps.
+    const frames=C.effectiveClipLayout(clips).at(-1)?.end||0,output=$('#timelineDuration');
     const text=C.timecode(frames);
     if(output.textContent!==text)output.textContent=text;
-    output.title=`总时长 · 时:分:秒:帧 · ${C.FPS} FPS · ${frames} 帧；从零点到最后片段结尾，包含空隙，重叠不重复计时。`;
+    output.title=`实际生成总时长 · ${C.FPS} FPS · ${frames} 帧；挂起片段不计时、不留空位；正常片段之间有意保留的空隙/重叠按编译规则计算。编辑时间轴仍显示挂起片段以便恢复。`;
     output.setAttribute('aria-label',`总时长 ${C.seconds(frames)}，${frames} 帧`);
   }
   function renderClipDuration(clips=state.clips){
