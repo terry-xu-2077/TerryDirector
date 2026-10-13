@@ -745,8 +745,8 @@ def _attach_native_handler(report):
         print("[TerryDirector Loop][Report] 注册进度处理器失败：" + str(exc), flush=True)
 
 
-def start_report(loop_id, items):
-    new = RunReport(loop_id, items)
+def start_report(loop_id, items, pipeline=None):
+    new = RunReport(loop_id, items, pipeline=pipeline)
     with ACTIVE_LOCK:
         old = ACTIVE.get(new.loop_id)
         ACTIVE[new.loop_id] = new
@@ -756,11 +756,19 @@ def start_report(loop_id, items):
     _attach_native_handler(new)
 
 
-def mark_clip(loop_id, signature, index, status):
-    with ACTIVE_LOCK:
-        report = ACTIVE.get(str(loop_id))
-    if report is not None and report.signature == str(signature):
+def mark_clip(loop_id, signature, index, status, *,
+              cache_seconds=None, cache_mb=None, cache_frames=None):
+    try:
+        with ACTIVE_LOCK:
+            report = ACTIVE.get(str(loop_id))
+        if report is None or report.signature != str(signature):
+            return
+        if status == "completed" and cache_seconds is not None:
+            report.add_cache_result(int(index), elapsed=cache_seconds,
+                                    size_mb=cache_mb, frames=cache_frames)
         report.clip_event(int(index), "start" if status == "running" else "end")
+    except Exception as exc:
+        print("[TerryDirector Loop][Report] 无法记录片段：" + str(exc), flush=True)
 
 
 def finish_report(loop_id, signature):

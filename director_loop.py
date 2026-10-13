@@ -7,6 +7,8 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 from __future__ import annotations
 
 import json
+import os
+import time
 import uuid
 
 import folder_paths
@@ -34,6 +36,84 @@ from .director_internal import (
     TerryDirectorDecodeSegmentToCache,
     prepare_base_run_cache,
 )
+
+# An allowlist of diagnosis-relevant numeric/model settings. Neither prompt
+# contents nor arbitrary asset paths are retained in performance reports.
+_DIAG_FIELDS = {
+    "UNETLoader": ("unet_name", "weight_dtype"),
+    "CLIPLoader": ("clip_name", "type", "device"),
+    "VAELoader": ("vae_name",),
+    "LoraLoaderModelOnly": ("lora_name", "strength_model"),
+    "ModelAttentionBackend": ("attention",),
+    "MiniMaxLowVRAMAttention": ("head_chunks",),
+    "MiniMaxChunkFeedForward": ("chunks", "seq_threshold"),
+    "ResolutionSelector": ("aspect_ratio", "megapixels", "multiple"),
+    "BasicScheduler": ("scheduler", "steps", "denoise"),
+    "KSamplerSelect": ("sampler_name",),
+    "H3SigmaRefiner": ("extra_steps", "start_at_sigma", "end_at_sigma", "spacing"),
+    "SelfLiftAvatarH3Sampler": (
+        "cfg", "transition_step", "lowres_scale", "rho", "w_min", "w_max",
+        "upscaler_model", "highres_tiling", "tiling_mode", "tiling_tiles", "tiling_axis",
+    ),
+    "TerryDirectorSelfLiftSampler": (
+        "cfg", "transition_step", "lowres_scale", "sampling_steps",
+        "upscaler_model", "highres_tiling", "tiling_mode",
+    ),
+    "RAMCleanup": ("clean_file_cache", "clean_processes", "clean_dlls", "retry_times"),
+    "VHS_VideoCombine": ("format", "frame_rate", "crf", "pix_fmt", "save_output"),
+    "TerryDirectorLoopInfo": (),
+    "TerryDirectorLoopCondition": (),
+}
+
+
+def _pipeline_for_report(dynprompt, body):
+    """Capture body nodes and relevant upstream model settings without prompts.
+
+    Traversal includes only a small allowlisted upstream set, never full graph
+    serialization. Names or values outside _DIAG_FIELDS are ignored.
+    """
+    seen = set()
+    pending = [str(x) for x in body]
+    inventory = []
+    while pending and len(seen) < 120:
+        node_id = str(pending.pop())
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        try:
+            node = dynprompt.get_node(node_id)
+        except Exception:
+            continue
+        if not isinstance(node, dict):
+            continue
+        node_type = str(node.get("class_type") or "")
+        settings = {}
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        for key in _DIAG_FIELDS.get(node_type, ()):
+            value = inputs.get(key)
+            if isinstance(value, (str, int, float, bool)) and len(str(value)) <= 180:
+                settings[key] = value
+            elif is_link(value):
+                settings[key] = "<连接>"
+        if node_id in {str(v) for v in body} or node_type in _DIAG_FIELDS:
+            inventory.append({"id": node_id, "type": node_type, "settings": settings})
+        for value in inputs.values():
+            if not is_link(value):
+                continue
+            upstream_id = str(value[0])
+            if upstream_id in seen:
+                continue
+            try:
+                upstream = dynprompt.get_node(upstream_id)
+                upstream_type = upstream.get("class_type") if isinstance(upstream, dict) else None
+            except Exception:
+                continue
+            if upstream_type in _DIAG_FIELDS:
+                pending.append(upstream_id)
+    return sorted(inventory, key=lambda entry: (
+        int(entry["id"]) if entry["id"].isdigit() else float("inf"), entry["id"]
+    ))
+
 
 CATEGORY = "TerryDirector/循环"
 IMAGE_SLOTS = 9
@@ -407,7 +487,7 @@ class TerryDirectorLooper(StartLoop):
         )
         # Metrics attach to this expansion only; never change its sampler.
         try:
-            start_report(loop_id, items)
+            start_report(loop_id, items, pipeline=_pipeline_for_report(dynprompt, body))
         except Exception as exc:
             print(f"[TerryDirector Loop][Report] 采集初始化失败：{exc}", flush=True)
         end = dynprompt.get_node(end_id)
@@ -574,6 +654,7 @@ class TerryDirectorLoopCache(io.ComfyNode):
         segment, _previous_context = _require_loop_context(loop_context)
         loop = segment["_loop"]
         assembly = segment["assembly"]
+        cache_started = time.perf_counter()
         result = TerryDirectorDecodeSegmentToCache.execute(
             images=images,
             audio=audio,
@@ -588,11 +669,20 @@ class TerryDirectorLoopCache(io.ComfyNode):
             context_frames=int(loop["context_frames"]),
             fps=24,
         )
-        mark_clip(loop["loop_id"], loop["run_signature"], loop["index"], "completed")
-        _notify(loop["loop_id"], segment["id"], "completed")
+        cache_elapsed = time.perf_counter() - cache_started
         # The file-backed VIDEO ignores additional descriptor metadata; tagging
         # the descriptor keeps multi-looper runs isolated in LoopEnd.
         descriptor = json.loads(str(result[0]))
+        try:
+            cache_mb = os.path.getsize(descriptor["path"]) / (1024 * 1024)
+            mark_clip(
+                loop["loop_id"], loop["run_signature"], loop["index"], "completed",
+                cache_seconds=cache_elapsed, cache_mb=cache_mb,
+                cache_frames=int(descriptor.get("frames") or 0),
+            )
+        except Exception as exc:
+            print(f"[TerryDirector Loop][Report] 片段计时失败: {exc}", flush=True)
+        _notify(loop["loop_id"], segment["id"], "completed")
         descriptor["loop_id"] = str(loop["loop_id"])
         descriptor["run_signature"] = str(loop["run_signature"])
         return io.NodeOutput(
