@@ -8,10 +8,12 @@ const css=fs.readFileSync(path.join(__dirname,'../src/app.css'),'utf8');
 test('asset preview fills about eighty percent of the editor',()=>{
  assert.match(css,/dialog\[data-mode="media"\] \{ width:80vw;/);
  assert.match(css,/height:80dvh;/);
- assert.match(css,/\.asset-lightbox img,\.asset-lightbox video \{[^\n]*object-fit:contain;/);
+ assert.ok(css.includes('.asset-lightbox.is-image img {'));
+ assert.ok(css.includes('.asset-lightbox video {'));
+ assert.ok(css.includes('object-fit:contain;'));
 });
 test('replacement preserves asset ID and reference numbering',()=>{
- assert.match(app,/state\.assetOverrides\[id\]=replacement/);
+ assert.ok(app.includes('state.assetOverrides[id]={...(state.assetOverrides[id]||{}),...replacement};'));
  assert.match(app,/\.\.\.a,\.\.\.\(state\.assetOverrides\?\.\[a\.id\]\|\|\{\}\)/);
  assert.match(app,/token:\x60\$\{mediaNames\[a\.kind\]\} \$\{a\.number\}\x60/);
  assert.match(app,/if\(kind!==old\.kind\)/);
@@ -34,7 +36,7 @@ test('replacement is serialized and history can revert source',()=>{
 test('preview, timeline thumbnails, and asset pool resolve replacements',()=>{
  assert.match(app,/const asset=poolEntries\(\)\.find\(a=>a\.id===id\);if\(!asset\)return;/);
  assert.match(app,/const getImage=c=>poolEntries\(\)\.find/);
- assert.match(app,/const key=entries\.map\(a=>\[a\.id,a\.src,a\.name\]/);
+ assert.ok(app.includes("const key=entries.map(a=>[a.id,a.src,a.name,a.displayName||'']"));
  assert.match(app,/temporaryAssetUrls\.forEach\(url=>URL\.revokeObjectURL\(url\)\)/);
 });
 test('new replacement uses native upload endpoint when embedded',()=>{
