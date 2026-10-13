@@ -6,6 +6,7 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import folder_paths
@@ -28,6 +29,7 @@ from .director_loop_adapters import (
 )
 from .director_core import config_json, normalize_config
 from .director_loop_video import TerryDirectorStreamVideo
+from .director_loop_report import start_report, mark_clip, finish_report
 from .director_internal import (
     TerryDirectorDecodeSegmentToCache,
     prepare_base_run_cache,
@@ -403,6 +405,11 @@ class TerryDirectorLooper(StartLoop):
         expanded = _expand_director_loop(
             dynprompt, loop_id, body, end_id, items, "{}"
         )
+        # Metrics attach to this expansion only; never change its sampler.
+        try:
+            start_report(loop_id, items)
+        except Exception as exc:
+            print(f"[TerryDirector Loop][Report] 采集初始化失败：{exc}", flush=True)
         end = dynprompt.get_node(end_id)
         remaining_inputs = end["inputs"].copy()
         for key in ("images", "audio", "dependency"):
@@ -466,7 +473,9 @@ class TerryDirectorLoopInfo(io.ComfyNode):
     def execute(cls, loop_context):
         segment, previous_context = _require_loop_context(loop_context)
         adapter = adapter_from_segment(segment)
-        _notify(segment["_loop"]["loop_id"], segment["id"], "running")
+        loop = segment["_loop"]
+        mark_clip(loop["loop_id"], loop["run_signature"], loop["index"], "running")
+        _notify(loop["loop_id"], segment["id"], "running")
         media = adapter.reference_media(
             segment,
             previous_context,
@@ -579,9 +588,15 @@ class TerryDirectorLoopCache(io.ComfyNode):
             context_frames=int(loop["context_frames"]),
             fps=24,
         )
+        mark_clip(loop["loop_id"], loop["run_signature"], loop["index"], "completed")
         _notify(loop["loop_id"], segment["id"], "completed")
+        # The file-backed VIDEO ignores additional descriptor metadata; tagging
+        # the descriptor keeps multi-looper runs isolated in LoopEnd.
+        descriptor = json.loads(str(result[0]))
+        descriptor["loop_id"] = str(loop["loop_id"])
+        descriptor["run_signature"] = str(loop["run_signature"])
         return io.NodeOutput(
-            str(result[0]),
+            json.dumps(descriptor, ensure_ascii=False),
             {"images": result[1], "audio": result[2]},
         )
 
@@ -602,8 +617,9 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             is_input_list=True,
             is_output_node=True,
             description=(
-                "接收循环体已经解码完成的 IMAGE/AUDIO，写入无损分段缓存并输出低内存流式 VIDEO。"
-                "片段元数据由循环器内部注入；循环结束不再要求手动连接片段数据。"
+                "接收外部 IMAGE/AUDIO，输出流式 VIDEO 和每轮循环的 Markdown 性能记录。"
+                "记录包含逐段耗时、原生进度步速、GPU 显存和系统内存，"
+                "自动保存至 ComfyUI output/TerryDirector/reports。"
             ),
             inputs=[
                 io.Image.Input(
@@ -637,6 +653,7 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             ],
             outputs=[
                 io.Video.Output(display_name="视频"),
+                io.String.Output(display_name="循环记录 Markdown"),
             ],
             hidden=[io.Hidden.execution_list, io.Hidden.unique_id],
         )
@@ -673,5 +690,14 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             bit_depth=_one(bit_depth),
             color_space=_one(color_space),
         )
-        return io.NodeOutput(video)
+        try:
+            identity = json.loads(str(descriptors[0]))
+            markdown = finish_report(
+                identity.get("loop_id", ""),
+                identity.get("run_signature", ""),
+            )
+        except Exception as exc:
+            print(f"[TerryDirector Loop][Report] 输出报告失败：{exc}", flush=True)
+            markdown = "# TerryDirector 循环性能记录\n\n报告生成失败，VIDEO 输出不受影响。\n"
+        return io.NodeOutput(video, markdown)
 
