@@ -98,6 +98,7 @@ function createNodeRenderer() {
   const last = webSource.indexOf("function clamp01(", first);
   assert.ok(first >= 0 && last > first);
   const context = {
+    opens,
     effectiveClipLayout, FPS: 24,
     RUN_RUNNING: "running", RUN_COMPLETED: "completed", RUN_ERROR: "error",
     ADVANCED_NODE_CLASS: "TerryDirectorAdvanced", LOOP_NODE_CLASS: "TerryDirectorLooper",
