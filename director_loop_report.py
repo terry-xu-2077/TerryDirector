@@ -145,7 +145,8 @@ class RunReport:
         self.last_resource = None
         self.last_resource_time = None
         self.start_io = {}
-        self.last_saved = 0.0
+        self.last_saved = self.started
+        self.save_lock = threading.RLock()
         self.pipeline = pipeline or []
         self.source_log = {"status": "未检索日志", "files": [], "by_clip": []}
         self.environment = {
@@ -386,6 +387,46 @@ class RunReport:
             }
             return json.loads(json.dumps(payload, ensure_ascii=False, allow_nan=False))
 
+    @staticmethod
+    def _log_phases(events):
+        phases = {"low_step": [], "high_step": []}
+        for event in events:
+            kind = event.get("kind")
+            if kind in ("low_step", "high_step"):
+                phases[kind].append(event.get("seconds", 0))
+            elif kind in ("low_total", "high_total", "upscale", "transition_total"):
+                phases[kind] = event.get("seconds")
+        return phases
+
+    def _alerts(self):
+        flags = []
+        completed = [(i, c["end"] - c["start"]) for i, c in enumerate(self.clips)
+                     if c["start"] is not None and c["end"] is not None]
+        if len(completed) >= 3:
+            typical = statistics.median(value for _, value in completed)
+            if typical > 0:
+                for i, seconds in completed:
+                    if seconds > typical * 1.65:
+                        flags.append(f"片段 {i + 1} 整段耗时 {duration(seconds)}，高于中位耗时 {seconds/typical:.2f} 倍。")
+        gpu_peak, total = self.global_peak.get("gpu_used"), self.global_peak.get("gpu_total")
+        if gpu_peak is not None and total and gpu_peak / total >= 0.9:
+            flags.append(f"GPU 显存采样峰值达 {gpu_peak/total:.1%}（{gpu_peak:.2f}/{total:.2f} GiB），建议核对 WDDM/动态权重卸载。")
+        ram_peak, total_ram = self.global_peak.get("ram_used"), self.global_peak.get("ram_total")
+        if ram_peak is not None and total_ram and ram_peak / total_ram >= 0.85:
+            flags.append(f"系统 RAM 峰值达 {ram_peak/total_ram:.1%}，需核查页面文件、解码缓冲及缓存。")
+        for i, events in enumerate(self.source_log.get("by_clip") or []):
+            phase = self._log_phases(events)
+            if phase.get("upscale", 0) >= 90:
+                flags.append(f"片段 {i + 1} Self-Lift Latent 升采样耗费 {phase['upscale']:.1f}s，明显偏长，可优先查显存交换。")
+            if phase.get("high_total", 0) >= 300:
+                flags.append(f"片段 {i + 1} Self-Lift 高清阶段耗费 {phase['high_total']:.1f}s。")
+        missing = [i + 1 for i, c in enumerate(self.clips)
+                   if c["end"] is not None and not any(s["steps"] for s in c["samplers"].values())]
+        if missing:
+            flags.append("这些已完成片段没有实测原生采样步数：" +
+                         ", ".join(map(str, missing)) + "；请对照 Self-Lift 原生日志或提交 comfyui.log。")
+        return flags[:30]
+
     def markdown(self, file_path=""):
         with self.lock:
             elapsed = (self.ended if self.ended is not None else self.clock()) - self.started
@@ -404,7 +445,8 @@ class RunReport:
                 "- 资源采样：" + str(self.samples) + " 次（约每 " + str(self.sample_interval) + " 秒）",
             ]
             if file_path:
-                lines.append("- 自动保存：" + file_path)
+                lines.append("- Markdown 报告：" + file_path)
+                lines.append("- 原始诊断 JSON：" + str(Path(file_path).with_suffix(".json")))
             lines.extend(["", "## 系统资源峰值", "", "| 指标 | 采集峰值 |", "| --- | ---: |"])
             fields = (
                 ("gpu_used", "GPU 总占用（含其他进程）"),
@@ -492,21 +534,41 @@ class RunReport:
             return "\n".join(lines) + "\n"
 
 
-def _save(report):
+def _save(report, include_logs=False):
+    """Atomic MD + lossless JSON trace, same per-run filenames on checkpoint."""
     import folder_paths
-    directory = Path(folder_paths.get_output_directory()) / "TerryDirector" / "reports"
-    directory.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.fromtimestamp(report.started_wall).strftime("%Y%m%d_%H%M%S")
-    path = directory / ("loop_" + stamp + "_" + report.signature[:10] + ".md")
-    result = report.markdown(str(path))
-    temporary = path.with_suffix(".md.tmp")
-    try:
-        temporary.write_text(result, encoding="utf-8")
-        os.replace(temporary, path)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
-    return result
+    with report.save_lock:
+        directory = Path(folder_paths.get_output_directory()) / "TerryDirector" / "reports"
+        directory.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.fromtimestamp(report.started_wall).strftime("%Y%m%d_%H%M%S")
+        path = directory / ("loop_" + stamp + "_" + report.signature[:10] + ".md")
+        json_path = path.with_suffix(".json")
+        if include_logs:
+            try:
+                from .director_loop_logmetrics import read_current_run_logs
+            except ImportError:
+                try:
+                    from director_loop_logmetrics import read_current_run_logs
+                except ImportError:
+                    read_current_run_logs = None
+            if read_current_run_logs is not None:
+                with report.lock:
+                    segments = [{"wall_start": x["wall_start"], "wall_end": x["wall_end"]}
+                                for x in report.clips]
+                logs = read_current_run_logs(segments)
+                with report.lock:
+                    report.source_log = logs
+        content = report.markdown(str(path))
+        raw = json.dumps(report.raw(), ensure_ascii=False, indent=2, allow_nan=False)
+        for target, text in ((json_path, raw), (path, content)):
+            temporary = target.with_name(target.name + ".tmp")
+            try:
+                temporary.write_text(text, encoding="utf-8")
+                os.replace(temporary, target)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+        return content
 
 
 def _save_partial(report):
@@ -515,7 +577,7 @@ def _save_partial(report):
             ACTIVE.pop(report.loop_id, None)
     report.close("中断或未完成")
     try:
-        _save(report)
+        _save(report, include_logs=True)
     except Exception as exc:
         print("[TerryDirector Loop][Report] 保存未完成报告失败：" + str(exc), flush=True)
 
@@ -606,7 +668,7 @@ def finish_report(loop_id, signature):
         return "# TerryDirector 循环性能记录\n\n未找到匹配的运行采样记录；视频输出不受影响。\n"
     report.close("已完成")
     try:
-        return _save(report)
+        return _save(report, include_logs=True)
     except Exception as exc:
         print("[TerryDirector Loop][Report] 保存报告失败：" + str(exc), flush=True)
         return report.markdown() + "\n自动保存失败：" + str(exc) + "\n"
