@@ -107,7 +107,9 @@ function createNodeRenderer() {
     openEditor: (...args) => opens.push(args),
     timelineTitleHtml: () => "<span>时间线</span>",
     timeText: frames => (frames / 24) + "s",
-    escapeHtml: value => String(value).replaceAll("<", "&lt;"),
+    escapeHtml: value => String(value).replace(/[&<>"']/g, char => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[char]),
     clamp01: value => Math.max(0, Math.min(1, Number(value) || 0)),
     queueMicrotask: () => {},
     refreshLoopConditionCards: () => {},
