@@ -208,7 +208,7 @@ function modeControls(initialChain=true,initialReadonly=false){
    getSavedChain(){return chainBeforeSort;}
   };
  `)(timeline,selector=>{
-  const key=selector.match(/^\\[data-action=(.+)\\]$/)?.[1];
+  const key=selector.match(/data-action=([a-z-]+)/)?.[1];
   return buttons[key]||null;
  },initialReadonly);
  controls.refreshChainButton();
