@@ -105,11 +105,11 @@ test('aliases survive payload export and are recognized by frontend and backend 
  const state={selected:null,clips:[],assetOverrides:{},globalPrompt:'Image <Picture 3>',assetIds:['a']};
  const source={id:'a',name:'snow.png',displayName:'雪地战壕',
    number:3,kind:'image',source:{type:'comfy-input',path:'snow.png'}};
- const payload=new Function('state','poolEntries','cleanAssetAlias',`
+ const payload=new Function('state','poolEntries','cleanAssetAlias','C',`
    function finishPromptEdit(){}function syncAllReferences(){}
    ${fields}
    return documentPayload();
- `)(state,()=>[source],cleanAssetAlias);
+ `)(state,()=>[source],cleanAssetAlias,{FPS:24});
  assert.equal(payload.assets[0].displayName,'雪地战壕');
  assert.equal(payload.assets[0].name,'snow.png');
  assert.equal(payload.assets[0].number,3);
