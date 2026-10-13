@@ -1363,6 +1363,35 @@ function miniRulerHtml(totalFrames) {
   return `<div class="td-mini-ruler" aria-hidden="true">${ticks.join("")}</div>`;
 }
 
+
+/** Show authored suspended clips as a separate, NON-TIMED strip.
+ * The ruler and playable clip track remain the compacted execution timeline.
+ * Original authoring indices/names are retained here for easy restoration. */
+function suspendedClipsHtml(documentData) {
+  const paused = (documentData?.clips || [])
+    .map((clip, authoredIndex) => ({ clip, authoredIndex }))
+    .filter(({ clip }) => clip.suspended === true);
+  if (!paused.length) return "";
+  const chips = paused.map(({ clip, authoredIndex }) => {
+    const originalIndex = authoredIndex + 1;
+    const title = `原片段 ${originalIndex} · ${clip.name} · 已挂起（不参与生成与总时长）· 点击打开编辑器`;
+    return `<button type="button" class="td-mini-suspended-chip" data-suspended-clip="${escapeHtml(clip.id)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"><span class="td-mini-suspended-index">原片段 ${originalIndex}</span><span class="td-mini-suspended-name">${escapeHtml(clip.name)}</span></button>`;
+  }).join("");
+  return `<div class="td-mini-suspended-strip" role="group" aria-label="已挂起 ${paused.length} 个片段，不计入生成时长"><span class="td-mini-suspended-heading">⏸ 挂起 <b>${paused.length}</b></span><div class="td-mini-suspended-list">${chips}</div></div>`;
+}
+
+/** Clicking any paused chip opens the editor focused on THAT source clip,
+ * without modifying the generated video order or enabling the clip. */
+function bindSuspendedClipButtons(node, root) {
+  root.querySelectorAll("[data-suspended-clip]").forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openEditor(node, button, button.dataset.suspendedClip);
+    });
+  });
+}
+
 function timelineHtml(documentData, activity = {}, activeClips = effectiveClipLayout(documentData.clips)) {
   // This is the generated-video preview, not the editing canvas. Muted
   // segments must not occupy labels, time, empty gaps, or visual slots.
@@ -1444,12 +1473,14 @@ function renderNode(node) {
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
       <div class="td-mini-timeline" data-action="edit" title="预览实际生成的有效片段，点击打开编辑器">${timelineHtml(doc, activity, activeClips)}</div>
+      ${suspendedClipsHtml(doc)}
     </div>
   </div>`;
 
   root.querySelectorAll('[data-action="edit"]').forEach(button => {
     button.addEventListener("click", () => openEditor(node, button));
   });
+  bindSuspendedClipButtons(node, root);
   if (node.comfyClass === LOOP_NODE_CLASS) {
     queueMicrotask(() => refreshLoopConditionCards(node));
   }
@@ -2383,6 +2414,7 @@ function renderAdvancedNode(node) {
           <div class="td-adv-playhead" style="left:${Math.max(0,Math.min(100,state.time/Math.max(totalSeconds,1)*100))}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
         </div>
       </div>
+      ${suspendedClipsHtml(doc)}
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
       ${hasPartialRecovery ? `<div class="td-adv-rerun-tools td-adv-recovery-tools${rerunBusy ? " is-busy" : ""}">
@@ -2563,6 +2595,7 @@ function renderAdvancedNode(node) {
     if (!state.manualScroll) follow();
   });
   root.querySelector('[data-action="edit"]').addEventListener("click", e => openEditor(node, e.currentTarget));
+  bindSuspendedClipButtons(node, root);
   const rerunSeedInput = root.querySelector(".td-adv-rerun-seed");
   rerunSeedInput?.addEventListener("change", () => {
     if (!state.selected) return;
@@ -2870,8 +2903,10 @@ function mountNode(node) {
     root,
     {
       hideOnZoom: false,
-      getMinHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? 455 : 118,
-      getMaxHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? undefined : 148,
+      getMinHeight: () => node.comfyClass === ADVANCED_NODE_CLASS
+        ? 455 : readConfig(node).document.clips.some(clip => clip.suspended) ? 148 : 118,
+      getMaxHeight: () => node.comfyClass === ADVANCED_NODE_CLASS
+        ? undefined : readConfig(node).document.clips.some(clip => clip.suspended) ? 180 : 148,
       margin: 3,
     }
   );
@@ -3431,7 +3466,7 @@ function ensureEditorOverlay() {
   });
 }
 
-function openEditor(node, button) {
+function openEditor(node, button, selectedClipId = null) {
   ensureEditorOverlay();
   activeNode = node;
   editorDirty = false;
@@ -3440,6 +3475,9 @@ function openEditor(node, button) {
   startAiConfigWatch();
 
   const documentData = clone(readConfig(node).document);
+  if (selectedClipId && documentData.clips?.some(clip => clip.id === selectedClipId)) {
+    documentData.selected = selectedClipId;
+  }
   overlay.classList.add("is-open");
   document.documentElement.style.overflow = "hidden";
 

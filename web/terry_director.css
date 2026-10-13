@@ -1268,3 +1268,81 @@
 .td-output-check-help.is-warning {
   color: #ffc18b;
 }
+
+
+/* Paused clips are visible as an UNTIMED editorial list under the real video
+   ruler. They retain their source index/name but never expand generated time. */
+.td-mini-suspended-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  margin-top: 6px;
+  padding: 3px 6px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px dashed rgba(167,162,176,.24);
+  border-radius: 7px;
+  background: rgba(255,255,255,.017);
+}
+.td-mini-suspended-heading {
+  flex: none;
+  white-space: nowrap;
+  color: rgba(186,182,196,.73);
+  font-size: 9px;
+  font-weight: 500;
+}
+.td-mini-suspended-heading b {
+  color: rgba(212,208,219,.88);
+  font-variant-numeric: tabular-nums;
+}
+.td-mini-suspended-list {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(150,145,163,.4) transparent;
+}
+.td-node-shell .td-mini-suspended-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 90px;
+  max-width: 190px;
+  height: 21px;
+  padding: 0 7px;
+  border: 1px dashed rgba(178,173,189,.26);
+  border-radius: 5px;
+  background: rgba(105,107,122,.09);
+  color: rgba(194,190,204,.69);
+  cursor: pointer;
+  font: 9px/1.2 Inter, ui-sans-serif, system-ui, sans-serif;
+  filter: saturate(.5);
+  white-space: nowrap;
+}
+.td-node-shell .td-mini-suspended-chip:hover,
+.td-node-shell .td-mini-suspended-chip:focus-visible {
+  border-color: rgba(181,160,216,.52);
+  background: rgba(145,124,169,.12);
+  color: #ded9e5;
+}
+.td-mini-suspended-index {
+  flex: none;
+  font-weight: 600;
+  color: rgba(190,185,203,.70);
+}
+.td-mini-suspended-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.td-node-shell-advanced .td-mini-suspended-strip {
+  margin: 5px 0 4px;
+}
