@@ -1,0 +1,22 @@
+name: TerryDirector loop report regression
+
+on:
+  push:
+    branches:
+      - feature/timeline-clip-reorder
+    paths:
+      - director_loop.py
+      - director_loop_report.py
+      - tests/test_loop_report.py
+      - .github/workflows/loop-report-smoke.yml
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax check
+        run: python -m py_compile director_loop.py director_loop_report.py tests/test_loop_report.py
+      - name: Report regression tests
+        run: python -m unittest discover -s tests -p test_loop_report.py -v
