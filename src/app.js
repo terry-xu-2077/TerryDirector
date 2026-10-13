@@ -136,6 +136,9 @@
   const mediaNames={image:'Picture',video:'Video',audio:'Audio'};
   const mediaPattern=()=>/<(Picture|Video|Audio)\s+(\d+)>/gi;
   const mediaKey=(kind,number)=>`${kind.toLowerCase()}:${Number(number)}`;
+  // User-facing label is independent of the source filename and H3 token.
+  const cleanAssetAlias=value=>String(value??'').replace(/\s+/g,' ').trim().slice(0,80);
+  const assetDisplayName=asset=>cleanAssetAlias(asset?.displayName)||asset?.name||'';
   const transitionLabels={tail_reference:'尾帧参考',tail_continuation:'尾帧续接',independent:'独立'};
   const normalizeTransitionMode=(value,fallback='tail_continuation')=>Object.hasOwn(transitionLabels,value)?value:fallback;
   const activity=new Map(),emptyActivity={status:'idle',progress:0,elapsedSeconds:0,completedAt:null};
@@ -149,7 +152,7 @@
   let resolutionEditBefore=null;
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
-  let replacingAssetId=null,replacingAssetBusy=false;
+  let replacingAssetId=null,replacingAssetBusy=false,stopAssetZoom=null;
   const temporaryAssetUrls=new Set();
   // Sort mode temporarily owns the timeline; restore this preference on exit.
   let chainBeforeSort=null;
@@ -578,10 +581,10 @@
     const entries=poolEntries();$('#refCount').textContent=entries.length;
     // Selection changes only update usage badges. Keep the shared grid and its
     // scroll position stable while moving between clips or editing a prompt.
-    const key=entries.map(a=>[a.id,a.src,a.name].join('|')).join('||');
+    const key=entries.map(a=>[a.id,a.src,a.name,a.displayName||''].join('|')).join('||');
     if(assetGridKey!==key||!$('#references').children.length){
       const scroll=$('#referenceDrop').scrollTop;assetGridKey=key;
-      $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(a.name)}" aria-label="查看 ${esc(a.name)}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span><span class="asset-current-use" hidden>当前引用</span></div><strong>${esc(a.name)}</strong><small title="${esc(a.source?.type==='comfy-input'?'ComfyUI input/'+a.source.path:a.source?.path?'示例 input/'+a.source.path:a.local?'仅本页读取，未上传':'示例素材')}">${a.kind==='image'?'图片':a.kind==='video'?'视频':'音频'}${a.source?.type==='comfy-input'?' · input':a.source?.type==='demo-input'?' · input 示例':a.local?' · 本地':''}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt; 到当前片段">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-delete-asset="${a.id}" title="从资产池删除 ${esc(a.name)}" aria-label="从资产池删除 ${esc(a.name)}">${icon('trash')}<span>删除</span></button></div></div>`).join('');
+      $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(assetDisplayName(a))}" aria-label="查看 ${esc(assetDisplayName(a))}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span><span class="asset-current-use" hidden>当前引用</span></div><strong>${esc(assetDisplayName(a))}</strong><small title="${esc(a.source?.type==='comfy-input'?'ComfyUI input/'+a.source.path:a.source?.path?'示例 input/'+a.source.path:a.local?'仅本页读取，未上传':'示例素材')}">${a.kind==='image'?'图片':a.kind==='video'?'视频':'音频'}${a.source?.type==='comfy-input'?' · input':a.source?.type==='demo-input'?' · input 示例':a.local?' · 本地':''}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt; 到当前片段">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-delete-asset="${a.id}" title="从资产池删除 ${esc(assetDisplayName(a))}" aria-label="从资产池删除 ${esc(assetDisplayName(a))}">${icon('trash')}<span>删除</span></button></div></div>`).join('');
       $('#referenceDrop').scrollTop=scroll;
     }
     refreshAssetUsage();
@@ -593,7 +596,7 @@
     const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
     replacingAssetId=null;
     promptEditor.closeMenu();stopDialogMedia();
-    const d=$('#dialog');d.dataset.mode='media';d.dataset.assetId=id;$('#dialogTitle').textContent=asset.name;
+    const d=$('#dialog');d.dataset.mode='media';d.dataset.assetId=id;$('#dialogTitle').textContent=assetDisplayName(asset);
     const actions=$('#dialogActions');actions.replaceChildren();
     const replace=document.createElement('button');replace.type='button';
     replace.className='button primary';replace.dataset.action='replace-asset';
@@ -611,6 +614,22 @@
     const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='comfy-input'?'ComfyUI input/'+asset.source.path:asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
     if(!embedded)note.textContent='站点仅用占位缩略图展示原参考图位置。真正的图片文件仍在本机 ComfyUI/input，不在公开仓库中。';
     if(!d.open)d.showModal();
+  }
+  function renameAsset(id,value){
+    if(hostReadonly)return;
+    const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
+    const wanted=cleanAssetAlias(value);
+    const alias=wanted===asset.name?'':wanted;
+    if(alias===cleanAssetAlias(asset.displayName))return;
+    mutate(()=>{
+      if(!state.assetOverrides)state.assetOverrides={};
+      state.assetOverrides[id]={...(state.assetOverrides[id]||{}),displayName:alias};
+    });
+    assetGridKey='';renderReferences();
+    if($('#dialog').dataset.mode==='media'&&$('#dialog').dataset.assetId===id)
+      $('#dialogTitle').textContent=assetDisplayName({...asset,displayName:alias});
+    promptEditor?.refreshAssets();globalPromptEditor?.refreshAssets();
+    toast(alias?'资产显示名称已更新，所有引用同步生效。':'已恢复默认资产名称。');
   }
   async function replaceAssetFile(file){
     const id=replacingAssetId,old=poolEntries().find(asset=>asset.id===id);
@@ -638,7 +657,7 @@
       // undo/redo restores the original source without rewriting prompt tags.
       mutate(()=>{
         if(!state.assetOverrides)state.assetOverrides={};
-        state.assetOverrides[id]=replacement;
+        state.assetOverrides[id]={...(state.assetOverrides[id]||{}),...replacement};
       });
       assetGridKey='';
       renderReferences();
@@ -859,7 +878,8 @@
   }
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
-    getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
+    getAssets:()=>poolEntries().map(a=>({id:a.id,name:assetDisplayName(a),fileName:a.name,
+      displayName:a.displayName||'',kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
     getAssetAvailability:clipAssetAvailability,
     onBeforeChange:()=>{if(hostReadonly)return false;if(!editBefore)editBefore=C.copy(state);},
     onChange:text=>{if(hostReadonly)return;const c=current();if(c){c[c.promptMode==='ai'?'aiPrompt':'prompt']=text;if(syncReferences(c)){refreshAssetUsage();timeline?.invalidate();}}$('#promptCount').textContent=`${text.length} 字`;},
@@ -1246,6 +1266,7 @@
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;
     return {id:String(raw.id||`asset-${index+1}`),name:String(raw.name||path.split('/').at(-1)||path),kind,
+      displayName:cleanAssetAlias(raw.displayName),
       number:Math.max(1,Number.parseInt(raw.number,10)||1),
       src:embedded?inputPreviewUrl(path):siteDemoThumbnail(raw.number),
       source:{type:'comfy-input',path}};
@@ -1314,6 +1335,7 @@
       globalAiMetadata:state.globalAiMetadata||{},autoAiEnhance:!!state.autoAiEnhance,
       clips:state.clips.map(({id,name,start,end,seed,aiSeed,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,seed:normalizeClipSeedValue(seed),aiSeed:normalizeClipSeedValue(aiSeed),prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
+        ...(cleanAssetAlias(a.displayName)?{displayName:cleanAssetAlias(a.displayName)}:{}),
         source:{type:'comfy-input',path:a.source.path}}))};
   }
   function destroyGlobalPromptEditor(){
@@ -1416,7 +1438,8 @@
     globalModal={updateBusy};
     globalPromptEditor=new window.TDH3Editor({
       visual:$('#globalPromptVisual'),textarea:$('#globalPromptText'),menuRoot:d,
-      getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,
+      getAssets:()=>poolEntries().map(a=>({id:a.id,name:assetDisplayName(a),fileName:a.name,
+        displayName:a.displayName||'',kind:a.kind==='image'?'picture':a.kind,
         raw:'<'+a.token+'>',preview:a.kind==='image'?a.src:''})),
       getAssetAvailability:(asset,options)=>globalAssetAvailability(asset,{
         ...options,value:options?.value??currentField().text
