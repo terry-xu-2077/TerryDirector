@@ -84,8 +84,9 @@ test("visual paused cards never add frames or shift video end position",()=>{
   assert.equal(preview.totalFrames,684);
   assert.equal(preview.entries.length,11);
   assert.equal(preview.suspendedCount,8);
-  // Original authored 12-second segments retain 288-frame visual widths.
-  assert.equal(preview.visualFrames,684+8*288);
+  // The full source timeline spans 2964 frames; individual suspended
+  // segments have different authored lengths (10, 12 and 15 seconds).
+  assert.equal(preview.visualFrames,eleven.at(-1).end);
   for(const entry of preview.entries){
     const sourceFrames = entry.clip.end-entry.clip.start;
     assert.equal(entry.visualEnd-entry.visualStart,sourceFrames,
