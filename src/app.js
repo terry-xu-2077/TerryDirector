@@ -167,7 +167,7 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.01" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><div class="clip-seed-control" title="留空时跟随 TerryDirector 节点 Seed；填写后仅当前片段使用此 Seed"><span>Seed</span><input id="clipSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 Seed" placeholder="跟随"><button id="clipSeedRandom" type="button" title="随机当前片段 Seed" aria-label="随机当前片段 Seed">${icon('dice')}</button></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.1" inputmode="decimal" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><div class="clip-seed-control" title="留空时跟随 TerryDirector 节点 Seed；填写后仅当前片段使用此 Seed"><span>Seed</span><input id="clipSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 Seed" placeholder="跟随"><button id="clipSeedRandom" type="button" title="随机当前片段 Seed" aria-label="随机当前片段 Seed">${icon('dice')}</button></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
         <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><div class="clip-ai-seed-control" title="留空时跟随 TerryDirector Llama 的全局 AI Seed；填写后仅当前片段 AI 增强使用此 Seed"><span>AI Seed</span><input id="clipAiSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 AI Seed" placeholder="跟随"><button id="clipAiSeedRandom" type="button" title="随机当前片段 AI Seed" aria-label="随机当前片段 AI Seed">${icon('dice')}</button></div><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
@@ -310,7 +310,11 @@
     number.disabled=!enabled;range.disabled=!enabled;
     if(!c){number.value='';if(control)control.title='';return;}
     const frames=c.end-c.start,seconds=frames/C.FPS,aligned=C.h3AlignedFrames(frames);
-    number.value=Number(seconds.toFixed(2));
+    // Input and spinner events update the frame model while the field keeps
+    // the user's raw decimal text. Rewriting it here breaks typing "10.5"
+    // and makes a small spinner step appear to have no effect at 24 FPS.
+    if(!enabled||!durationEditBefore||document.activeElement!==number)
+      number.value=Number(seconds.toFixed(2));
     range.max='15';
     range.value=String(Math.min(15,seconds));
     const hint=aligned===frames
@@ -1507,8 +1511,16 @@
   durationRange.addEventListener('input',e=>{beginDurationEdit();previewDuration(e.target.valueAsNumber);});
   for(const event of ['pointerup','pointercancel','lostpointercapture','change'])durationRange.addEventListener(event,finishDurationEdit);
   durationNumber.addEventListener('focus',beginDurationEdit);
-  durationNumber.addEventListener('input',e=>{beginDurationEdit();if(e.target.validity.valid)previewDuration(e.target.valueAsNumber);});
-  durationNumber.addEventListener('change',finishDurationEdit);
+  durationNumber.addEventListener('input',e=>{
+    beginDurationEdit();
+    const seconds=e.target.valueAsNumber;
+    // Arbitrary decimal values are legal: the 0.1s spinner step must not
+    // reject typed values such as 10.25s. Invalid partial text is left alone.
+    if(!e.target.validity.badInput&&Number.isFinite(seconds)&&seconds>=1)
+      previewDuration(seconds);
+  });
+  // Native spin buttons may emit "change" while still focused. Commit only
+  // on blur/Enter so we don't round away the next step or decimal digit.
   durationNumber.addEventListener('blur',finishDurationEdit);
   durationNumber.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();finishDurationEdit();e.target.blur();}});
   const clipSeedInput=$('#clipSeedInput'),clipSeedRandom=$('#clipSeedRandom');

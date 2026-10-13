@@ -781,7 +781,8 @@ body.td-embedded .top-timeline-duration {
 }
 
 .clip-duration-control > input[type="number"] {
-  width: 52px;
+  width: 66px;
+  min-width: 56px;
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--td-border);
