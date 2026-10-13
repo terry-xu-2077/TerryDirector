@@ -1,6 +1,6 @@
 /* Run: node --test tests/test_suspended_timeline.mjs
- * Suspended clips disappear from preview, timings and effective indices, but
- * remain untouched in the editable source document for later restoration. */
+ * Suspended clips stay visible as untimed grey chips, but disappear from
+ * GENERATED duration/indices/active track. Source clips remain unchanged. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -90,6 +90,7 @@ test("all suspended clips give zero frames and no active clip", () => {
 });
 
 function createNodeRenderer() {
+  const opens = [];
   const start = webSource.indexOf("function miniRulerHtml(totalFrames) {");
   const end = webSource.indexOf("function resolveVirtualOutputSource(", start);
   assert.ok(start >= 0 && end > start);
@@ -102,6 +103,7 @@ function createNodeRenderer() {
     ADVANCED_NODE_CLASS: "TerryDirectorAdvanced", LOOP_NODE_CLASS: "TerryDirectorLooper",
     readConfig: node => ({ document: node.doc }),
     ensureActivity: () => ({}),
+    openEditor: (...args) => opens.push(args),
     timelineTitleHtml: () => "<span>时间线</span>",
     timeText: frames => (frames / 24) + "s",
     escapeHtml: value => String(value).replaceAll("<", "&lt;"),
@@ -112,7 +114,7 @@ function createNodeRenderer() {
   vm.runInNewContext(
     webSource.slice(first, last) + "\n" +
     webSource.slice(start, end) +
-    "\nthis.__renderer = {renderNode, timelineHtml, authoredAssetIds};",
+    "\nthis.__renderer = {renderNode, timelineHtml, authoredAssetIds, suspendedClipsHtml, opens};",
     context
   );
   return context.__renderer;
@@ -127,9 +129,14 @@ test("Looper node stats and cards reflect only 3 active clips", () => {
   assert.match(root.innerHTML, /总时长：<b>28\.5<\/b>s/);
   assert.match(root.innerHTML, /片段数：<b>3<\/b>/);
   assert.equal((root.innerHTML.match(/<div class="td-mini-clip(?:\s|")/g) || []).length, 3);
-  assert.doesNotMatch(root.innerHTML, /镜头 11/);
-  assert.match(root.innerHTML, /片段 3/);
-  assert.doesNotMatch(root.innerHTML, /片段 11/);
+  assert.equal((root.innerHTML.match(/class="td-mini-suspended-chip"/g) || []).length, 8);
+  assert.match(root.innerHTML, /⏸ 挂起 <b>8<\/b>/);
+  assert.match(root.innerHTML, /原片段 4/);
+  assert.match(root.innerHTML, /原片段 11/);
+  assert.match(root.innerHTML, /镜头 11/);
+  // Suspended originals must not be included in the playable clip region.
+  const timed = root.innerHTML.split('class="td-mini-suspended-strip"')[0];
+  assert.doesNotMatch(timed, /镜头 11/);
 });
 
 test("base node and LoopStart share the same effective preview", () => {
@@ -146,6 +153,8 @@ test("base node and LoopStart share the same effective preview", () => {
     (html[0].match(/<div class="td-mini-clip(?:\s|")/g) || []).length,
     (html[1].match(/<div class="td-mini-clip(?:\s|")/g) || []).length
   );
+  assert.equal((html[0].match(/class="td-mini-suspended-chip"/g) || []).length, 8);
+  assert.equal((html[1].match(/class="td-mini-suspended-chip"/g) || []).length, 8);
 });
 
 test("assets referenced solely by suspended clips are not counted as in use", () => {
@@ -166,12 +175,22 @@ test("assets referenced solely by suspended clips are not counted as in use", ()
   assert.deepEqual([...authoredAssetIds(doc)].sort(), ["a","c"]);
 });
 
-test("when every clip is suspended the mini-preview offers recovery", () => {
-  const html = createNodeRenderer().timelineHtml({
-    clips:[clip("a", 0, 240, true),clip("b", 240, 480, true)]
-  });
+test("when every clip is suspended, generated track says empty but suspended strip retains both", () => {
+  const render = createNodeRenderer();
+  const documentData = {
+    clips:[clip("a", 0, 240, true),clip("b", 240, 480, true)],
+    assets:[]
+  };
+  const html = render.timelineHtml(documentData);
   assert.match(html,/所有片段均已挂起/);
   assert.doesNotMatch(html, /td-mini-clip-meta/);
+  const strip = render.suspendedClipsHtml(documentData);
+  assert.equal((strip.match(/class="td-mini-suspended-chip"/g)||[]).length, 2);
+  const root = { innerHTML: "", querySelectorAll: () => [] };
+  render.renderNode({comfyClass: "TerryDirectorLooper", __tdRoot: root, doc: documentData});
+  assert.match(root.innerHTML, /总时长：<b>0<\/b>s/);
+  assert.match(root.innerHTML, /片段数：<b>0<\/b>/);
+  assert.match(root.innerHTML, /挂起 <b>2<\/b>/);
 });
 
 test("editor total uses actual generated duration without hiding editable clips", () => {
@@ -189,9 +208,62 @@ test("editor total uses actual generated duration without hiding editable clips"
   assert.match(output.title, /挂起片段不计时/);
 });
 
-test("Advanced uses effective geometry rather than raw authored clip heads", () => {
+test("Advanced keeps the effective ruler AND separately displays paused chips", () => {
   const section = webSource.slice(webSource.indexOf("function renderAdvancedNode(node) {"));
   assert.match(section, /const clips = effectiveClipLayout\(doc\.clips\)/);
   assert.match(section, /const totalFrames = clips\.at\(-1\)\?\.end \|\| 0/);
   assert.match(section, /state\.time = Math\.max\(0, Math\.min\(totalSeconds,/);
+  assert.match(section, /\$\{suspendedClipsHtml\(doc\)\}/);
+  assert.match(section, /bindSuspendedClipButtons\(node, root\)/);
+});
+
+test("pause chips retain authoring order across an interior suspension", () => {
+  const doc = {clips:[
+    clip("A",0,120), clip("S",120,180,true), clip("B",180,360),
+    clip("T",360,480,true), clip("C",480,600)
+  ]};
+  const { timelineHtml, suspendedClipsHtml } = createNodeRenderer();
+  const rendered = timelineHtml(doc);
+  assert.equal((rendered.match(/<div class="td-mini-clip(?:\s|")/g)||[]).length, 3);
+  assert.doesNotMatch(rendered, /镜头 S/);
+  const paused = suspendedClipsHtml(doc);
+  assert.match(paused, /原片段 2/);
+  assert.match(paused, /原片段 4/);
+  assert.ok(paused.indexOf("原片段 2") < paused.indexOf("原片段 4"));
+});
+
+test("paused chip click opens editor focused on the original clip", () => {
+  const render = createNodeRenderer();
+  const handlers = new Map();
+  const fakeChip = {
+    dataset: {suspendedClip: "4"},
+    addEventListener(event, callback) { handlers.set(event,callback); }
+  };
+  const root = {innerHTML:"", querySelectorAll(selector) {
+    return selector === "[data-suspended-clip]" ? [fakeChip] : [];
+  }};
+  const node = {comfyClass: "TerryDirectorLooper",__tdRoot: root,doc:{clips:eleven,assets:[]}};
+  render.renderNode(node);
+  let prevented = false, stopped = false;
+  handlers.get("click")({
+    preventDefault(){prevented=true;},
+    stopPropagation(){stopped=true;}
+  });
+  assert.equal(render.opens.length,1);
+  assert.equal(render.opens[0][0],node);
+  assert.equal(render.opens[0][2],"4");
+  assert.ok(prevented&&stopped);
+  assert.match(webSource,/documentData\.selected = selectedClipId/);
+});
+
+test("paused chip markup escapes filenames and remains horizontally scrollable", async () => {
+  const { suspendedClipsHtml } = createNodeRenderer();
+  const doc = {clips:[{...clip("bad",0,100,true),name:'<script>alert("x")</script>'}]};
+  const html = suspendedClipsHtml(doc);
+  assert.doesNotMatch(html,/<script>/);
+  assert.match(html,/&lt;script&gt;/);
+  const css = await fs.readFile(path.join(root,"web/terry_director.css"),"utf8");
+  assert.match(css,/\.td-mini-suspended-list\s*\{/);
+  assert.match(css,/overflow-x:\s*auto/);
+  assert.match(css,/\.td-mini-suspended-chip/);
 });
