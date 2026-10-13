@@ -13,12 +13,47 @@ import os
 import re
 import threading
 import time
+import platform
+import sys
+import statistics
 
 GIB = 1024 ** 3
-FIELDS = ("gpu_used", "torch_allocated", "torch_reserved", "ram_used", "process_rss")
+FIELDS = ("gpu_used", "torch_allocated", "torch_reserved", "ram_used", "process_rss",
+          "swap_used", "gpu_util", "gpu_power", "proc_cpu_percent")
 ACTIVE = {}
 ACTIVE_LOCK = threading.RLock()
 ITERATION = re.compile(r"(?:^|\.)(\d+)_([^.]+)$")
+_NVML = None
+_NVML_HANDLE = None
+_NVML_TRIED = False
+
+
+def _nvml_stats():
+    """Optional NVML GPU utilization/power; initialization happens once."""
+    global _NVML, _NVML_HANDLE, _NVML_TRIED
+    if not _NVML_TRIED:
+        _NVML_TRIED = True
+        try:
+            import pynvml
+            pynvml.nvmlInit()
+            _NVML = pynvml
+            _NVML_HANDLE = pynvml.nvmlDeviceGetHandleByIndex(0)
+        except Exception:
+            _NVML = None
+            _NVML_HANDLE = None
+    if _NVML is None or _NVML_HANDLE is None:
+        return {}
+    try:
+        util = _NVML.nvmlDeviceGetUtilizationRates(_NVML_HANDLE)
+        result = {"gpu_util": float(util.gpu)}
+        try:
+            result["gpu_power"] = _NVML.nvmlDeviceGetPowerUsage(_NVML_HANDLE) / 1000.0
+        except Exception:
+            pass
+        return result
+    except Exception:
+        return {}
+
 
 
 def resource_snapshot():
@@ -29,7 +64,22 @@ def resource_snapshot():
         ram = psutil.virtual_memory()
         result["ram_used"] = (ram.total - ram.available) / GIB
         result["ram_total"] = ram.total / GIB
-        result["process_rss"] = psutil.Process(os.getpid()).memory_info().rss / GIB
+        proc = psutil.Process(os.getpid())
+        result["process_rss"] = proc.memory_info().rss / GIB
+        cpu = proc.cpu_times()
+        result["proc_cpu_seconds"] = cpu.user + cpu.system
+        try:
+            swap = psutil.swap_memory()
+            result["swap_used"] = swap.used / GIB
+            result["swap_total"] = swap.total / GIB
+        except Exception:
+            pass
+        try:
+            io = proc.io_counters()
+            result["io_read_bytes"] = io.read_bytes
+            result["io_write_bytes"] = io.write_bytes
+        except Exception:
+            pass
     except Exception:
         pass
     try:
@@ -43,6 +93,7 @@ def resource_snapshot():
             result["gpu_name"] = torch.cuda.get_device_name()
     except Exception:
         pass
+    result.update(_nvml_stats())
     return result
 
 
@@ -70,7 +121,7 @@ def cell(text):
 
 
 class RunReport:
-    def __init__(self, loop_id, items, clock=None, sample_interval=2.0):
+    def __init__(self, loop_id, items, clock=None, sample_interval=2.0, pipeline=None):
         if not items:
             raise ValueError("没有可采集的循环片段")
         self.loop_id = str(loop_id)
@@ -89,37 +140,90 @@ class RunReport:
         self.lock = threading.RLock()
         self.global_peak = {}
         self.samples = 0
+        self.sample_history = []
+        self.events = []
+        self.last_resource = None
+        self.last_resource_time = None
+        self.start_io = {}
+        self.last_saved = 0.0
+        self.pipeline = pipeline or []
+        self.source_log = {"status": "未检索日志", "files": [], "by_clip": []}
+        self.environment = {
+            "python": sys.version.split()[0],
+            "platform": platform.platform(),
+            "cores": os.cpu_count(),
+        }
+        try:
+            import torch
+            self.environment["pytorch"] = str(torch.__version__)
+            self.environment["cuda"] = str(getattr(torch.version, "cuda", "未知"))
+        except Exception:
+            pass
         self.clips = [
             {
                 "id": str(item["id"]),
                 "name": str(item.get("name") or ("片段 " + str(i + 1))),
                 "frames": int(item.get("output_frames") or 0),
+                "h3_frames": int(item.get("h3_frames") or 0),
+                "seed": str(item.get("_loop", {}).get("seed", "")),
+                "continuity": item.get("continuity", {}).get("kind", "未知"),
+                "transition": item.get("transition_mode", ""),
+                "gap_frames": int(item.get("assembly", {}).get("gap_before_frames") or 0),
+                "trim_frames": int(item.get("assembly", {}).get("trim_head_frames") or 0),
                 "start": None,
                 "end": None,
+                "wall_start": None,
+                "wall_end": None,
                 "status": "未开始",
                 "peak": {},
                 "samplers": {},
                 "node_stages": {},
+                "cache": {},
             }
             for i, item in enumerate(items)
         ]
 
     def sample(self):
         snapshot = resource_snapshot()
+        now = self.clock()
         with self.lock:
             self.samples += 1
             if snapshot.get("gpu_name"):
                 self.gpu_name = str(snapshot["gpu_name"])
+            if self.last_resource is not None and self.last_resource_time is not None:
+                span = now - self.last_resource_time
+                prev = self.last_resource.get("proc_cpu_seconds")
+                current = snapshot.get("proc_cpu_seconds")
+                if span > 0 and prev is not None and current is not None:
+                    # CPU usage may exceed 100% on multi-core workloads.
+                    snapshot["proc_cpu_percent"] = max(0.0, (current - prev) / span * 100)
+            self.last_resource = snapshot
+            self.last_resource_time = now
+            if not self.start_io:
+                self.start_io = {key: snapshot[key] for key in ("io_read_bytes", "io_write_bytes")
+                                 if key in snapshot}
+            active = [i for i, c in enumerate(self.clips)
+                      if c["start"] is not None and c["end"] is None]
+            current_clip = active[-1] if active else None
+            # Keep real chronological snapshots so stalls and memory trends
+            # remain observable in the machine-readable companion JSON.
+            sample = {"elapsed_s": round(now - self.started, 3),
+                      "clip_index": current_clip}
+            for key, value in snapshot.items():
+                if isinstance(value, (int, float)) and math.isfinite(value):
+                    sample[key] = round(float(value), 4)
+            self.sample_history.append(sample)
+            if len(self.sample_history) > 30000:
+                self.sample_history.pop(0)
             for name, value in snapshot.items():
-                if name not in FIELDS and name not in ("gpu_total", "ram_total"):
+                if name not in FIELDS and name not in ("gpu_total", "ram_total", "swap_total"):
                     continue
                 if not isinstance(value, (int, float)) or not math.isfinite(value):
                     continue
                 self.global_peak[name] = max(self.global_peak.get(name, value), value)
-                for clip in self.clips:
-                    if clip["start"] is not None and clip["end"] is None:
-                        peak = clip["peak"]
-                        peak[name] = max(peak.get(name, value), value)
+                if current_clip is not None:
+                    peak = self.clips[current_clip]["peak"]
+                    peak[name] = max(peak.get(name, value), value)
 
     def start_monitor(self):
         self.sample()
@@ -130,7 +234,14 @@ class RunReport:
 
     def _monitor(self):
         while not self.stop_event.wait(self.sample_interval):
-            self.sample()
+            try:
+                self.sample()
+                now = self.clock()
+                if now - self.last_saved >= 90:
+                    self.last_saved = now
+                    _save(self)  # Periodic crash-resistant Markdown + JSON checkpoint.
+            except Exception as exc:
+                print("[TerryDirector Loop][Report] 后台采集或检查点失败：" + str(exc), flush=True)
 
     def clip_event(self, index, action):
         if not 0 <= index < len(self.clips):
@@ -141,12 +252,21 @@ class RunReport:
             clip = self.clips[index]
             if action == "start" and clip["start"] is None:
                 clip["start"] = self.clock()
+                clip["wall_start"] = time.time()
                 clip["status"] = "进行中"
             elif action == "end" and clip["start"] is not None and clip["end"] is None:
                 clip["end"] = self.clock()
+                clip["wall_end"] = time.time()
                 clip["status"] = "已完成"
+            self.events.append({"at": round(self.clock() - self.started, 3),
+                                "clip_index": index, "kind": action})
         if action == "start":
             self.sample()
+        elif action == "end":
+            try:
+                _save(self)  # Preserve each completed segment even on crash/abort.
+            except Exception as exc:
+                print("[TerryDirector Loop][Report] 片段检查点失败：" + str(exc), flush=True)
 
     def stage_event(self, index, node_id, node_type, action):
         if not 0 <= index < len(self.clips) or is_sampler(node_type):
@@ -163,6 +283,9 @@ class RunReport:
             elif action == "end":
                 if node is not None and node["end"] is None:
                     node["end"] = now
+            self.events.append({"at": round(now - self.started, 3),
+                                "clip_index": index, "kind": action,
+                                "source": str(node_id), "type": str(node_type)})
 
     def sampler_event(self, index, node_id, node_type, action, value=None, maximum=None):
         if not 0 <= index < len(self.clips) or not is_sampler(node_type):
@@ -174,9 +297,13 @@ class RunReport:
                 "type": str(node_type), "start": now, "end": None,
                 "steps": 0, "step_seconds": 0.0, "intervals": [],
                 "last_value": 0.0, "last_max": None, "last_time": now,
+                "progress_timeline": [],
             })
             if action == "end":
                 item["end"] = now
+                self.events.append({"at": round(now - self.started, 3),
+                                    "clip_index": index, "kind": "sampler_end",
+                                    "source": str(node_id)})
                 return
             if action != "progress":
                 return
@@ -188,6 +315,11 @@ class RunReport:
             if not math.isfinite(progress) or not math.isfinite(total) or total <= 0:
                 return
             progress = max(0.0, min(progress, total))
+            if len(item["progress_timeline"]) < 4096:
+                item["progress_timeline"].append({
+                    "elapsed_s": round(now - self.started, 3),
+                    "step": progress, "total_steps": total,
+                })
             if item["last_max"] is not None and (
                 total != item["last_max"] or progress < item["last_value"]
             ):
@@ -218,6 +350,41 @@ class RunReport:
         if self.thread is not None and threading.current_thread() is not self.thread:
             self.thread.join(timeout=0.5)
         self.sample()
+
+    def add_cache_result(self, index, *, elapsed=None, size_mb=None, frames=None):
+        if not 0 <= index < len(self.clips):
+            return
+        with self.lock:
+            clip = self.clips[index]
+            clip["cache"] = {
+                "time_s": None if elapsed is None else float(elapsed),
+                "size_mb": None if size_mb is None else float(size_mb),
+                "frames": None if frames is None else int(frames),
+            }
+
+    def raw(self):
+        """Fully machine-readable diagnostic trace; never include prompt content."""
+        with self.lock:
+            payload = {
+                "format": "terrydirector-loop-diagnostics",
+                "version": 2,
+                "loop_id": self.loop_id,
+                "run_signature": self.signature,
+                "status": self.status,
+                "started_wall_unix": self.started_wall,
+                "ended_wall_unix": self.ended_wall,
+                "duration_seconds": (self.ended or self.clock()) - self.started,
+                "sample_interval_seconds": self.sample_interval,
+                "gpu_name": self.gpu_name,
+                "environment": self.environment,
+                "pipeline": self.pipeline,
+                "global_peak": self.global_peak,
+                "samples": self.sample_history,
+                "events": self.events,
+                "clips": self.clips,
+                "source_log": self.source_log,
+            }
+            return json.loads(json.dumps(payload, ensure_ascii=False, allow_nan=False))
 
     def markdown(self, file_path=""):
         with self.lock:
