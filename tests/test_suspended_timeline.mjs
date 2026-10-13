@@ -84,7 +84,13 @@ test("visual paused cards never add frames or shift video end position",()=>{
   assert.equal(preview.totalFrames,684);
   assert.equal(preview.entries.length,11);
   assert.equal(preview.suspendedCount,8);
-  assert.equal(preview.visualFrames,684+8*preview.pausedWidth);
+  // Original authored 12-second segments retain 288-frame visual widths.
+  assert.equal(preview.visualFrames,684+8*288);
+  for(const entry of preview.entries){
+    const sourceFrames = entry.clip.end-entry.clip.start;
+    assert.equal(entry.visualEnd-entry.visualStart,sourceFrames,
+      "each paused clip must keep its original proportional length");
+  }
   assert.equal(preview.entries[2].visualEnd,684);
   assert.equal(preview.entries[3].visualStart,684);
   assert.equal(preview.realToVisual(684),684);
@@ -93,6 +99,19 @@ test("visual paused cards never add frames or shift video end position",()=>{
     assert.equal(preview.visualToReal(preview.realToVisual(frame)),frame);
 });
 
+test("10s and 15s suspended segments retain the original 2:3 width ratio",()=>{
+  const data=[clip("A",0,240),clip("10s",240,480,true),
+    clip("15s",480,840,true),clip("B",840,1080)];
+  const preview=previewClipLayout(data);
+  assert.equal(preview.totalFrames,480);
+  assert.equal(preview.visualFrames,1080);
+  assert.equal(preview.entries[1].visualEnd-preview.entries[1].visualStart,240);
+  assert.equal(preview.entries[2].visualEnd-preview.entries[2].visualStart,360);
+  const ratio=(preview.entries[2].visualEnd-preview.entries[2].visualStart)/
+    (preview.entries[1].visualEnd-preview.entries[1].visualStart);
+  assert.equal(ratio,1.5);
+  assert.equal(preview.visualToReal(preview.visualFrames),480);
+});
 test("suspended cards between active clips are contiguous display-only slots",()=>{
   const document=[
     clip("A",0,120),clip("S",120,180,true),clip("B",180,360),
@@ -155,6 +174,11 @@ test("LoopStart uses old single-row muted clip cards, correct 28.5s / 3",()=>{
   assert.match(html,/片段数：<b>3<\/b>/);
   assert.equal((html.match(/<div class="td-mini-clip(?:\s|")/g)||[]).length,11);
   assert.equal((html.match(/class="td-mini-clip is-suspended"/g)||[]).length,8);
+  assert.match(html,/td-mini-ruler-tick/);
+  // First three segments occupy their original fraction of the 123.5s ruler.
+  const first = html.match(/class="td-mini-clip" style="left:0%;width:([\d.]+)%/);
+  assert.ok(first, "Original timeline card style must be restored");
+  assert.ok(Math.abs(Number(first[1])-(156/2964*100))<0.001);
   assert.match(html,/片段 11/);
   assert.match(html,/镜头 11/);
   assert.doesNotMatch(html,/td-mini-suspended-strip/);
