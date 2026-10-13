@@ -201,6 +201,44 @@
     });
     return rank;
   }
+  // Treat the selected clips as one block anchored to the exact drop frame.
+  // Clip metadata (including transitionMode), group gaps and overlaps survive.
+  function reorderClipGroupAtFrame(clips, ids, frame) {
+    if(!Number.isFinite(frame))return clips;
+    const chosen=new Set(ids),selected=clips.filter(c=>chosen.has(c.id));
+    if(!selected.length)return clips;
+    const anchor=Math.max(0,Math.round(frame));
+    if(selected.length===1){
+      const id=selected[0].id;
+      return reorderClipsAtFrame(clips,id,reorderIndex(clips,id,anchor),anchor);
+    }
+    const origin=selected[0].start;
+    if(origin===anchor)return clips;
+    const delta=anchor-origin;
+    const moving=selected.map(c=>({...c,start:c.start+delta,end:c.end+delta}));
+    const end=moving[moving.length-1].end;
+    const others=clips.filter(c=>!chosen.has(c.id));
+    const proposed=others.filter(c=>c.start<anchor).length;
+    // When a prefix cannot fit left of frame zero, place it after the
+    // dragged block rather than moving the block away from the cursor.
+    for(let rank=proposed;rank>=0;rank--){
+      const prefix=others.slice(0,rank),suffix=others.slice(rank);
+      const left=prefix.length?Math.min(0,anchor-prefix[prefix.length-1].end):0;
+      if(prefix.length&&prefix[0].start+left<0)continue;
+      const right=suffix.length?Math.max(0,end-suffix[0].start):0;
+      return [
+        ...prefix.map(c=>({...c,start:c.start+left,end:c.end+left})),
+        ...moving,
+        ...suffix.map(c=>({...c,start:c.start+right,end:c.end+right}))
+      ];
+    }
+    return clips;
+  }
+  function clipsIntersectingRange(clips,frameA,frameB){
+    if(!Number.isFinite(frameA)||!Number.isFinite(frameB)||frameA===frameB)return [];
+    const first=Math.min(frameA,frameB),last=Math.max(frameA,frameB);
+    return clips.filter(c=>c.start<last&&c.end>first).map(c=>c.id);
+  }
   function bounds(clips, id, mode) {
     const i = clips.findIndex(c => c.id === id), c = clips[i];
     if (!c) return { min: 0, max: 0 };
@@ -291,7 +329,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, insertClipAtFrame, reorderClips, reorderClipsAtFrame, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, insertClipAtFrame, reorderClips, reorderClipsAtFrame, reorderClipGroupAtFrame, clipsIntersectingRange, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);
