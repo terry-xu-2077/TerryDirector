@@ -420,6 +420,11 @@ class RunReport:
                 flags.append(f"片段 {i + 1} Self-Lift Latent 升采样耗费 {phase['upscale']:.1f}s，明显偏长，可优先查显存交换。")
             if phase.get("high_total", 0) >= 300:
                 flags.append(f"片段 {i + 1} Self-Lift 高清阶段耗费 {phase['high_total']:.1f}s。")
+            large = [e.get("staged_mb", 0) for e in events
+                     if e.get("kind") == "model_staged" and e.get("model") == "MiniMaxH3"]
+            available = self.global_peak.get("gpu_total")
+            if large and available and max(large) / 1024 > available * 1.6:
+                flags.append(f"片段 {i + 1} H3 动态加载 Staged 约 {max(large)/1024:.1f} GiB，而 GPU 总显存 {available:.1f} GiB；请重点观察权重交换造成的延迟。")
         missing = [i + 1 for i, c in enumerate(self.clips)
                    if c["end"] is not None and not any(s["steps"] for s in c["samplers"].values())]
         if missing:
@@ -615,6 +620,40 @@ class RunReport:
                     ", ".join(f"{step:.1f}" for step in high) or "未采集",
                 ]
                 lines.append("| " + " | ".join(values) + " |")
+            lines.extend(["", "## 各段模型加载、RAM 清理与无损缓存线索（日志来源）", "",
+                          "| # | H3 动态加载请求 | H3 Staged 最大 | TE 加载请求 | RAM 清理次数 | Torch 编译 graph breaks 最大 |",
+                          "| ---: | ---: | ---: | ---: | ---: | ---: |"])
+            for i in range(len(self.clips)):
+                events = logs_by_clip[i] if i < len(logs_by_clip) else []
+                main_loads = sum(e.get("model") == "MiniMaxH3" and
+                                 e.get("kind") == "model_load" for e in events)
+                te_loads = sum(e.get("model") == "MiniMaxH3TEModel_" and
+                               e.get("kind") == "model_load" for e in events)
+                staged = [e["staged_mb"] for e in events
+                          if e.get("kind") == "model_staged" and
+                          e.get("model") == "MiniMaxH3"]
+                breaks = [e["breaks"] for e in events if e.get("kind") == "compiler_breaks"]
+                cleanups = [e for e in events if e.get("kind") == "ram_cleanup"]
+                lines.append("| " + " | ".join([
+                    str(i + 1), str(main_loads), number(max(staged) / 1024, "GiB") if staged else "未采集",
+                    str(te_loads), str(len(cleanups)),
+                    str(max(breaks)) if breaks else "未采集",
+                ]) + " |")
+            lines.append("")
+            lines.append("Staged 是日志宣告的动态权重暂存规模，**不是** GPU 当前驻留量。重复 Requested to load 也不必然代表完整磁盘重新加载，需结合 GPU 利用率、页面文件与步速判断。")
+            if len(snapshots) >= 2:
+                first, last = snapshots[0], snapshots[-1]
+                for source_key, label in (("io_read_bytes", "进程磁盘读入"),
+                                          ("io_write_bytes", "进程磁盘写出")):
+                    a, b = first.get(source_key), last.get(source_key)
+                    if a is not None and b is not None and b >= a:
+                        lines.append("- " + label + "（采样计数器增量）：" +
+                                     number((b - a) / (1024 ** 3), "GiB"))
+            cache_total = sum(c["cache"].get("size_mb", 0) or 0 for c in self.clips)
+            if cache_total:
+                lines.append("- 逐段无损缓存累计大小（各段写入量之和）：" +
+                             number(cache_total / 1024, "GiB"))
+
             lines.extend(["", "此表仅取匹配本次运行时间与片段时间的 SelfLiftAvatar 日志行，不是推断值；缺少原生日志时不填充。", "",
                           "## 自动诊断线索（仅提示排查，不代表根因结论）", ""])
             warnings = self._alerts()
