@@ -244,7 +244,7 @@ class LoopReportTests(unittest.TestCase):
         content = self.run.markdown()
         self.assertIn("770.75 s", content)
         self.assertIn("398.50 s", content)
-        self.assertIn("31.95", content)
+        self.assertIn("32.00 s/步", content)
         self.assertIn("Latent 升采样耗费", content)
 
 
