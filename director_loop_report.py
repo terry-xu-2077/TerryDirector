@@ -449,16 +449,21 @@ class RunReport:
                 lines.append("- 原始诊断 JSON：" + str(Path(file_path).with_suffix(".json")))
             lines.extend(["", "## 系统资源峰值", "", "| 指标 | 采集峰值 |", "| --- | ---: |"])
             fields = (
-                ("gpu_used", "GPU 总占用（含其他进程）"),
-                ("gpu_total", "GPU 总显存"),
-                ("torch_allocated", "PyTorch 已分配显存"),
-                ("torch_reserved", "PyTorch 已保留显存"),
-                ("ram_used", "系统 RAM 已用"),
-                ("ram_total", "系统 RAM 总量"),
-                ("process_rss", "ComfyUI 进程 RSS"),
+                ("gpu_used", "GPU 总占用（含其他进程）", "GiB"),
+                ("gpu_total", "GPU 总显存", "GiB"),
+                ("torch_allocated", "PyTorch 已分配显存", "GiB"),
+                ("torch_reserved", "PyTorch 已保留显存", "GiB"),
+                ("gpu_util", "GPU 使用率（需要 NVML）", "%"),
+                ("gpu_power", "GPU 功耗（需要 NVML）", "W"),
+                ("ram_used", "系统 RAM 已用", "GiB"),
+                ("ram_total", "系统 RAM 总量", "GiB"),
+                ("swap_used", "页面文件/交换内存已用", "GiB"),
+                ("swap_total", "页面文件/交换内存总量", "GiB"),
+                ("process_rss", "ComfyUI 进程 RSS", "GiB"),
+                ("proc_cpu_percent", "ComfyUI 进程 CPU 使用率（多核可大于100%）", "%"),
             )
-            for key, label in fields:
-                lines.append("| " + label + " | " + number(self.global_peak.get(key), "GiB") + " |")
+            for key, label, unit in fields:
+                lines.append("| " + label + " | " + number(self.global_peak.get(key), unit) + " |")
             lines.extend([
                 "", "## 逐片段汇总", "",
                 "| 序号 | 片段 | 视频时长 | 整段耗时 | 采样器耗时 | 实测进度步数 | 实测 s/步 | GPU 占用峰值 | RAM 峰值 | 进程 RSS 峰值 |",
@@ -490,7 +495,28 @@ class RunReport:
                     number(clip["peak"].get("process_rss"), "GiB"),
                 ]
                 lines.append("| " + " | ".join(values) + " |")
-            lines.extend(["", "## 各段采样器、逐步速度与节点耗时", ""])
+            lines.extend(["", "## 节点阶段耗时对照（来源：ComfyUI 原生执行事件）", "",
+                          "| # | 采样器 | VAE 解码 | 每段 VHS 编码 | RAM 清理 | 无损缓存写入 |",
+                          "| ---: | ---: | ---: | ---: | ---: | ---: |"])
+            for i, clip in enumerate(self.clips):
+                stages = list(clip["node_stages"].values())
+                def stage_seconds(predicate):
+                    values = [x["end"] - x["start"] for x in stages
+                              if x["end"] is not None and predicate(x["type"].lower())]
+                    return number(sum(values), "s") if values else "未采集"
+                sampler_times = [x["end"] - x["start"] for x in clip["samplers"].values()
+                                 if x["end"] is not None]
+                lines.append("| " + " | ".join([
+                    str(i + 1),
+                    number(sum(sampler_times), "s") if sampler_times else "未采集",
+                    stage_seconds(lambda name: "decode" in name or
+                                  "vae" in name and "loader" not in name),
+                    stage_seconds(lambda name: "videocombine" in name or "savevideo" in name),
+                    stage_seconds(lambda name: "cleanup" in name or "cleanmemory" in name),
+                    number(clip["cache"].get("time_s"), "s"),
+                ]) + " |")
+            lines.extend(["", "节点时间属于观察到的执行区间，存在并行或嵌套时不得直接将各列求和；没收到事件则显示「未采集」。", "",
+                          "## 各段采样器、逐步速度与节点耗时", ""])
             for i, clip in enumerate(self.clips):
                 lines.append("### " + str(i + 1) + ". " + cell(clip["name"]))
                 if not clip["samplers"]:
@@ -509,6 +535,9 @@ class RunReport:
                     if observation["intervals"]:
                         intervals = ", ".join(f"{x:.2f}" for x in observation["intervals"])
                         lines.append("  - 原生进度间隔（秒）：" + intervals)
+                        vals = observation["intervals"]
+                        lines.append("  - 每步最快/中位/最慢：" +
+                                     f"{min(vals):.2f} / {statistics.median(vals):.2f} / {max(vals):.2f} s/步")
                 stage_times = []
                 for node in clip["node_stages"].values():
                     if node["end"] is not None:
@@ -517,14 +546,91 @@ class RunReport:
                     lines.append("- 其他节点执行时间（从慢到快，最多 12 项）：")
                     for seconds, node_type in sorted(stage_times, reverse=True)[:12]:
                         lines.append("  - " + cell(node_type) + "：" + number(seconds, "s"))
+                if clip["cache"]:
+                    cache = clip["cache"]
+                    lines.append("- 无损缓存写入：" + number(cache.get("time_s"), "s") +
+                                 "；大小 " + number(cache.get("size_mb"), "MB") +
+                                 "；帧数 " + str(cache.get("frames") or "未采集"))
                 lines.append("")
+            lines.extend(["", "## 实际执行环境与循环体节点", ""])
+            for key, value in self.environment.items():
+                lines.append("- " + cell(key) + "：" + cell(value))
+            if self.pipeline:
+                lines.extend(["", "| 源节点 ID | 节点类型 | 影响性能的参数（不含提示词和素材路径） |",
+                              "| --- | --- | --- |"])
+                for item in self.pipeline[:100]:
+                    config = ", ".join(cell(k) + "=" + cell(v) for k, v in
+                                       (item.get("settings") or {}).items())
+                    lines.append("| " + cell(item.get("id")) + " | " +
+                                 cell(item.get("type")) + " | " + (config or "—") + " |")
+            else:
+                lines.append("- 未采集到循环体配置；请同时提供 ComfyUI 工作流 JSON。")
+
+            lines.extend(["", "## GPU 与内存时间序列（抽样概览）", "",
+                          "逐点资源快照保存在同名 JSON 的 samples 数组，以下仅取约 20 个时间点展示变化。", "",
+                          "| 相对耗时 | 片段 | GPU 显存 | PyTorch 分配 | RAM 已用 | 进程 RSS | GPU 利用率 | 页面文件 |",
+                          "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"])
+            snapshots = self.sample_history
+            if snapshots:
+                stride = max(1, math.ceil(len(snapshots) / 20))
+                shown = list(snapshots[::stride])
+                if shown[-1] is not snapshots[-1]:
+                    shown.append(snapshots[-1])
+                for snap in shown:
+                    active = snap.get("clip_index")
+                    values = [
+                        duration(snap["elapsed_s"]),
+                        str(active + 1) if active is not None else "准备/结束",
+                        number(snap.get("gpu_used"), "GiB"),
+                        number(snap.get("torch_allocated"), "GiB"),
+                        number(snap.get("ram_used"), "GiB"),
+                        number(snap.get("process_rss"), "GiB"),
+                        number(snap.get("gpu_util"), "%"),
+                        number(snap.get("swap_used"), "GiB"),
+                    ]
+                    lines.append("| " + " | ".join(values) + " |")
+            else:
+                lines.append("| — | — | 未采集 | 未采集 | 未采集 | 未采集 | 未采集 | 未采集 |")
+
+            lines.extend(["", "## Self-Lift 内部分阶段耗时（日志来源）", ""])
+            log = self.source_log or {}
+            lines.append("- 日志状态：" + cell(log.get("status") or "未关联"))
+            lines.append("- 日志文件：" + cell(", ".join(log.get("files") or [])))
+            lines.extend(["", "| # | 低清总耗时 | 稳定低清单步中位 | Latent 升采样 | 高清总耗时 | 低清每步（s） | 高清每步（s） |",
+                          "| ---: | ---: | ---: | ---: | ---: | --- | --- |"])
+            logs_by_clip = log.get("by_clip") or []
+            for i, clip in enumerate(self.clips):
+                events = logs_by_clip[i] if i < len(logs_by_clip) else []
+                phases = self._log_phases(events)
+                low = phases.get("low_step", [])
+                high = phases.get("high_step", [])
+                steady = statistics.median(low[1:]) if len(low) > 2 else None
+                values = [
+                    str(i + 1),
+                    number(phases.get("low_total"), "s"),
+                    number(steady, "s/步"),
+                    number(phases.get("upscale"), "s"),
+                    number(phases.get("high_total"), "s"),
+                    ", ".join(f"{step:.1f}" for step in low) or "未采集",
+                    ", ".join(f"{step:.1f}" for step in high) or "未采集",
+                ]
+                lines.append("| " + " | ".join(values) + " |")
+            lines.extend(["", "此表仅取匹配本次运行时间与片段时间的 SelfLiftAvatar 日志行，不是推断值；缺少原生日志时不填充。", "",
+                          "## 自动诊断线索（仅提示排查，不代表根因结论）", ""])
+            warnings = self._alerts()
+            lines.extend(["- " + warning for warning in warnings]
+                         if warnings else ["- 未发现明显异常，或可用数据不足以确定异常。"])
+            lines.append("")
+
             lines.extend([
                 "## 统计说明", "",
                 "- 整段耗时：循环信息节点开始至内部循环缓存完成，包含外部采样器、VAE、用户额外输出、缓存，非单纯 GPU 采样时间。",
                 "- 采样器耗时：ComfyUI 原生节点开始与结束事件测得，可能包含模型初始化、Self-Lift 多阶段与权重加载。",
                 "- 每步速度：只根据原生采样进度实际增加的步数与时间间隔计算。未上报步数则显示未采集；第一步可能包含初始化。",
                 "- GPU 总占用来自 CUDA 设备空闲量；PyTorch 显存仅包含 PyTorch 管理的当前进程内存。",
-                "- 峰值为每约 2 秒非同步快照，可能漏掉更短暂的峰值。",
+                "- 利用率和功耗仅在 NVML 可用时采集；CUDA、RAM、IO 采样不会主动 torch.cuda.synchronize()。",
+                "- 峰值为每约 2 秒的资源快照，可能漏掉更短暂的峰值。中断期间会尽量保留报告检查点。",
+                "- JSON 不保存任何片段提示词正文、图片或音频内容，仅保存性能与非敏感配置。",
                 "- 整个报告不包含循环之后由官方 SaveVideo 完成的最终编码时间。",
                 "- 片段耗时合计：" + duration(sum(completed_durations)) +
                 "；总耗时还包含首段前准备、片段衔接与结束处理。",
