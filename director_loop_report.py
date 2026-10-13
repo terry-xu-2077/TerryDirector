@@ -99,6 +99,7 @@ class RunReport:
                 "status": "未开始",
                 "peak": {},
                 "samplers": {},
+                "node_stages": {},
             }
             for i, item in enumerate(items)
         ]
@@ -134,6 +135,8 @@ class RunReport:
     def clip_event(self, index, action):
         if not 0 <= index < len(self.clips):
             return
+        if action == "end":
+            self.sample()  # Capture the final active-segment memory snapshot.
         with self.lock:
             clip = self.clips[index]
             if action == "start" and clip["start"] is None:
@@ -142,7 +145,24 @@ class RunReport:
             elif action == "end" and clip["start"] is not None and clip["end"] is None:
                 clip["end"] = self.clock()
                 clip["status"] = "已完成"
-        self.sample()
+        if action == "start":
+            self.sample()
+
+    def stage_event(self, index, node_id, node_type, action):
+        if not 0 <= index < len(self.clips) or is_sampler(node_type):
+            return
+        # All copied loop-body nodes are measured, not just H3 or a specific
+        # VAE. This allows identifying slow decoders and per-clip encoders.
+        now = self.clock()
+        with self.lock:
+            stages = self.clips[index]["node_stages"]
+            node = stages.get(str(node_id))
+            if action == "start":
+                if node is None:
+                    stages[str(node_id)] = {"type": str(node_type), "start": now, "end": None}
+            elif action == "end":
+                if node is not None and node["end"] is None:
+                    node["end"] = now
 
     def sampler_event(self, index, node_id, node_type, action, value=None, maximum=None):
         if not 0 <= index < len(self.clips) or not is_sampler(node_type):
@@ -261,7 +281,7 @@ class RunReport:
                     number(clip["peak"].get("process_rss"), "GiB"),
                 ]
                 lines.append("| " + " | ".join(values) + " |")
-            lines.extend(["", "## 各段采样器与逐步速度", ""])
+            lines.extend(["", "## 各段采样器、逐步速度与节点耗时", ""])
             for i, clip in enumerate(self.clips):
                 lines.append("### " + str(i + 1) + ". " + cell(clip["name"]))
                 if not clip["samplers"]:
@@ -280,6 +300,14 @@ class RunReport:
                     if observation["intervals"]:
                         intervals = ", ".join(f"{x:.2f}" for x in observation["intervals"])
                         lines.append("  - 原生进度间隔（秒）：" + intervals)
+                stage_times = []
+                for node in clip["node_stages"].values():
+                    if node["end"] is not None:
+                        stage_times.append((max(0.0, node["end"] - node["start"]), node["type"]))
+                if stage_times:
+                    lines.append("- 其他节点执行时间（从慢到快，最多 12 项）：")
+                    for seconds, node_type in sorted(stage_times, reverse=True)[:12]:
+                        lines.append("  - " + cell(node_type) + "：" + number(seconds, "s"))
                 lines.append("")
             lines.extend([
                 "## 统计说明", "",
@@ -359,6 +387,8 @@ def _attach_native_handler(report):
                 return
             if is_sampler(node_type):
                 report.sampler_event(index, str(node_id), node_type, kind, value, maximum)
+            elif kind in ("start", "end"):
+                report.stage_event(index, str(node_id), node_type, kind)
 
         def start_handler(self, node_id, state, prompt_id):
             self._event(node_id, "start")
