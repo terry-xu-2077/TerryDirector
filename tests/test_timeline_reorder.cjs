@@ -16,7 +16,7 @@ const clips = [
 function timeline(sortMode,input=clips){
  const events={previews:[],commits:[]},tl=Object.create(Timeline.prototype);
  Object.assign(tl,{
-  clips:C.copy(input),sortMode,sortPositions:new Map(),sortAnimStamp:0,sortAnimating:false,
+  clips:C.copy(input),sortMode,
   chainEnabled:true,snapEnabled:false,selected:'a',ppf:1,scroll:0,inset:70,ruler:32,
   width:1600,height:180,hand:false,playing:false,snapFrame:null,callouts:[],frame:0,
   host:{getBoundingClientRect(){return {left:0,top:0};}},
@@ -63,12 +63,14 @@ test('three-way sort updates indices live and permits returning to original slot
  move(tl,e,320);assert.deepEqual(tl.clips.map(c=>c.id),['a','c','b']);
  move(tl,e,624);assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
 });
-test('spring moves displaced clips but keeps actual frames integral',()=>{
+test('displaced clips render at their new slots immediately without springs',()=>{
  const {tl}=timeline(true),e=start(tl,'b');move(tl,e,0);
- const initial=tl.sortPositions.get('a').frame;
- for(let i=1;i<25;i++)tl.advanceSortAnimation(i*16.67);
- assert.ok(tl.sortPositions.get('a').frame>initial);
- assert.equal(tl.clips.find(c=>c.id==='a').start,336);tl.up(e);
+ const a=tl.clips.find(c=>c.id==='a');
+ assert.equal(a.start,336);
+ assert.equal(tl.clipX(a),tl.x(a.start));
+ assert.equal(Timeline.prototype.advanceSortAnimation,undefined);
+ assert.equal(tl.sortPositions,undefined);
+ tl.up(e);
 });
 test('no-op sort does not write history',()=>{
  const {tl,events}=timeline(true),e=start(tl,'b');tl.up(e);assert.equal(events.commits.length,0);
@@ -77,9 +79,10 @@ test('pointer cancellation restores original clips',()=>{
  const {tl,events}=timeline(true),e=start(tl,'b');move(tl,e,0);tl.cancel();
  assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);assert.equal(events.commits.length,0);
 });
-test('disabling sort cancels a gesture and clears visual spring state',()=>{
+test('disabling sort cancels the gesture without residual animation state',()=>{
  const {tl}=timeline(true),e=start(tl,'b');move(tl,e,0);tl.setSortMode(false);
- assert.equal(tl.sortMode,false);assert.equal(tl.sortPositions.size,0);
+ assert.equal(tl.sortMode,false);assert.equal(tl.drag,null);
+ assert.equal(tl.sortPositions,undefined);
  assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
 });
 test('all permutations preserve durations and compiler chronology',()=>{

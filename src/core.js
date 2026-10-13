@@ -95,6 +95,26 @@
       return a.index - b.index;
     }).map(item => item.clip);
   }
+  // Ripple-insert at the playhead without trimming or splitting authored clips.
+  // A clip crossing the playhead joins the shifted suffix. Preserve every
+  // shifted clip's duration, metadata, and existing intra-suffix seam.
+  function insertClipAtFrame(clips, clip, frame) {
+    if (!clip || !Number.isFinite(frame)) return clips;
+    const start = Math.max(0, Math.round(frame));
+    const duration = Math.max(1, Math.round(clip.end - clip.start));
+    const ordered = orderClips(clips);
+    const firstShifted = ordered.findIndex(existing => existing.end > start);
+    const inserted = { ...clip, start, end: start + duration };
+    if (firstShifted < 0) return [...ordered, inserted];
+    const suffix = ordered.slice(firstShifted);
+    // Always ripple by at least the inserted length. If the playhead is
+    // inside a clip, push that whole clip to the new clip's end.
+    const delta = Math.max(duration, inserted.end - suffix[0].start);
+    return [...ordered.slice(0, firstShifted), inserted,
+      ...suffix.map(existing => ({
+        ...existing, start: existing.start + delta, end: existing.end + delta
+      }))];
+  }
   // Drag sorting uses the original heads as insertion slots; the new order
   // inherits those slots. Nudge later heads only when the swapped durations
   // would violate H3's chronological or two-way-overlap invariants.
@@ -218,7 +238,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, reorderClips, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, insertClipAtFrame, reorderClips, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -10,7 +10,6 @@
       this.selected = options.selected; this.frame = 0; this.ppf = 1.8; this.scroll = 0;
       this.inset = 70; this.ruler = 32; this.width = 1; this.height = 1;
       this.snapEnabled = true; this.chainEnabled = true; this.sortMode = false; this.hand = false; this.showWave = false;
-      this.sortPositions = new Map(); this.sortAnimStamp = 0; this.sortAnimating = false;
       this.images = new Map(); this.hover = null; this.drag = null; this.playing = false;
       this.dirty = true; this.raf = 0; this.snapFrame = null; this.callouts = [];
       this.content = host.querySelector('.content'); this.overlay = host.querySelector('.overlay');
@@ -46,51 +45,19 @@
     x(frame) { return this.inset+frame*this.ppf-this.scroll; }
     frameAt(x) { return Math.max(0,Math.round((x-this.inset+this.scroll)/this.ppf)); }
     point(e) { const r=this.host.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
-    setClips(clips) {
-      this.clips=clips;
-      if(!this.sortMode)this.sortPositions.clear();
-      else {
-        const ids=new Set(clips.map(c=>c.id));
-        for(const id of this.sortPositions.keys())if(!ids.has(id))this.sortPositions.delete(id);
-      }
-      this.clampScroll();this.invalidate();
-    }
+    setClips(clips) { this.clips=clips; this.clampScroll(); this.invalidate(); }
     setSortMode(enabled) {
-      this.cancel();
-      this.sortMode=!!enabled;this.snapFrame=null;this.sortAnimStamp=0;
-      if(!enabled){this.sortPositions.clear();this.sortAnimating=false;}
+      this.cancel();this.sortMode=!!enabled;this.snapFrame=null;
       this.callouts=[];this.invalidate();
     }
+    // The dragged clip follows the cursor; all other clips render immediately
+    // at their committed integer-frame slots, with no spring/overshoot.
     clipStart(c) {
       return this.sortMode&&this.drag?.mode==='sort'&&c.id===this.drag.id
-        ? this.drag.dragFrame : (this.sortMode ? this.sortPositions.get(c.id)?.frame??c.start : c.start);
+        ? this.drag.dragFrame : c.start;
     }
     clipX(c) { return this.x(this.clipStart(c)); }
     clipEndX(c) { return this.clipX(c)+(c.end-c.start)*this.ppf; }
-    // The spring is a render-only state: history and backend always receive
-    // integer frames and never animation positions.
-    advanceSortAnimation(now) {
-      if(!this.sortMode||!this.sortPositions.size)return false;
-      const dt=this.sortAnimStamp?C.clamp((now-this.sortAnimStamp)/16.667,.4,2):1;
-      this.sortAnimStamp=now;
-      let active=false;
-      for(const c of this.clips){
-        const p=this.sortPositions.get(c.id);
-        if(!p)continue;
-        if(this.drag?.mode==='sort'&&c.id===this.drag.id){
-          p.frame=this.drag.dragFrame;p.velocity=0;continue;
-        }
-        const difference=c.start-p.frame;
-        if(Math.abs(difference)*this.ppf<.18&&Math.abs(p.velocity)*this.ppf<.16){
-          p.frame=c.start;p.velocity=0;continue;
-        }
-        p.velocity=(p.velocity+difference*.24*dt)*Math.pow(.68,dt);
-        p.frame+=p.velocity*dt;active=true;
-      }
-      this.sortAnimating=active;
-      if(active)this.dirty=true;
-      return active;
-    }
     select(id) { this.selected=id; this.invalidate(); }
     setFrame(frame,notify=true) { this.frame=C.clamp(Math.round(frame),0,this.total); if(notify)this.options.onFrame?.(this.frame); this.invalidate(false); }
     invalidate(content=true) { if(content)this.dirty=true; if(!this.raf)this.raf=requestAnimationFrame(t=>this.paint(t)); }
@@ -151,11 +118,6 @@
       if(readonly){if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);this.overlay.style.cursor='default';this.invalidate();return;}
       const mode=this.sortMode?'sort':this.edgeAt(c,p);
       const visualStart=this.clipStart(c);
-      if(mode==='sort'){
-        for(const clip of this.clips)if(!this.sortPositions.has(clip.id))
-          this.sortPositions.set(clip.id,{frame:clip.start,velocity:0});
-        this.sortAnimStamp=0;
-      }
       this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,
         dragFrame:visualStart,visualStart,pointer:e.pointerId,last:p,follow:(mode==='move'||mode==='right')&&this.chainEnabled};
       this.overlay.style.cursor=mode==='sort'||mode==='move'?'grabbing':'ew-resize';this.invalidate();
@@ -207,10 +169,6 @@
       if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);
       this.overlay.style.cursor=this.hand?'grab':'default';
       if(d.original){
-        if(d.mode==='sort'){
-          const p=this.sortPositions.get(d.id);
-          if(p){p.frame=d.dragFrame;p.velocity=0;}
-        }
         if(d.mode!=='sort'||JSON.stringify(d.original)!==JSON.stringify(this.clips))
           this.options.onCommit?.(this.clips,d.original);
         this.options.onDragEnd?.();
@@ -220,10 +178,6 @@
     cancel() {
       if(!this.drag)return;const d=this.drag;this.drag=null;this.snapFrame=null;
       if(d.original){
-        if(d.mode==='sort'){
-          const p=this.sortPositions.get(d.id);
-          if(p){p.frame=d.dragFrame;p.velocity=0;}
-        }
         this.clips=d.original;this.options.onPreview?.(this.clips);this.options.onDragEnd?.();
       }
       this.overlay.style.cursor='default';this.invalidate();
@@ -256,13 +210,6 @@
         ctx.save();
         if(this.sortMode&&c.id===this.drag?.id&&this.drag?.mode==='sort'){
           ctx.shadowColor=t.selection;ctx.shadowBlur=15;
-        }else if(this.sortMode){
-          const speed=Math.abs(this.sortPositions.get(c.id)?.velocity||0)*this.ppf;
-          const squeeze=Math.min(.055,speed*.003);
-          if(squeeze>.003){
-            const cx=x+width/2,cy=y+ch/2;
-            ctx.translate(cx,cy);ctx.scale(1-squeeze,1+squeeze*.25);ctx.translate(-cx,-cy);
-          }
         }
         const selected=c.id===this.selected,suspended=!!c.suspended;
         let fill=suspended?t.inset:t.clip;
@@ -446,9 +393,8 @@
     paint(now) {
       this.raf=0;
       if(this.playing){const next=this.playFrame+Math.floor((now-this.playStart)*C.FPS/1000);this.frame=Math.min(this.total,next);this.options.onFrame?.(this.frame);if(this.frame>=this.total){this.playing=false;this.options.onPlay?.(false);}else if(this.x(this.frame)>this.width-25){this.scroll+=this.width*.45;this.clampScroll();this.dirty=true;}}
-      const animating=this.advanceSortAnimation(now);
       if(this.dirty){this.drawContent();this.dirty=false;}this.drawOverlay();this.drawBusySpinners(now);
-      if(this.playing||this.busyAnimating||animating)this.invalidate(false);
+      if(this.playing||this.busyAnimating)this.invalidate(false);
     }
     destroy() { this.abort.abort();this.resizeObserver.disconnect();cancelAnimationFrame(this.raf);this.images.clear(); }
   }
