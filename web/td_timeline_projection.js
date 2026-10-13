@@ -32,9 +32,9 @@ export function effectiveClipLayout(clips) {
 
 /**
  * Pure display geometry for the OLD one-row clip presentation. Active clips
- * keep their effective time positions; each suspended clip is drawn as a small
- * ghost card occupying visual width only. The paused width never contributes
- * to output video duration, sampler frames, or the loop count.
+ * keep their effective time positions; suspended cards retain their ORIGINAL
+ * authored durations on the visual ruler, just as the earlier preview did.
+ * These visual widths never contribute to output frames, loop count or timing.
  *
  * Visual coordinate mapping is invertible for the active time range, including
  * leading/interior/trailing suspensions. The player snaps paused regions to
@@ -43,11 +43,10 @@ export function effectiveClipLayout(clips) {
 export function previewClipLayout(authoredClips, effective = effectiveClipLayout(authoredClips)) {
   const authored = Array.isArray(authoredClips) ? authoredClips : [];
   const totalFrames = effective.at(-1)?.end ?? 0;
-  const suspendedCount = authored.filter(clip => clip?.suspended === true).length;
-  const pausedWidth = totalFrames > 0
-    ? Math.max(20, Math.min(48, Math.round(totalFrames / Math.max(12, authored.length * 2))))
-    : 48;
-  const visualFrames = totalFrames + suspendedCount * pausedWidth;
+  const pausedDurations = authored.filter(clip => clip?.suspended === true)
+    .map(clip => Math.max(1, Math.trunc(Number(clip.end) - Number(clip.start)) || 1));
+  const suspendedCount = pausedDurations.length;
+  const visualFrames = totalFrames + pausedDurations.reduce((total, frames) => total + frames, 0);
   const entries = [];
   const pauses = [];
   let activeIndex = 0, offset = 0, lastActiveEnd = 0;
@@ -55,16 +54,17 @@ export function previewClipLayout(authoredClips, effective = effectiveClipLayout
 
   for (const [authoredIndex, clip] of authored.entries()) {
     if (clip?.suspended === true) {
+      const duration = Math.max(1, Math.trunc(Number(clip.end) - Number(clip.start)) || 1);
       const start = lastActiveEnd + offset;
-      const end = start + pausedWidth;
-      const pause = { at: lastActiveEnd, start, end, frames: pausedWidth, beforeActive: false };
+      const end = start + duration;
+      const pause = { at: lastActiveEnd, start, end, frames: duration, beforeActive: false };
       pauses.push(pause);
       pendingPaused.push(pause);
       entries.push({
         clip, authoredIndex, activeIndex: -1, suspended: true,
         visualStart: start, visualEnd: end
       });
-      offset += pausedWidth;
+      offset += duration;
       continue;
     }
     const active = effective[activeIndex];
@@ -103,7 +103,7 @@ export function previewClipLayout(authoredClips, effective = effectiveClipLayout
   };
   const percent = frame => visualFrames > 0 ? frame / visualFrames * 100 : 0;
   return {
-    entries, pauses, totalFrames, visualFrames, pausedWidth, suspendedCount,
+    entries, pauses, totalFrames, visualFrames, suspendedCount,
     realToVisual, visualToReal, percent
   };
 }

@@ -1381,44 +1381,58 @@ function bindSuspendedClipButtons(node, root) {
   });
 }
 
-function timelineHtml(documentData, activity = {}, activeClips = effectiveClipLayout(documentData.clips)) {
-  const layout = previewClipLayout(documentData.clips, activeClips);
-  if (!layout.entries.length) {
+function timelineHtml(documentData, activity = {}) {
+  const clips = documentData.clips || [];
+  if (!clips.length) {
     return '<div class="td-mini-empty">尚无片段 · 点击编辑</div>';
   }
-  const total = Math.max(1, layout.visualFrames);
-  const clipHtml = layout.entries.map(({ clip, authoredIndex, suspended, visualStart, visualEnd }) => {
-    const left = Math.max(0, Math.min(100, visualStart / total * 100));
-    const width = Math.max(0.8, Math.min(100 - left, (visualEnd - visualStart) / total * 100));
-    const record = suspended ? {} : activity?.[clip.id] || {};
-    const running = !suspended && record.status === RUN_RUNNING;
-    const completed = !suspended && record.status === RUN_COMPLETED;
-    const failed = !suspended && record.status === RUN_ERROR;
-    const progress = completed ? 1 : running ? clamp01(record.progress) : 0;
-    const percent = Math.round(progress * 100);
-    const visualCompleted = completed || (running && percent >= 100);
-    const duration = timeText(Math.max(1, Number(clip.end) - Number(clip.start)));
-    const originalIndex = authoredIndex + 1;
-    const pausedClass = suspended ? " is-suspended" : "";
-    const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
-    const samplingSteps = Number(record.samplingSteps);
-    const samplingInfo = running && samplingSteps > 0
-      ? ` · 采样 ${Number(record.samplingStep) || 0}/${samplingSteps}`
-      : "";
-    const statusText = suspended ? "已挂起（不计入时长）"
-      : visualCompleted ? "已完成"
-      : running ? (samplingInfo ? `生成中 ${percent}%${samplingInfo}` : (percent > 0 ? `生成中 ${percent}%` : "准备中"))
-      : failed ? "生成失败" : "";
-    const title = `片段 ${originalIndex} · ${clip.name}${statusText ? ` · ${statusText}` : ""}`;
-    const pausedAttrs = suspended
-      ? ` data-suspended-clip="${escapeHtml(clip.id)}" role="button" tabindex="0" aria-label="${escapeHtml(title)}"`
-      : "";
-    const progressHtml = (running || visualCompleted)
-      ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
-      : "";
-    return `<div class="td-mini-clip${pausedClass}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : authoredIndex + 1}" title="${escapeHtml(title)}"${pausedAttrs}><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${originalIndex}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
-  }).join("");
-  return miniRulerHtml(layout.totalFrames, frame => layout.percent(layout.realToVisual(frame))) + clipHtml;
+
+  const total = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
+  const clipHtml = clips
+    .map((clip, index) => {
+      const left = Math.max(0, Math.min(100, (clip.start / total) * 100));
+      const width = Math.max(
+        0.8,
+        Math.min(100 - left, ((clip.end - clip.start) / total) * 100)
+      );
+      const record = activity?.[clip.id] || {};
+      const running = !clip.suspended && record.status === RUN_RUNNING;
+      const completed = !clip.suspended && record.status === RUN_COMPLETED;
+      const failed = !clip.suspended && record.status === RUN_ERROR;
+      const progress = completed ? 1 : running ? clamp01(record.progress) : 0;
+      const percent = Math.round(progress * 100);
+      const progressDone = running && percent >= 100;
+      const visualCompleted = completed || progressDone;
+      const durationFrames = Math.max(1, (Number(clip.end) || 0) - (Number(clip.start) || 0));
+      const suspended = clip.suspended ? " is-suspended" : "";
+      const runClass = visualCompleted ? " is-completed" : running ? " is-running" : failed ? " is-error" : "";
+      const duration = timeText(Math.max(0, durationFrames));
+      const samplingSteps = Number(record.samplingSteps);
+      const samplingInfo = running && samplingSteps > 0
+        ? ` · 采样 ${Number(record.samplingStep) || 0}/${samplingSteps}`
+        : "";
+      const statusText = visualCompleted
+        ? "已完成"
+        : running
+          ? (samplingInfo ? `生成中 ${percent}%${samplingInfo}` : (percent > 0 ? `生成中 ${percent}%` : "准备中"))
+          : failed
+            ? "生成失败"
+            : "";
+      const title = clip.suspended
+        ? `片段 ${index + 1} · ${clip.name} · 已挂起（不参与生成）`
+        : statusText ? `${clip.name} · ${statusText}` : clip.name;
+      const pausedAttrs = clip.suspended
+        ? ` data-suspended-clip="${escapeHtml(clip.id)}" role="button" tabindex="0" aria-label="${escapeHtml(title)}"`
+        : "";
+      const progressHtml = (running || visualCompleted)
+        ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
+        : "";
+
+      return `<div class="td-mini-clip${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : index + 1}" title="${escapeHtml(title)}"${pausedAttrs}><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
+    })
+    .join("");
+
+  return miniRulerHtml(total) + clipHtml;
 }
 
 function renderNode(node) {
@@ -1449,7 +1463,7 @@ function renderNode(node) {
         <span class="td-node-spacer"></span>
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
-      <div class="td-mini-timeline" data-action="edit" title="有效片段按生成时间排列；灰色片段已挂起且不计时">${timelineHtml(doc, activity, activeClips)}</div>
+      <div class="td-mini-timeline" data-action="edit" title="原始片段编排预览（包含挂起片段）；总时长只计算有效片段">${timelineHtml(doc, activity)}</div>
     </div>
   </div>`;
 
@@ -2315,11 +2329,12 @@ function renderAdvancedNode(node) {
   const shortestFrames = clips.length
     ? Math.min(...clips.map(clip => Math.max(1, Number(clip.end) - Number(clip.start))))
     : 1;
+  const shortestVisualFrames = layout.entries.length
+    ? Math.min(...layout.entries.map(item => Math.max(1, item.visualEnd - item.visualStart)))
+    : shortestFrames;
   const minTimelineTrackWidth = Math.max(
     1,
-    Math.ceil(layout.visualFrames / shortestFrames * ADVANCED_TIMELINE_MIN_CLIP_WIDTH),
-    layout.suspendedCount
-      ? Math.ceil(layout.visualFrames / layout.pausedWidth * 22) : 1
+    Math.ceil(layout.visualFrames / shortestVisualFrames * ADVANCED_TIMELINE_MIN_CLIP_WIDTH)
   );
   const activity = ensureActivity(node);
   const allSegmentsCompleted = clips.length > 0 &&
