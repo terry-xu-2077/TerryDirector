@@ -50,12 +50,9 @@
       this.cancel();this.sortMode=!!enabled;this.snapFrame=null;
       this.callouts=[];this.invalidate();
     }
-    // The dragged clip follows the cursor; all other clips render immediately
-    // at their committed integer-frame slots, with no spring/overshoot.
-    clipStart(c) {
-      return this.sortMode&&this.drag?.mode==='sort'&&c.id===this.drag.id
-        ? this.drag.dragFrame : c.start;
-    }
+    // Canvas and hit testing use the same committed frame coordinates.
+    // No separate drag-only display position that could snap on release.
+    clipStart(c) { return c.start; }
     clipX(c) { return this.x(this.clipStart(c)); }
     clipEndX(c) { return this.clipX(c)+(c.end-c.start)*this.ppf; }
     select(id) { this.selected=id; this.invalidate(); }
@@ -117,9 +114,9 @@
       this.selected=c.id;this.options.onSelect?.(c.id);
       if(readonly){if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);this.overlay.style.cursor='default';this.invalidate();return;}
       const mode=this.sortMode?'sort':this.edgeAt(c,p);
-      const visualStart=this.clipStart(c);
       this.drag={mode,id:c.id,origin:p,original:C.copy(this.clips),start:c.start,end:c.end,
-        dragFrame:visualStart,visualStart,pointer:e.pointerId,last:p,follow:(mode==='move'||mode==='right')&&this.chainEnabled};
+        grabOffset:p.x-this.clipX(c),dragFrame:c.start,pointer:e.pointerId,last:p,
+        follow:(mode==='move'||mode==='right')&&this.chainEnabled};
       this.overlay.style.cursor=mode==='sort'||mode==='move'?'grabbing':'ew-resize';this.invalidate();
     }
     move(e) {
@@ -134,11 +131,14 @@
     }
     updateSortDrag() {
       const d=this.drag;if(d?.mode!=='sort')return;
-      d.dragFrame=Math.max(0,Math.round(d.visualStart+(d.last.x-d.origin.x)/this.ppf));
+      // Account for the grab position and current viewport scroll/zoom.
+      // The clip start is always the frame directly beneath its dragged edge.
+      d.dragFrame=this.frameAt(d.last.x-d.grabOffset);
       const rank=C.reorderIndex(d.original,d.id,d.dragFrame);
-      if(rank!==d.rank){
-        d.rank=rank;
-        this.clips=C.reorderClips(d.original,d.id,rank);
+      const next=C.reorderClipsAtFrame(d.original,d.id,rank,d.dragFrame);
+      d.rank=next.findIndex(c=>c.id===d.id);
+      if(JSON.stringify(next)!==JSON.stringify(this.clips)){
+        this.clips=next;
         this.options.onPreview?.(this.clips);
         this.clampScroll();
       }
@@ -165,7 +165,14 @@
     }
     up(e) {
       if(!this.drag)return;
-      const d=this.drag;this.drag=null;this.snapFrame=null;
+      const d=this.drag;
+      // pointerup can arrive at a position not delivered by pointermove.
+      // Commit the actual release frame, not the last intermediate preview.
+      if(d.mode==='sort'&&Number.isFinite(e.clientX)){
+        d.last=this.point(e);
+        this.updateSortDrag();
+      }
+      this.drag=null;this.snapFrame=null;
       if(this.overlay.hasPointerCapture(e.pointerId))this.overlay.releasePointerCapture(e.pointerId);
       this.overlay.style.cursor=this.hand?'grab':'default';
       if(d.original){

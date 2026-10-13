@@ -107,9 +107,9 @@
     const inserted = { ...clip, start, end: start + duration };
     if (firstShifted < 0) return [...ordered, inserted];
     const suffix = ordered.slice(firstShifted);
-    // Always ripple by at least the inserted length. If the playhead is
-    // inside a clip, push that whole clip to the new clip's end.
-    const delta = Math.max(duration, inserted.end - suffix[0].start);
+    // Spend any available blank interval first. Only the shortage moves the
+    // suffix; a clip already covering the playhead moves entirely beyond it.
+    const delta = Math.max(0, inserted.end - suffix[0].start);
     return [...ordered.slice(0, firstShifted), inserted,
       ...suffix.map(existing => ({
         ...existing, start: existing.start + delta, end: existing.end + delta
@@ -134,6 +134,59 @@
       arranged.push({ ...clip, start, end: start + duration });
     }
     return arranged;
+  }
+  // Reorder around a fixed mouse release frame. The dragged clip is NEVER
+  // moved to a preset slot. Other clips yield left/right while remaining whole.
+  // Existing intentional overlaps with the dragged clip may be retained, but
+  // a newly adjacent clip may not overlap it.
+  function reorderClipsAtFrame(clips, id, targetIndex, frame) {
+    const from=clips.findIndex(c=>c.id===id);
+    if(from<0||!Number.isFinite(frame)||!Number.isFinite(targetIndex))return clips;
+    const anchor=Math.max(0,Math.round(frame));
+    const requested=clamp(Math.trunc(targetIndex),0,clips.length-1);
+    if(from===requested&&anchor===clips[from].start)return clips;
+    const allowedOverlap=(a,b)=>{
+      const index=clips.findIndex(c=>c.id===a.id);
+      return index>=0&&clips[index+1]?.id===b.id
+        ? Math.max(0,clips[index].end-clips[index+1].start) : 0;
+    };
+    // A short drop cannot always fit after a longer clip at timeline zero.
+    // In that case move the existing clip to the right of the drop, never
+    // move the dragged clip itself.
+    for(let index=requested;index>=0;index--){
+      const arranged=reorderClips(clips,id,index).map(c=>({...c}));
+      const moving=arranged[index],duration=moving.end-moving.start;
+      moving.start=anchor;moving.end=anchor+duration;
+      if(index>0){
+        const prev=arranged[index-1],prev2=arranged[index-2];
+        const shift=Math.min(0,
+          anchor+allowedOverlap(prev,moving)-prev.end,
+          moving.end-1-prev.end,
+          anchor-1-prev.start,
+          prev2?anchor-prev2.end:0);
+        if(arranged[0].start+shift<0)continue;
+        // Move the prefix together so its authored seams survive unchanged.
+        for(let i=0;i<index;i++){
+          arranged[i].start+=shift;arranged[i].end+=shift;
+        }
+      }
+      if(index<arranged.length-1){
+        const next=arranged[index+1],next2=arranged[index+2];
+        const prev=arranged[index-1];
+        const shift=Math.max(0,
+          moving.end-allowedOverlap(moving,next)-next.start,
+          moving.start+1-next.start,
+          moving.end+1-next.end,
+          prev?prev.end-next.start:0,
+          next2?moving.end-next2.start:0);
+        // Move the suffix together; don't alter its internal spacing.
+        for(let i=index+1;i<arranged.length;i++){
+          arranged[i].start+=shift;arranged[i].end+=shift;
+        }
+      }
+      return arranged;
+    }
+    return clips;
   }
   // Head crossing changes the rank. A later clip can take the first slot
   // at frame zero even though negative timeline positions are impossible.
@@ -238,7 +291,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, insertClipAtFrame, reorderClips, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, insertClipAtFrame, reorderClips, reorderClipsAtFrame, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

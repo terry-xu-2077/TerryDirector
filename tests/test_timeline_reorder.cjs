@@ -63,15 +63,55 @@ test('three-way sort updates indices live and permits returning to original slot
  move(tl,e,320);assert.deepEqual(tl.clips.map(c=>c.id),['a','c','b']);
  move(tl,e,624);assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
 });
-test('displaced clips render at their new slots immediately without springs',()=>{
- const {tl}=timeline(true),e=start(tl,'b');move(tl,e,0);
+test('displaced clips render immediately while the dragged clip stays at the precise drop frame',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'b');
+ move(tl,e,100);
+ const b=tl.clips.find(c=>c.id==='b');
  const a=tl.clips.find(c=>c.id==='a');
- assert.equal(a.start,336);
+ assert.equal(b.start,100);
+ assert.ok(a.start>=b.end);
+ assert.equal(tl.clipX(b),tl.x(100));
  assert.equal(tl.clipX(a),tl.x(a.start));
  assert.equal(Timeline.prototype.advanceSortAnimation,undefined);
- assert.equal(tl.sortPositions,undefined);
- tl.up(e);
+ tl.up({...e,clientX:e.clientX-236});
+ assert.equal(tl.clips.find(c=>c.id==='b').start,100);
+ assert.equal(events.commits.at(-1).after.find(c=>c.id==='b').start,100);
 });
+test('dragging first clip past second preserves exact drop frame and moves others',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'a');
+ move(tl,e,337);
+ assert.deepEqual(tl.clips.map(c=>c.id),['b','a','c']);
+ assert.equal(tl.clips.find(c=>c.id==='a').start,337);
+ assert.equal(tl.clips.find(c=>c.id==='b').start,0);
+ tl.up({...e,clientX:e.clientX+337});
+ assert.equal(events.commits[0].after.find(c=>c.id==='a').start,337);
+});
+test('sorting can reposition without crossing another clip head',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'b');
+ move(tl,e,355);
+ assert.deepEqual(tl.clips.map(c=>c.id),['a','b','c']);
+ assert.equal(tl.clips.find(c=>c.id==='b').start,355);
+ tl.up({...e,clientX:e.clientX+19});
+ assert.equal(events.commits.length,1);
+ assert.equal(events.commits[0].after[1].start,355);
+});
+test('release coordinates win even without a final pointermove event',()=>{
+ const {tl,events}=timeline(true),e=start(tl,'b');
+ tl.up({...e,clientX:e.clientX+(105-336)});
+ assert.equal(tl.clips.find(c=>c.id==='b').start,105);
+ assert.equal(events.commits[0].after[0].start,105);
+});
+test('authored overlaps are stable on an unmoved sort gesture',()=>{
+ const withOverlap=[
+  {id:'a',start:0,end:240},{id:'b',start:200,end:440},
+  {id:'c',start:400,end:640}
+ ];
+ const {tl,events}=timeline(true,withOverlap),e=start(tl,'b');
+ tl.up(e);
+ assert.deepEqual(tl.clips,withOverlap);
+ assert.equal(events.commits.length,0);
+});
+
 test('no-op sort does not write history',()=>{
  const {tl,events}=timeline(true),e=start(tl,'b');tl.up(e);assert.equal(events.commits.length,0);
 });

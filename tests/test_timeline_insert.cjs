@@ -46,10 +46,24 @@ test('ripple keeps authored gaps after the inserted clip',()=>{
  const withGap=[clips[0],{...clips[1],start:360,end:600}];
  const out=C.insertClipAtFrame(withGap,added,300);
  assert.deepEqual(positions(out),[
-  ['a',0,240],['new',300,420],['b',480,720]
+  ['a',0,240],['new',300,420],['b',420,660]
  ]);
 });
 
+test('enough empty space leaves later clips at their original positions',()=>{
+ const withGap=[clips[0],{...clips[1],start:600,end:840}];
+ const out=C.insertClipAtFrame(withGap,added,300);
+ assert.deepEqual(positions(out),[
+  ['a',0,240],['new',300,420],['b',600,840]
+ ]);
+});
+test('a partial gap only pushes later clips by the shortfall',()=>{
+ const withGap=[clips[0],{...clips[1],start:450,end:690}];
+ const out=C.insertClipAtFrame(withGap,added,400);
+ assert.deepEqual(positions(out),[
+  ['a',0,240],['new',400,520],['b',520,760]
+ ]);
+});
 test('ripple preserves suffix overlap and never clips an existing segment',()=>{
  const withOverlap=[
   {id:'a',start:0,end:240}, {id:'b',start:200,end:440}, {id:'c',start:400,end:640}
