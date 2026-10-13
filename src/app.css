@@ -215,8 +215,13 @@ dialog[data-mode="global-prompt"] { width:min(880px,calc(100vw - 48px)); }
 
 /* Docked generation feedback: normal grid flow, never covers prompt text. */
 .reference-column { display:contents; }
-.asset-lightbox { min-height:180px;max-height:68dvh;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:var(--td-bg-inset); }
-.asset-lightbox img,.asset-lightbox video { display:block;max-width:100%;max-height:68dvh;object-fit:contain; }
+dialog[data-mode="media"] { width:80vw;max-width:calc(100vw - 20px);height:80dvh;max-height:calc(100dvh - 20px);display:flex;flex-direction:column;padding:18px 22px; }
+dialog[data-mode="media"]:not([open]) { display:none; }
+dialog[data-mode="media"] .modal-body { flex:1;min-height:0;display:flex;flex-direction:column; }
+dialog[data-mode="media"] .modal-header { flex:none; }
+dialog[data-mode="media"] .modal-actions { flex:none;margin-top:12px; }
+.asset-lightbox { flex:1;min-height:0;min-width:0;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:var(--td-bg-inset); }
+.asset-lightbox img,.asset-lightbox video { display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain; }
 .asset-lightbox audio { width:min(720px,90%);margin:70px 20px; }
 .asset-lightbox-note { margin:8px 2px 0;color:var(--td-text-muted);font-size:10px; }
 .composer-footer #promptUsed { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }

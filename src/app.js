@@ -149,6 +149,8 @@
   let resolutionEditBefore=null;
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
+  let replacingAssetId=null,replacingAssetBusy=false;
+  const temporaryAssetUrls=new Set();
   // Sort mode temporarily owns the timeline; restore this preference on exit.
   let chainBeforeSort=null;
   let aiConfig=null,aiConfigStatus='disconnected',aiJob=null,aiPolling=false,aiSeen=new Set();
@@ -182,6 +184,7 @@
         </section>
     </main>
     <input type="file" id="fileInput" accept="image/*,video/*,audio/*" multiple hidden>
+    <input type="file" id="assetReplaceInput" hidden>
     <input type="file" id="timelineImportInput" accept="application/json,.json" hidden>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <dialog id="dialog"><div class="modal-header"><strong id="dialogTitle"></strong>${ib('close-dialog','close','关闭弹窗')}</div><div class="modal-body" id="dialogBody"></div><div class="modal-actions" id="dialogActions"></div></dialog>
@@ -389,7 +392,10 @@
   }
   function poolEntries(){
     const active=new Set(state.assetIds);
-    return assets.filter(a=>active.has(a.id)).map(a=>({...a,token:`${mediaNames[a.kind]} ${a.number}`}));
+    return assets.filter(a=>active.has(a.id)).map(a=>({
+      ...a,...(state.assetOverrides?.[a.id]||{}),
+      token:`${mediaNames[a.kind]} ${a.number}`
+    }));
   }
   function referencesIn(prompt,entries=poolEntries()){
     const lookup=new Map(entries.map(a=>[mediaKey(mediaNames[a.kind],a.number),a.id]));
@@ -572,7 +578,7 @@
     const entries=poolEntries();$('#refCount').textContent=entries.length;
     // Selection changes only update usage badges. Keep the shared grid and its
     // scroll position stable while moving between clips or editing a prompt.
-    const key=entries.map(a=>a.id).join('|');
+    const key=entries.map(a=>[a.id,a.src,a.name].join('|')).join('||');
     if(assetGridKey!==key||!$('#references').children.length){
       const scroll=$('#referenceDrop').scrollTop;assetGridKey=key;
       $('#references').innerHTML=entries.map(a=>`<div class="reference-tile" draggable="true" data-reference="${a.id}"><button class="reference-insert" data-preview-ref="${a.id}" title="查看 ${esc(a.name)}" aria-label="查看 ${esc(a.name)}"><div class="reference-cover">${a.kind==='image'?`<img src="${esc(a.src)}" alt="">`:icon(a.kind==='video'?'film':'wave')}<span class="asset-token">${esc(a.token)}</span><span class="asset-current-use" hidden>当前引用</span></div><strong>${esc(a.name)}</strong><small title="${esc(a.source?.type==='comfy-input'?'ComfyUI input/'+a.source.path:a.source?.path?'示例 input/'+a.source.path:a.local?'仅本页读取，未上传':'示例素材')}">${a.kind==='image'?'图片':a.kind==='video'?'视频':'音频'}${a.source?.type==='comfy-input'?' · input':a.source?.type==='demo-input'?' · input 示例':a.local?' · 本地':''}</small></button><div class="reference-tools"><button data-insert-ref="${a.id}" title="插入 &lt;${a.token}&gt; 到当前片段">${icon('link')}<span>插入引用</span></button><button class="remove-reference" data-delete-asset="${a.id}" title="从资产池删除 ${esc(a.name)}" aria-label="从资产池删除 ${esc(a.name)}">${icon('trash')}<span>删除</span></button></div></div>`).join('');
@@ -584,10 +590,17 @@
     $('#dialogBody')?.querySelectorAll('video,audio').forEach(media=>{media.pause();media.removeAttribute('src');media.load();});
   }
   function previewAsset(id){
-    const asset=assets.find(a=>a.id===id);if(!asset)return;
+    const asset=poolEntries().find(a=>a.id===id);if(!asset)return;
+    replacingAssetId=null;
     promptEditor.closeMenu();stopDialogMedia();
-    const d=$('#dialog');d.dataset.mode='media';$('#dialogTitle').textContent=asset.name;
-    $('#dialogActions').innerHTML='<button class="button" data-action="close-dialog">关闭</button>';
+    const d=$('#dialog');d.dataset.mode='media';d.dataset.assetId=id;$('#dialogTitle').textContent=asset.name;
+    const actions=$('#dialogActions');actions.replaceChildren();
+    const replace=document.createElement('button');replace.type='button';
+    replace.className='button primary';replace.dataset.action='replace-asset';
+    replace.textContent='替换资产';replace.disabled=hostReadonly;
+    replace.title='替换所有片段共用的素材文件，保留资产 ID 和引用编号';
+    const close=document.createElement('button');close.className='button';close.dataset.action='close-dialog';close.textContent='关闭';
+    actions.append(replace,close);
     const body=$('#dialogBody');body.replaceChildren();
     const wrap=document.createElement('div');wrap.className='asset-lightbox';
     const media=document.createElement(asset.kind==='image'?'img':asset.kind);
@@ -598,6 +611,46 @@
     const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='comfy-input'?'ComfyUI input/'+asset.source.path:asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
     if(!embedded)note.textContent='站点仅用占位缩略图展示原参考图位置。真正的图片文件仍在本机 ComfyUI/input，不在公开仓库中。';
     if(!d.open)d.showModal();
+  }
+  async function replaceAssetFile(file){
+    const id=replacingAssetId,old=poolEntries().find(asset=>asset.id===id);
+    if(!old||!file||hostReadonly||replacingAssetBusy)return;
+    const kind=(file.type||'').split('/')[0];
+    if(kind!==old.kind){
+      toast(`替换文件必须与原素材类型一致（${old.kind==='image'?'图片':old.kind==='video'?'视频':'音频'}）`);
+      return;
+    }
+    replacingAssetBusy=true;
+    const button=$('[data-action=replace-asset]');
+    if(button){button.disabled=true;button.textContent='正在替换…';}
+    try{
+      let replacement;
+      if(embedded){
+        const result=await uploadInputFile(file);
+        if(result.kind!==old.kind)throw new Error('上传的文件类型与原素材不一致');
+        replacement={name:result.name||file.name,src:result.preview_url||inputPreviewUrl(result.path),
+          source:{type:'comfy-input',path:result.path},local:false};
+      }else{
+        const url=URL.createObjectURL(file);temporaryAssetUrls.add(url);
+        replacement={name:file.name,src:url,source:{type:'upload-demo',name:file.name},local:true};
+      }
+      // Save the replacement in document history, not in the base asset cache:
+      // undo/redo restores the original source without rewriting prompt tags.
+      mutate(()=>{
+        if(!state.assetOverrides)state.assetOverrides={};
+        state.assetOverrides[id]=replacement;
+      });
+      assetGridKey='';
+      renderReferences();
+      previewAsset(id);
+      toast('资产已全局替换；全部片段及全局提示词的引用编号保持不变。');
+    }catch(error){
+      toast(error?.message||'替换资产失败，请重试。');
+    }finally{
+      replacingAssetBusy=false;
+      if(button?.isConnected){button.disabled=false;button.textContent='替换资产';}
+      replacingAssetId=null;
+    }
   }
   function resolutionFromControls(){
     const ratio=$('#aspectRatioSelect'),mp=$('#megapixelsInput'),multiple=$('#multipleInput');
@@ -1082,6 +1135,7 @@
     // be released. A new project has its own empty pool, not the previous one.
     stopDialogMedia();
     assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));
+    temporaryAssetUrls.forEach(url=>URL.revokeObjectURL(url));temporaryAssetUrls.clear();
     assets=withSamples?sampleAssets.slice():[];
     nextPoolNumber={image:withSamples?4:1,video:1,audio:1};assetGridKey='';
   }
@@ -1245,6 +1299,7 @@
       autoAiEnhance:raw.autoAiEnhance===true,clips,
       selected:clips.some(c=>c.id===raw.selected)?raw.selected:(clips[0]?.id||null),
       assetIds:assets.map(a=>a.id)};
+    state.assetOverrides={};
     history=new C.History();assetGridKey='';activity.clear();
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
@@ -1505,6 +1560,15 @@
     'export-timeline':exportTimelineData,
     'upload-assets':()=>$('#fileInput').click(),
     'pick-input':pickInputAssets,
+    'replace-asset':()=>{
+      if(hostReadonly||replacingAssetBusy||$('#dialog').dataset.mode!=='media')return;
+      const target=poolEntries().find(a=>a.id===$('#dialog').dataset.assetId);
+      if(!target)return;
+      replacingAssetId=target.id;
+      const input=$('#assetReplaceInput');
+      input.accept=target.kind==='image'?'image/*':target.kind==='video'?'video/*':'audio/*';
+      input.value='';input.click();
+    },
     help,
     'toggle-prompt-view':()=>{finishPromptEdit();promptView=promptView==='visual'?'text':'visual';renderPrompt();},
     'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
@@ -1626,6 +1690,11 @@
     mutate(()=>{clip.aiSeed=randomClipSeed();});
   });
   $('#fileInput').addEventListener('change',e=>{importFiles(e.target.files);e.target.value='';});
+  $('#assetReplaceInput').addEventListener('change',e=>{
+    const file=e.target.files?.[0];e.target.value='';
+    if(file)void replaceAssetFile(file);
+    else replacingAssetId=null;
+  });
   $('#timelineImportInput').addEventListener('change',e=>{const file=e.target.files?.[0];e.target.value='';if(file)void importTimelineFile(file);});
   $('#zoomRange').addEventListener('input',e=>{timeline.zoom((.22*Math.pow(24/.22,Number(e.target.value)/100))/timeline.ppf);});
   app.addEventListener('dragstart',e=>{const ref=e.target.closest('[data-reference]');if(ref){if(hostReadonly){e.preventDefault();return;}e.dataTransfer.setData('application/x-terrydirector-asset',ref.dataset.reference);e.dataTransfer.effectAllowed='copy';}});
@@ -1721,5 +1790,5 @@
     window.TerryDirectorDemo.ready=loadSiteDemo();
   }
   window.addEventListener('pagehide',()=>{stopDialogMedia();promptEditor.closeMenu();});
-  window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));});
+  window.addEventListener('beforeunload',()=>{stopDialogMedia();promptEditor.destroy();timeline.destroy();assets.filter(a=>a.local).forEach(a=>URL.revokeObjectURL(a.src));temporaryAssetUrls.forEach(url=>URL.revokeObjectURL(url));});
 })();
