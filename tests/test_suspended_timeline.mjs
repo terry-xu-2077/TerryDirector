@@ -228,6 +228,7 @@ test("Advanced maps paused geometry into cursor and seeks without second row",()
   assert.match(section,/const playheadPercent = seconds => layout\.percent\(layout\.realToVisual\(seconds \* FPS\)\)/);
   assert.match(section,/layout\.visualToReal\(fraction \* layout\.visualFrames\)/);
   assert.match(section,/bindSuspendedClipButtons\(node, root\)/);
+  assert.match(section,/event\.target\.closest\("\[data-clip\], \[data-suspended-clip\]"\)/);
   assert.doesNotMatch(section,/suspendedClipsHtml/);
 });
 

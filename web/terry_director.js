@@ -2523,7 +2523,7 @@ function renderAdvancedNode(node) {
     setTime(Math.round(layout.visualToReal(fraction * layout.visualFrames)) / FPS);
   };
   track.addEventListener("pointerdown", event => {
-    if (event.button !== 0 || event.target.closest("[data-clip]")) return;
+    if (event.button !== 0 || event.target.closest("[data-clip], [data-suspended-clip]")) return;
     draggingHead = true;
     track.setPointerCapture(event.pointerId);
     seekPointer(event);
