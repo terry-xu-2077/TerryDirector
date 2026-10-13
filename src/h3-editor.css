@@ -54,3 +54,8 @@
   background:transparent;
   box-shadow:none;
 }
+
+/* Custom aliases change display only; the chip keeps its raw H3 token. */
+.h3-editor .h3-chip.h3-picture .h3-label,
+.h3-editor .h3-chip.h3-video .h3-label,
+.h3-editor .h3-chip.h3-audio .h3-label { display:block;max-width:min(240px,50vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }

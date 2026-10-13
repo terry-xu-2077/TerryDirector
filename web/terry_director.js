@@ -1193,6 +1193,9 @@ function normalizeConfig(value) {
         .map(asset => ({
           id: String(asset.id),
           name: String(asset.name || asset.source.path),
+          ...(String(asset.displayName || "").trim()
+            ? { displayName: String(asset.displayName).trim().slice(0, 80) }
+            : {}),
           kind: asset.kind,
           number: Math.max(1, Number.parseInt(asset.number, 10) || 1),
           source: {

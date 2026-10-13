@@ -131,13 +131,18 @@ def normalize_document(value: Any) -> dict[str, Any]:
             continue
         number = max(1, _as_int(raw.get("number"), 1))
         seen_asset_ids.add(asset_id)
-        assets.append({
+        asset = {
             "id": asset_id,
             "name": str(raw.get("name") or path.rsplit("/", 1)[-1])[:240],
             "kind": kind,
             "number": number,
             "source": {"type": "comfy-input", "path": path},
-        })
+        }
+        # UI alias is independent of the filesystem name and H3 token.
+        alias = " ".join(str(raw.get("displayName") or "").split())[:80]
+        if alias:
+            asset["displayName"] = alias
+        assets.append(asset)
 
     valid_asset_ids = {item["id"] for item in assets}
     for clip in clips:
