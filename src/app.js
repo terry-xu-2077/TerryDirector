@@ -163,7 +163,7 @@
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
       <div class="timeline-toolbar"><div class="timeline-controls"><div class="timeline-tools">${ib('undo','undo','撤销（Ctrl / ⌘ Z）')}${ib('redo','redo','重做（Ctrl / ⌘ Shift Z）')}<span class="separator"></span>${ib('pointer','pointer','选择与移动片段（V）','is-active')}${ib('hand','hand','平移时间线（H / 鼠标中键）')}${ib('sort','reorder','排序模式：拖动片段在松手位置固定，其他片段即时让位','',false)}${ib('snap','magnet','吸附（S），拖动时 Alt 临时关闭','is-active')}${ib('chain','link','后续联动：普通移动或调整片段尾部时后方片段跟随；排序模式会自动暂停，退出后恢复原状态','is-active',true)}${ib('duplicate','duplicate','复制选中片段至末尾')}${ib('delete','trash','删除选中片段（Delete）')}${ib('suspend','pause','挂起当前片段：编译时视为空白','',false)}</div><span class="spacer"></span><div class="timeline-zoom">${ib('zoom-out','minus','缩小（−）')}<input type="range" min="0" max="100" value="35" id="zoomRange" aria-label="时间线缩放">${ib('zoom-in','plus','放大（＋）')}${ib('fit','fit','适应全部片段（F）')}</div></div></div>
-      <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。普通模式拖动片段移动或裁剪；开启排序后拖动片段保持实际落点，其他片段即时让位。左右键步进，Ctrl Z 撤销。"></canvas></div>
+      <div class="timeline-body" id="timelineBody"><canvas class="timeline-canvas content" aria-hidden="true"></canvas><canvas class="timeline-canvas overlay" tabindex="0" aria-label="单行时间线。只有顶部时间刻度可以定位播放头。空白区域拖拽框选，Shift 拖动从片段上框选，Ctrl 或 Command 单击增减选中片段。排序模式支持整体移动已选片段。Ctrl Z 撤销。"></canvas></div>
       <div class="timeline-bottom"><div class="timeline-run-progress" id="timelineRunProgress" hidden><i></i></div><div class="timeline-scroll" id="scrollBar"><div class="scroll-thumb" id="scrollThumb"></div></div></div>
     </section>
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
@@ -765,10 +765,18 @@
     $('#clipName').value=c?.name||'';$('#clipName').disabled=!c||hostReadonly;$('#clipName').hidden=!c;
     const suspendButton=$('[data-action=suspend]');
     if(suspendButton){
-      suspendButton.disabled=!c||hostReadonly;
-      suspendButton.classList.toggle('is-active',!!c?.suspended);
-      suspendButton.setAttribute('aria-pressed',String(!!c?.suspended));
-      suspendButton.title=c?.suspended?'恢复当前片段生成':'挂起当前片段：编译时视为空白';
+      const ids=new Set(timeline?.selectedIds||[state.selected].filter(Boolean));
+      const targets=state.clips.filter(clip=>ids.has(clip.id));
+      const total=targets.length,all=total>0&&targets.every(clip=>clip.suspended);
+      const some=targets.some(clip=>clip.suspended);
+      suspendButton.disabled=!total||hostReadonly;
+      suspendButton.classList.toggle('is-active',all);
+      suspendButton.setAttribute('aria-pressed',some&&!all?'mixed':String(all));
+      suspendButton.title=total>1
+        ?`${all?'恢复':'挂起'}选中的 ${total} 个片段（保留各片段原有承接模式）`
+        :all?'恢复当前片段生成':'挂起当前片段：编译时视为空白';
+      const label=suspendButton.querySelector('span');
+      if(label)label.textContent=`${all?'恢复':'挂起'}${total>1?` (${total})`:''}`;
     }
     const sortButton=$('[data-action=sort]');
     if(sortButton){
@@ -778,9 +786,24 @@
     }
     refreshChainButton();
     renderPrompt();renderTiming();renderRunProgress();renderReferences();updateHistory();
-    if(timeline){timeline.setClips(state.clips);timeline.select(state.selected);}
+    if(timeline){
+      timeline.setClips(state.clips);
+      timeline.select(state.selected,true); // Preserve a multi-selection on render.
+    }
   }
-  function select(id,seek=false){finishDurationEdit();finishPromptEdit();state.selected=id;if(timeline){timeline.select(id);if(seek&&current())timeline.setFrame(current().start);}renderAll();}
+  function select(id,seek=false){
+    finishDurationEdit();finishPromptEdit();state.selected=id;
+    if(timeline){
+      timeline.setSelection(id?[id]:[],id,false);
+      if(seek&&current())timeline.setFrame(current().start);
+    }
+    renderAll();
+  }
+  function selectMultiple(ids,primary){
+    finishDurationEdit();finishPromptEdit();
+    if(primary)state.selected=primary;
+    renderAll();
+  }
   promptEditor=new window.TDH3Editor({
     visual:$('#promptVisual'),textarea:$('#promptText'),
     getAssets:()=>poolEntries().map(a=>({id:a.id,name:a.name,kind:a.kind==='image'?'picture':a.kind,raw:`<${a.token}>`,preview:a.kind==='image'?a.src:''})),
@@ -794,6 +817,7 @@
     clips:state.clips,selected:state.selected,getImage,getActivity:activityFor,readonly:()=>hostReadonly,
     getTransitionMode:id=>normalizeTransitionMode(state.clips.find(c=>c.id===id)?.transitionMode,'tail_continuation'),
     onTransitionMenu:(seam,point)=>openTransitionMenu(seam,point),
+    onSelectionChange:(ids,primary)=>selectMultiple(ids,primary),
     onSelect:id=>select(id),onFrame:()=>{},
     onPreview:clips=>{renderTiming(clips);const index=clips.findIndex(c=>c.id===state.selected);$('#clipNumber').textContent=index>=0?`片段 ${index+1}`:'暂无片段';},
     onDragEnd:()=>timeline.invalidate(),
@@ -847,6 +871,7 @@
     });
     // Keep the playhead and viewport at the insertion point; duplicating a
     // clip remains an append-to-end action, as before.
+    timeline.setSelection([state.selected],state.selected,false);
     if(insertionFrame!==null)timeline.setFrame(insertionFrame);
     else timeline.fit();
   }
@@ -1162,7 +1187,7 @@
     timeline.cancel();timeline.chainEnabled=!!enabled;
     refreshChainButton();
   }
-  function help(){modal('时间线编排 Demo','<p>工具栏的「排序」默认关闭。开启时自动暂停后续联动（按钮置灰），片段按松手位置固定、其他片段移动让位（无弹动动画）；退出排序后恢复之前的后续联动开关状态及普通移动/裁剪的边界约束。</p><p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>全局提示词通过顶栏按钮在浮窗中编辑；新建片段默认启用“使用全局”。编译时先拼接全局提示词，再拼接片段提示词，并从合并后的 Prompt 扫描实际引用素材。</p><p>时间线接缝会显示生成语义：重叠 = 连续生成；存在空隙 = 独立生成；首尾贴合时可在“尾帧参考 / 尾帧续接 / 独立”之间下拉切换。新建片段默认值来自 ComfyUI Settings 的 TerryDirector → 时间线 → 默认镜头衔接。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
+  function help(){modal('时间线编排 Demo','<p>播放头只能在顶部时间刻度定位；在轨道空白横向拖动可框选，按 Shift 可从片段上开始框选，按 Ctrl / ⌘ 单击可逐个增减选中。框选后可批量挂起/恢复，进入排序模式后拖动其中一个选中片段即可将整个选区一起移动，保留组内的间隔与重叠。每个片段原有的承接模式独立保存，不随前一个片段改变、临时空隙或重叠而复位。</p><p>工具栏的「排序」默认关闭。开启时自动暂停后续联动（按钮置灰），片段按松手位置固定、其他片段移动让位（无弹动动画）；退出排序后恢复之前的后续联动开关状态及普通移动/裁剪的边界约束。</p><p>导演台浮窗只负责创作编排：顶部是时间线，下方是提示词与资产池。分辨率、采样器、种子、总步数、二采和其他生成参数都不在浮窗里设置。</p><p>全局提示词通过顶栏按钮在浮窗中编辑；新建片段默认启用“使用全局”。编译时先拼接全局提示词，再拼接片段提示词，并从合并后的 Prompt 扫描实际引用素材。</p><p>时间线接缝会显示生成语义：重叠 = 连续生成；存在空隙 = 独立生成；首尾贴合时可在“尾帧参考 / 尾帧续接 / 独立”之间下拉切换。新建片段默认值来自 ComfyUI Settings 的 TerryDirector → 时间线 → 默认镜头衔接。</p><p>片段时长仍按普通秒数编辑；悬停时可查看 H3 内部对齐帧数与最终裁切信息，不需要手动处理 5 + 17n 帧网格。</p><p>在时间线选择片段后编辑提示词；输入 @ 搜索资产，输入 / 打开 H3 语法菜单。资产池由当前 TerryDirector 节点的全部片段共用。</p>');}
   function assetFromDocument(raw,index){
     const path=String(raw?.source?.path||'').replaceAll('\\\\','/').split('/').filter(Boolean).join('/'),kind=String(raw?.kind||'');
     if(!path||!['image','video','audio'].includes(kind))return null;
@@ -1223,6 +1248,7 @@
     history=new C.History();assetGridKey='';activity.clear();
     nextId=Math.max(0,...clips.map(c=>Number.parseInt(String(c.id).split('-').at(-1),10)||0))+1;
     nextAsset=assets.length+1;embedDirty=false;
+    timeline.setSelection(state.selected?[state.selected]:[],state.selected,false);
     renderAll();timeline.fit();timeline.setFrame(current()?.start||0);
     if(embedded)window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
   }
@@ -1496,7 +1522,18 @@
     'zoom-out':()=>timeline.zoom(.8),'zoom-in':()=>timeline.zoom(1.25),fit:()=>timeline.fit(),
     delete:()=>{if(!current())return;timeline.cancel();mutate(()=>{state.clips=state.clips.filter(c=>c.id!==state.selected);state.selected=state.clips[0]?.id||null;});},
     duplicate:()=>{if(current())appendClip(current().name+' · 副本',current());},
-    suspend:()=>{if(current())mutate(()=>{current().suspended=!current().suspended;});},
+    suspend:()=>{
+      if(!current())return;
+      const ids=new Set(timeline?.selectedIds||[state.selected]);
+      const chosen=state.clips.filter(c=>ids.has(c.id));
+      if(!chosen.length)return;
+      const suspended=!chosen.every(c=>c.suspended);
+      mutate(()=>{
+        // Only suspended flags change: ID, per-clip transition mode,
+        // prompt, seeds, references and timeline geometry remain untouched.
+        for(const clip of state.clips)if(ids.has(clip.id))clip.suspended=suspended;
+      });
+    },
     reset:()=>{setSortEnabled(false);setChainEnabled(true);finishPromptEdit();resetActivity();timeline.cancel();history=new C.History();resetAssetCache(false);
       if(!embedded&&siteDemoDocument){loadDocument(C.copy(siteDemoDocument));aiConfig={previewOnly:true};renderAiControls();return;}
       state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},
