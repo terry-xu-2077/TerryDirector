@@ -589,7 +589,83 @@
     }
     refreshAssetUsage();
   }
+  function attachAssetImageZoom(viewport,image){
+    const tools=document.createElement('div');tools.className='asset-zoom-tools';
+    const makeButton=(label,title,callback)=>{
+      const button=document.createElement('button');button.type='button';
+      button.textContent=label;button.title=title;button.addEventListener('click',callback);
+      tools.append(button);return button;
+    };
+    let zoom=1,panX=0,panY=0,drag=null;
+    const abort=new AbortController(),signal=abort.signal;
+    const bounds=()=>viewport.getBoundingClientRect();
+    const limits=value=>{
+      const rect=bounds();
+      if(!rect.width||!rect.height||!image.naturalWidth||!image.naturalHeight)return {x:0,y:0};
+      const fit=Math.min(rect.width/image.naturalWidth,rect.height/image.naturalHeight);
+      return {
+        x:Math.max(0,(image.naturalWidth*fit*value-rect.width)/2),
+        y:Math.max(0,(image.naturalHeight*fit*value-rect.height)/2)
+      };
+    };
+    const draw=()=>{
+      const limit=limits(zoom);
+      panX=Math.max(-limit.x,Math.min(limit.x,panX));
+      panY=Math.max(-limit.y,Math.min(limit.y,panY));
+      image.style.transform='translate3d('+panX+'px,'+panY+'px,0) scale('+zoom+')';
+      viewport.classList.toggle('is-zoomed',zoom>1.001);
+      percent.textContent=Math.round(zoom*100)+'%';
+      minus.disabled=zoom<=1.001;reset.disabled=zoom<=1.001;
+    };
+    const setZoom=(target,pivotX=0,pivotY=0)=>{
+      const next=Math.max(1,Math.min(12,Number(target)||1));
+      // Preserve the image pixel under the pointer while zooming.
+      panX=pivotX-(pivotX-panX)*(next/zoom);
+      panY=pivotY-(pivotY-panY)*(next/zoom);
+      zoom=next;
+      if(next===1){panX=0;panY=0;}
+      draw();
+    };
+    const minus=makeButton('−','缩小图片',()=>setZoom(zoom/1.25));
+    const percent=document.createElement('span');percent.className='asset-zoom-percent';tools.append(percent);
+    makeButton('+','放大图片',()=>setZoom(zoom*1.25));
+    const reset=makeButton('适应','适应窗口（双击图片可复位）',()=>setZoom(1));
+    const tip=document.createElement('span');tip.className='asset-zoom-hint';
+    tip.textContent='滚轮缩放 · 放大后拖动';tools.append(tip);
+    viewport.append(tools);
+    viewport.addEventListener('wheel',e=>{
+      e.preventDefault();
+      const rect=bounds();
+      setZoom(zoom*Math.exp(-e.deltaY*0.0016),
+        e.clientX-rect.left-rect.width/2,e.clientY-rect.top-rect.height/2);
+    },{passive:false,signal});
+    viewport.addEventListener('pointerdown',e=>{
+      if(e.button!==0||zoom<=1.001||e.target.closest('.asset-zoom-tools'))return;
+      e.preventDefault();drag={id:e.pointerId,x:e.clientX,y:e.clientY,panX,panY};
+      viewport.setPointerCapture(e.pointerId);
+    },{signal});
+    viewport.addEventListener('pointermove',e=>{
+      if(!drag||e.pointerId!==drag.id)return;
+      panX=drag.panX+e.clientX-drag.x;panY=drag.panY+e.clientY-drag.y;draw();
+    },{signal});
+    const stopPan=e=>{
+      if(!drag||e.pointerId!==drag.id)return;
+      drag=null;
+      if(viewport.hasPointerCapture?.(e.pointerId))viewport.releasePointerCapture(e.pointerId);
+    };
+    for(const type of ['pointerup','pointercancel','lostpointercapture'])
+      viewport.addEventListener(type,stopPan,{signal});
+    viewport.addEventListener('dblclick',e=>{
+      if(e.target.closest('.asset-zoom-tools'))return;
+      e.preventDefault();setZoom(1);
+    },{signal});
+    image.addEventListener('load',()=>{zoom=1;panX=panY=0;draw();},{signal});
+    const observer=new ResizeObserver(draw);observer.observe(viewport);
+    draw();
+    return ()=>{abort.abort();observer.disconnect();};
+  }
   function stopDialogMedia(){
+    if(stopAssetZoom){stopAssetZoom();stopAssetZoom=null;}
     $('#dialogBody')?.querySelectorAll('video,audio').forEach(media=>{media.pause();media.removeAttribute('src');media.load();});
   }
   function previewAsset(id){
@@ -605,14 +681,32 @@
     const close=document.createElement('button');close.className='button';close.dataset.action='close-dialog';close.textContent='关闭';
     actions.append(replace,close);
     const body=$('#dialogBody');body.replaceChildren();
+    const nameRow=document.createElement('div');nameRow.className='asset-rename-bar';
+    const label=document.createElement('label');label.htmlFor='assetDisplayName';label.textContent='显示名称';
+    const nameInput=document.createElement('input');nameInput.id='assetDisplayName';nameInput.type='text';
+    nameInput.maxLength=80;nameInput.autocomplete='off';nameInput.value=asset.displayName||'';
+    nameInput.placeholder=asset.name;nameInput.disabled=hostReadonly;
+    nameInput.title='仅修改显示名称，不会重命名 ComfyUI input 源文件；清空可恢复默认名称';
+    const rename=document.createElement('button');rename.type='button';rename.className='button ghost';
+    rename.textContent='保存名称';rename.disabled=hostReadonly;
+    const saveName=()=>renameAsset(id,nameInput.value);
+    rename.addEventListener('click',saveName);
+    nameInput.addEventListener('keydown',e=>{
+      if(e.key==='Enter'){e.preventDefault();saveName();}
+      else if(e.key==='Escape'){e.preventDefault();nameInput.value=poolEntries().find(a=>a.id===id)?.displayName||'';}
+    });
+    nameRow.append(label,nameInput,rename);body.append(nameRow);
     const wrap=document.createElement('div');wrap.className='asset-lightbox';
+    if(asset.kind==='image')wrap.classList.add('is-image');
     const media=document.createElement(asset.kind==='image'?'img':asset.kind);
-    if(asset.kind==='image'){media.alt=asset.name;media.decoding='async';}
-    else{media.controls=true;media.preload='metadata';media.playsInline=true;media.setAttribute('aria-label',asset.name);}
+    if(asset.kind==='image'){media.alt=assetDisplayName(asset);media.decoding='async';media.draggable=false;}
+    else{media.controls=true;media.preload='metadata';media.playsInline=true;media.setAttribute('aria-label',assetDisplayName(asset));}
     media.addEventListener('error',()=>{if(!media.isConnected||!d.open)return;wrap.replaceChildren();wrap.textContent='浏览器无法预览此格式，素材仍可作为参考保留。';});
-    wrap.append(media);body.append(wrap);media.src=asset.src;
+    wrap.append(media);body.append(wrap);
+    if(asset.kind==='image')stopAssetZoom=attachAssetImageZoom(wrap,media);
+    media.src=asset.src;
     const note=document.createElement('p');note.className='asset-lightbox-note';note.textContent=`${asset.source?.type==='comfy-input'?'ComfyUI input/'+asset.source.path:asset.source?.type==='demo-input'?'示例 input/'+asset.source.path:asset.local?'本地文件 · 未上传':'示例'}参考素材 · 非生成结果`;body.append(note);
-    if(!embedded)note.textContent='站点仅用占位缩略图展示原参考图位置。真正的图片文件仍在本机 ComfyUI/input，不在公开仓库中。';
+    if(!embedded)note.textContent='站点示例仅有占位缩略图，真实媒体仍在本机 ComfyUI/input。可替换为本地文件预览；文件名不受显示名称影响。';
     if(!d.open)d.showModal();
   }
   function renameAsset(id,value){
