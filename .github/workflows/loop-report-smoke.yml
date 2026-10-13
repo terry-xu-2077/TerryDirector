@@ -9,6 +9,11 @@ on:
       - director_loop_report.py
       - director_loop_logmetrics.py
       - tests/test_loop_report.py
+      - src/core.js
+      - src/app.js
+      - web/terry_director.js
+      - web/td_timeline_projection.js
+      - tests/test_suspended_timeline.mjs
       - .github/workflows/loop-report-smoke.yml
   workflow_dispatch:
 
@@ -21,3 +26,10 @@ jobs:
         run: python -m py_compile director_loop.py director_loop_report.py director_loop_logmetrics.py tests/test_loop_report.py
       - name: Report regression tests
         run: python -m unittest discover -s tests -p test_loop_report.py -v
+      - name: Suspended timeline JS syntax and regression
+        run: |
+          node --check src/core.js
+          node --check src/app.js
+          node --input-type=module --check < web/td_timeline_projection.js
+          node --input-type=module --check < web/terry_director.js
+          node --test tests/test_suspended_timeline.mjs
