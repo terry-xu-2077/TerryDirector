@@ -304,6 +304,13 @@ def save_loop_segment(
     )
     output_path = root / "clips" / clip_name
     _write_clip(images, audio, output_path=output_path, format_name=format_name, frames=frames)
+    upstream_stat = None
+    if loop.get("upstream_path"):
+        try:
+            st = Path(loop["upstream_path"]).stat()
+            upstream_stat = {"size": st.st_size, "mtime_ns": st.st_mtime_ns}
+        except OSError:
+            pass
     # The encoded clip intentionally keeps its overlapping head. Only the
     # final assembled movie applies the head trim.
     descriptor = {
@@ -316,6 +323,7 @@ def save_loop_segment(
         "transition_mode": str(segment.get("transition_mode") or ""),
         "upstream_source": loop.get("upstream_path"),
         "upstream_type": loop.get("upstream_type"),
+        "upstream_stat": upstream_stat,
         "rerun_target": loop.get("rerun_target") or None,
         "recipe_fingerprint": loop.get("recipe_fingerprint"),
         "plan_fingerprint": loop.get("plan_fingerprint"),
