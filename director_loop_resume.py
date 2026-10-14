@@ -52,8 +52,29 @@ def workflow_fingerprint(dynprompt, body_ids, is_link) -> str:
 
 def plan_fingerprint(document, seed, compiled, workflow_hash, video_format):
     """Hash the *effective* authored content, not a random per-run UUID."""
+    # Cursor focus and the selected card do not alter generated content.
+    # Do not accidentally invalidate a resumable run when the user switches
+    # which clip is selected in the editor.
+    authored = dict(document)
+    authored.pop("selected", None)
+    asset_versions = []
+    for asset in authored.get("assets", []):
+        source = asset.get("source") if isinstance(asset, dict) else None
+        if not isinstance(source, dict) or source.get("type") != "comfy-input":
+            continue
+        label = str(source.get("path") or "")
+        try:
+            if not folder_paths.exists_annotated_filepath(label):
+                asset_versions.append((label, "missing"))
+                continue
+            p = Path(folder_paths.get_annotated_filepath(label))
+            stat = p.stat()
+            asset_versions.append((label, stat.st_size, stat.st_mtime_ns))
+        except (OSError, ValueError):
+            asset_versions.append((label, "unavailable"))
     relevant = {
-        "document": document,
+        "document": authored,
+        "input_asset_versions": sorted(asset_versions),
         "seed": str(seed),
         "segments": [{
             "id": segment["id"],
