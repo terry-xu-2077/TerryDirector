@@ -129,6 +129,12 @@ def _update_manifest(root: Path, descriptor: dict):
             "version": 2, "fps": FPS, "audio_sample_rate": AUDIO_RATE,
             "status": "in_progress", "clips": [],
         }
+    current_fingerprint = descriptor.get("plan_fingerprint")
+    existing_fingerprint = manifest.get("plan_fingerprint")
+    if (existing_fingerprint and current_fingerprint != existing_fingerprint):
+        raise ValueError("当前视频缓存与原任务参数签名不一致，拒绝混合保存")
+    if current_fingerprint:
+        manifest["plan_fingerprint"] = current_fingerprint
     clips = [part for part in manifest["clips"]
              if int(part["index"]) != int(descriptor["index"])]
     clips.append(descriptor)
@@ -313,6 +319,7 @@ def save_loop_segment(
         "upstream_source": loop.get("upstream_path"),
         "upstream_type": loop.get("upstream_type"),
         "rerun_target": loop.get("rerun_target") or None,
+        "plan_fingerprint": loop.get("plan_fingerprint"),
         "path": str(output_path),
         "frames": frames,
         "trim_head_frames": int(assembly["trim_head_frames"]),
