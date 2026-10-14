@@ -15,7 +15,7 @@ TerryDirector 是一套直接运行在 **ComfyUI** 中的视频镜头编排节�
 - **片段级 AI Seed**：每个片段可单独指定提示词增强 Seed；留空时跟随 TerryDirector Llama 的全局 AI Seed。
 - **三种生成工作方式**：标准 TerryDirector、带审片／局部重跑／中断恢复的 Advanced，以及使用普通 ComfyUI 采样节点组的时间线循环器。
 - **内置 Self-Lift**：独立「二采配置」节点，连接到「TerryDirector 配置」后启用；不需要另装外部 Self-Lift 采样器。
-- **长视频输出**：Advanced 与循环器使用无损分段缓存和单次最终视频编码，避免在生成阶段累积完整时间线的画面张量。
+- **长视频输出**：Advanced 保留无损缓存和审片功能；循环器每段立即保存 ProRes 422 HQ + PCM MOV，并可依据时间线无重编码拼接 Final.mov，不积累完整时间线的 IMAGE。
 
 ## 安装
 
