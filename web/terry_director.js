@@ -2879,6 +2879,7 @@ function mountNode(node) {
     if (node.comfyClass === LOOP_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
       hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "resume_incomplete"));
     }
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
@@ -2903,6 +2904,7 @@ function mountNode(node) {
   if (node.comfyClass === LOOP_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
       hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "resume_incomplete"));
     }
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
@@ -3455,8 +3457,23 @@ function ensureEditorOverlay() {
       editorDirty = false;
 
       const rerunClipId = String(message.rerunClipId || "").trim();
+      const resumeRequested = message.resumeIncomplete === true;
       void (async () => {
         const widget = node.widgets?.find(item => item.name === "rerun_clip_id");
+        const resumeWidget = node.widgets?.find(item => item.name === "resume_incomplete");
+        if (resumeRequested) {
+          if (rerunClipId || node.comfyClass !== LOOP_NODE_CLASS || !resumeWidget)
+            throw new Error("断点续跑仅适用于循环器，且不能与单镜头重跑同时使用");
+          const response = await fetch("/terrydirector/api/resume-check", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({loop_id:String(node.id)}),
+          });
+          const info = await response.json().catch(() => ({}));
+          if (!response.ok || !info.available)
+            throw new Error(info.error || "没有找到未完成任务");
+          // The backend makes the authoritative workflow fingerprint check
+          // before expanding any sampler node.
+        }
         if (rerunClipId) {
           if (node.comfyClass !== LOOP_NODE_CLASS || !widget) {
             throw new Error("只有 TerryDirector 循环器支持单片段重跑");
@@ -3472,6 +3489,7 @@ function ensureEditorOverlay() {
         }
 
         if (widget) widget.value = rerunClipId;
+        if (resumeWidget) resumeWidget.value = resumeRequested;
         node.__tdLocalRunLock = true;
         if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
         node.__tdRunActivity = blankActivity(node);
@@ -3486,6 +3504,7 @@ function ensureEditorOverlay() {
           // The payload has been serialized for ComfyUI by this point.
           // Do not accidentally rerun this clip in the next ordinary Queue.
           if (widget) widget.value = "";
+          if (resumeWidget) resumeWidget.value = false;
           node.setDirtyCanvas?.(true, true);
         }
       })().catch(error => {
@@ -3495,6 +3514,51 @@ function ensureEditorOverlay() {
           type: "terrydirector:run-error",
           error: String(error?.message || "提交单片段重跑失败"),
         }, location.origin);
+      });
+    } else if (message.type === "terrydirector:rebuild-final" && activeNode) {
+      const node = activeNode;
+      void (async () => {
+        if (node.comfyClass !== LOOP_NODE_CLASS) {
+          throw new Error("重新合并只支持 TerryDirector 循环器");
+        }
+        if (node.__tdLocalRunLock || node.__tdPromptId) {
+          throw new Error("当前循环仍在生成中，不能同时重组整片");
+        }
+        const endId = loopExecutionTarget(node);
+        const endNode = app.graph?.getNodeById?.(Number(endId));
+        const format = endNode?.widgets?.find(w => w.name === "segment_format")?.value;
+        const seed = node.widgets?.find(w => w.name === "seed")?.value ?? 0;
+        const prompt = staticStringInputValue(
+          node, "tail_reference_prompt", DEFAULT_TAIL_REFERENCE_PROMPT
+        );
+        const response = await fetch("/terrydirector/api/rebuild-final", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body:JSON.stringify({
+            loop_id:String(node.id), document:message.document,
+            seed:String(seed), tail_reference_prompt:prompt,
+            segment_format:String(format || "MOV · ProRes 422 HQ"),
+            allow_stale:message.allowStale===true,
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 409 && Array.isArray(result.stale)) {
+          frame?.contentWindow?.postMessage({
+            type:"terrydirector:rebuild-status",
+            status:"stale", stale:result.stale,
+          },location.origin);
+          return;
+        }
+        if (!response.ok) throw new Error(result.error || "影片重组失败");
+        frame?.contentWindow?.postMessage({
+          type:"terrydirector:rebuild-status",
+          status:"completed", final:result.final, frames:result.frames,
+        },location.origin);
+      })().catch(error => {
+        frame?.contentWindow?.postMessage({
+          type:"terrydirector:rebuild-status",
+          status:"error", error:String(error?.message || "重组失败"),
+        },location.origin);
       });
     } else if (message.type === "terrydirector:save" && activeNode) {
       const next = readConfig(activeNode);
