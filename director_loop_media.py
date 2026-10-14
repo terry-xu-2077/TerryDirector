@@ -135,6 +135,10 @@ def _update_manifest(root: Path, descriptor: dict):
     clips.sort(key=lambda item: int(item["index"]))
     manifest["clips"] = clips
     manifest["segment_format"] = descriptor["segment_format"]
+    if descriptor.get("plan_fingerprint"):
+        manifest["plan_fingerprint"] = descriptor["plan_fingerprint"]
+    if descriptor.get("body_fingerprint"):
+        manifest["body_fingerprint"] = descriptor["body_fingerprint"]
     _atomic_json(path, manifest)
 
 
@@ -313,7 +317,11 @@ def save_loop_segment(
         "upstream_source": loop.get("upstream_path"),
         "upstream_type": loop.get("upstream_type"),
         "rerun_target": loop.get("rerun_target") or None,
+        "recipe_fingerprint": loop.get("recipe_fingerprint"),
+        "plan_fingerprint": loop.get("plan_fingerprint"),
+        "body_fingerprint": loop.get("body_fingerprint"),
         "path": str(output_path),
+        "file_size": output_path.stat().st_size,
         "frames": frames,
         "trim_head_frames": int(assembly["trim_head_frames"]),
         "trim_tail_frames": int(assembly["trim_tail_frames"]),
