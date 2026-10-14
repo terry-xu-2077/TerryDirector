@@ -158,6 +158,16 @@ class ResumeAndMerge(unittest.TestCase):
         self.assertEqual([x["index"] for x in selected["clips"]], [0, 1, 2])
         self.assertEqual([x["segment_id"] for x in selected["stale"]], ["C"])
 
+    def test_legacy_unsigned_take_requires_stale_confirmation(self):
+        a = clip("A", 0, 48)
+        self.write("old-video", [(a, 50)], status="completed", stamped=False)
+        selected = state.select_current_takes(
+            self.root, [a], ["no-match"], "MOV", seed=22,
+        )
+        self.assertEqual(len(selected["clips"]), 1)
+        self.assertTrue(selected["stale"])
+        self.assertIn("缺少生成指纹", selected["stale"][0]["reason"])
+
     def test_skips_entity_but_resets_generated_head_trim(self):
         physical = clip("P", 0, 48, kind="entity")
         physical["source_asset"] = {"source": {"path": "anchor.mov"}}
