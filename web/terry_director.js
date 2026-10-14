@@ -1456,176 +1456,65 @@ function bindLoopMemorySource(node) {
 // Advanced review is intentionally independent of the full editor timeline.
 // Persist UI selection in memory, never in the creative document.
 function mountNode(node) {
+  if (node?.comfyClass !== LOOP_NODE_CLASS) return;
   ensureActivity(node);
-  const minWidth = directorMinWidth(node);
   if (!node.__tdAiLinkBound) {
     const previous = node.onConnectionsChange;
     node.onConnectionsChange = function(...args) {
-      const result = previous?.apply(this,args);
-      queueMicrotask(()=>{if(this===activeNode)pushAiConfig(this);});
+      const result = previous?.apply(this, args);
+      queueMicrotask(() => { if (this === activeNode) pushAiConfig(this); });
       return result;
     };
-    node.__tdAiLinkBound=true;
+    node.__tdAiLinkBound = true;
   }
   syncTailReferencePromptWidget(node);
-
   if (!node.__tdMinWidthBound) {
     const originalOnResize = node.onResize;
     node.onResize = function(size) {
-      const resizeMinWidth = directorMinWidth(this);
-      if (Array.isArray(size) && size[0] < resizeMinWidth) {
-        size[0] = resizeMinWidth;
-      }
-      if (
-        Array.isArray(size) &&
-        this.comfyClass === ADVANCED_NODE_CLASS &&
-        size[1] < ADVANCED_NODE_MIN_HEIGHT
-      ) {
-        size[1] = ADVANCED_NODE_MIN_HEIGHT;
-      }
-      if (this.comfyClass === ADVANCED_NODE_CLASS) {
-        updateAdvancedPreviewHeightFromUserResize(this, size);
-      }
+      if (Array.isArray(size) && size[0] < LOOP_MIN_WIDTH) size[0] = LOOP_MIN_WIDTH;
       originalOnResize?.call(this, size);
-      if (this.comfyClass === ADVANCED_NODE_CLASS) {
-        queueMicrotask(() => syncAdvancedAspect(this));
-      }
     };
     node.__tdMinWidthBound = true;
   }
-  if (Array.isArray(node.size) && node.size[0] < minWidth) {
-    node.size[0] = minWidth;
-  }
-  if (node.__tdRoot) {
-    if (
-      node.comfyClass === ADVANCED_NODE_CLASS &&
-      (node.size?.[1] || 0) < ADVANCED_NODE_MIN_HEIGHT
-    ) {
-      node.setSize?.([
-        node.size?.[0] || DIRECTOR_MIN_WIDTH,
-        ADVANCED_NODE_MIN_HEIGHT,
-      ]);
-    }
-    if (node.comfyClass === ADVANCED_NODE_CLASS) {
-      node.__tdLastResizeSize = [
-        Number(node.size?.[0]) || DIRECTOR_MIN_WIDTH,
-        Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
-      ];
-      advancedStoredPreviewHeight(node);
-      bindAdvancedResizeGestureTracking(node);
-    }
+  const hide = () => {
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
-    if (node.comfyClass === LOOP_NODE_CLASS) {
-      hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "resume_previous"));
+    for (const name of ["initial_iteration_value", "rerun_clip_id", "resume_previous"]) {
+      hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
-    if (node.comfyClass === ADVANCED_NODE_CLASS) {
-      hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-      for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","recovery_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
-    }
+  };
+  hide();
+  if (node.__tdRoot) {
     renderNode(node);
-    if (node.comfyClass === ADVANCED_NODE_CLASS) {
-      void loadAdvancedCapabilities(node);
-      void restoreAdvancedState(node);
-    }
     return;
   }
-
   ensureCss();
   const backing = configWidget(node);
   if (!backing) return;
-  hideBackingWidget(backing);
-  hideBackingWidget(tailReferencePromptWidget(node));
-  if (node.comfyClass === LOOP_NODE_CLASS) {
-      hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
-      hideBackingWidget(node.widgets?.find(w => w.name === "resume_previous"));
-    }
-  if (node.comfyClass === ADVANCED_NODE_CLASS) {
-    hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
-    hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
-    hideBackingWidget(node.widgets?.find(w => w.name === "video_format"));
-    hideBackingWidget(node.widgets?.find(w => w.name === "video_codec"));
-    for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","recovery_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
-  }
-
   const root = document.createElement("div");
-  root.className = "td-node-shell td-node-shell-director" + (node.comfyClass === ADVANCED_NODE_CLASS ? " td-node-shell-advanced" : "");
+  root.className = "td-node-shell td-node-shell-director";
   root.addEventListener("pointerdown", event => event.stopPropagation());
   root.addEventListener("wheel", event => event.stopPropagation(), { passive: true });
-
-  const widget = node.addDOMWidget(
-    "terrydirector_panel",
-    "terrydirector",
-    root,
-    {
-      hideOnZoom: false,
-      getMinHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? 455 : 118,
-      getMaxHeight: () => node.comfyClass === ADVANCED_NODE_CLASS ? undefined : 148,
-      margin: 3,
-    }
-  );
+  const widget = node.addDOMWidget("terrydirector_panel", "terrydirector", root, {
+    hideOnZoom: false,
+    getMinHeight: () => 118,
+    getMaxHeight: () => 148,
+    margin: 3,
+  });
   widget.serialize = false;
   widget.options.serialize = false;
-
   node.__tdRoot = root;
   node.__tdDomWidget = widget;
-
   const originalCallback = backing.callback;
   backing.callback = value => {
     originalCallback?.(value);
-    queueMicrotask(() => {
-      hideBackingWidget(backing);
-      renderNode(node);
-    });
+    queueMicrotask(() => { hide(); renderNode(node); });
   };
-
-  const isLoopStart = node.comfyClass === LOOP_NODE_CLASS;
-  const defaultWidth = isLoopStart ? LOOP_DEFAULT_WIDTH : 470;
-  const defaultHeight = isLoopStart ? LOOP_DEFAULT_HEIGHT : 245;
-  const width = Math.max(minWidth, Math.min(520, node.size?.[0] || defaultWidth));
-  if (node.comfyClass === ADVANCED_NODE_CLASS) {
-    if ((node.size?.[1] || 0) < ADVANCED_NODE_MIN_HEIGHT) {
-      node.setSize?.([node.size?.[0] || width, ADVANCED_NODE_MIN_HEIGHT]);
-    }
-    node.__tdLastResizeSize = [
-      Number(node.size?.[0]) || width,
-      Number(node.size?.[1]) || ADVANCED_NODE_MIN_HEIGHT,
-    ];
-    advancedStoredPreviewHeight(node);
-    bindAdvancedResizeGestureTracking(node);
-  } else if (isLoopStart) {
-    if ((node.size?.[0] || 0) < minWidth) {
-      node.setSize?.([minWidth, node.size?.[1] || defaultHeight]);
-    }
-  } else if ((node.size?.[1] || 0) > 320 || (node.size?.[1] || 0) < 205) {
-    node.setSize?.([width, defaultHeight]);
-  } else if ((node.size?.[0] || 0) < minWidth) {
-    node.setSize?.([minWidth, node.size?.[1] || defaultHeight]);
+  if ((node.size?.[0] || 0) < LOOP_MIN_WIDTH) {
+    node.setSize?.([LOOP_MIN_WIDTH, node.size?.[1] || LOOP_DEFAULT_HEIGHT]);
   }
-
   renderNode(node);
-  if (node.comfyClass === ADVANCED_NODE_CLASS) {
-    const previousConnection = node.onConnectionsChange;
-    if (!node.__tdAspectConnectionBound) {
-      node.onConnectionsChange = function(...args) {
-        const result = previousConnection?.apply(this, args);
-        queueMicrotask(() => syncAdvancedAspect(this));
-        return result;
-      };
-      node.__tdAspectConnectionBound = true;
-    }
-    queueMicrotask(() => syncAdvancedAspect(node));
-    void loadAdvancedCapabilities(node);
-    void restoreAdvancedState(node);
-  }
 }
-
 
 const LLAMA_MODE_NEVER = 2;
 const LLAMA_MODE_BYPASS = 4;
