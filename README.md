@@ -91,7 +91,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
                                                   └─ 片段清单 manifest.json（每镜头 MOV 已单独保存）
 ```
 
-循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的低透明度 **圆角凸包「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环器输出 **VIDEO** 和循环性能 **Markdown STRING**，无需再连接 CreateVideo。报告自动保存在 `output/TerryDirector/reports/`，内容涵盖逐段耗时、真实采样进度与显存/RAM 采样峰值；采样器未上报步数时不估算每步速度。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO；当前片段元数据由循环器内部注入，因此无需再从「循环信息」手动拉一根「片段数据」到循环结束。它不接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
+循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的低透明度 **圆角凸包「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环器每段立即保存完整 ProRes 422 HQ / PCM 24-bit MOV，最后可选择直接拼接 Final.mov；同时提供 VIDEO、循环性能 **Markdown STRING** 和片段清单路径，**无需再连接 CreateVideo / SaveVideo**。报告自动保存在 `output/TerryDirector/reports/`，内容涵盖逐段耗时、真实采样进度与显存/RAM 采样峰值；采样器未上报步数时不估算每步速度。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO；当前片段元数据由循环器内部注入，因此无需再从「循环信息」手动拉一根「片段数据」到循环结束。它不接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长和分辨率信息；片段永久保存在 `output/TerryDirector/clips/`，每个运行独立文件夹，合并默认开启，可关闭。原始 MOV 保留完整镜头，Final.mov 按编排自动裁掉重叠头部和空档填充；不再将最终视频编码委托给下游 SaveVideo。
 
 ## 时间线与编辑
 
