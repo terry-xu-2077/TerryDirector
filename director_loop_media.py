@@ -483,27 +483,51 @@ def _concat_video(parts: list[tuple[Path, int, int]], destination: Path, format_
     _probe_video(str(destination), expected_frames)
 
 
-def merge_loop_clips(descriptors: list[dict], *, merge_final: bool) -> str | None:
-    """Frame-accurate final file from persisted full clips, with exact PCM samples."""
+def merge_loop_clips(
+    descriptors: list[dict], *, merge_final: bool,
+    output_root: str | Path | None = None,
+    source_root: str | Path | None = None,
+) -> str | None:
+    """Frame-exact Final: normal run or copy-only rebuild across old takes.
+
+    Rebuild writes a new assembly directory and references the original
+    encoded MOVs; the source files are neither duplicated nor overwritten.
+    """
     if not descriptors:
         raise ValueError("循环没有生成有效片段")
     ordered = sorted(descriptors, key=lambda part: int(part["index"]))
     format_name = ordered[0]["segment_format"]
     ext, codec = _encoder(format_name)
-    root = Path(ordered[0]["path"]).resolve().parent.parent
+    cross_run = output_root is not None
+    if cross_run and not merge_final:
+        raise ValueError("重组整片必须启用合并")
+    root = (
+        Path(output_root).resolve() if cross_run
+        else Path(ordered[0]["path"]).resolve().parent.parent
+    )
+    allowed = Path(source_root).resolve() if source_root else root
+    if cross_run and (
+        source_root is None or not root.is_relative_to(allowed / "assemblies")
+    ):
+        raise ValueError("重组整片的输出目录必须位于循环器私有 assemblies 目录")
     expected_run = str(ordered[0]["run_signature"])
     if not all(
-        str(part.get("run_signature")) == expected_run
+        (cross_run or str(part.get("run_signature")) == expected_run)
         and str(part.get("segment_format")) == format_name
         and int(part.get("fps", 0)) == FPS
         and int(part.get("width", 0)) == int(ordered[0]["width"])
         and int(part.get("height", 0)) == int(ordered[0]["height"])
         and int(part.get("channels", 0)) == int(ordered[0]["channels"])
         and Path(part["path"]).is_file()
-        and Path(part["path"]).resolve().parent.parent == root
+        and Path(part["path"]).resolve().is_relative_to(allowed)
+        and (cross_run or Path(part["path"]).resolve().parent.parent == root)
+        and (
+            not part.get("file_size")
+            or Path(part["path"]).stat().st_size == int(part["file_size"])
+        )
         for part in ordered
     ):
-        raise ValueError("循环片段编码参数、运行签名或输出路径不一致")
+        raise ValueError("循环片段编码参数、文件大小、来源路径或运行签名不一致")
     if [int(item["index"]) for item in ordered] != list(range(len(ordered))):
         raise ValueError("循环片段缺失或顺序不连续")
     if not merge_final:
@@ -528,6 +552,13 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool) -> str | Non
     video_parts: list[tuple[Path, int, int]] = []
     expected_frames = 0
     root.mkdir(parents=True, exist_ok=True)
+    if cross_run:
+        _atomic_json(root / "timeline.json", {
+            "version": 2, "fps": FPS, "audio_sample_rate": AUDIO_RATE,
+            "status": "in_progress", "segment_format": format_name,
+            "clips": ordered,
+            "assembled_from_history": True,
+        })
     work = root / ".merging"
     work.mkdir(exist_ok=True)
     pcm = work / "timeline_audio.pcm"
