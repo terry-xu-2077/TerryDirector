@@ -106,6 +106,27 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
                 int(stream(path, "v:0")["nb_frames"]) == 24 for path in sources
             ))
             self.assertFalse(list(root.rglob("*.pt")))
+            # Rebuild across independently saved takes: the second clip may
+            # have come from a later single-clip rerun. No source MOV or
+            # original Final is overwritten.
+            mixed = [dict(part) for part in clips]
+            mixed[1]["run_signature"] = "newer-take"
+            assembled = media.merge_loop_clips(
+                mixed, merge_final=True,
+                output_root=root / "assemblies" / "rebuild-mix",
+                source_root=root,
+            )
+            self.assertEqual(int(stream(assembled, "v:0")["nb_frames"]), expected_frames)
+            self.assertEqual(int(stream(assembled, "a:0")["duration_ts"]),
+                             expected_frames * 2000)
+            self.assertTrue(Path(final).is_file())
+            self.assertTrue(all(path.is_file() for path in sources))
+            self.assertTrue((Path(assembled).parent / "timeline.json").is_file())
+            with self.assertRaises(ValueError):
+                media.merge_loop_clips(
+                    mixed, merge_final=True,
+                    output_root=root / "outside-rebuild", source_root=root,
+                )
             self.assertEqual(
                 media.merge_loop_clips(clips, merge_final=False), None
             )
