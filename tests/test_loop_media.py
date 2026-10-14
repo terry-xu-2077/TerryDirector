@@ -81,6 +81,7 @@ class TestLoopMedia(unittest.TestCase):
             },
             "_loop": {
                 "index": index, "context_frames": 12,
+                "seed": 1000 + index,
                 "cache_key": "loop-test",
                 "run_signature": "movtest" if fmt == self.media.MOV_HQ else "mp4test",
                 "loop_id": "test",
@@ -96,6 +97,8 @@ class TestLoopMedia(unittest.TestCase):
         self.assertEqual(carry_images.shape[0], 12)
         self.assertEqual(carry_audio["sample_rate"], 32000)
         self.assertEqual(data["frames"], frames)
+        self.assertEqual(data["seed"], str(1000 + index))
+        self.assertEqual(data["authored_index"], index)
         return data
 
     def _count_frames(self, path):
@@ -134,7 +137,7 @@ class TestLoopMedia(unittest.TestCase):
     def test_mp4_can_skip_merge(self):
         # A different run must not inherit a previous run's cached data.
         fmt = self.media.MP4_H264
-        part = self._segment(2, 24, 0, fmt=fmt)
+        part = self._segment(0, 24, 0, fmt=fmt)
         self.assertIsNone(self.media.merge_loop_clips([part], merge_final=False))
         self.assertTrue(Path(part["path"]).is_file())
         self.assertEqual(self._count_frames(part["path"]), 24)
