@@ -31,7 +31,7 @@ from .director_loop_adapters import (
 )
 from .director_core import config_json, normalize_config
 from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips, complete_isolated_rerun
-from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context
+from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context, video_info
 from .director_loop_memory import log_loop_ram, release_completed_body
 from .director_loop_report import start_report, mark_clip, finish_report
 from .director_loop_state import (
@@ -371,7 +371,23 @@ def _configure_run_integrity(
     resumed = None
     if resume_mode:
         root = loop_folder(folder_paths.get_output_directory(), loop_id)
-        resumed = incomplete_run(root, items, recipes, plan_hash, segment_format)
+
+        def verified_movie(row):
+            try:
+                info = video_info(row["path"])
+                frames = info.get("video_frames")
+                if frames is not None and int(frames) != int(row["frames"]):
+                    return False
+                if frames is None and abs(info["frames_24fps"]-int(row["frames"])) > 1:
+                    return False
+                return bool(info["has_audio"])
+            except (RuntimeError, ValueError, OSError, KeyError, TypeError):
+                return False
+
+        resumed = incomplete_run(
+            root, items, recipes, plan_hash, segment_format,
+            verify_media=verified_movie,
+        )
         if resumed is None:
             raise ValueError(
                 "没有可续跑的相同工作流：时间线、提示词、Seed、"
