@@ -13,7 +13,8 @@ on:
       - director_loop_video.py
       - director_loop_mov.py
       - tests/test_loop_prores_manifest.py
-      - tests/test_loop_prores_ffmpeg.py
+      - tests/test_loop_prores_ffmpeg.py tests/test_loop_prores_writer.py
+      - tests/test_loop_prores_writer.py
       - director_loop_x2_windows.py
       - director_loop_x2_decode.py
       - tests/test_loop_x2_windows.py
@@ -42,10 +43,14 @@ jobs:
         run: python -m unittest discover -s tests -p test_loop_x2_windows.py -v
       - name: X2 adapter regression (runs when PyTorch is available)
         run: python -m unittest discover -s tests -p test_loop_x2_adapter.py -v
+      - name: Install small ProRes encoder test dependency
+        run: python -m pip install numpy
       - name: ProRes MOV manifest regression
         run: python -m unittest discover -s tests -p test_loop_prores_manifest.py -v
       - name: Real FFmpeg ProRes assembly validation
         run: python -m unittest discover -s tests -p test_loop_prores_ffmpeg.py -v
+      - name: Real per-clip ProRes/PCM writer validation
+        run: python -m unittest discover -s tests -p test_loop_prores_writer.py -v
       - name: Suspended timeline JS syntax and regression
         run: |
           node --check src/core.js
