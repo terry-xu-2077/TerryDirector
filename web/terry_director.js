@@ -437,7 +437,7 @@ function applyProgressState(detail) {
 
 /**
  * Native H3 sampler nodes have their own visible node IDs, not the "td_sN_*"
- * expanded node IDs used by Base/Advanced. Link their real progress_state
+ * expanded node IDs in the loop. Link their real progress_state
  * value/max back to the enclosing Looper and zero-based active segment.
  */
 function applyLoopSamplerProgress(detail) {
@@ -1431,8 +1431,7 @@ function bindLoopMemorySource(node) {
   node.__tdLoopMemoryLinkBound = true;
 }
 
-// Advanced review is intentionally independent of the full editor timeline.
-// Persist UI selection in memory, never in the creative document.
+// Only the loop node owns an embedded timeline; upstream model choice stays external.
 function mountNode(node) {
   if (node?.comfyClass !== LOOP_NODE_CLASS) return;
   ensureActivity(node);
@@ -1867,7 +1866,7 @@ function stopAiConfigWatch() {
   }
   tdAiConfigSignature = "";
 }
-// Do not use writeConfig(): changing prompts during a running Advanced Queue
+// Do not use writeConfig(): changing prompts during a running loop Queue
 // must not reset activity, prompt ID or in-progress rerun/cache state.
 function applyAiResultsWithoutReset(node, records) {
   if (!isDirector(node) || !records || typeof records !== "object") return false;
