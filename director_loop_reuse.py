@@ -132,12 +132,12 @@ def _video_tail(path, width, height, total_frames, count):
         _ffmpeg_program("ffmpeg"), "-nostdin", "-hide_banner", "-loglevel", "error",
         "-i", str(path), "-map", "0:v:0",
         "-vf", f"fps={FPS},trim=start_frame={first}:end_frame={total_frames},setpts=PTS-STARTPTS",
-        "-an", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
+        "-an", "-pix_fmt", "rgb48le", "-f", "rawvideo", "pipe:1",
     ]
-    size = width * height * 3
-    # Fill directly into the sole uint8 staging buffer; never use run().stdout
-    # which would create an additional copy of a potentially large overlap.
-    result = np.empty((count, height, width, 3), dtype=np.uint8)
+    size = width * height * 3 * 2
+    # Preserve ProRes 10-bit color depth while decoding to RGB16.
+    # Fill directly into one staging buffer, not run().stdout.
+    result = np.empty((count, height, width, 3), dtype="<u2")
     p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         view = memoryview(result).cast("B")
@@ -153,7 +153,7 @@ def _video_tail(path, width, height, total_frames, count):
         error = p.stderr.read()
         if p.wait() != 0:
             raise RuntimeError(error.decode("utf-8", errors="replace")[-1800:])
-        return torch.from_numpy(result).to(torch.float32).div_(255.0)
+        return torch.from_numpy(result).to(torch.float32).div_(65535.0)
     except BaseException:
         p.kill()
         p.wait()
