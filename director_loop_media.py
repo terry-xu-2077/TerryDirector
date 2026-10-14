@@ -320,6 +320,7 @@ def save_loop_segment(
         "upstream_type": loop.get("upstream_type"),
         "rerun_target": loop.get("rerun_target") or None,
         "plan_fingerprint": loop.get("plan_fingerprint"),
+        "assembly_plan": loop.get("assembly_plan"),
         "path": str(output_path),
         "frames": frames,
         "trim_head_frames": int(assembly["trim_head_frames"]),
