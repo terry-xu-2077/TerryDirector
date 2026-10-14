@@ -312,20 +312,9 @@ function activityPayload(node) {
   };
 }
 
-function pushActivity(node, { fullRender = false } = {}) {
-  const advancedRunning =
-    node?.comfyClass === ADVANCED_NODE_CLASS &&
-    !!(node.__tdPromptId || node.__tdLocalRunLock);
-
-  if (advancedRunning && !fullRender) {
-    suspendAdvancedFinalVideo(node);
-    if (!patchAdvancedActivity(node)) renderNode(node);
-  } else {
-    renderNode(node);
-  }
-
+function pushActivity(node) {
+  renderNode(node);
   if (node?.comfyClass === LOOP_NODE_CLASS) refreshLoopConditionCards(node);
-
   if (!frameReady || activeNode !== node || !frame?.contentWindow) return;
   frame.contentWindow.postMessage(
     { type: "terrydirector:activity", activity: activityPayload(node) },
@@ -379,26 +368,8 @@ function ensurePromptRun(node, promptId) {
   if (node.__tdPromptId === promptId) return;
   node.__tdPromptId = promptId;
   node.__tdLocalRunLock = false;
-  if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
-  if (node.__tdRerunActiveClipId) {
-    const activity = ensureActivity(node);
-    const record = activity[node.__tdRerunActiveClipId];
-    if (record) {
-      record.status = RUN_RUNNING;
-      record.progress = 0;
-      record.elapsedSeconds = 0;
-      record.completedAt = null;
-      record.error = "";
-      record.startedAt = performance.now();
-    }
-  } else {
-    node.__tdRunActivity = blankActivity(node);
-  }
-  // First transition into a run gets one full render so readonly controls
-  // and run state are synchronized. Subsequent progress_state events only patch
-  // clip activity in place; rebuilding the Advanced DOM would repeatedly tear
-  // down and reload the final <video> element.
-  pushActivity(node, { fullRender: node.comfyClass === ADVANCED_NODE_CLASS });
+  node.__tdRunActivity = blankActivity(node);
+  pushActivity(node);
 }
 
 function segmentIndex(nodeId) {
@@ -559,36 +530,7 @@ function finishPromptActivity(promptId, success, message = "") {
     }
     node.__tdPromptId = null;
     node.__tdLocalRunLock = false;
-    if (node.comfyClass === ADVANCED_NODE_CLASS) endAdvancedLivePreview(node);
-    if (node.comfyClass === ADVANCED_NODE_CLASS && node.__tdRecoveryAction) {
-      const recoveryWidget = node.widgets?.find(w => w.name === "recovery_mode");
-      if (recoveryWidget) {
-        recoveryWidget.value = "";
-        recoveryWidget.callback?.("");
-      }
-      node.__tdRecoveryAction = null;
-    }
-    if (node.__tdRerunActiveClipId) {
-      const widget = node.widgets?.find(w => w.name === "rerun_clip_id");
-      if (widget) {
-        widget.value = "";
-        widget.callback?.("");
-      }
-      node.__tdRerunActiveClipId = null;
-    }
     pushActivity(node);
-  }
-  // execution_start suspends Advanced media before we know which output
-  // node will execute. Restore unaffected Advanced nodes when this prompt ends.
-  for (const node of app.graph?._nodes || []) {
-    if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
-    if (
-      node.__tdMediaSuspendedForPrompt === promptId ||
-      (promptId == null && node.__tdMediaSuspendedForPrompt)
-    ) {
-      node.__tdMediaSuspendedForPrompt = null;
-      if (!node.__tdPromptId && !node.__tdLocalRunLock) renderNode(node);
-    }
   }
   return matched;
 }
@@ -596,25 +538,13 @@ function finishPromptActivity(promptId, success, message = "") {
 function bindExecutionActivity() {
   if (bindExecutionActivity.bound) return;
   bindExecutionActivity.bound = true;
-
   api.addEventListener("execution_start", event => {
-    const promptId = event.detail?.prompt_id;
-    tdActiveExecutionPromptId = promptId ?? null;
-    // A restored Advanced result may already have a <video> element holding
-    // browser/WDDM video surfaces before Comfy starts sampling. Release those
-    // surfaces at prompt start, before the first sampler progress event.
-    for (const node of app.graph?._nodes || []) {
-      if (node?.comfyClass !== ADVANCED_NODE_CLASS) continue;
-      node.__tdMediaSuspendedForPrompt = promptId || true;
-      suspendAdvancedFinalVideo(node);
-    }
+    tdActiveExecutionPromptId = event.detail?.prompt_id ?? null;
   });
-
   api.addEventListener("progress_state", event => {
     applyProgressState(event.detail);
     applyLoopSamplerProgress(event.detail);
   });
-
   api.addEventListener("execution_cached", event => {
     const promptId = event.detail?.prompt_id;
     for (const id of event.detail?.nodes || []) {
@@ -631,99 +561,19 @@ function bindExecutionActivity() {
       pushActivity(node);
     }
   });
-
-  api.addEventListener("b_preview_with_metadata", event => {
-    const data = event.detail || {};
-    const node =
-      directorNodeFromId(data.displayNodeId) ||
-      directorNodeFromId(data.parentNodeId) ||
-      directorNodeFromExecutionId(data.nodeId);
-    if (!node || node.comfyClass !== ADVANCED_NODE_CLASS) return;
-    if (node.widgets?.find(w => w.name === "preview_enabled")?.value !== true) return;
-    const previewFps = Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12);
-    if (previewFps !== 1 || !(data.blob instanceof Blob)) return;
-    node.__tdLivePreviewActive = true;
-    node.__tdLivePreviewData = { blob: data.blob };
-    applyAdvancedLivePreview(node, node.__tdLivePreviewData);
-  });
-
-  api.addEventListener("kj_preview_override", event => {
-    const data = event.detail || {};
-    const node = directorNodeFromExecutionId(data.node_id);
-    if (!node || node.comfyClass !== ADVANCED_NODE_CLASS) return;
-    if (node.widgets?.find(w => w.name === "preview_enabled")?.value !== true) return;
-    const previewFps = Number(node.widgets?.find(w => w.name === "preview_fps")?.value ?? 12);
-    if (previewFps <= 1) return;
-    node.__tdLivePreviewActive = true;
-    node.__tdLivePreviewData = data;
-    applyAdvancedLivePreview(node, data);
-  });
-
-  // Native video save reports its file metadata through the normal ComfyUI
-  // execution event. The expanded graph's node_id may be namespaced.
-  api.addEventListener("executed", event => {
-    const detail = event.detail || {};
-    const nodeId = String(detail.node ?? "");
-    if (!nodeId.includes("td_advanced_finish") && !nodeId.includes("td_advanced_save_video") && !directorNodeFromId(nodeId)) return;
-    const displayId = detail.display_node_id ?? detail.display_node ?? detail.parent_node_id;
-    let owningNode = directorNodeFromId(displayId) || directorNodeFromExecutionId(nodeId);
-    if (!owningNode || owningNode.comfyClass !== ADVANCED_NODE_CLASS) return;
-    const video = detail.output?.video?.[0] ||
-      detail.output?.td_saved_video?.[0] ||
-      detail.output?.images?.[0] || detail.output?.videos?.[0] ||
-      detail.output?.gifs?.[0];
-    if (!video?.filename) return;
-    const params = new URLSearchParams({
-      filename: video.filename,
-      subfolder: video.subfolder || "",
-      type: video.type || "output",
+  for (const name of ["execution_success", "execution_error", "execution_interrupted"]) {
+    api.addEventListener(name, event => {
+      const promptId = event.detail?.prompt_id;
+      if (tdActiveExecutionPromptId === promptId) tdActiveExecutionPromptId = null;
+      const success = name === "execution_success";
+      const message = name === "execution_interrupted" ? "生成已取消"
+        : (event.detail?.exception_message || "生成失败");
+      const matched = finishPromptActivity(promptId, success, message);
+      if (matched && name === "execution_interrupted") {
+        void api.freeMemory({ freeExecutionCache: true });
+      }
     });
-    endAdvancedLivePreview(owningNode);
-    owningNode.__tdPreviewUrl = "/view?" + params.toString();
-    renderNode(owningNode);
-  });
-
-  api.addEventListener("execution_success", event => {
-    const finishedPromptId = event.detail?.prompt_id;
-    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
-    const matched = finishPromptActivity(event.detail?.prompt_id, true);
-    if (matched) {
-      for (const node of app.graph?._nodes || []) {
-        if (node?.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
-      }
-    }
-  });
-  api.addEventListener("execution_error", event => {
-    const finishedPromptId = event.detail?.prompt_id;
-    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
-    const matched = finishPromptActivity(
-      event.detail?.prompt_id,
-      false,
-      event.detail?.exception_message || "生成失败"
-    );
-    if (matched) {
-      for (const node of app.graph?._nodes || []) {
-        if (node?.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
-      }
-    }
-  });
-  api.addEventListener("execution_interrupted", event => {
-    const finishedPromptId = event.detail?.prompt_id;
-    if (tdActiveExecutionPromptId === finishedPromptId) tdActiveExecutionPromptId = null;
-    const matched = finishPromptActivity(
-      event.detail?.prompt_id,
-      false,
-      "生成已取消"
-    );
-    if (matched) {
-      void api.freeMemory({ freeExecutionCache: true });
-      for (const node of app.graph?._nodes || []) {
-        if (node?.comfyClass === ADVANCED_NODE_CLASS) {
-          window.setTimeout(() => void restoreAdvancedState(node), 150);
-        }
-      }
-    }
-  });
+  }
 }
 
 function ensureCss() {
