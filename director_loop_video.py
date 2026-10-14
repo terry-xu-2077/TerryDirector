@@ -108,24 +108,39 @@ class TerryDirectorStreamVideo(VideoInput):
         return self._saved_video().as_cropped(x, y, width, height)
 
     def _clear_lossless_cache(self):
-        """Only delete our private per-run temp directory, never arbitrary paths."""
-        temp_root = os.path.realpath(os.path.join(
-            folder_paths.get_temp_directory(), "terrydirector_base"
-        ))
-        roots = {os.path.realpath(os.path.dirname(item["path"])) for item in self._descriptors}
+        """Delete only the completed run's own cache, never another run.
+
+        Recovery cache lives under output/, rather than temp/, so it survives
+        failed renders and ComfyUI restarts. Legacy temp paths are supported
+        for old in-flight runs. Both layouts are <root>/<looper>/<run>/.
+        """
+        roots = {
+            os.path.realpath(os.path.dirname(item["path"]))
+            for item in self._descriptors
+        }
         if len(roots) != 1:
             return
-        root = roots.pop()
-        try:
-            common = os.path.commonpath((
-                os.path.normcase(root), os.path.normcase(temp_root)
-            ))
-        except ValueError:
-            # Different drives on Windows: never delete unrelated data.
+        run_root = roots.pop()
+        allowed_parents = (
+            os.path.realpath(os.path.join(
+                folder_paths.get_output_directory(),
+                "TerryDirector", "recovery_cache",
+            )),
+            os.path.realpath(os.path.join(
+                folder_paths.get_temp_directory(), "terrydirector_base",
+            )),
+        )
+        # Require exactly two levels (loop key and run signature). This avoids
+        # deleting the cache root or a neighboring run's recovery data.
+        parent = os.path.dirname(os.path.dirname(run_root))
+        if not any(
+            os.path.normcase(parent) == os.path.normcase(allowed)
+            for allowed in allowed_parents
+        ):
             return
-        if common != os.path.normcase(temp_root) or root == temp_root:
+        if not os.path.isdir(run_root):
             return
-        shutil.rmtree(root, ignore_errors=True)
+        shutil.rmtree(run_root, ignore_errors=True)
 
     def save_to(self, path, format=Types.VideoContainer.AUTO,
                 codec=Types.VideoCodec.AUTO, metadata=None,

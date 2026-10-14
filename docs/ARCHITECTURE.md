@@ -26,6 +26,7 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 | `director_loop.py` | 循环开始、循环信息／条件／结束及动态子图 |
 | `director_loop_adapters.py` | 模型适配器注册与 H3 模型专属策略；LTX 2.5 仅占位 |
 | `director_loop_video.py` | 从分段 .pt 缓存延迟读取并在 SaveVideo 中流式编码 VIDEO |
+| `director_loop_report.py` | 对外部循环执行进行独立采集；以真实循环/采样进度与周期资源快照生成 Markdown 报告，不承担模型生成或解码 |
 | `server_routes.py` | 编辑器入口、ComfyUI input 资产与磁盘空间只读查询 |
 | `web/` | ComfyUI 节点内控件、迷你时间线、弹窗及事件监听 |
 | `src/`、`assets/`、`index.html` | 正式浮窗复用的 UI 资源和静态预览入口 |
@@ -74,7 +75,7 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢复／片段重跑，最终一次性编码视频，避免中间 H.264 有损压缩。保存成功后清理生成时的分段画面缓存，保留必要的 checkpoint。
 
-独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache，不再经过用户可见的 LoopEnd 端口。LoopCache 将最终媒体写入无损分段缓存并从同一结果提取尾帧/音频上下文；因此 2X Fast Decode、锐化或其他画面处理可以直接成为连续性与最终输出的真实来源。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，并用「循环结束依赖」闭合该副作用分支。LoopEnd 不再保存或输出分段 LATENT。
+独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache，不再经过用户可见的 LoopEnd 端口。LoopCache 将最终媒体写入无损分段缓存并从同一结果提取尾帧/音频上下文；因此 2X Fast Decode、锐化或其他画面处理可以直接成为连续性与最终输出的真实来源。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，并用「循环结束依赖」闭合该副作用分支。LoopEnd 不再保存或输出分段 LATENT。完成运行时另附 Markdown 循环性能记录（节点 STRING 输出并自动写入 `output/TerryDirector/reports/`）。
 
 **资源边界：** 文件化缓存减少时间线累积，但无法消除当前单段解码、VAE 与编码器的 RAM/显存需求。长时间线仍需足够的 ComfyUI 临时目录磁盘空间。
 
@@ -95,3 +96,5 @@ TerryDirector 前端的静态上游追踪会识别 TerryTools `TerryWireBusUnpac
 已实测的环境、默认采样数值、原始工作流 SHA 与可信提交基线汇总在 [STABLE_BASELINES.md](STABLE_BASELINES.md)。原 Base、Advanced 与 Self-Lift 的已验收行为是后续重构时必须保持的契约；循环器是否兼容更多模型，以相应适配器的独立实测为准。
 
 界面配色、间距和时间线渲染以当前 `src/` 与 `web/` 代码为准；如需追溯恢复，时间线早期 UI 的固定提交基线为 `408395e7620fe368775515ca515d04fae7a8daed`。
+
+诊断报告：`director_loop_report.py` 在循环执行旁路采集逐片段时间、原生节点/步数事件和 RAM/VRAM 时序，`director_loop_logmetrics.py` 在循环结束时按真实时间戳关联 Self-Lift 低清、升采样、高清与模型加载日志。自动导出同名 Markdown 和 JSON；不注入采样器、不额外解码 LATENT。报告不记录原始提示词/资产路径，未观测的数据明确显示未采集。

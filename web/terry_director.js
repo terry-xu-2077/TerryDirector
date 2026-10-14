@@ -2,6 +2,7 @@ import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
+import { effectiveClipLayout, previewClipLayout } from "./td_timeline_projection.js";
 import {
   findLoopMemorySources,
   readLoopOutputResolution,
@@ -28,7 +29,7 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   "KSampler", "KSamplerAdvanced",
   "ResolutionSelector", "PrimitiveInt", "PrimitiveFloat",
   "PrimitiveString", "Reroute", "GetNode", "SetNode",
-  "MiniMaxH3VAEDecodeFast", "VAELoader",
+  "MiniMaxH3VAEDecodeFast", "TerryDirectorH3X2LowRAMDecode", "VAELoader",
   "TerryXuMemoryCleanup", "LTXVSeparateAVLatent",
   "SelfLiftAvatarH3Sampler", "TerryDirectorSelfLiftSampler",
   "TerryWireBusPack", "TerryWireBusUnpack",
@@ -1192,6 +1193,9 @@ function normalizeConfig(value) {
         .map(asset => ({
           id: String(asset.id),
           name: String(asset.name || asset.source.path),
+          ...(String(asset.displayName || "").trim()
+            ? { displayName: String(asset.displayName).trim().slice(0, 80) }
+            : {}),
           kind: asset.kind,
           number: Math.max(1, Number.parseInt(asset.number, 10) || 1),
           source: {
@@ -1262,12 +1266,15 @@ function referencedAssetIds(prompt, assets) {
   return ids;
 }
 
-function authoredAssetIds(documentData) {
+function authoredAssetIds(documentData, activeClips = effectiveClipLayout(documentData.clips)) {
   const assets = documentData.assets || [];
   const globalPrompt = documentData.globalPromptMode === "ai" && documentData.aiGlobalPrompt
     ? documentData.aiGlobalPrompt : documentData.globalPrompt;
-  const ids = referencedAssetIds(globalPrompt, assets);
-  for (const clip of documentData.clips || []) {
+  // Suspended clips cannot consume a reference. Global prompt images only
+  // count if an active clip actually enables the global prompt.
+  const ids = activeClips.some(clip => clip.useGlobalPrompt !== false)
+    ? referencedAssetIds(globalPrompt, assets) : new Set();
+  for (const clip of activeClips) {
     const activePrompt = clip.promptMode === "ai" && clip.aiPrompt ? clip.aiPrompt : clip.prompt;
     for (const id of referencedAssetIds(activePrompt, assets)) ids.add(id);
   }
@@ -1342,14 +1349,14 @@ function writeConfig(node, config, render = true) {
   queueMicrotask(refreshAllOutputMemoryInfo);
 }
 
-function miniRulerHtml(totalFrames) {
+function miniRulerHtml(totalFrames, percentAtFrame = frame => totalFrames > 0 ? frame / totalFrames * 100 : 0) {
   const totalSeconds = Math.max(0, totalFrames / FPS);
   const desired = totalSeconds / 6;
   const candidates = [1, 2, 3, 5, 10, 15, 20, 30, 60, 120, 300, 600];
   const step = candidates.find(value => value >= desired) || candidates.at(-1);
   const ticks = [];
   for (let seconds = 0; seconds <= totalSeconds + 0.0001; seconds += step) {
-    const left = totalSeconds ? (seconds / totalSeconds) * 100 : 0;
+    const left = percentAtFrame(seconds * FPS);
     const minutes = Math.floor(seconds / 60);
     const remain = Math.round(seconds % 60);
     const label = `${String(minutes).padStart(2, "0")}:${String(remain).padStart(2, "0")}`;
@@ -1357,6 +1364,24 @@ function miniRulerHtml(totalFrames) {
     ticks.push(`<span class="td-mini-ruler-tick${edgeClass}" style="left:${left}%"><b>${label}</b><i></i></span>`);
   }
   return `<div class="td-mini-ruler" aria-hidden="true">${ticks.join("")}</div>`;
+}
+
+
+/** A suspended card is still an ordinary clip in the SAME preview row.
+ * Clicking it locates the source clip in the editor without changing output.
+ */
+function bindSuspendedClipButtons(node, root) {
+  root.querySelectorAll("[data-suspended-clip]").forEach(button => {
+    const edit = event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openEditor(node, button, button.dataset.suspendedClip);
+    };
+    button.addEventListener("click", edit);
+    button.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") edit(event);
+    });
+  });
 }
 
 function timelineHtml(documentData, activity = {}) {
@@ -1396,12 +1421,17 @@ function timelineHtml(documentData, activity = {}) {
           : failed
             ? "生成失败"
             : "";
-      const title = statusText ? `${clip.name} · ${statusText}` : clip.name;
+      const title = clip.suspended
+        ? `片段 ${index + 1} · ${clip.name} · 已挂起（不参与生成）`
+        : statusText ? `${clip.name} · ${statusText}` : clip.name;
+      const pausedAttrs = clip.suspended
+        ? ` data-suspended-clip="${escapeHtml(clip.id)}" role="button" tabindex="0" aria-label="${escapeHtml(title)}"`
+        : "";
       const progressHtml = (running || visualCompleted)
         ? `<span class="td-mini-clip-progress"><i style="width:${visualCompleted ? 100 : percent}%"></i></span>`
         : "";
 
-      return `<div class="td-mini-clip${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : index + 1}" title="${escapeHtml(title)}"><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
+      return `<div class="td-mini-clip${suspended}${runClass}" style="left:${left}%;width:${width}%;z-index:${running && !visualCompleted ? 12 : index + 1}" title="${escapeHtml(title)}"${pausedAttrs}><div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${duration}</span></div><span class="td-mini-label">${escapeHtml(clip.name)}</span>${progressHtml}</div>`;
     })
     .join("");
 
@@ -1415,8 +1445,9 @@ function renderNode(node) {
 
   const config = readConfig(node);
   const doc = config.document;
-  const total = Math.max(0, ...doc.clips.map(clip => clip.end || 0));
-  const usedAssetIds = authoredAssetIds(doc);
+  const activeClips = effectiveClipLayout(doc.clips);
+  const total = activeClips.at(-1)?.end || 0;
+  const usedAssetIds = authoredAssetIds(doc, activeClips);
   const usedAssets = doc.assets.filter(asset => usedAssetIds.has(asset.id)).length;
   const activity = ensureActivity(node);
   const totalSeconds = Number((total / FPS).toFixed((total / FPS) % 1 ? 2 : 0));
@@ -1428,20 +1459,21 @@ function renderNode(node) {
         <span class="td-mini-stats">
           总时长：<b>${totalSeconds}</b>s
           <i></i>
-          片段数：<b>${doc.clips.length}</b>
+          片段数：<b>${activeClips.length}</b>
           <i></i>
           导入资产：<b>${doc.assets.length}</b><em>（<b>${usedAssets}</b> 个被使用）</em>
         </span>
         <span class="td-node-spacer"></span>
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
-      <div class="td-mini-timeline" data-action="edit" title="打开时间线编辑器">${timelineHtml(doc, activity)}</div>
+      <div class="td-mini-timeline" data-action="edit" title="原始片段编排预览（包含挂起片段）；总时长只计算有效片段">${timelineHtml(doc, activity)}</div>
     </div>
   </div>`;
 
   root.querySelectorAll('[data-action="edit"]').forEach(button => {
     button.addEventListener("click", () => openEditor(node, button));
   });
+  bindSuspendedClipButtons(node, root);
   if (node.comfyClass === LOOP_NODE_CLASS) {
     queueMicrotask(() => refreshLoopConditionCards(node));
   }
@@ -1521,36 +1553,8 @@ function linkedNodeForInput(node, inputName) {
 }
 
 function effectiveTimelineFrames(documentData) {
-  const clips = Array.isArray(documentData?.clips) ? documentData.clips : [];
-  let previousActiveOriginal = null;
-  let previousEffectiveEnd = 0;
-  let suspendedSinceActive = false;
-  let lastEffectiveEnd = 0;
-
-  for (const clip of clips) {
-    const start = Math.max(0, Number(clip?.start) || 0);
-    const end = Math.max(start + 1, Number(clip?.end) || start + 1);
-    if (clip?.suspended === true) {
-      suspendedSinceActive = true;
-      continue;
-    }
-
-    let effectiveStart;
-    if (!previousActiveOriginal) {
-      effectiveStart = suspendedSinceActive ? 0 : start;
-    } else if (suspendedSinceActive) {
-      effectiveStart = previousEffectiveEnd;
-    } else {
-      effectiveStart = previousEffectiveEnd + (start - Number(previousActiveOriginal.end || 0));
-    }
-
-    lastEffectiveEnd = effectiveStart + (end - start);
-    previousEffectiveEnd = lastEffectiveEnd;
-    previousActiveOriginal = clip;
-    suspendedSinceActive = false;
-  }
-
-  return Math.max(0, Math.round(lastEffectiveEnd));
+  // Exactly the same projection drives the video preview and memory estimate.
+  return effectiveClipLayout(documentData?.clips).at(-1)?.end || 0;
 }
 
 function directorResolution(node) {
@@ -2318,8 +2322,9 @@ function renderAdvancedNode(node) {
   const root = node.__tdRoot;
   if (!root) return;
   const doc = readConfig(node).document;
-  const clips = (doc.clips || []).filter(clip => !clip.suspended);
-  const totalFrames = Math.max(1, ...clips.map(clip => Number(clip.end) || 0));
+  const clips = effectiveClipLayout(doc.clips);
+  const layout = previewClipLayout(doc.clips, clips);
+  const totalFrames = layout.totalFrames;
   const totalSeconds = totalFrames / FPS;
   const state = node.__tdReview ||= { selected: doc.selected, time: 0, manualScroll: false };
   state.rerunSeedCustom ||= {};
@@ -2347,17 +2352,20 @@ function renderAdvancedNode(node) {
       } catch {}
     }
   }
+  state.time = Math.max(0, Math.min(totalSeconds, Number(state.time) || 0));
   const format = seconds => {
     const value = Math.max(0, seconds || 0);
     return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(Math.floor(value % 60)).padStart(2, "0")}`;
   };
-  const shortestFrames = Math.max(
-    1,
-    Math.min(...clips.map(clip => Math.max(1, Number(clip.end) - Number(clip.start))))
-  );
+  const shortestFrames = clips.length
+    ? Math.min(...clips.map(clip => Math.max(1, Number(clip.end) - Number(clip.start))))
+    : 1;
+  const shortestVisualFrames = layout.entries.length
+    ? Math.min(...layout.entries.map(item => Math.max(1, item.visualEnd - item.visualStart)))
+    : shortestFrames;
   const minTimelineTrackWidth = Math.max(
     1,
-    Math.ceil(totalFrames / shortestFrames * ADVANCED_TIMELINE_MIN_CLIP_WIDTH)
+    Math.ceil(layout.visualFrames / shortestVisualFrames * ADVANCED_TIMELINE_MIN_CLIP_WIDTH)
   );
   const activity = ensureActivity(node);
   const allSegmentsCompleted = clips.length > 0 &&
@@ -2370,21 +2378,27 @@ function renderAdvancedNode(node) {
     ? partialRecovery.completedIds.length
     : 0;
   const hasPartialRecovery = recoveryCount > 0 && recoveryCount < Math.max(1, Number(partialRecovery?.total || clips.length));
-  const rulerHtml = miniRulerHtml(totalFrames);
-  const clipHtml = clips.map((clip, index) => {
-    const left = Math.max(0, Math.min(100, Number(clip.start) / totalFrames * 100));
-    const width = Math.max(
-      0.8,
-      Math.min(100 - left, (Number(clip.end) - Number(clip.start)) / totalFrames * 100)
-    );
-    const record = activity[clip.id] || {};
-    const running = record.status === RUN_RUNNING;
-    const completed = record.status === RUN_COMPLETED;
-    const failed = record.status === RUN_ERROR;
+  const playheadPercent = seconds => layout.percent(layout.realToVisual(seconds * FPS));
+  const rulerHtml = miniRulerHtml(totalFrames, frame => layout.percent(layout.realToVisual(frame)));
+  const clipHtml = layout.entries.map(({ clip, authoredIndex, suspended, visualStart, visualEnd }) => {
+    const left = layout.percent(visualStart);
+    const width = Math.max(0.8, Math.min(100 - left, layout.percent(visualEnd - visualStart)));
+    const record = suspended ? {} : activity[clip.id] || {};
+    const running = !suspended && record.status === RUN_RUNNING;
+    const completed = !suspended && record.status === RUN_COMPLETED;
+    const failed = !suspended && record.status === RUN_ERROR;
     const percent = completed ? 100 : Math.round(clamp01(record.progress) * 100);
-    const classes = [clip.suspended ? "is-suspended" : "", running ? "is-running" : "", completed ? "is-completed" : "", failed ? "is-error" : "", clip.id === state.selected ? "is-selected" : ""].filter(Boolean).join(" ");
-    return `<button type="button" class="td-mini-clip td-adv-clip ${classes}" style="left:${left}%;width:${width}%" data-clip="${escapeHtml(clip.id)}" title="${escapeHtml(clip.name)}">
-      <div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${index + 1}</span><span class="td-mini-duration">${timeText(Number(clip.end)-Number(clip.start))}</span></div>
+    const classes = [
+      suspended ? "is-suspended" : "", running ? "is-running" : "",
+      completed ? "is-completed" : "", failed ? "is-error" : "",
+      !suspended && clip.id === state.selected ? "is-selected" : "",
+    ].filter(Boolean).join(" ");
+    const data = suspended
+      ? `data-suspended-clip="${escapeHtml(clip.id)}"`
+      : `data-clip="${escapeHtml(clip.id)}"`;
+    const label = `片段 ${authoredIndex + 1} · ${clip.name}${suspended ? " · 已挂起（不计入时长）" : ""}`;
+    return `<button type="button" class="td-mini-clip td-adv-clip ${classes}" style="left:${left}%;width:${width}%" ${data} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">
+      <div class="td-mini-clip-meta"><span class="td-mini-index">片段 ${authoredIndex + 1}</span><span class="td-mini-duration">${timeText(Number(clip.end)-Number(clip.start))}</span></div>
       <span class="td-mini-label">${escapeHtml(clip.name)}</span>
       ${running || completed ? `<span class="td-mini-clip-progress"><i style="width:${percent}%"></i></span>` : ""}
     </button>`;
@@ -2427,10 +2441,11 @@ function renderAdvancedNode(node) {
       <div class="td-adv-scroll td-mini-timeline" tabindex="0" aria-label="自适应时间线">
         <div class="td-adv-track" data-min-track-width="${minTimelineTrackWidth}" style="width:100%;min-width:${minTimelineTrackWidth}px;box-sizing:border-box">
           ${rulerHtml}
-          ${clipHtml}
-          <div class="td-adv-playhead" style="left:${Math.max(0,Math.min(100,state.time/Math.max(totalSeconds,1)*100))}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
+          ${clipHtml || '<div class="td-mini-empty">尚无片段 · 点击编辑</div>'}
+          <div class="td-adv-playhead" style="left:${playheadPercent(state.time)}%" role="slider" tabindex="0" aria-label="播放头" aria-valuemin="0" aria-valuemax="${totalSeconds}" aria-valuenow="${state.time}"><span class="td-adv-playhead-label">${format(state.time)}</span><i class="td-adv-playhead-grip"></i></div>
         </div>
       </div>
+      
     </div>
     <div class="td-adv-actions"><span class="td-adv-selected">已选中：${escapeHtml(clips.find(c => c.id === state.selected)?.name || "无")}</span>
       ${hasPartialRecovery ? `<div class="td-adv-rerun-tools td-adv-recovery-tools${rerunBusy ? " is-busy" : ""}">
@@ -2514,7 +2529,7 @@ function renderAdvancedNode(node) {
   );
   const playhead = root.querySelector(".td-adv-playhead");
   const updateHead = () => {
-    const percent = Math.max(0, Math.min(100, state.time / Math.max(totalSeconds, 1) * 100));
+    const percent = playheadPercent(state.time);
     playhead.style.left = `${percent}%`;
     playhead.setAttribute("aria-valuenow", String(state.time));
     playhead.querySelector(".td-adv-playhead-label").textContent = format(state.time);
@@ -2523,7 +2538,7 @@ function renderAdvancedNode(node) {
   const follow = () => {
     updateHead();
     if (!scroller.classList.contains("has-overflow")) return;
-    const position = state.time / Math.max(totalSeconds, 1) * track.scrollWidth;
+    const position = playheadPercent(state.time) / 100 * track.scrollWidth;
     node.__tdAutoTimelineScroll = true;
     scroller.scrollLeft = Math.max(
       0,
@@ -2551,10 +2566,10 @@ function renderAdvancedNode(node) {
     const rect = track.getBoundingClientRect();
     if (!rect.width) return;
     const fraction = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    setTime(Math.round(fraction * totalSeconds * FPS) / FPS);
+    setTime(Math.round(layout.visualToReal(fraction * layout.visualFrames)) / FPS);
   };
   track.addEventListener("pointerdown", event => {
-    if (event.button !== 0 || event.target.closest("[data-clip]")) return;
+    if (event.button !== 0 || event.target.closest("[data-clip], [data-suspended-clip]")) return;
     draggingHead = true;
     track.setPointerCapture(event.pointerId);
     seekPointer(event);
@@ -2611,6 +2626,7 @@ function renderAdvancedNode(node) {
     if (!state.manualScroll) follow();
   });
   root.querySelector('[data-action="edit"]').addEventListener("click", e => openEditor(node, e.currentTarget));
+  bindSuspendedClipButtons(node, root);
   const rerunSeedInput = root.querySelector(".td-adv-rerun-seed");
   rerunSeedInput?.addEventListener("change", () => {
     if (!state.selected) return;
@@ -3479,7 +3495,7 @@ function ensureEditorOverlay() {
   });
 }
 
-function openEditor(node, button) {
+function openEditor(node, button, selectedClipId = null) {
   ensureEditorOverlay();
   activeNode = node;
   editorDirty = false;
@@ -3488,6 +3504,9 @@ function openEditor(node, button) {
   startAiConfigWatch();
 
   const documentData = clone(readConfig(node).document);
+  if (selectedClipId && documentData.clips?.some(clip => clip.id === selectedClipId)) {
+    documentData.selected = selectedClipId;
+  }
   overlay.classList.add("is-open");
   document.documentElement.style.overflow = "hidden";
 

@@ -155,7 +155,12 @@
         // Video URLs are not images. Until a real poster exists, show its media icon.
         const src=a?.kind==='picture'?a.preview:(a?.poster||'');
         if(src){if(image.getAttribute('src')!==src)image.src=src;image.hidden=false;}else{image.removeAttribute('src');image.hidden=true;}
-        chip.querySelector('.h3-media-icon').hidden=!!src;chip.title=a?`${S.label(a.raw)} · ${a.name}`:`${chip.dataset.raw} · 尚未绑定参考`;chip.classList.toggle('is-unbound',!a);
+        chip.querySelector('.h3-media-icon').hidden=!!src;
+        const original=S.label(chip.dataset.raw),alias=String(a?.displayName||'').trim();
+        chip.querySelector('.h3-label').textContent=alias||original;
+        chip.title=a?(alias?`${alias} · ${original} · ${a.fileName||a.name}`:`${original} · ${a.name}`):`${chip.dataset.raw} · 尚未绑定参考`;
+        chip.setAttribute('aria-label','更换'+(alias||original));
+        chip.classList.toggle('is-unbound',!a);
       }
     }
     replaceSelection(text,parse=true,explicitRange=null){
@@ -227,7 +232,7 @@
     openMenu(state){this.closeMenu();state.element=el('div','h3-menu');state.element.id='td-h3-menu';state.element.setAttribute('role','listbox');this.menu=state;this.menuRoot.append(state.element);this.visual.setAttribute('aria-controls',state.element.id);this.visual.setAttribute('aria-expanded','true');this.renderMenu();}
     menuOptions(m){
       if(m.type==='asset')return (this.getAssets?.()||[])
-        .filter(a=>!m.query||`${a.name} ${a.raw} ${a.kind} ${S.label(a.raw)}`.toLowerCase().includes(m.query))
+        .filter(a=>!m.query||`${a.name} ${a.fileName||''} ${a.raw} ${a.kind} ${S.label(a.raw)}`.toLowerCase().includes(m.query))
         .map(a=>{
           const rawAvailability=this.getAssetAvailability?.(a,{
             value:this.value,

@@ -172,8 +172,9 @@ def _base_cache_root(cache_key: str, run_signature: str) -> str:
     safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "base"))[:120]
     safe_run = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(run_signature or "run"))[:80]
     root = os.path.join(
-        folder_paths.get_temp_directory(),
-        "terrydirector_base",
+        folder_paths.get_output_directory(),
+        "TerryDirector",
+        "recovery_cache",
         safe_key,
         safe_run,
     )
@@ -182,14 +183,8 @@ def _base_cache_root(cache_key: str, run_signature: str) -> str:
 
 
 def prepare_base_run_cache(cache_key: str, run_signature: str) -> str:
-    safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_key or "base"))[:120]
-    node_root = os.path.join(
-        folder_paths.get_temp_directory(),
-        "terrydirector_base",
-        safe_key,
-    )
-    if os.path.isdir(node_root):
-        shutil.rmtree(node_root, ignore_errors=True)
+    # Runs have unique directories under output so a failed run survives a
+    # ComfyUI restart. Successful final merge removes only its own run data.
     return _base_cache_root(cache_key, run_signature)
 
 

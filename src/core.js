@@ -52,8 +52,193 @@
     const n = Math.max(5, Math.ceil(Number(frames) || 0));
     return n + (5 - (n % 17) + 17) % 17;
   }
+  function effectiveClipLayout(clips) {
+      // Mirror director_compile.compile_timeline's suspended-segment projection.
+      // A suspended clip disappears from execution; the next active clip joins
+      // the previous active tail. Intentional gaps/overlaps between consecutive
+      // ACTIVE clips are preserved. No original clip positions are mutated.
+      const effective = [];
+      let previousOriginalEnd = null;
+      let previousEffectiveEnd = 0;
+      let suspendedSinceActive = false;
+      for (const clip of Array.isArray(clips) ? clips : []) {
+        if (clip?.suspended === true) {
+          suspendedSinceActive = true;
+          continue;
+        }
+        const originalStart = Math.max(0, Math.trunc(Number(clip?.start) || 0));
+        const originalEnd = Math.max(originalStart + 1, Math.trunc(Number(clip?.end) || originalStart + 1));
+        const effectiveStart = previousOriginalEnd === null
+          ? (suspendedSinceActive ? 0 : originalStart)
+          : suspendedSinceActive ? previousEffectiveEnd
+            : previousEffectiveEnd + originalStart - previousOriginalEnd;
+        const effectiveEnd = effectiveStart + originalEnd - originalStart;
+        effective.push({ ...clip, start: effectiveStart, end: effectiveEnd });
+        previousOriginalEnd = originalEnd;
+        previousEffectiveEnd = effectiveEnd;
+        suspendedSinceActive = false;
+      }
+      return effective;
+    }
   // Actual arranged duration starts at timeline zero; viewport padding is not content.
   const arrangementFrames = clips => clips.reduce((end, clip) => Math.max(end, clip.end), 0);
+  // List order is also generation order. Keep each clip's ID and metadata intact
+  // while ordering by its head frame. At frame zero, the moved clip wins a tie.
+  function orderClips(clips, movingId = null) {
+    return clips.map((clip, index) => ({ clip, index })).sort((a, b) => {
+      const delta = a.clip.start - b.clip.start;
+      if (delta) return delta;
+      if (movingId && a.clip.start === 0) {
+        if (a.clip.id === movingId) return -1;
+        if (b.clip.id === movingId) return 1;
+      }
+      return a.index - b.index;
+    }).map(item => item.clip);
+  }
+  // Ripple-insert at the playhead without trimming or splitting authored clips.
+  // A clip crossing the playhead joins the shifted suffix. Preserve every
+  // shifted clip's duration, metadata, and existing intra-suffix seam.
+  function insertClipAtFrame(clips, clip, frame) {
+    if (!clip || !Number.isFinite(frame)) return clips;
+    const start = Math.max(0, Math.round(frame));
+    const duration = Math.max(1, Math.round(clip.end - clip.start));
+    const ordered = orderClips(clips);
+    const firstShifted = ordered.findIndex(existing => existing.end > start);
+    const inserted = { ...clip, start, end: start + duration };
+    if (firstShifted < 0) return [...ordered, inserted];
+    const suffix = ordered.slice(firstShifted);
+    // Spend any available blank interval first. Only the shortage moves the
+    // suffix; a clip already covering the playhead moves entirely beyond it.
+    const delta = Math.max(0, inserted.end - suffix[0].start);
+    return [...ordered.slice(0, firstShifted), inserted,
+      ...suffix.map(existing => ({
+        ...existing, start: existing.start + delta, end: existing.end + delta
+      }))];
+  }
+  // Drag sorting uses the original heads as insertion slots; the new order
+  // inherits those slots. Nudge later heads only when the swapped durations
+  // would violate H3's chronological or two-way-overlap invariants.
+  function reorderClips(clips, id, targetIndex) {
+    const from = clips.findIndex(c => c.id === id);
+    if (from < 0 || clips.length < 2 || !Number.isFinite(targetIndex)) return clips;
+    const to = clamp(Math.trunc(targetIndex), 0, clips.length - 1);
+    if (from === to) return clips;
+    const slots = clips.map(c => c.start), ordered = clips.slice();
+    ordered.splice(to, 0, ordered.splice(from, 1)[0]);
+    const arranged = [];
+    for (let i = 0; i < ordered.length; i++) {
+      const clip = ordered[i], duration = clip.end - clip.start;
+      const prev = arranged[i - 1], prev2 = arranged[i - 2];
+      const start = Math.max(slots[i], prev ? prev.start + 1 : 0,
+        prev ? prev.end - duration + 1 : 0, prev2 ? prev2.end : 0);
+      arranged.push({ ...clip, start, end: start + duration });
+    }
+    return arranged;
+  }
+  // Reorder around a fixed mouse release frame. The dragged clip is NEVER
+  // moved to a preset slot. Other clips yield left/right while remaining whole.
+  // Existing intentional overlaps with the dragged clip may be retained, but
+  // a newly adjacent clip may not overlap it.
+  function reorderClipsAtFrame(clips, id, targetIndex, frame) {
+    const from=clips.findIndex(c=>c.id===id);
+    if(from<0||!Number.isFinite(frame)||!Number.isFinite(targetIndex))return clips;
+    const anchor=Math.max(0,Math.round(frame));
+    const requested=clamp(Math.trunc(targetIndex),0,clips.length-1);
+    if(from===requested&&anchor===clips[from].start)return clips;
+    const allowedOverlap=(a,b)=>{
+      const index=clips.findIndex(c=>c.id===a.id);
+      return index>=0&&clips[index+1]?.id===b.id
+        ? Math.max(0,clips[index].end-clips[index+1].start) : 0;
+    };
+    // A short drop cannot always fit after a longer clip at timeline zero.
+    // In that case move the existing clip to the right of the drop, never
+    // move the dragged clip itself.
+    for(let index=requested;index>=0;index--){
+      const arranged=reorderClips(clips,id,index).map(c=>({...c}));
+      const moving=arranged[index],duration=moving.end-moving.start;
+      moving.start=anchor;moving.end=anchor+duration;
+      if(index>0){
+        const prev=arranged[index-1],prev2=arranged[index-2];
+        const shift=Math.min(0,
+          anchor+allowedOverlap(prev,moving)-prev.end,
+          moving.end-1-prev.end,
+          anchor-1-prev.start,
+          prev2?anchor-prev2.end:0);
+        if(arranged[0].start+shift<0)continue;
+        // Move the prefix together so its authored seams survive unchanged.
+        for(let i=0;i<index;i++){
+          arranged[i].start+=shift;arranged[i].end+=shift;
+        }
+      }
+      if(index<arranged.length-1){
+        const next=arranged[index+1],next2=arranged[index+2];
+        const prev=arranged[index-1];
+        const shift=Math.max(0,
+          moving.end-allowedOverlap(moving,next)-next.start,
+          moving.start+1-next.start,
+          moving.end+1-next.end,
+          prev?prev.end-next.start:0,
+          next2?moving.end-next2.start:0);
+        // Move the suffix together; don't alter its internal spacing.
+        for(let i=index+1;i<arranged.length;i++){
+          arranged[i].start+=shift;arranged[i].end+=shift;
+        }
+      }
+      return arranged;
+    }
+    return clips;
+  }
+  // Head crossing changes the rank. A later clip can take the first slot
+  // at frame zero even though negative timeline positions are impossible.
+  function reorderIndex(clips, id, frame) {
+    if (!Number.isFinite(frame)) return -1;
+    const from = clips.findIndex(c => c.id === id);
+    if (from < 0) return -1;
+    let rank = 0;
+    clips.forEach((clip, index) => {
+      if (index === from) return;
+      if (frame > clip.start || (frame === clip.start && frame !== 0 && from > index)) rank++;
+    });
+    return rank;
+  }
+  // Treat the selected clips as one block anchored to the exact drop frame.
+  // Clip metadata (including transitionMode), group gaps and overlaps survive.
+  function reorderClipGroupAtFrame(clips, ids, frame) {
+    if(!Number.isFinite(frame))return clips;
+    const chosen=new Set(ids),selected=clips.filter(c=>chosen.has(c.id));
+    if(!selected.length)return clips;
+    const anchor=Math.max(0,Math.round(frame));
+    if(selected.length===1){
+      const id=selected[0].id;
+      return reorderClipsAtFrame(clips,id,reorderIndex(clips,id,anchor),anchor);
+    }
+    const origin=selected[0].start;
+    if(origin===anchor)return clips;
+    const delta=anchor-origin;
+    const moving=selected.map(c=>({...c,start:c.start+delta,end:c.end+delta}));
+    const end=moving[moving.length-1].end;
+    const others=clips.filter(c=>!chosen.has(c.id));
+    const proposed=others.filter(c=>c.start<anchor).length;
+    // When a prefix cannot fit left of frame zero, place it after the
+    // dragged block rather than moving the block away from the cursor.
+    for(let rank=proposed;rank>=0;rank--){
+      const prefix=others.slice(0,rank),suffix=others.slice(rank);
+      const left=prefix.length?Math.min(0,anchor-prefix[prefix.length-1].end):0;
+      if(prefix.length&&prefix[0].start+left<0)continue;
+      const right=suffix.length?Math.max(0,end-suffix[0].start):0;
+      return [
+        ...prefix.map(c=>({...c,start:c.start+left,end:c.end+left})),
+        ...moving,
+        ...suffix.map(c=>({...c,start:c.start+right,end:c.end+right}))
+      ];
+    }
+    return clips;
+  }
+  function clipsIntersectingRange(clips,frameA,frameB){
+    if(!Number.isFinite(frameA)||!Number.isFinite(frameB)||frameA===frameB)return [];
+    const first=Math.min(frameA,frameB),last=Math.max(frameA,frameB);
+    return clips.filter(c=>c.start<last&&c.end>first).map(c=>c.id);
+  }
   function bounds(clips, id, mode) {
     const i = clips.findIndex(c => c.id === id), c = clips[i];
     if (!c) return { min: 0, max: 0 };
@@ -144,7 +329,7 @@
     undo(current) { if (!this.undoItems.length) return null; this.redoItems.push(copy(current)); return this.undoItems.pop(); }
     redo(current) { if (!this.redoItems.length) return null; this.undoItems.push(copy(current)); return this.redoItems.pop(); }
   }
-  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
+  const api = { FPS, clamp, copy, intersection, seams, overlaps, h3AlignedFrames, arrangementFrames, effectiveClipLayout, orderClips, insertClipAtFrame, reorderClips, reorderClipsAtFrame, reorderClipGroupAtFrame, clipsIntersectingRange, reorderIndex, bounds, editClip, moveFollowing, trimEndFollowing, snap, seconds, timecode, History };
   if (typeof module !== 'undefined') module.exports = api;
   global.TDCore = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -45,7 +45,7 @@ input,textarea { min-width:0; }
 .top-data-button svg { width:14px;height:14px; }
 .prototype { color:var(--td-text-muted);font-size:10px;letter-spacing:1px; }
 .icon-button { display:inline-flex;align-items:center;justify-content:center;flex:none;width:auto;height:29px;gap:5px;white-space:nowrap;font-size:11px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--td-text-secondary);padding:0 7px; }
-.icon-button:hover { background:var(--td-bg-hover);color:var(--td-text-main); }
+.icon-button:hover:not(:disabled) { background:var(--td-bg-hover);color:var(--td-text-main); }
 .icon-button.is-active { color:var(--td-effect);border-color:var(--td-border);background:var(--td-accent-soft); }
 .button { display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:0 12px;border:1px solid var(--td-border);border-radius:7px;background:var(--td-bg-surface);font-size:12px;white-space:nowrap; }
 .button:hover:not(:disabled) { background:var(--td-bg-hover);border-color:var(--td-border-focus); }
@@ -215,10 +215,36 @@ dialog[data-mode="global-prompt"] { width:min(880px,calc(100vw - 48px)); }
 
 /* Docked generation feedback: normal grid flow, never covers prompt text. */
 .reference-column { display:contents; }
-.asset-lightbox { min-height:180px;max-height:68dvh;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:var(--td-bg-inset); }
-.asset-lightbox img,.asset-lightbox video { display:block;max-width:100%;max-height:68dvh;object-fit:contain; }
-.asset-lightbox audio { width:min(720px,90%);margin:70px 20px; }
-.asset-lightbox-note { margin:8px 2px 0;color:var(--td-text-muted);font-size:10px; }
+dialog[data-mode="media"] { width:80vw;max-width:calc(100vw - 20px);height:80dvh;max-height:calc(100dvh - 20px);display:flex;flex-direction:column;padding:18px 22px; }
+dialog[data-mode="media"]:not([open]) { display:none; }
+dialog[data-mode="media"] .modal-body { flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden; }
+dialog[data-mode="media"] .modal-header { flex:none; }
+dialog[data-mode="media"] .modal-actions { flex:none;margin-top:12px; }
+.asset-rename-bar { display:flex;align-items:center;gap:10px;min-width:0;margin-bottom:12px;flex:none; }
+.asset-rename-bar label { flex:none;margin:0;color:var(--td-text-secondary);white-space:nowrap; }
+.asset-rename-bar input { flex:1;min-width:0;height:34px;padding:0 11px;border:1px solid var(--td-border);border-radius:7px;background:var(--td-bg-inset);color:var(--td-text-main);font:13px "Segoe UI","Microsoft YaHei",sans-serif; }
+.asset-rename-bar input:focus-visible { outline:1px solid var(--td-border-focus);outline-offset:1px; }
+.asset-rename-bar button { flex:none; }
+.asset-lightbox { position:relative;flex:1;min-height:0;min-width:0;display:grid;place-items:center;overflow:hidden;border-radius:8px;background:var(--td-bg-inset);overscroll-behavior:contain; }
+.asset-lightbox.is-image { touch-action:none; }
+.asset-lightbox.is-image img { position:absolute;inset:0;display:block;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain;transform-origin:center center;user-select:none;pointer-events:none; }
+.asset-lightbox.is-image.is-zoomed { cursor:grab; }
+.asset-lightbox.is-image.is-zoomed:active { cursor:grabbing; }
+.asset-lightbox video { display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain; }
+.asset-lightbox audio { width:min(720px,calc(100% - 40px));max-width:100%; }
+.asset-zoom-tools { position:absolute;right:12px;bottom:12px;z-index:2;display:flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid var(--td-border);border-radius:8px;background:var(--td-bg-elevated);box-shadow:0 4px 16px var(--td-shadow); }
+.asset-zoom-tools button { min-width:29px;height:27px;padding:0 7px;border:0;border-radius:5px;color:var(--td-text-main);background:var(--td-bg-hover);cursor:pointer; }
+.asset-zoom-tools button:hover:not(:disabled) { background:var(--td-accent-soft); }
+.asset-zoom-tools button:disabled { opacity:.4;cursor:default; }
+.asset-zoom-percent { min-width:39px;text-align:center;font:11px Consolas,monospace;color:var(--td-text-main); }
+.asset-zoom-hint { margin-left:6px;font-size:10px;color:var(--td-text-secondary);white-space:nowrap; }
+.asset-lightbox-note { margin:8px 2px 0;color:var(--td-text-muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none; }
+@media(max-width:700px) {
+  .asset-rename-bar { flex-wrap:wrap; }
+  .asset-rename-bar input { flex-basis:calc(100% - 150px); }
+  .asset-zoom-hint { display:none; }
+  dialog[data-mode="media"] { padding:12px; }
+}
 .composer-footer #promptUsed { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .composer-footer #promptCount { flex:none; }
 .generation-controls { margin-top:16px;padding-top:14px;border-top:1px solid var(--td-border-soft); }
@@ -781,7 +807,8 @@ body.td-embedded .top-timeline-duration {
 }
 
 .clip-duration-control > input[type="number"] {
-  width: 52px;
+  width: 66px;
+  min-width: 56px;
   height: 26px;
   padding: 0 6px;
   border: 1px solid var(--td-border);
@@ -1376,4 +1403,200 @@ dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
   dialog[data-mode="global-prompt"] .global-ai-status {
     text-align:left;
   }
+}
+
+
+/* Responsive floating-editor pass (2026-10-13).
+ * Use the editor/column width, not ComfyUI's outer viewport. Keep the header
+ * legible and retain a scrollable prompt region on short, narrow windows. */
+@container td-editor-shell (max-width: 930px) {
+  #app > .topbar {
+    grid-template-areas: "brand duration actions" "leading leading leading";
+    grid-template-columns: minmax(100px,1fr) auto auto;
+    gap: 5px 10px;
+    align-content: center;
+    min-width: 0;
+    padding: 7px 12px;
+  }
+  #app > .topbar .top-timeline-duration { justify-self: center; }
+  #app > .topbar .top-timeline-leading {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    gap: 6px;
+    padding-block: 1px 3px;
+  }
+  #app > .topbar .top-timeline-leading > * { flex-shrink: 0; }
+  #app > .topbar .top-actions { min-width: 0; }
+  #app > .topbar .prototype { display: none; }
+  #app > .topbar .top-data-actions { gap: 4px; }
+  #app > .topbar .top-data-button { padding-inline: 8px; }
+}
+@container td-editor-shell (max-width: 760px) {
+  #app > .topbar {
+    grid-template-areas: "brand duration" "actions actions" "leading leading";
+    grid-template-columns: minmax(0,1fr) auto;
+    gap: 4px 10px;
+    padding: 7px 12px;
+  }
+  #app > .topbar .brand { overflow: hidden; font-size: 14px; }
+  #app > .topbar .brand > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  #app > .topbar .top-timeline-duration { justify-self: end; }
+  #app > .topbar .top-actions {
+    width: 100%;
+    justify-self: stretch;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  #app > .topbar .top-data-actions { margin-right: auto; }
+  #app > .timeline-panel {
+    height: var(--timeline-height);
+    min-height: 172px;
+  }
+  #app > .timeline-panel .timeline-toolbar {
+    height: 40px;
+    min-height: 40px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+    align-content: center;
+    gap: 4px;
+    padding: 0 10px;
+  }
+  #app > .timeline-panel .timeline-controls {
+    flex: 1 1 auto;
+    flex-basis: auto;
+    width: auto;
+    min-width: 0;
+    height: 100%;
+    overflow-x: auto;
+  }
+  #app > .timeline-panel .timeline-tools .icon-button > span,
+  #app > .timeline-panel .timeline-zoom .icon-button > span { display: none; }
+  #app > .timeline-panel .timeline-tools [data-action="sort"] > span { display: inline; }
+  #app > .timeline-panel .timeline-zoom { gap: 0; }
+  #app > .timeline-panel .timeline-zoom input { width: 46px; }
+  #app > .timeline-panel .timeline-body { min-height: 85px; }
+}
+@container td-editor-shell (max-width: 480px) {
+  #app > .topbar { column-gap: 6px; padding-inline: 9px; }
+  #app > .topbar .brand { gap: 5px; }
+  #app > .topbar .brand-mark, #app > .topbar .brand-mark img { width: 24px; height: 24px; }
+  #app > .topbar .top-timeline-duration { gap: 4px; }
+  #app > .topbar .top-timeline-duration > span { font-size: 9px; }
+  #app > .topbar .top-timeline-duration > output { font-size: 14px; }
+  #app > .topbar .top-actions { gap: 3px; }
+  #app > .topbar .top-data-button {
+    font-size: 0;
+    gap: 0;
+    padding-inline: 7px;
+  }
+  #app > .topbar .top-data-button svg { width: 16px; height: 16px; }
+  #app > .topbar .save-close { padding-inline: 9px !important; }
+  #app > .topbar .editor-close { width: 30px; }
+  #app > .timeline-panel .timeline-zoom input { display: none; }
+}
+
+/* Reflow the actual clip editor rather than forcing empty grid cells that
+ * push Seed / Global / view toggles into scattered third and fourth rows. */
+@container td-prompt-panel (max-width: 630px) {
+  #app .composer-heading {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-content: center;
+    column-gap: 8px;
+    row-gap: 5px;
+    padding-block: 6px;
+  }
+  #app .composer-heading .clip-identity {
+    flex: 1 1 145px;
+    min-width: 110px;
+    max-width: 100%;
+    gap: 6px;
+  }
+  #app .composer-heading .clip-duration-control {
+    flex: 1 1 155px;
+    min-width: 145px;
+    max-width: 220px;
+    width: auto;
+    margin: 0;
+  }
+  #app .composer-heading .clip-seed-control {
+    flex: 0 1 165px;
+    min-width: 145px;
+    width: auto;
+    max-width: 100%;
+  }
+  #app .composer-heading .clip-global-toggle { flex: none; }
+  #app .composer-heading .prompt-view-switch {
+    flex: none;
+    margin-left: auto;
+  }
+  #app .ai-prompt-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0,1fr);
+    align-items: start;
+    justify-content: stretch;
+    gap: 5px;
+    padding: 6px 0;
+  }
+  #app .ai-prompt-tabs { max-width: 100%; width: max-content; }
+  #app .ai-prompt-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+}
+@container td-prompt-panel (max-width: 390px) {
+  #app .composer-heading .clip-identity {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  #app .composer-heading .clip-duration-control { max-width: 100%; }
+  #app .composer-heading .prompt-view-switch { margin-left: 0; }
+  #app .ai-prompt-tab { padding-inline: 8px; }
+  #app .ai-prompt-actions > .button { padding-inline: 8px; }
+}
+
+/* When the host window is short, the fixed floating shell must scroll rather
+ * than clipping the workspace behind a 200-400px timeline and wrapping header.
+ * Preserve a real editor surface even when width and height both shrink. */
+@media (max-height: 720px) {
+  body.td-embedded #app {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  body.td-embedded #app > .topbar { flex: 0 0 auto; }
+  body.td-embedded #app > .timeline-panel {
+    flex: 0 0 auto;
+    height: min(var(--timeline-height), 140px);
+    min-height: 140px;
+  }
+  body.td-embedded #app > .timeline-panel .timeline-body { min-height: 82px; }
+  body.td-embedded #app > #timelineResize { flex: 0 0 5px; }
+  body.td-embedded #app > .workspace {
+    flex: 0 0 auto;
+    min-height: 330px;
+  }
+  body.td-embedded #app > .workspace > .prompt-panel {
+    min-height: 330px;
+  }
+  body.td-embedded #app > .workspace .prompt-editor {
+    min-height: 125px;
+  }
+}
+/* Extremely short windows still get a functional canvas; the shell itself
+ * can scroll, and prompt/source panels remain reachable below the timeline. */
+@media (max-height: 480px) {
+  body.td-embedded #app > .timeline-panel {
+    height: 120px;
+    min-height: 120px;
+  }
+  body.td-embedded #app > .timeline-panel .timeline-body { min-height: 62px; }
 }

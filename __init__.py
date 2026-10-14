@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .director_selflift_node import TerryDirectorSelfLiftSampler
+from .director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
 from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
 
 from typing_extensions import override
@@ -48,6 +49,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorPromptEnhancer,
             TerryDirectorSecondPassConfig,
             TerryDirectorSelfLiftSampler,
+            TerryDirectorH3X2LowRAMDecode,
             TerryDirectorConfig,
             TerryDirector,
             TerryDirectorAdvanced,

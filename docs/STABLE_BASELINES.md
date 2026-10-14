@@ -74,6 +74,16 @@
 
 `minimax_h3` 为默认适配器；`ltx_2_5` 为未完成的注册占位，`ready=False`，不会静默退回 H3 解码。模型选择 UI 尚未对 LTX 开放，后续适配需独立 GPU 验收。
 
+### SelfLift + 2X FastDecode 长循环 RAM 回归（2026-10-14）
+
+- 故障基线：14 段、153.5 秒工作流此前连续两次在后期失败；最近一次前 12 段完成，第 13 段 `clip-15` 的 SelfLift 已完成，但整段 `F.pixel_shuffle()` 申请 6,091,407,360 字节时 CPU OOM。旧报告采样到系统 RAM 63.57/63.75 GiB。工作流中的 `RAMCleanup` 被禁用；启用的 `TerryXuMemoryCleanup` 位于循环入口，并非每段解码后执行。
+- 修复：循环在下一段采样前定向释放上一段的 ComfyUI 输出缓存和已完成执行引用，在 LoopEnd 释放最后一段；FastDecode 将 PixelShuffle 限制为 4 帧一块，直接填充唯一的最终 BHWC IMAGE，时间分块模式预分配输出而不在末尾 `torch.cat()`。没有改变采样、帧率、分辨率或输出精度。对应本仓库提交 `f47ba8c3ddaf720f1944f0d53e04684ca6dad94c`，第三方 FastDecode 本地仓库提交 `03d377e40bc222c24dcb54a9f234ef2d00f32924`。
+- 小规模验收：10 秒单段为 240 帧；10+15 秒两段最终为 600 帧、25 秒、1920×1088、24 fps，AAC 立体声可解码且非静音。合成像素测试中，旧整段 PixelShuffle 路径与新分块路径的 Float16/Float32 输出逐像素相同。
+- 长回归：沿用原 SelfLift/2X VAE 核心参数，只运行前 13 段（141.5 秒）；API 转换绕过了循环入口的 `TerryXuMemoryCleanup`。13/13 段完成，最终 MP4 可完整解码 3396 帧、1920×1088、24 fps、141.5 秒，AAC 32 kHz 立体声非静音；没有运行第 14 段。原故障段 `clip-15` 的 PixelShuffle 完成时 RSS 39.60 GiB、系统可用内存 8.01 GiB，随后 240 帧写盘成功。
+- RAM 证据：第 2–13 段采样前 RSS 为 27.18–29.25 GiB，第 13 段为 27.89 GiB；进入第 13 段时节点缓存从 7.89 GiB 降至 0.28 GiB，LoopEnd 又将最后一段缓存从 6.36 GiB 降至 0.30 GiB。全程最大解码阶段日志 RSS 45.68 GiB、最低系统可用内存 2.05 GiB，发生在 15 秒段。独立 0.5 秒采样得到峰值 RSS 45.09 GiB、最低可用 2.63 GiB；不同采样点不能直接与旧报告的进程 RSS 比值。原始运行报告位于 `ComfyUI/output/TerryDirector/reports/loop_20261014_104823_6bc53ef518.md`（同名 JSON），半秒采样 CSV 位于工作区 `recovery_backup_20261014/ram_fix_13clips_ram.csv`。
+- 边界：现有 IMAGE 输出接口仍要求完整解码缓冲区与最终 IMAGE 同时存在；15 秒段只余约 2 GiB 系统可用内存，其他进程占用或更长的单段仍可能 OOM。持久化失败缓存路径已改到 output 目录并在 ComfyUI 重启后加载，但自动从中断片段续跑、实际 BF16 工作流与完整 14 段尚未验证。
+- 后续兼容方案：新增 TerryDirector 自带的可选 `TerryDirector H3 2X 低内存解码`，使用原版第三方 `MiniMaxH3VAEDecodeFast` 公开接口按 51 帧（含 39 帧因果上下文）的小窗口处理并写入唯一最终 IMAGE 缓冲区，**不要求也不修改第三方解码器源码**。此方案与上面的 13 段验收配置不是同一实现；目前仅有窗口分割和模拟后端的离线回归，仍需新的 GPU 实测，不得把之前的 13 段结果算作该适配器通过。另已修复成功保存后新路径的运行缓存清理，失败/中断缓存仍保留。
+
 ## 历史证据如何追溯
 
 本次清理仅移除旧文档、测试及实验文件在**当前 `main` 文件树**中的副本，不会改写既有 Git 提交对象。删除前的汇总参考点：
