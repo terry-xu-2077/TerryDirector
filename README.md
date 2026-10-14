@@ -77,7 +77,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
 
 点击节点内的迷你时间线，即可在当前 ComfyUI 页面打开导演编辑窗口；编辑片段、提示词与共享素材后「保存并退出」。挂起片段保留在创作时间线里，但不会提交采样。尾帧参考／续接／独立等行为可在片段接缝处调整，并可在 ComfyUI 的 TerryDirector 设置里配置默认衔接方式。
 
-[在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/main/index.html) 可直接查看最新编辑器布局：网站从 [AI 验收工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**，不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。网站「AI 增强提示词」标签另加载 [H3 Skill 六段式英文增强示例](examples/TerryDirector_AI_3clips_demo_prompts.json)，可与未修改的三段中文原文切换对比；这些文字是**依据内置官方 Skill 手工编写的静态展示稿，不是实际 Qwen 推理输出**。示例仅注入网页显示层，不修改 [GPU 验收用工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 中刻意保留为空的 `aiPrompt`。链接经只读静态代理预览当前主分支。
+[在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/main/index.html) 可直接查看最新编辑器布局：网站从 [AI 验收工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**（引用旧 Base 样本只为了保留既有 UI 演示数据，不能直接作为新版本循环工作流运行），不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。网站「AI 增强提示词」标签另加载 [H3 Skill 六段式英文增强示例](examples/TerryDirector_AI_3clips_demo_prompts.json)，可与未修改的三段中文原文切换对比；这些文字是**依据内置官方 Skill 手工编写的静态展示稿，不是实际 Qwen 推理输出**。示例仅注入网页显示层，不修改 [GPU 验收用工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 中刻意保留为空的 `aiPrompt`。链接经只读静态代理预览当前主分支。
 
 ## 使用边界
 
