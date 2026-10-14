@@ -110,6 +110,13 @@
     stop() { if(this.playing){this.playing=false;this.options.onPlay?.(false);} }
     edgeAt(c,p) {
       if(this.sortMode)return 'move';
+      // Entity context refers to the video's first N frames. Moving the left
+      // source inpoint requires separate source-offset support; do not fake it
+      // with a timeline-only trim. Right trim (shortening) remains available.
+      if(c.kind==='entity'){
+        const right=Math.abs(p.x-this.x(c.end));
+        return right<=Math.min(9,(c.end-c.start)*this.ppf/3)?'right':'move';
+      }
       const left=Math.abs(p.x-this.x(c.start)),right=Math.abs(p.x-this.x(c.end));
       const threshold=Math.min(9,(c.end-c.start)*this.ppf/3);
       return Math.min(left,right)<=threshold?(left<=right?'left':'right'):'move';
