@@ -227,7 +227,10 @@ def _take_rows(loop_root):
                 yield item
 
 
-def select_current_takes(loop_root, segments, recipe_hashes, segment_format):
+def select_current_takes(
+    loop_root, segments, recipe_hashes, segment_format,
+    *, seed=None, resolver=None,
+):
     """Select the newest recipe-compatible MOV for each generated clip.
 
     Report downstream clips that were rendered from an older predecessor;
@@ -242,12 +245,24 @@ def select_current_takes(loop_root, segments, recipe_hashes, segment_format):
         if part.get("kind") == "entity":
             prev = {"kind": "entity", "source": part["source_asset"]["source"]["path"]}
             continue
+        # In a rebuild request we have the current authored document and seed,
+        # but cannot safely query a live Comfy graph from a separate HTTP
+        # handler. Verify each take against *its recorded* sampler graph hash,
+        # then warn separately when chosen takes used different graph versions.
+        def recipe_for(row):
+            if seed is None:
+                return recipe
+            original_graph = row.get("body_fingerprint")
+            if not original_graph:
+                return ""
+            return clip_fingerprint(part, seed, original_graph, resolver)
+
         entry = next((
             row for row in histories
             if str(row.get("segment_id")) == str(part["id"])
             and _descriptor_valid(row, loop_root,
                     expected_frames=part["output_frames"],
-                    expected_recipe=recipe,
+                    expected_recipe=recipe_for(row),
                     required_format=segment_format)
         ), None)
         if entry is None:
@@ -290,6 +305,15 @@ def select_current_takes(loop_root, segments, recipe_hashes, segment_format):
                 })
         chosen.append(entry)
         prev = {"kind": "generated", "path": entry["path"]}
+    # The current model graph may have changed since old takes were created.
+    # Mixing samples from different recorded versions requires confirmation.
+    graphs = {str(row.get("body_fingerprint") or "") for row in chosen}
+    if len(graphs) > 1:
+        stale.append({
+            "segment_id": "__pipeline__",
+            "name": "工作流版本",
+            "reason": "选中的镜头由不同版本的采样或解码工作流生成",
+        })
     if problems:
         raise ValueError("不能重建整片：" + "；".join(problems))
     return {"clips": chosen, "stale": stale, "total": len(chosen)}
