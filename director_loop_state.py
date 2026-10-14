@@ -87,7 +87,9 @@ def clip_fingerprint(segment, global_seed, graph_hash, resolver=None):
         "h3_frames": int(segment["h3_frames"]),
         "transition_mode": segment.get("transition_mode"),
         "continuity": segment.get("continuity"),
-        "assembly": segment.get("assembly"),
+        # The physical context anchor does not enter Final; the runtime
+        # therefore zeroes the guided head trim. Authored continuity and
+        # frame ranges above still capture the complete edit geometry.
         "assets": asset_tags,
         "source_asset": source_asset,
         "body": graph_hash,
