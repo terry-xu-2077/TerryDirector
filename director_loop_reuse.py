@@ -20,7 +20,7 @@ import torch
 
 FPS = 24
 RATE = 48000
-SUPPORTED_EXTENSIONS = {".mov", ".mp4", ".mkv", ".webm", ".avi"}
+SUPPORTED_EXTENSIONS = {".mov", ".mp4", ".mkv", ".webm", ".avi", ".m4v"}
 
 
 def _ffmpeg_program(kind):
