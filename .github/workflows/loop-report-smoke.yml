@@ -14,6 +14,10 @@ on:
       - director_loop_reuse.py
       - director_loop_resume.py
       - tests/test_loop_resume.py
+      - tests/test_loop_only_registration.py
+      - __init__.py
+      - director_selflift_node.py
+      - director_selflift.py
       - director_compile.py
       - director_core.py
       - tests/test_loop_clip_reuse.py
@@ -46,7 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
-        run: python -m py_compile director_loop.py director_loop_resume.py director_loop_reuse.py director_compile.py director_core.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py tests/test_loop_clip_reuse.py tests/test_loop_resume.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
+        run: python -m py_compile __init__.py director_selflift_node.py director_selflift.py director_loop.py director_loop_resume.py director_loop_reuse.py director_compile.py director_core.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py tests/test_loop_clip_reuse.py tests/test_loop_resume.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
+      - name: Loop-only node registration after legacy removal
+        run: python -m unittest discover -s tests -p test_loop_only_registration.py -v
       - name: Resume checkpoint and workflow fingerprint validity
         run: python -m unittest discover -s tests -p test_loop_resume.py -v
       - name: Physical clip compilation and saved-result lookup
