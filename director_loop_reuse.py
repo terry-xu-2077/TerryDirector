@@ -82,6 +82,9 @@ def safe_input_video(asset):
     if not relative or not folder_paths.exists_annotated_filepath(relative):
         raise FileNotFoundError(f"实体视频丢失：{relative}")
     path = Path(folder_paths.get_annotated_filepath(relative)).resolve()
+    input_root = Path(folder_paths.get_input_directory()).resolve()
+    if not _contained(path, input_root):
+        raise ValueError("实体视频只允许来自 ComfyUI input 文件夹")
     video_info(path)
     return str(path)
 
