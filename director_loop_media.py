@@ -477,6 +477,9 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool) -> str | Non
                 for part in ordered
             )
             _atomic_json(manifest, state)
+        # No next segment is pending. Failure snapshots are useful only
+        # while the run is incomplete.
+        (root / ".recovery" / "next_context.npz").unlink(missing_ok=True)
         return None
 
     channels = int(ordered[0]["channels"])
@@ -560,6 +563,7 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool) -> str | Non
             state["final"] = str(final)
             state["final_frames"] = expected_frames
             _atomic_json(manifest, state)
+        (root / ".recovery" / "next_context.npz").unlink(missing_ok=True)
         print(
             f"[TerryDirector Loop][Final] {final}, frames={expected_frames}, "
             f"fps={FPS}, format={format_name}",
