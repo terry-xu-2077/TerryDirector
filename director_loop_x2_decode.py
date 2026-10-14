@@ -143,9 +143,15 @@ class TerryDirectorH3X2LowRAMDecode(io.ComfyNode):
             if drop and float(seam_warning_threshold) > 0:
                 count = min(drop, offset)
                 if count:
-                    previous = result_images[:, offset - count:offset].float()
-                    repeated = block[:, drop - count:drop].float()
-                    deviation = (previous - repeated).abs().mean().item()
+                    # Compare one frame at a time: converting a full overlap
+                    # to float32 would reintroduce GiB-sized temporaries.
+                    deviation_sum = 0.0
+                    for frame_index in range(count):
+                        previous = result_images[:, offset - count + frame_index].float()
+                        repeated = block[:, drop - count + frame_index].float()
+                        deviation_sum += (previous - repeated).abs().mean().item()
+                        del previous, repeated
+                    deviation = deviation_sum / count
                     peak_seam = max(peak_seam, deviation)
                     if deviation > float(seam_warning_threshold):
                         print(
@@ -154,7 +160,6 @@ class TerryDirectorH3X2LowRAMDecode(io.ComfyNode):
                             "可提高前导上下文帧数并检查画面。",
                             flush=True,
                         )
-                    del previous, repeated
             result_images[:, offset:end].copy_(block[:, drop:drop + window.keep_frames])
             print(
                 f"[TerryDirector X2] window {index + 1}/{len(windows)}: "
