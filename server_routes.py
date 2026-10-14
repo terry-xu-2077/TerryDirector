@@ -95,6 +95,85 @@ async def terrydirector_input_files(request: web.Request) -> web.Response:
     return web.json_response({"files": rows})
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/video-info")
+async def terrydirector_video_info(request: web.Request) -> web.Response:
+    """Inspect a selected ComfyUI input video, without exposing other paths."""
+    relative = str(request.query.get("path") or "")
+    if not relative or len(relative) > 1024:
+        return web.json_response({"error": "未选择视频文件"}, status=400)
+    try:
+        path = _safe_input(relative)
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED["video"]:
+            raise FileNotFoundError("没有找到有效的视频文件")
+        from .director_loop_reuse import video_info
+        return web.json_response(video_info(str(path)), headers={"Cache-Control": "no-store"})
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/rerun-check")
+async def terrydirector_rerun_check(request: web.Request) -> web.Response:
+    """Validate that the original predecessor can supply a rerun's context."""
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("非法的重跑参数")
+        loop_id = str(payload.get("loop_id") or "").strip()
+        clip_id = str(payload.get("clip_id") or "").strip()
+        if not loop_id.isdigit() or not clip_id or len(clip_id) > 128:
+            raise ValueError("必须指定有效的循环节点和目标片段")
+        from .director_core import normalize_document
+        from .director_compile import compile_timeline
+        from .director_loop_reuse import find_saved_clip, safe_input_video, video_info
+
+        doc = normalize_document(payload.get("document"))
+        plan = compile_timeline(doc)
+        segments = plan["segments"]
+        index = next((i for i, item in enumerate(segments)
+                      if item["id"] == clip_id), None)
+        if index is None:
+            raise ValueError("目标片段不存在或已挂起，请先恢复该片段")
+        target = segments[index]
+        if target["kind"] != "generated":
+            raise ValueError("实体视频不需要 AI 重跑，请选择生成片段")
+        relation = target["continuity"]["kind"]
+        if relation not in ("tail_reference", "tail_frame", "overlap"):
+            return web.json_response({"ok": True, "context": "not_required"})
+
+        if index == 0:
+            raise ValueError("找不到上一镜头，无法取得承接上下文")
+        previous = segments[index - 1]
+        count = int(target["continuity"].get("frames", 1)) if relation == "overlap" else 1
+        if previous["kind"] == "entity":
+            source = safe_input_video(previous["source_asset"])
+            info = video_info(source)
+            if info["frames_24fps"] < previous["output_frames"]:
+                raise ValueError(
+                    f"实体片段「{previous['name']}」不足 {previous['output_frames']} 帧，"
+                    "无法提供完整承接区"
+                )
+            source_type = "entity"
+        else:
+            saved = find_saved_clip(
+                loop_id, previous["id"], required_frames=previous["output_frames"],
+            )
+            if saved is None:
+                raise FileNotFoundError(
+                    f"缺少上一镜头「{previous['name']}」的历史 MOV/MP4，"
+                    "无法执行当前的尾帧或重叠衔接。请先生成上一镜头，"
+                    "或在时间线中导入实体视频。"
+                )
+            source = saved["path"]
+            source_type = "saved_result"
+
+        return web.json_response({
+            "ok": True, "source_type": source_type,
+            "source_name": previous["name"], "context_frames": count,
+        })
+    except (ValueError, KeyError, TypeError, RuntimeError, FileNotFoundError, OSError) as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=400)
+
+
 @PromptServer.instance.routes.post("/terrydirector/api/upload")
 async def terrydirector_upload(request: web.Request) -> web.Response:
     reader = await request.multipart()
