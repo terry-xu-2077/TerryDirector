@@ -7,6 +7,7 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import os
 import time
 import uuid
@@ -817,10 +818,7 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             for item in descriptors
         ]
         first = descriptor_list[0]
-        root = loop_mov_root(
-            first["loop_id"].join(["loop-", ""]) if False else "loop-" + first["loop_id"],
-            first["run_signature"],
-        ) if False else __import__("pathlib").Path(first["path"]).parent
+        root = Path(first["path"]).parent
         manifest = _read_manifest(root)
         expected = int(manifest.get("total_clips") or 0)
         if expected and len(descriptor_list) != expected:
