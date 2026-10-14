@@ -6,6 +6,7 @@ TerryDirectorLoopEnd. This module does not implement an H3 sampler.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import os
@@ -693,6 +694,14 @@ class TerryDirectorLoopCache(io.ComfyNode):
             gap_frames=int(assembly["gap_before_frames"]),
             gap_after_frames=int(assembly["gap_after_frames"]),
             context_frames=int(loop["context_frames"]),
+            seed=int(loop["seed"]),
+            transition_mode=segment.get("transition_mode"),
+            continuity_kind=segment.get("continuity", {}).get("kind"),
+            start_frame=int(segment.get("start_frame", 0)),
+            generated_frames=int(segment.get("h3_frames", 0)),
+            prompt_sha256=hashlib.sha256(
+                str(segment.get("prompt", "")).encode("utf-8")
+            ).hexdigest(),
         )
         cache_elapsed = time.perf_counter() - started
         log_loop_ram("after_disk_write", segment["id"], cls.hidden.execution_list, descriptor["path"])
