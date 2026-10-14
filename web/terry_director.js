@@ -2879,6 +2879,7 @@ function mountNode(node) {
     if (node.comfyClass === LOOP_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
       hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "resume_previous"));
     }
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
@@ -2903,6 +2904,7 @@ function mountNode(node) {
   if (node.comfyClass === LOOP_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
       hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "resume_previous"));
     }
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
@@ -3455,8 +3457,13 @@ function ensureEditorOverlay() {
       editorDirty = false;
 
       const rerunClipId = String(message.rerunClipId || "").trim();
+      const resumePrevious = message.resumePrevious === true;
       void (async () => {
         const widget = node.widgets?.find(item => item.name === "rerun_clip_id");
+        const resumeWidget = node.widgets?.find(item => item.name === "resume_previous");
+        if (resumePrevious && (node.comfyClass !== LOOP_NODE_CLASS || !resumeWidget)) {
+          throw new Error("只有 TerryDirector 循环器支持从已保存的 MOV 继续");
+        }
         if (rerunClipId) {
           if (node.comfyClass !== LOOP_NODE_CLASS || !widget) {
             throw new Error("只有 TerryDirector 循环器支持单片段重跑");
@@ -3472,6 +3479,7 @@ function ensureEditorOverlay() {
         }
 
         if (widget) widget.value = rerunClipId;
+        if (resumeWidget) resumeWidget.value = resumePrevious;
         node.__tdLocalRunLock = true;
         if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
         node.__tdRunActivity = blankActivity(node);
@@ -3486,6 +3494,7 @@ function ensureEditorOverlay() {
           // The payload has been serialized for ComfyUI by this point.
           // Do not accidentally rerun this clip in the next ordinary Queue.
           if (widget) widget.value = "";
+          if (resumeWidget) resumeWidget.value = false;
           node.setDirtyCanvas?.(true, true);
         }
       })().catch(error => {
