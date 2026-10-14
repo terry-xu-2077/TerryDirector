@@ -332,6 +332,7 @@ class TerryDirectorSecondPassConfig(io.ComfyNode):
         upscalers = _selflift_upscaler_options()
         return io.Schema(
             node_id="TerryDirectorSecondPassConfig",
+            is_dev_only=True,  # Legacy Base/Advanced; keep old workflow compatibility
             display_name="TerryDirector 二采配置",
             category="MiniMax H3/TerryDirector",
             description=(
@@ -537,6 +538,7 @@ class TerryDirectorConfig(io.ComfyNode):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="TerryDirectorConfig",
+            is_dev_only=True,  # Legacy Base/Advanced; keep old workflow compatibility
             display_name="TerryDirector 配置",
             category="MiniMax H3/TerryDirector",
             description=(
@@ -681,6 +683,7 @@ class TerryDirector(io.ComfyNode):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="TerryDirector",
+            is_dev_only=True,  # Legacy Base/Advanced; keep old workflow compatibility
             display_name="TerryDirector",
             category="MiniMax H3/TerryDirector",
             description=(
@@ -774,6 +777,7 @@ class TerryDirectorAdvanced(TerryDirector):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="TerryDirectorAdvanced",
+            is_dev_only=True,  # Legacy Base/Advanced; keep old workflow compatibility
             display_name="TerryDirector Advanced",
             category="MiniMax H3/TerryDirector",
             description="增强版导演节点：视频审片、原生保存、分段 LATENT 缓存与选中片段局部重跑。",
@@ -1055,6 +1059,7 @@ class TerryDirectorOutput(io.ComfyNode):
     def define_schema(cls) -> io.Schema:
         return io.Schema(
             node_id="TerryDirectorOutput",
+            is_dev_only=True,  # Legacy Base/Advanced; keep old workflow compatibility
             display_name="TerryDirector 输出",
             search_aliases=["导演输出", "TerryDirector 解码"],
             category="MiniMax H3/TerryDirector",
