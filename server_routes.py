@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import uuid
 import mimetypes
 import re
 import shutil
@@ -171,6 +173,105 @@ async def terrydirector_rerun_check(request: web.Request) -> web.Response:
             "source_name": previous["name"], "context_frames": count,
         })
     except (ValueError, KeyError, TypeError, RuntimeError, FileNotFoundError, OSError) as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/resume-check")
+async def terrydirector_resume_check(request: web.Request) -> web.Response:
+    """A quick UI hint. Full recipe and body validation happens at Queue time."""
+    try:
+        payload = await request.json()
+        from .director_loop_state import loop_folder, _manifests, _manifest
+        loop_root = loop_folder(
+            folder_paths.get_output_directory(), str(payload.get("loop_id") or "")
+        )
+        for path in _manifests(loop_root):
+            info = _manifest(path)
+            if (info and info.get("status") == "in_progress"
+                    and info.get("plan_fingerprint")
+                    and not info.get("rerun_target")):
+                return web.json_response({
+                    "available": True,
+                    "previous_clips": len(info.get("clips") or []),
+                    "requires_signature_check": True,
+                })
+        return web.json_response({
+            "available": False,
+            "error": "没有找到可续跑的未完成 MOV 任务",
+        })
+    except (ValueError, KeyError, OSError, TypeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+def _rebuild_final_sync(payload: dict) -> dict:
+    from .director_compile import compile_timeline, DEFAULT_TAIL_REFERENCE_PROMPT
+    from .director_core import normalize_document
+    from .director_loop_state import loop_folder, select_current_takes
+    from .director_loop_media import merge_loop_clips, FORMATS
+
+    loop_id = str(payload.get("loop_id") or "")
+    root = loop_folder(folder_paths.get_output_directory(), loop_id)
+    document = normalize_document(payload.get("document"))
+    if len(document["clips"]) > 200:
+        raise ValueError("当前版本最多支持 200 个时间线片段参与 Final 重建")
+    seed = int(str(payload.get("seed") or "0"))
+    if not 0 <= seed <= 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("全局 Seed 超出范围")
+    name = str(payload.get("segment_format") or "")
+    if name not in FORMATS:
+        raise ValueError("请选择有效的 MOV/MP4 保存格式")
+    prompt = str(payload.get("tail_reference_prompt") or DEFAULT_TAIL_REFERENCE_PROMPT)
+    plan = compile_timeline(document, tail_reference_prompt=prompt)
+    segments = plan["segments"]
+
+    def asset_path(rel):
+        safe = _safe_input(rel)
+        if not safe.is_file():
+            raise FileNotFoundError("引用资产已丢失：" + rel)
+        return str(safe)
+
+    selected = select_current_takes(
+        root, segments, [None] * len(segments), name,
+        seed=seed, resolver=asset_path,
+    )
+    if not selected["clips"]:
+        raise ValueError("没有能够参与 Final 的生成镜头")
+    stale = selected["stale"]
+    if stale and payload.get("allow_stale") is not True:
+        return {
+            "ok": False, "stale": stale, "status": "stale",
+            "message": "部分镜头仍依赖旧版上游结果。可以重跑相应镜头，"
+                       "或确认后仍然合并。",
+        }
+    output = root / "assemblies" / ("rebuild-" + uuid.uuid4().hex[:12])
+    # The merge is atomic at the Final file level. On any failure, all
+    # existing source MOVs and historical Final videos remain unchanged.
+    final = merge_loop_clips(
+        selected["clips"], merge_final=True,
+        output_root=output, source_root=root,
+    )
+    manifest = output / "timeline.json"
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
+    metadata["stale_dependencies"] = stale
+    metadata["source"] = "TerryDirector reassemble"
+    from .director_loop_media import _atomic_json
+    _atomic_json(manifest, metadata)
+    return {
+        "ok": True, "status": "completed", "final": str(final),
+        "frames": metadata["final_frames"], "stale": stale,
+    }
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/rebuild-final")
+async def terrydirector_rebuild_final(request: web.Request) -> web.Response:
+    """Assemble an updated Final solely from original MOV/MP4 files."""
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("无效的整片合并参数")
+        result = await asyncio.to_thread(_rebuild_final_sync, payload)
+        return web.json_response(result, status=409 if result.get("status") == "stale" else 200)
+    except (FileNotFoundError, ValueError, KeyError, TypeError, OSError, RuntimeError) as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=400)
 
 
