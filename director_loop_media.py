@@ -390,6 +390,32 @@ def _concat_video(parts: list[tuple[Path, int, int]], destination: Path, format_
             concat_file.unlink(missing_ok=True)
         return
 
+    # If MP4 needs no overlap/gap edits, stream-copy the original H.264
+    # bitstreams. Otherwise GOP dependencies make arbitrary inpoints unsafe,
+    # so fall back to exact frame-filtering and one final H.264 encode.
+    if all(lo == 0 and not path.stem.startswith("gap_") for path, lo, _ in parts):
+        concat_file = destination.with_suffix(".ffconcat")
+        try:
+            with open(concat_file, "w", encoding="utf-8") as output:
+                output.write("ffconcat version 1.0\n")
+                for path, _, _ in parts:
+                    escaped = str(path.resolve()).replace("\\", "/").replace("'", "'\\''")
+                    output.write(f"file '{escaped}'\n")
+            try:
+                _run([
+                    _ffmpeg(), "-hide_banner", "-loglevel", "error", "-y",
+                    "-safe", "0", "-f", "concat", "-i", str(concat_file),
+                    "-map", "0:v:0", "-an", "-c:v", "copy",
+                    "-f", "mp4", str(destination),
+                ], context="H.264 无裁切流复制拼接")
+                _probe_video(str(destination), expected_frames)
+                return
+            except RuntimeError as exc:
+                destination.unlink(missing_ok=True)
+                print(f"[TerryDirector Loop] MP4 stream copy fallback: {exc}", flush=True)
+        finally:
+            concat_file.unlink(missing_ok=True)
+
     # H.264 frames are interdependent within a GOP: stream-copying an
     # arbitrary overlap cut can duplicate/miss frames. Use frame-accurate
     # decoding/filtering when trimming MP4, keeping the output 24fps.
