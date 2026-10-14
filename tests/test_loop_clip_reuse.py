@@ -92,6 +92,9 @@ class TestPhysicalClips(unittest.TestCase):
         )
         scope = {
             "DEFAULT_LOOP_ADAPTER": "minimax_h3",
+            "MOV_HQ": "MOV · ProRes 422 HQ",
+            "plan_fingerprint": lambda *args: "unit-test-fingerprint",
+            "find_resume_checkpoint": lambda *args: None,
             "get_loop_adapter": lambda _: adapter,
             "normalize_config": lambda config: {
                 "document": self.core.normalize_document(config["document"]),
