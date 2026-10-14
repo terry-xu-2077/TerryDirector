@@ -1,59 +1,25 @@
 # 使用指南
 
-此文档描述当前 `main` 的实际接口和接线方式。基础模式、Advanced、循环器可分别使用，不要求把三种模式串在同一个工作流中。
+本指南以 TerryDirector 当前循环器为准。**Base / Advanced 及其专属配置／输出节点已停止注册**。旧工作流如需完整复现，可以在独立工作目录中检出历史提交 `b751b93`；不应把旧代码复制进新版本节点包。
 
 ## 1. 首次配置
 
-1. 将 TerryDirector 安装在 ComfyUI 的 `custom_nodes/TerryDirector`，重启后搜索节点名。
-2. 使用本机已有的 MiniMax H3 模型、CLIP、视频 VAE、音频 VAE 建立模型加载链。
-3. 新建「TerryDirector 配置」，连入上述四类依赖，并选择宽高比、百万像素、采样器等参数。
-4. 在主导演节点中点击迷你时间线，编辑提示词、图片资产与片段时间，然后保存并退出。
-5. 第一次生成建议只启用一个短片段，再逐步测试多片段、尾帧参考和重叠衔接。
+1. 在 ComfyUI 的 `custom_nodes/TerryDirector` 安装最新版本，并重启 ComfyUI。
+2. 使用已有的 H3 模型、文本编码器、视频 VAE 和音频 VAE，按自己熟悉的方式连接采样及解码工作流；TerryDirector 不强制包装这一链路。
+3. 创建「TerryDirector 循环开始」和「TerryDirector 循环结束」，将生成／解码链放在循环域中，由「循环信息」传入逐段 Prompt、Seed 和引用资产。
+4. 在循环开始节点点击时间线编辑，编排镜头、尾帧承接和提示词；保存后运行。推荐先测一个低分辨率短片段。
+5. 输出选择默认 MOV / ProRes 422 HQ，可选 MP4 / H.264。完成后会逐段保存镜头，按需自动合并 Final。
 
-节点的配置随 ComfyUI 工作流保存；建议保留自己的 JSON 工作流副本。仓库不附带模型权重。
+`config_json` 随 ComfyUI 工作流保存；`timeline.json` 随本次实际运行及 MOV/MP4 保存。TerryDirector 不随仓库附带模型权重。
 
-## 2. 基础 TerryDirector（已隐藏，旧工作流兼容）
+## 2. 历史节点迁移
 
-连接顺序：
+旧版 `TerryDirector` (Base)、`TerryDirectorAdvanced`、`TerryDirectorConfig`、`TerryDirectorSecondPassConfig`、`TerryDirectorOutput` 以及关联的 `.pt` 缓存／分段输出节点已经退休。旧工作流在新版本里可能提示缺失节点，需要转换为当前「循环开始 → 外部采样／解码 → 循环结束」结构，或使用历史版本打开。项目保留 Git 历史以供恢复。
 
-```text
-模型 / CLIP / 视频 VAE / 音频 VAE
-                 ↓
-       TerryDirector 配置
-                 ↓
-          TerryDirector
-                 ↓
-       TerryDirector 输出
-          ├─ 分段潜变量（LATENT 列表）
-          ├─ 合并画面（IMAGE）──┐
-          └─ 合并音频（AUDIO）──┴─→ CreateVideo → SaveVideo
-```
+保留共享的 `TerryDirectorSelfLiftSampler` 内部节点及 `director_selflift*.py` 实现；用户也可以直接在循环体内接入现有的 Self-Lift 生成节点。原 Base 二采配置节点不再作为生成参数入口。
 
-基础模式适合还需要在 ComfyUI 下游继续处理完整画面／音频的工作流。分段在生成期间可以写盘、释放内存，但最终完整 IMAGE 仍需足够系统 RAM。
+## 3. 时间线循环器（外部生成 / 解码链）
 
-## 3. 内置 Self-Lift 二采（旧 Base/Advanced 配置）
-
-```text
-TerryDirector 二采配置
-          ↓
-TerryDirector 配置
-          ↓
-TerryDirector / TerryDirector Advanced
-```
-
-只用本节点包内置 Self-Lift，不需要外部 selflift-Avatar 采样插件或额外打补丁脚本。主模型、CLIP、音视频 VAE 与目标分辨率继续由「TerryDirector 配置」提供，Seed 属于时间线节点。
-
-连接有效二采配置后，普通采样器、调度器、总步数和 Denoise 会显示「二采接管」并变为不可编辑；断开二采后恢复原值。未连接二采配置时保持普通生成。
-
-二采需要适配的放大模型权重；如果配置里没有所需权重，请检查 ComfyUI 的 latent upscale 模型目录。RTX 3090 参考的已验收参数见 [稳定基线](STABLE_BASELINES.md)。提高分辨率、启用高清空间分块或更换注意力后端，都会改变显存需求。
-
-## 4. Advanced 高级导演（已隐藏，旧工作流兼容）
-
-以 **TerryDirector Advanced** 代替基础主节点，同样接入「导演配置」。Advanced 自带视频保存设置和审片功能，支持选中片段局部重跑、中断后恢复，并采用无损分段缓存和最终单次编码以降低长视频生成期间的内存峰值。
-
-Advanced 已使用分段文件化视频输出，不应该再将其导演输出当成完整的 IMAGE/AUDIO 使用。「TerryDirector 输出」的标准 IMAGE/AUDIO 拆包功能主要面向基础模式。
-
-## 5. 时间线循环器（外部生成 / 解码链）
 
 循环器是后续版本唯一推荐的视频生成入口：包装普通 ComfyUI 采样／解码链，不内置专属 H3 采样器。循环开始与唯一连通的循环结束之间会自动显示低透明度的 **圆角凸包「TerryDirector 循环域」**：它只是画布背景层的视觉范围，不创建 ComfyUI Group、不改变节点归属和执行逻辑；区域边界按从循环开始向下游可达、并在循环结束处闭合的节点自动计算。循环结束只接收**已经解码完成的 IMAGE/AUDIO**、提取必要承接上下文和逐段编码 MOV/MP4，不再接收 VAE、LATENT 或保存完整视频张量 .pt。
 
