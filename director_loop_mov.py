@@ -253,7 +253,10 @@ def save_loop_mov_segment(*, images, audio, cache_key, run_signature,
                           segment_id, segment_name, position,
                           output_frames, trim_head_frames,
                           gap_frames, gap_after_frames,
-                          context_frames, total_clips=None):
+                          context_frames, total_clips=None,
+                          seed=None, transition_mode=None,
+                          continuity_kind=None, start_frame=None,
+                          generated_frames=None, prompt_sha256=None):
     """Write full editorial MOV but retain only minimal raw generation context.
 
     The overlap head is intentionally NOT removed here: users can trim source
@@ -299,6 +302,12 @@ def save_loop_mov_segment(*, images, audio, cache_key, run_signature,
         "name": str(segment_name), "path": str(target),
         "frames": output_frames, "trim_head_frames": trim,
         "gap_before_frames": gap, "gap_after_frames": gap_after,
+        "seed": None if seed is None else str(seed),
+        "transition_mode": str(transition_mode or ""),
+        "continuity_kind": str(continuity_kind or ""),
+        "timeline_start_frame": None if start_frame is None else int(start_frame),
+        "generated_frames": None if generated_frames is None else int(generated_frames),
+        "prompt_sha256": str(prompt_sha256 or ""),
         **technical,
     }
     manifest = _read_manifest(root)
