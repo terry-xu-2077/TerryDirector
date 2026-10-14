@@ -665,7 +665,7 @@ class TerryDirectorLooper(StartLoop):
         end_id = loop["_loop_end"]
         end_inputs = dynprompt.get_node(end_id).get("inputs", {})
         format_name = str(end_inputs.get("segment_format", MOV_HQ))
-        workflow_hash = workflow_fingerprint(dynprompt, body)
+        workflow_hash = workflow_fingerprint(dynprompt, body, is_link)
         items = _plan_items(
             _one(config_json),
             _one(seed),
