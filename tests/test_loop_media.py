@@ -81,7 +81,8 @@ class TestLoopMedia(unittest.TestCase):
             },
             "_loop": {
                 "index": index, "context_frames": 12,
-                "cache_key": "loop-test", "run_signature": "fixedtest",
+                "cache_key": "loop-test",
+                "run_signature": "movtest" if fmt == self.media.MOV_HQ else "mp4test",
                 "loop_id": "test",
             },
         }
