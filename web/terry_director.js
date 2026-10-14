@@ -1068,35 +1068,6 @@ function effectiveTimelineFrames(documentData) {
   return effectiveClipLayout(documentData?.clips).at(-1)?.end || 0;
 }
 
-function directorResolution(node) {
-  const configNode = linkedNodeForInput(node, "director_config");
-  if (configNode?.comfyClass !== CONFIG_NODE_CLASS) return null;
-
-  const ratioValue = String(
-    configNode.widgets?.find(widget => widget.name === "aspect_ratio")?.value ?? "16:9"
-  );
-  const match = ratioValue.match(/(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/);
-  if (!match) return null;
-
-  const rw = Number(match[1]);
-  const rh = Number(match[2]);
-  const megapixels = Math.max(
-    0.01,
-    Number(configNode.widgets?.find(widget => widget.name === "megapixels")?.value ?? 1)
-  );
-  const multiple = Math.max(
-    1,
-    Number(configNode.widgets?.find(widget => widget.name === "multiple")?.value ?? 32)
-  );
-  if (!(rw > 0 && rh > 0)) return null;
-
-  const totalPixels = megapixels * 1024 * 1024;
-  const scale = Math.sqrt(totalPixels / (rw * rh));
-  const width = Math.max(multiple, Math.round(rw * scale / multiple) * multiple);
-  const height = Math.max(multiple, Math.round(rh * scale / multiple) * multiple);
-  return { width, height };
-}
-
 function mergeFrameMemoryEstimate(frames, resolution) {
   const { width, height } = resolution;
   const gib = frames * width * height * 3 * 4 / (1024 ** 3);
@@ -1154,122 +1125,24 @@ function loopEndMemoryEstimate(node) {
   };
 }
 
-function outputMemoryEstimate(node) {
-  const director = linkedNodeForInput(node, "director_output");
-  if (!director || !isDirector(director)) {
-    return { state: "disconnected" };
-  }
-
-  if (director.comfyClass === ADVANCED_NODE_CLASS) {
-    return { state: "advanced" };
-  }
-
-  const config = readConfig(director);
-  const frames = effectiveTimelineFrames(config.document);
-  const resolution = directorResolution(director);
-  if (!resolution || frames < 1) {
-    return { state: "pending" };
-  }
-
-  return mergeFrameMemoryEstimate(frames, resolution);
-}
-
 function renderOutputMemoryInfo(node) {
   const root = node?.__tdOutputInfoRoot;
-  if (!root) return;
-
-  const isLoopEnd = node.comfyClass === LOOP_END_NODE_CLASS;
-  const estimate = isLoopEnd ? loopEndMemoryEstimate(node) : outputMemoryEstimate(node);
+  if (!root || node.comfyClass !== LOOP_END_NODE_CLASS) return;
+  const estimate = loopEndMemoryEstimate(node);
+  refreshTempDiskSpace();
+  const segmentFormat = node.widgets?.find(widget => widget.name === "segment_format")?.value;
+  const mergeFinal = node.widgets?.find(widget => widget.name === "merge_final")?.value;
+  const card = createLoopOutputCheckCard(estimate, tdTempDisk, { segmentFormat, mergeFinal });
   root.hidden = false;
-
-  if (isLoopEnd) {
-    refreshTempDiskSpace();
-    const segmentFormat = node.widgets?.find(widget => widget.name === "segment_format")?.value;
-    const mergeFinal = node.widgets?.find(widget => widget.name === "merge_final")?.value;
-    const card = createLoopOutputCheckCard(estimate, tdTempDisk, {
-      segmentFormat, mergeFinal,
-    });
-    root.className = card.className;
-    root.innerHTML = card.html;
-  } else if (estimate.state === "disconnected") {
-    root.className = "td-output-memory-card is-idle";
-    root.innerHTML = `
-      <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">i</span>
-        <strong>${isLoopEnd ? "逐段视频输出" : "合并画面内存"}</strong>
-      </div>
-      <div class="td-output-memory-note">${isLoopEnd
-        ? "连接循环信息与工作流后显示片段输出概况。"
-        : "连接 TerryDirector 后显示预计内存占用。"}</div>
-    `;
-  } else if (estimate.state === "advanced") {
-    root.className = "td-output-memory-card is-idle";
-    root.innerHTML = `
-      <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">i</span>
-        <strong>Advanced 使用分段文件化输出</strong>
-      </div>
-      <div class="td-output-memory-note">不会在生成阶段保留整条合并画面。</div>
-    `;
-  } else if (isLoopEnd && estimate.state === "summary") {
-    const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
-    root.className = "td-output-memory-card is-idle";
-    root.innerHTML = `
-      <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">i</span>
-        <strong>流式视频输出</strong>
-      </div>
-      <div class="td-output-memory-meta">
-        ${estimate.activeClips} 个启用片段 · ${estimate.frames} 帧 · ${seconds}s · 24 fps
-      </div>
-      <div class="td-output-memory-note">${estimate.hint}</div>
-    `;
-  } else if (estimate.state !== "ready") {
-    root.className = "td-output-memory-card is-idle";
-    root.innerHTML = `
-      <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">i</span>
-        <strong>${isLoopEnd ? "逐段视频输出" : "合并画面内存"}</strong>
-      </div>
-      <div class="td-output-memory-note">${estimate.hint || "正在读取时间线与分辨率信息…"}</div>
-    `;
-  } else {
-    const seconds = Number(estimate.seconds.toFixed(estimate.seconds % 1 ? 1 : 0));
-    const memory = estimate.gib.toFixed(1);
-    root.className = isLoopEnd ? "td-output-memory-card is-normal"
-      : `td-output-memory-card is-${estimate.level}`;
-    root.innerHTML = `
-      <div class="td-output-memory-title">
-        <span class="td-output-memory-icon">${isLoopEnd ? "i" : estimate.level === "high" ? "!" : "i"}</span>
-        <strong>${isLoopEnd
-          ? `流式视频 · 避免约 <b>${memory} GB</b> 整段画面占用`
-          : `合并整段画面预计占用 <b>${memory} GB</b> 内存`}</strong>
-      </div>
-      <div class="td-output-memory-meta">
-        ${estimate.frames} 帧 · ${seconds}s · ${estimate.width}×${estimate.height}${isLoopEnd && estimate.source === "upstream" ? " · 上游分辨率" : ""}
-      </div>
-      <div class="td-output-memory-note">
-        ${isLoopEnd
-          ? "逐段 MOV/MP4 保存，循环结束可选按重叠裁切合并；不生成完整 .pt 缓存。"
-          : estimate.level === "high"
-            ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
-            : estimate.level === "notice"
-              ? "内存占用较高，后续图像节点可能继续增加内存占用。"
-              : "当前合并画面内存占用处于正常范围。"}
-      </div>
-    `;
-  }
-
+  root.className = card.className;
+  root.innerHTML = card.html;
   queueMicrotask(() => {
     try {
       const computed = node.computeSize?.();
       const width = Math.max(Number(node.size?.[0]) || 320, 320);
-      const height = Math.max(
-        Number(node.size?.[1]) || 0,
+      const height = Math.max(Number(node.size?.[1]) || 0,
         Number(computed?.[1]) || 0,
-        isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 245) :
-          (estimate?.state === "ready" ? 205 : 185)
-      );
+        estimate?.state === "disconnected" ? 165 : 245);
       node.setSize?.([width, height]);
     } catch {}
     node.setDirtyCanvas?.(true, true);
@@ -1278,8 +1151,7 @@ function renderOutputMemoryInfo(node) {
 
 function refreshAllOutputMemoryInfo() {
   for (const node of app.graph?._nodes || []) {
-    if (node?.comfyClass === OUTPUT_NODE_CLASS ||
-        node?.comfyClass === LOOP_END_NODE_CLASS) renderOutputMemoryInfo(node);
+    if (node?.comfyClass === LOOP_END_NODE_CLASS) renderOutputMemoryInfo(node);
   }
 }
 
@@ -1486,8 +1358,7 @@ function mountLoopConditionNode(node) {
 }
 
 function mountOutputNode(node) {
-  if (!node || (node.comfyClass !== OUTPUT_NODE_CLASS &&
-                node.comfyClass !== LOOP_END_NODE_CLASS)) return;
+  if (!node || node.comfyClass !== LOOP_END_NODE_CLASS) return;
   ensureCss();
 
   if (!node.__tdOutputInfoRoot) {
