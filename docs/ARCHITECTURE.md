@@ -25,7 +25,8 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 | `director_selflift*.py` | 内置 Self-Lift 采样、潜空间放大、数学和高清分块 |
 | `director_loop.py` | 循环开始、循环信息／条件／结束及动态子图 |
 | `director_loop_adapters.py` | 模型适配器注册与 H3 模型专属策略；LTX 2.5 仅占位 |
-| `director_loop_video.py` | 从分段 .pt 缓存延迟读取并在 SaveVideo 中流式编码 VIDEO |
+| `director_loop_mov.py` | 循环逐段保存 ProRes MOV、维护少量承接上下文恢复文件与 manifest；结束时按时间线重叠帧和空档拼接 Final.mov，视频流复制、PCM 逐采样对齐 |
+| `director_loop_video.py` | 旧版循环 .pt 视频输出适配器（保留用于历史兼容，不再作为循环主路径） |
 | `director_loop_report.py` | 对外部循环执行进行独立采集；以真实循环/采样进度与周期资源快照生成 Markdown 报告，不承担模型生成或解码 |
 | `server_routes.py` | 编辑器入口、ComfyUI input 资产与磁盘空间只读查询 |
 | `web/` | ComfyUI 节点内控件、迷你时间线、弹窗及事件监听 |
@@ -75,9 +76,9 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢复／片段重跑，最终一次性编码视频，避免中间 H.264 有损压缩。保存成功后清理生成时的分段画面缓存，保留必要的 checkpoint。
 
-独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache，不再经过用户可见的 LoopEnd 端口。LoopCache 将最终媒体写入无损分段缓存并从同一结果提取尾帧/音频上下文；因此 2X Fast Decode、锐化或其他画面处理可以直接成为连续性与最终输出的真实来源。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，并用「循环结束依赖」闭合该副作用分支。LoopEnd 不再保存或输出分段 LATENT。完成运行时另附 Markdown 循环性能记录（节点 STRING 输出并自动写入 `output/TerryDirector/reports/`）。
+独立循环器：每段由用户工作流自行完成采样与解码；LoopCache 从未裁切的 IMAGE/AUDIO 里提取下一段所需的尾帧/重叠上下文，然后**立即保存完整原始片段为 ProRes 422 HQ MOV（48 kHz PCM 24-bit）**，不再默认写完整 `.pt` 张量。跨段只传紧凑承接信息和已保存 MOV 描述，释放已完成节点缓存。LoopEnd 默认读取 MOV 描述，按 `trim_head_frames` 精确裁切每段开头的重叠区、按 gap 帧数插黑场静音，再以 ProRes 视频流复制与 PCM 采样级拼接生成 Final.mov；每段 MOV 不被覆盖，仍适用于 NLE 单独剪辑。LoopEnd 的 VIDEO 输出指向已完成 Final.mov，关闭合并时为可选空输出；还输出 Markdown 性能记录和 manifest 路径。旧版 `director_loop_video.py` 留在树中供历史追溯，不再用于此路径。因中断保留下来的 MOV、manifest、少量 `.recovery/next_context.npz` 可供后续恢复开发利用，但尚未实现自动识别和跳过已完成镜头。
 
-**资源边界：** 文件化缓存减少时间线累积，但无法消除当前单段解码、VAE 与编码器的 RAM/显存需求。长时间线仍需足够的 ComfyUI 临时目录磁盘空间。
+**资源边界：** 循环器不再保留完整 `.pt`，显著节省磁盘和最终装配读取成本；但当前单段 VAE 和 IMAGE 输出依然需要 CPU RAM/VRAM，ProRes 编码也会有短时 CPU 内存开销。最新上下文 `.npz` 只保存下一段所需的原始尾帧/重叠音频。ProRes 为 10-bit 4:2:2 高质量有损中间编码，不等价于 Float32 原张量；单段 MOV 保持完整内容，Final 才执行自动去重裁切。
 
 ## 模型适配器
 
