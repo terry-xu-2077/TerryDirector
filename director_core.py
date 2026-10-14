@@ -39,6 +39,7 @@ def default_document() -> dict[str, Any]:
                 "useGlobalPrompt": True,
                 "transitionMode": "tail_reference",
                 "suspended": False,
+                "kind": "generated",
             }
         ],
         "assets": [],
@@ -113,6 +114,8 @@ def normalize_document(value: Any) -> dict[str, Any]:
             "useGlobalPrompt": raw.get("useGlobalPrompt") is not False,
             "transitionMode": raw.get("transitionMode") if raw.get("transitionMode") in {"tail_reference", "tail_continuation", "independent"} else "tail_continuation",
             "suspended": raw.get("suspended") is True,
+            "kind": "entity" if raw.get("kind") == "entity" else "generated",
+            "sourceAssetId": str(raw.get("sourceAssetId") or ""),
         })
 
     if not clips:
@@ -145,8 +148,14 @@ def normalize_document(value: Any) -> dict[str, Any]:
         assets.append(asset)
 
     valid_asset_ids = {item["id"] for item in assets}
+    valid_video_asset_ids = {item["id"] for item in assets if item["kind"] == "video"}
     for clip in clips:
         clip["refs"] = [ref for ref in clip["refs"] if ref in valid_asset_ids]
+        if clip["kind"] == "entity" and clip["sourceAssetId"] not in valid_video_asset_ids:
+            # Keep the clip visible with its unresolved ID. The compiler
+            # will explain the missing video rather than generating a fake
+            # clip or silently switching it to independent.
+            pass
 
     selected = str(value.get("selected") or "")
     if selected not in {clip["id"] for clip in clips}:
