@@ -99,7 +99,7 @@ class TestLoopProResManifest(unittest.TestCase):
             self.assertEqual(available.read_bytes(), b"keep")
 
     def test_safe_file_names(self):
-        self.assertEqual(MOV._safe_name("a/b:c*?\"<>|"), "a_b_c_____")
+        self.assertEqual(MOV._safe_name("a/b:c*?\"<>|"), "a_b_c______")
         self.assertEqual(MOV._safe_name("..."), "clip")
 
     def test_overlap_and_gaps_are_distinct(self):
