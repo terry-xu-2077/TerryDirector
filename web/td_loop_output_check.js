@@ -1,22 +1,22 @@
 const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
 
 /**
- * A practical output check for TerryDirector's always-streamed LoopEnd.
- * The generated MP4 size cannot be inferred from duration or resolution;
- * this checks the space needed for lossless per-segment .pt cache instead.
+ * Rough output-drive space guidance for encoded per-clip MOV/MP4.
+ * Unlike the legacy .pt estimate, size cannot be predicted exactly:
+ * spatial detail, encoding parameters and merge intermediates all matter.
  */
-
-// The Base cache stores float32 RGB frames plus (usually) 32k stereo audio.
-// 25% overhead covers temporary writes and small PCM/container differences.
-// This is advisory, not a guaranteed upper bound for arbitrary H3 sources.
-export function estimateLoopTempSpaceBytes(frames, width, height, fps = 24) {
+export function estimateLoopTempSpaceBytes(frames, width, height, fps = 24, format = "MOV · ProRes 422 HQ", merge = true) {
   if (![frames, width, height, fps].every(Number.isFinite) ||
       !Number.isSafeInteger(frames) || !Number.isSafeInteger(width) ||
       !Number.isSafeInteger(height) ||
       frames <= 0 || width <= 0 || height <= 0 || fps <= 0) return null;
-  const rgb = frames * width * height * 3 * 4;
-  const audio = Math.ceil(frames / fps * 32000) * 2 * 4;
-  const bytes = Math.ceil((rgb + audio) * 1.25);
+  // Generous per-frame planning factors, not contractual encoder bitrates.
+  const mp4 = String(format).startsWith("MP4");
+  const videoBytes = frames * width * height * (mp4 ? 0.2 : 0.9);
+  const pcmBytes = frames * (48000 / fps) * 2 * 3;
+  // The final merge can temporarily need a video-only file plus Final.
+  const factor = merge ? (mp4 ? 3.0 : 2.5) : 1.25;
+  const bytes = Math.ceil((videoBytes + pcmBytes) * factor);
   return Number.isSafeInteger(bytes) ? bytes : null;
 }
 
@@ -53,7 +53,7 @@ function brandMark() {
 }
 
 /** Return node card data, no DOM dependencies or network calls. */
-export function createLoopOutputCheckCard(estimate, diskState = {}) {
+export function createLoopOutputCheckCard(estimate, diskState = {}, options = {}) {
   const connected = estimate && estimate.state !== "disconnected";
   if (!connected) return {
     className: "td-output-memory-card is-loop-check is-idle",
@@ -68,7 +68,10 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
   const count = Number(estimate.activeClips) || 0;
   const ready = estimate.state === "ready";
   const budget = ready
-    ? estimateLoopTempSpaceBytes(frames, Number(estimate.width), Number(estimate.height))
+    ? estimateLoopTempSpaceBytes(
+        frames, Number(estimate.width), Number(estimate.height), 24,
+        options.segmentFormat, options.mergeFinal !== false,
+      )
     : null;
   const disk = diskState.info || null;
   const status = disk && budget != null
@@ -86,18 +89,18 @@ export function createLoopOutputCheckCard(estimate, diskState = {}) {
     ? formatLoopDiskSpace(disk.freeBytes)
     : diskState.failed ? "暂无法读取" : "正在检查…";
   const need = budget == null ? "暂无法估算" : formatLoopDiskSpace(budget);
-  const diskSummary = "预计使用 " + need + " / 磁盘剩余 " + free;
+  const diskSummary = "编码空间参考 " + need + " / 剩余 " + free;
 
   const title = '<div class="td-output-memory-title">' +
     brandMark() +
     '<strong>视频输出检查</strong></div>';
   const warning = status === "critical" || status === "warning";
   const diskExtra = warning
-    ? ' class="is-warning" title="临时磁盘空间偏紧，请预留足够空间。"'
-    : ' title="预计使用量包含余量；不是最终视频文件大小。"';
+    ? ' class="is-warning" title="输出磁盘空间偏紧，编码文件大小会随内容波动。"'
+    : ' title="粗略规划空间，含合并过程临时文件；不是精确文件体积。"';
   const html = title +
     row("视频规格", spec) +
-    row("磁盘临时空间", diskSummary, diskExtra);
+    row("片段输出空间", diskSummary, diskExtra);
   return {
     className: "td-output-memory-card is-loop-check" +
       (status === "critical" ? " is-space-low" :
