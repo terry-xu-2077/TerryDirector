@@ -169,7 +169,10 @@ def _manifest(path):
         return None
 
 
-def incomplete_run(loop_root, segments, recipe_hashes, plan_hash, segment_format):
+def incomplete_run(
+    loop_root, segments, recipe_hashes, plan_hash, segment_format,
+    *, verify_media=None,
+):
     """Latest resumable *prefix*. Reuse only exact matching contiguous results.
 
     If a previous run has a corrupt/missing middle clip, we reuse its valid
@@ -203,6 +206,8 @@ def incomplete_run(loop_root, segments, recipe_hashes, plan_hash, segment_format
             # For resume all generated clips need to be in the same run
             # folder. This prevents accidentally reusing an unrelated take.
             if Path(candidate["path"]).resolve().parent.parent != path.parent.resolve():
+                break
+            if verify_media is not None and not verify_media(candidate):
                 break
             prefix.append(dict(candidate))
         completed = sum(part is not None for part in prefix)
