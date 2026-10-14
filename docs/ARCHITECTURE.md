@@ -6,7 +6,7 @@
 
 TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `comfy_entrypoint()`。正式注册的节点分为三组：
 
-**标准导演：** `TerryDirectorSecondPassConfig`（可选）→ `TerryDirectorConfig` → `TerryDirector` / `TerryDirectorAdvanced`，基础版另接 `TerryDirectorOutput`。这条链负责模型、尺寸、音视频 VAE 与普通/二采参数。所有片段使用共享时间线、Seed、提示词与素材配置。
+**历史 Base / Advanced（已在新建节点列表中隐藏）：** `TerryDirectorSecondPassConfig`（可选）→ `TerryDirectorConfig` → `TerryDirector` / `TerryDirectorAdvanced`，基础版另接 `TerryDirectorOutput`。这条链负责模型、尺寸、音视频 VAE 与普通/二采参数。所有片段使用共享时间线、Seed、提示词与素材配置。
 
 **独立循环器：** `TerryDirectorLooper` → `TerryDirectorLoopInfo` → 用户自己的 H3 / Self-Lift / 解码节点组及 `TerryDirectorLoopCondition` → `TerryDirectorLoopEnd`。循环器依托 ComfyUI 原生 LoopIteration / LoopProgress / LoopResult 展开，隐藏缓存及上下文回传。循环体必须自行完成解码并向循环结束提交最终 `IMAGE + AUDIO`；LoopEnd 不再接收 VAE 或 LATENT，也不执行解码，只输出流式 `VIDEO`。
 
@@ -25,7 +25,8 @@ TerryDirector 是一个 ComfyUI 扩展，入口为根目录 `__init__.py` 的 `c
 | `director_selflift*.py` | 内置 Self-Lift 采样、潜空间放大、数学和高清分块 |
 | `director_loop.py` | 循环开始、循环信息／条件／结束及动态子图 |
 | `director_loop_adapters.py` | 模型适配器注册与 H3 模型专属策略；LTX 2.5 仅占位 |
-| `director_loop_video.py` | 从分段 .pt 缓存延迟读取并在 SaveVideo 中流式编码 VIDEO |
+| `director_loop_media.py` | 每轮编码完整 ProRes MOV / H.264 MP4、保存轻量承接数据和 timeline.json；按时间线重叠剪辑 Final |
+| `director_loop_video.py` | 旧版 .pt 惰性 VIDEO 输出的兼容实现；当前循环不再使用 |
 | `director_loop_report.py` | 对外部循环执行进行独立采集；以真实循环/采样进度与周期资源快照生成 Markdown 报告，不承担模型生成或解码 |
 | `server_routes.py` | 编辑器入口、ComfyUI input 资产与磁盘空间只读查询 |
 | `web/` | ComfyUI 节点内控件、迷你时间线、弹窗及事件监听 |
@@ -75,9 +76,9 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢复／片段重跑，最终一次性编码视频，避免中间 H.264 有损压缩。保存成功后清理生成时的分段画面缓存，保留必要的 checkpoint。
 
-独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache，不再经过用户可见的 LoopEnd 端口。LoopCache 将最终媒体写入无损分段缓存并从同一结果提取尾帧/音频上下文；因此 2X Fast Decode、锐化或其他画面处理可以直接成为连续性与最终输出的真实来源。最后一个节点返回惰性 VIDEO 对象；官方 SaveVideo 请求 `save_to()` 时才逐段读取缓存并编码。若用户在循环体中自行使用 VHS Video Combine，也可以把每轮结果直接保存为独立片段，并用「循环结束依赖」闭合该副作用分支。LoopEnd 不再保存或输出分段 LATENT。完成运行时另附 Markdown 循环性能记录（节点 STRING 输出并自动写入 `output/TerryDirector/reports/`）。
+独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache。LoopCache **先从未压缩的原始画面／声音提取下一段承接上下文**，再逐段编码完整的 MOV / ProRes 422 HQ（默认）或 MP4 / H.264。只去除 H3 对齐时补出的额外尾帧，保留本镜头的重叠开头以方便剪辑。LoopEnd 可选将已经保存的影片按时间线逐段裁掉新片段开头的重复区域并重组为 Final.mov / Final.mp4；ProRes 视频帧通过 FFmpeg 合并时优先流复制，PCM 音频在 48kHz 下按整数帧对应的采样数裁切。输出包含最终 VIDEO（关闭合并时为空）、Markdown 性能记录与镜头目录 STRING，不再生产完整 .pt 缓存。失败时已经保存的 MOV/MP4 和 `timeline.json` 仍存在，并保存最新承接上下文的 .npz；自动恢复尚未实施。
 
-**资源边界：** 文件化缓存减少时间线累积，但无法消除当前单段解码、VAE 与编码器的 RAM/显存需求。长时间线仍需足够的 ComfyUI 临时目录磁盘空间。
+**资源边界：** 不保存完整 .pt 节省磁盘空间及最后重复编码，但无法消除当前单段 VAE 解码的 IMAGE 内存峰值。输出目录需要 FFmpeg（或 imageio-ffmpeg），ProRes 422 HQ 是高质量有损中间编码，不是对原 Float32 IMAGE 的数学无损。最终 MP4 存在 GOP 时需重新编码视频才能做到精确帧级裁切。
 
 ## 模型适配器
 
