@@ -371,6 +371,109 @@ def complete_isolated_rerun(descriptors: list[dict], clip_id: str):
     )
 
 
+def rebuild_final_from_saved_clips(
+    *, loop_id: str, current: dict, assembly_plan: list[dict],
+    format_name: str,
+) -> tuple[str | None, list[str]]:
+    """Reassemble a new Final after a single-clip rerun, without resampling.
+
+    Source MOVs are reused by reference and retain their old versions.
+    Missing, incompatible and stale downstream clips are recorded explicitly;
+    stale continuity does not silently pretend to be valid.
+    """
+    from .director_loop_reuse import find_saved_clip
+
+    root = Path(current["path"]).resolve().parent.parent
+    if not assembly_plan:
+        return None, ["没有完整的原时间线编排信息"]
+    selected = []
+    missing = []
+    stale = []
+    previous_source = None
+    previous_was_entity = False
+    for part in assembly_plan:
+        if part.get("kind") == "entity":
+            previous_was_entity = True
+            previous_source = None
+            continue
+        part_id = str(part["id"])
+        if part_id == str(current["segment_id"]):
+            descriptor = dict(current)
+        else:
+            saved = find_saved_clip(
+                loop_id, part_id, required_frames=int(part["output_frames"]),
+            )
+            if saved is None:
+                missing.append(str(part.get("name") or part_id))
+                continue
+            descriptor = dict(saved)
+        if descriptor.get("segment_format") != format_name:
+            missing.append(f"{part_id}（编码格式不一致）")
+            continue
+        continuity = part.get("continuity") or {}
+        depends_on_previous = continuity.get("kind") in (
+            "overlap", "tail_frame", "tail_reference",
+        )
+        if (depends_on_previous and not previous_was_entity
+                and previous_source is not None
+                and descriptor.get("upstream_source")
+                and Path(str(descriptor["upstream_source"])).resolve()
+                    != Path(previous_source).resolve()):
+            stale.append(part_id)
+        descriptor["index"] = len(selected)
+        descriptor["trim_head_frames"] = (
+            0 if previous_was_entity
+            else int(part["assembly"]["trim_head_frames"])
+        )
+        descriptor["gap_before_frames"] = (
+            0 if previous_was_entity
+            else int(part["assembly"]["gap_before_frames"])
+        )
+        selected.append(descriptor)
+        previous_source = descriptor["path"]
+        previous_was_entity = False
+
+    manifest_path = root / "timeline.json"
+    state = json.loads(manifest_path.read_text("utf-8"))
+    state["assembly_sources"] = [
+        {"segment_id": part["segment_id"], "path": part["path"]}
+        for part in selected
+    ]
+    state["stale_downstream"] = stale
+    state["missing_for_final"] = missing
+    if missing:
+        state["final_rebuild_status"] = "missing"
+        _atomic_json(manifest_path, state)
+        return None, missing
+    if not selected:
+        return None, ["没有可合并的生成片段"]
+
+    try:
+        # This is a NEW Final in the rerun directory, leaving older Final
+        # untouched. FFmpeg reuses source ProRes packets when possible.
+        output = merge_loop_clips(
+            selected, merge_final=True, output_root=root,
+        )
+        state = json.loads(manifest_path.read_text("utf-8"))
+        state["assembly_sources"] = [
+            {"segment_id": part["segment_id"], "path": part["path"]}
+            for part in selected
+        ]
+        state["stale_downstream"] = stale
+        state["missing_for_final"] = []
+        state["final_rebuild_status"] = (
+            "completed_with_stale_dependencies" if stale else "completed"
+        )
+        _atomic_json(manifest_path, state)
+        return output, []
+    except (ValueError, RuntimeError, OSError) as exc:
+        state = json.loads(manifest_path.read_text("utf-8"))
+        state["final_rebuild_status"] = "failed"
+        state["final_rebuild_error"] = str(exc)[:500]
+        _atomic_json(manifest_path, state)
+        return None, [f"重新合并失败：{exc}"]
+
+
 def _raw_audio(path: str, channels: int, directory: Path) -> Path:
     fd, tmp = tempfile.mkstemp(prefix=".td_audio_decoded_", suffix=".pcm", dir=directory)
     os.close(fd)
