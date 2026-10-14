@@ -8,13 +8,6 @@ from typing_extensions import override
 
 from comfy_api.latest import ComfyExtension, io
 
-from .director_node import (
-    TerryDirector,
-    TerryDirectorAdvanced,
-    TerryDirectorConfig,
-    TerryDirectorSecondPassConfig,
-    TerryDirectorOutput,
-)
 from .director_loop import (
     TerryDirectorLooper,
     TerryDirectorLoopInfo,
@@ -23,19 +16,6 @@ from .director_loop import (
     TerryDirectorLoopEnd,
     TerryDirectorLoopFrame,
     TerryDirectorLoopReuse,
-)
-from .director_internal import (
-    TerryDirectorCacheLatent,
-    TerryDirectorLoadCachedLatent,
-    TerryDirectorDecodeSegmentToCache,
-    TerryDirectorMaterializeTimeline,
-    TerryDirectorDecodeAdvancedSegmentToCache,
-    TerryDirectorLoadAdvancedSegmentContext,
-    TerryDirectorAdvancedLosslessFinish,
-    TerryDirectorAssembleMedia,
-    TerryDirectorPackOutput,
-    TerryDirectorPackAdvancedOutput,
-    TerryDirectorResampleReferenceVideo,
 )
 from . import server_routes as _server_routes  # noqa: F401 - register routes on import
 
@@ -48,13 +28,8 @@ class TerryDirectorExtension(ComfyExtension):
         node_classes = [
             TerryDirectorLlamaConfig,
             TerryDirectorPromptEnhancer,
-            TerryDirectorSecondPassConfig,
             TerryDirectorSelfLiftSampler,
             TerryDirectorH3X2LowRAMDecode,
-            TerryDirectorConfig,
-            TerryDirector,
-            TerryDirectorAdvanced,
-            TerryDirectorOutput,
             TerryDirectorLooper,
             TerryDirectorLoopInfo,
             TerryDirectorLoopCondition,
@@ -62,17 +37,6 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorLoopEnd,
             TerryDirectorLoopFrame,
             TerryDirectorLoopReuse,
-            TerryDirectorPackOutput,
-            TerryDirectorCacheLatent,
-            TerryDirectorLoadCachedLatent,
-            TerryDirectorDecodeSegmentToCache,
-            TerryDirectorMaterializeTimeline,
-            TerryDirectorDecodeAdvancedSegmentToCache,
-            TerryDirectorLoadAdvancedSegmentContext,
-            TerryDirectorAdvancedLosslessFinish,
-            TerryDirectorAssembleMedia,
-            TerryDirectorPackAdvancedOutput,
-            TerryDirectorResampleReferenceVideo,
         ]
         return node_classes
 
