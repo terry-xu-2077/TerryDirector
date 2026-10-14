@@ -43,7 +43,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector 循环开始** | 按时间线驱动普通视频生成节点组 |
 | **TerryDirector 循环信息** | 输出提示词、采样帧数、Seed、片段数据与图片／视频／音频参考 |
 | **TerryDirector 循环条件** | 将前一段实际画面／声音应用于当前段的 H3 条件 |
-| **TerryDirector 循环结束** | 接收已解码 IMAGE/AUDIO，输出流式 VIDEO 和循环性能 Markdown（自动保存报告） |
+| **TerryDirector 循环结束** | 每段即时保存 ProRes 422 HQ MOV；可按时间线裁切重叠并无重编码合并 Final.mov，输出 VIDEO、Markdown 与 manifest 路径 |
 
 部分内部节点会自动注册供执行图使用，不需要手动添加到画布。
 
@@ -86,8 +86,9 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
                                                       ▼ ▼
                                        TerryDirector 循环结束
                                                   │
-                                                  ├─ VIDEO → 官方 SaveVideo
-                                                  └─ Markdown 循环性能记录（自动另存文件）
+                                                  ├─ Final.mov（可选 VIDEO 输出）
+                                                  ├─ Markdown 循环性能记录（自动另存文件）
+                                                  └─ 片段清单 manifest.json（每镜头 MOV 已单独保存）
 ```
 
 循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的低透明度 **圆角凸包「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环器输出 **VIDEO** 和循环性能 **Markdown STRING**，无需再连接 CreateVideo。报告自动保存在 `output/TerryDirector/reports/`，内容涵盖逐段耗时、真实采样进度与显存/RAM 采样峰值；采样器未上报步数时不估算每步速度。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO；当前片段元数据由循环器内部注入，因此无需再从「循环信息」手动拉一根「片段数据」到循环结束。它不接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；最终封装格式、编码器和保存路径由下游 SaveVideo 决定。
@@ -100,7 +101,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
 
 ## 使用边界
 
-TerryDirector 当前以 24 fps 编排视频；不同生成链对帧数和参考素材有各自限制。标准模式的完整 IMAGE 输出仍需要足够系统内存；高级和循环器的流式输出依赖临时磁盘空间。Self-Lift 性能、画质和显存占用与模型、分辨率、注意力后端及工作流配置有关。
+TerryDirector 当前以 24 fps 编排视频；不同生成链对帧数和参考素材有各自限制。标准模式的完整 IMAGE 输出仍需要足够系统内存；Advanced 的无损缓存仍需要相应磁盘空间；循环器直接保存各段 ProRes MOV，无需完整 .pt 视频缓存。Self-Lift 性能、画质和显存占用与模型、分辨率、注意力后端及工作流配置有关。
 
 循环器的模型适配器中，`minimax_h3` 已可运行，`ltx_2_5` 仍是明确禁用的预留实现。不会静默把 LTX 数据按 H3 方式解码。
 
