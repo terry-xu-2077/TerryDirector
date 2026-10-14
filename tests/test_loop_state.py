@@ -179,5 +179,69 @@ class ResumeAndMerge(unittest.TestCase):
         self.assertEqual(picked["clips"][0]["trim_head_frames"], 0)
 
 
+class LoopIntegration(unittest.TestCase):
+    def test_entrypoint_uses_old_run_signature_without_resampling_prefix(self):
+        import ast
+        import types
+        source = (ROOT / "director_loop.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        func = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                    and node.name == "_configure_run_integrity")
+        resumed_descriptor = {
+            "segment_id": "A", "frames": 48, "path": "/fake/A.mov",
+        }
+        calls = []
+
+        def prior(_root, _items, _recipes, plan_hash, _fmt, verify_media=None):
+            self.assertEqual(plan_hash, "plan-signature")
+            self.assertTrue(verify_media(resumed_descriptor))
+            calls.append("examined")
+            return {
+                "run_signature": "old-run", "completed": 1,
+                "total_generated": 2,
+                "prefix": [resumed_descriptor],
+            }
+
+        scope = {
+            "graph_fingerprint": lambda *args: "graph",
+            "clip_fingerprint": lambda part, *args: "recipe-" + part["id"],
+            "plan_fingerprint": lambda *args: "plan-signature",
+            "incomplete_run": prior,
+            "loop_folder": lambda *args: "/fake",
+            "is_link": lambda v: isinstance(v, list),
+            "folder_paths": types.SimpleNamespace(
+                get_output_directory=lambda: "/fake",
+                exists_annotated_filepath=lambda *_: True,
+                get_annotated_filepath=lambda value: value,
+            ),
+            "video_info": lambda _path: {
+                "video_frames": 48, "has_audio": True, "frames_24fps": 48,
+            },
+            "find_saved_clip": lambda *args, **kwargs: None,
+        }
+        exec(compile(ast.Module(body=[func], type_ignores=[]),
+                     "director_loop.py", "exec"), scope)
+        items = [
+            {"id": name, "kind": "generated", "h3_frames": 56,
+             "output_frames": 48, "_loop": {
+                 "action": "generate", "run_signature": "new-run",
+                 "signature": "new",
+             }}
+            for name in ("A", "B")
+        ]
+        result = scope["_configure_run_integrity"](
+            items, "42", 99, None, [], "4", "MOV", resume_mode=True,
+        )
+        self.assertEqual(calls, ["examined"])
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual([row["_loop"]["action"] for row in items],
+                         ["resume_result", "generate"])
+        self.assertTrue(all(
+            row["_loop"]["run_signature"] == "old-run" for row in items
+        ))
+        self.assertEqual(items[0]["_loop"]["reuse_descriptor"], resumed_descriptor)
+        self.assertEqual(items[1]["_loop"]["plan_fingerprint"], "plan-signature")
+
+
 if __name__ == "__main__":
     unittest.main()
