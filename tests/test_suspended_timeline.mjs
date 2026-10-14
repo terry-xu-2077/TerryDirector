@@ -147,7 +147,7 @@ function createNodeRenderer(){
   const context={
     opens, effectiveClipLayout, previewClipLayout, FPS:24,
     RUN_RUNNING:"running",RUN_COMPLETED:"completed",RUN_ERROR:"error",
-    ADVANCED_NODE_CLASS:"TerryDirectorAdvanced",LOOP_NODE_CLASS:"TerryDirectorLooper",
+    LOOP_NODE_CLASS:"TerryDirectorLooper",
     readConfig:node=>({document:node.doc}),ensureActivity:()=>({}),
     openEditor:(...args)=>opens.push(args),
     timelineTitleHtml:()=>"<span>时间线</span>",
@@ -185,9 +185,9 @@ test("LoopStart uses old single-row muted clip cards, correct 28.5s / 3",()=>{
   assert.doesNotMatch(html,/td-mini-suspended-strip/);
 });
 
-test("Base and LoopStart match; paused clips never affect used asset count",()=>{
+test("LoopStart ignores suspended-clip asset references",()=>{
   const render=createNodeRenderer();
-  for(const comfyClass of ["TerryDirector","TerryDirectorLooper"]){
+  for(const comfyClass of ["TerryDirectorLooper"]){
     const root={innerHTML:"",querySelectorAll:()=>[]};
     render.renderNode({comfyClass,__tdRoot:root,doc:{clips:eleven,assets:[]}});
     assert.equal((root.innerHTML.match(/class="td-mini-clip is-suspended"/g)||[]).length,8);
@@ -241,20 +241,7 @@ test("old suspended clip styles are restored and names are HTML escaped",async()
   assert.match(html,/&quot;x&quot;/);
   const css=await fs.readFile(path.join(root,"web/terry_director.css"),"utf8");
   assert.match(css,/\.td-node-shell-director \.td-mini-clip\.is-suspended/);
-  assert.match(css,/\.td-node-shell-advanced \.td-adv-clip\.is-suspended/);
   assert.doesNotMatch(css,/\.td-mini-suspended-strip/);
-});
-
-test("Advanced maps paused geometry into cursor and seeks without second row",()=>{
-  const section=webSource.slice(webSource.indexOf("function renderAdvancedNode(node) {"));
-  assert.match(section,/const layout = previewClipLayout\(doc\.clips, clips\)/);
-  assert.match(section,/const totalFrames = layout\.totalFrames/);
-  assert.match(section,/const clipHtml = layout\.entries\.map/);
-  assert.match(section,/const playheadPercent = seconds => layout\.percent\(layout\.realToVisual\(seconds \* FPS\)\)/);
-  assert.match(section,/layout\.visualToReal\(fraction \* layout\.visualFrames\)/);
-  assert.match(section,/bindSuspendedClipButtons\(node, root\)/);
-  assert.match(section,/event\.target\.closest\("\[data-clip\], \[data-suspended-clip\]"\)/);
-  assert.doesNotMatch(section,/suspendedClipsHtml/);
 });
 
 test("editor duration stays accurate while authoring all clips",()=>{
