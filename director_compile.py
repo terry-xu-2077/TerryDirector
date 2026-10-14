@@ -300,14 +300,31 @@ def compile_timeline(
         start = int(effective_clip["start"])
         end = int(effective_clip["end"])
         output_frames = int(clip["end"]) - int(clip["start"])
-        generated_frames = h3_align_frames(output_frames)
-        if generated_frames > H3_MAX_FRAMES:
+        is_entity = clip.get("kind") == "entity"
+        generated_frames = output_frames if is_entity else h3_align_frames(output_frames)
+        if not is_entity and generated_frames > H3_MAX_FRAMES:
             raise ValueError(
                 f"TerryDirector segment {index + 1} exceeds H3 maximum length "
                 f"({H3_MAX_FRAMES} frames at {FPS} fps)"
             )
-        effective_prompt = _effective_prompt(document, clip)
-        prompt, local_assets = _compile_assets(effective_prompt, assets)
+        if is_entity:
+            source_id = str(clip.get("sourceAssetId") or "")
+            source_asset = next(
+                (asset for asset in assets
+                 if asset.get("id") == source_id and asset.get("kind") == "video"),
+                None,
+            )
+            if source_asset is None:
+                raise ValueError(
+                    f"实体片段「{clip['name']}」缺少有效的视频资产。"
+                    "请在编辑器中重新选择已有的视频文件。"
+                )
+            prompt = ""
+            local_assets = {"images": [], "videos": [], "audios": []}
+        else:
+            source_asset = None
+            effective_prompt = _effective_prompt(document, clip)
+            prompt, local_assets = _compile_assets(effective_prompt, assets)
         continuity, gap_before, trim_head = _continuity(previous, effective_clip)
         if continuity["kind"] == "tail_reference":
             if len(local_assets["images"]) >= MAX_REFERENCE_IMAGES:
@@ -333,6 +350,12 @@ def compile_timeline(
 
         segment = {
             "index": index,
+            "kind": "entity" if is_entity else "generated",
+            "source_asset": source_asset,
+            # Imported physical clips are context anchors, not generated
+            # frames to include in Final. They occupy the authored timeline
+            # but are skipped when assembling editable generated clips.
+            "include_in_final": not is_entity,
             "id": str(clip["id"]),
             "name": str(clip["name"]),
             "seed": clip_seed_value,
