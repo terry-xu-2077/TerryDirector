@@ -19,13 +19,11 @@ on:
       - src/timeline.js
       - src/app.css
       - director_loop_media.py
-      - director_node.py
       - server_routes.py
       - tests/test_loop_media.py
       - tests/test_loop_media_ffmpeg_nomodel.py
       - web/td_loop_output_check.js
       - director_loop_memory.py
-      - director_loop_video.py
       - director_loop_x2_windows.py
       - director_loop_x2_decode.py
       - tests/test_loop_x2_windows.py
@@ -47,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
-        run: python -m py_compile director_loop.py director_loop_resume.py director_loop_reuse.py director_compile.py director_core.py director_node.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py director_loop_video.py tests/test_loop_clip_reuse.py tests/test_loop_resume.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
+        run: python -m py_compile director_loop.py director_loop_resume.py director_loop_reuse.py director_compile.py director_core.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py tests/test_loop_clip_reuse.py tests/test_loop_resume.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
       - name: Resume checkpoint and workflow fingerprint validity
         run: python -m unittest discover -s tests -p test_loop_resume.py -v
       - name: Physical clip compilation and saved-result lookup
