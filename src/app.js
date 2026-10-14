@@ -975,6 +975,11 @@
     }
     refreshChainButton();
     renderPrompt();renderTiming();renderRunProgress();renderReferences();updateHistory();
+    if(c?.kind==='entity'){
+      $('#promptText').readOnly=true;
+      $('#promptVisual').contentEditable='false';
+      $('#useGlobalPrompt').disabled=true;
+    }
     if(timeline){
       timeline.setClips(state.clips);
       timeline.select(state.selected,true); // Preserve a multi-selection on render.
