@@ -104,6 +104,10 @@ SelfLift / H3 采样 LATENT
 
 2X VAE（例如 `MiniMax-H3-X2-Detail-v1.safetensors`）只属于用户自己的 Fast Decode 链。循环结束收到的就是最终解码画面，因此尾帧参考会从这组真实 IMAGE 中提取上一段尾帧。
 
+**可选：TerryDirector H3 2X 低内存解码。** 这个节点由 TerryDirector 自身维护，不修改第三方解码器。需要安装原版 `MiniMaxH3VAEDecodeFast` 作为执行后端；将原工作流中的 `LTXVSeparateAVLatent → MiniMaxH3VAEDecodeFast` 视频支路替换为 `LTXVSeparateAVLatent → TerryDirector H3 2X 低内存解码`，2X 视频 VAE 仍接入新节点，IMAGE 输出依然接「循环结束」和原有视频保存分支，音频支路不变。
+
+新节点将 H3 Latent 按合法时间网格切成带前导上下文的小块，逐块调用**未修改的** FastDecode，再将有效帧复制进唯一的最终 IMAGE 缓冲区；默认每块新增 51 帧、前导上下文 39 帧，空间 Tile 256 / overlap 64，接缝诊断逐帧计算，避免额外完整图像副本。由于 H3 的分块因果上下文可能影响块边界，正式制作前请检查接缝与画质。当前标准 IMAGE 接口仍要求最终整段视频常驻 RAM，所以本方案降低的是峰值而非保证任何时长都无 OOM；真正逐帧写盘还需要更进一步的流式缓存接口。新节点为**可选实验路径，尚未完成用户机器上的完整 GPU 14 段验证**，原有 FastDecode 节点与接线继续兼容。
+
 如果希望每段分别由 `VHS Video Combine` 保存，需把 VHS 的 `Filenames` 输出接到循环结束的 **「循环结束依赖」** 输入。该输入不消费文件名内容，只用于告诉原生 Loop：这条每段保存分支必须完成后，当前循环才能结束。若只需要最终整条流式 VIDEO，则可以不接此依赖，直接把循环结束的 VIDEO 接官方 SaveVideo。
 
 循环结束的「视频输出检查」会尽量沿已解码画面链追踪实际输出尺寸；对明确识别的 2X Fast Decode VAE 会显示推算后的尺寸并据此估算临时缓存空间。保存最终流式视频成功后，对应无损分段临时文件会自动清理；异常中断可能保留缓存供排查。
