@@ -439,6 +439,18 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool) -> str | Non
     if [int(item["index"]) for item in ordered] != list(range(len(ordered))):
         raise ValueError("循环片段缺失或顺序不连续")
     if not merge_final:
+        manifest = root / "timeline.json"
+        if manifest.is_file():
+            with open(manifest, encoding="utf-8") as source:
+                state = json.load(source)
+            state["status"] = "completed"
+            state["final"] = None
+            state["final_frames"] = sum(
+                int(part["gap_before_frames"]) +
+                int(part["frames"]) - int(part["trim_head_frames"])
+                for part in ordered
+            )
+            _atomic_json(manifest, state)
         return None
 
     channels = int(ordered[0]["channels"])
