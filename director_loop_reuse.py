@@ -47,29 +47,51 @@ def _execute(args, label):
 
 def video_info(path):
     if Path(path).suffix.lower() not in SUPPORTED_EXTENSIONS or not Path(path).is_file():
-        raise ValueError("需要有效的 MOV、MP4、MKV、WebM 或 AVI 视频")
-    raw = _execute([
-        _ffmpeg_program("ffprobe"), "-v", "error",
-        "-show_entries",
-        "stream=index,codec_type,width,height,r_frame_rate,avg_frame_rate,nb_frames,sample_rate,channels:format=duration",
-        "-of", "json", str(path),
-    ], "视频信息读取")
-    data = json.loads(raw)
-    streams = data.get("streams") or []
-    video = next((s for s in streams if s.get("codec_type") == "video"), None)
-    audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
-    if not video:
-        raise ValueError("文件没有可解码的视频轨道")
-    width, height = int(video["width"]), int(video["height"])
-    duration = float(data.get("format", {}).get("duration") or 0)
+        raise ValueError("需要有效的 MOV、MP4、MKV、WebM、M4V 或 AVI 视频")
+    try:
+        probe = _ffmpeg_program("ffprobe")
+    except RuntimeError:
+        probe = None
+    if probe:
+        raw = _execute([
+            probe, "-v", "error",
+            "-show_entries",
+            "stream=index,codec_type,width,height,r_frame_rate,avg_frame_rate,nb_frames,sample_rate,channels:format=duration",
+            "-of", "json", str(path),
+        ], "视频信息读取")
+        data = json.loads(raw)
+        streams = data.get("streams") or []
+        video = next((s for s in streams if s.get("codec_type") == "video"), None)
+        audio = next((s for s in streams if s.get("codec_type") == "audio"), None)
+        if not video:
+            raise ValueError("文件没有可解码的视频轨道")
+        width, height = int(video["width"]), int(video["height"])
+        duration = float(data.get("format", {}).get("duration") or 0)
+        channels = int(audio.get("channels") or 0) if audio else 0
+        has_audio = audio is not None
+    else:
+        # imageio-ffmpeg can ship ffmpeg without ffprobe. ComfyUI already
+        # depends on PyAV, so inspecting the container must work in that case.
+        import av
+        with av.open(str(path)) as container:
+            video = next((s for s in container.streams if s.type == "video"), None)
+            audio = next((s for s in container.streams if s.type == "audio"), None)
+            if video is None:
+                raise ValueError("文件没有可解码的视频轨道")
+            width, height = int(video.codec_context.width), int(video.codec_context.height)
+            duration = float(container.duration or 0) / float(av.time_base)
+            if duration <= 0 and video.duration is not None:
+                duration = float(video.duration * video.time_base)
+            has_audio = audio is not None
+            channels = int(getattr(audio.codec_context, "channels", 0) or 0) if audio else 0
     if width <= 0 or height <= 0 or duration <= 0 or duration > 36000:
         raise ValueError("实体视频尺寸或时长无效")
     return {
         "width": width, "height": height,
         "frames_24fps": max(1, round(duration * FPS)),
         "duration": duration,
-        "has_audio": audio is not None,
-        "audio_channels": int(audio.get("channels") or 0) if audio else 0,
+        "has_audio": has_audio,
+        "audio_channels": channels,
     }
 
 
