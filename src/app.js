@@ -154,6 +154,7 @@
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
   let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null,clipContextMenu=null;
   let replacingAssetId=null,replacingAssetBusy=false,stopAssetZoom=null;
+  let rebuildingFinal=false;
   const temporaryAssetUrls=new Set();
   // Sort mode temporarily owns the timeline; restore this preference on exit.
   let chainBeforeSort=null;
@@ -164,7 +165,7 @@
     <header class="topbar">
       <div class="brand"><span class="brand-mark"><img src="assets/mark.svg" alt="" aria-hidden="true"></span><span>时间线编辑器</span></div>
       <div class="top-timeline-leading"><button class="button ghost" data-action="new" title="在播放头处插入片段；空白足够时不移动后续片段">${icon('plus')}新建片段</button><button class="button ghost" data-action="import-physical-clip" type="button" title="从资产池中的视频插入一个不会经过 AI 采样的实体片段">${icon('film')}实体片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前自动AI增强提示</span></label></div>
-      <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
+      <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="button ghost td-resume" data-action="resume-workflow" type="button" title="复用匹配的已完成镜头，从上次失败处继续生成">${icon('refresh')}继续生成</button><button class="button ghost td-rebuild" data-action="rebuild-final" type="button" title="利用已保存的 MOV/MP4 重新组装完整影片，不执行采样">${icon('film')}重组整片</button><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">H3 Skill · 静态增强稿</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
     <section class="timeline-panel" id="timelinePanel" aria-label="时间轴">
@@ -1523,6 +1524,10 @@
     }
     const queueButton=$('[data-action=queue-workflow]');
     const running=[...activity.values()].some(record=>record.status==='running');
+    for(const action of ['resume-workflow','rebuild-final']){
+      const button=$('[data-action='+action+']');
+      if(button)button.disabled=running||hostReadonly||(action==='rebuild-final'&&rebuildingFinal);
+    }
     if(queueButton){
       queueButton.disabled=running;
       queueButton.classList.toggle('is-running',running);
@@ -1785,7 +1790,7 @@
     $('#dialogSaveChanges').onclick=()=>{d.close();saveToHost();};
     if(!d.open)d.showModal();
   }
-  function queueWorkflow(rerunClipId=''){
+  function queueWorkflow(rerunClipId='',resumeIncomplete=false){
     if(rerunClipId && (current()?.id!==rerunClipId || current()?.kind==='entity' || current()?.suspended)){
       toast('请选择一个未挂起的生成片段进行重跑');return;
     }
@@ -1797,9 +1802,46 @@
     window.parent.postMessage({
       type:'terrydirector:queue-workflow',
       document:documentPayload(),
-      rerunClipId:String(rerunClipId||'')
+      rerunClipId:String(rerunClipId||''),
+      resumeIncomplete:!!resumeIncomplete
     },hostOrigin);
   }
+  function rebuildFinal(allowStale=false){
+    if(hostReadonly||aiJob||rebuildingFinal)return;
+    if(!embedded){toast('正式嵌入 ComfyUI 后可从已保存的镜头重组整片。');return;}
+    finishDurationEdit();finishPromptEdit();syncAllReferences();
+    rebuildingFinal=true;
+    const button=$('[data-action=rebuild-final]');
+    if(button){button.disabled=true;button.textContent='正在检查镜头…';}
+    window.parent.postMessage({
+      type:'terrydirector:rebuild-final',
+      document:documentPayload(),
+      allowStale:!!allowStale,
+    },hostOrigin);
+  }
+
+  function receiveRebuildStatus(message){
+    rebuildingFinal=false;
+    const button=$('[data-action=rebuild-final]');
+    if(button){button.disabled=false;button.innerHTML=icon('film')+'重组整片';}
+    if(message.status==='completed'){
+      modal('完整影片已重组',
+        '<p>已直接使用现有 MOV/MP4 重建 Final，没有重新运行采样器，也没有覆盖旧成片。</p>'+
+        '<p class="subtle" style="overflow-wrap:anywhere">'+esc(message.final||'')+'</p>');
+    }else if(message.status==='stale'){
+      const problems=(message.stale||[]).slice(0,20);
+      const body='<p>检测到部分镜头仍依赖旧版本的上游视频，强行合并可能产生画面或声音跳变。</p>'+
+        '<ul>'+problems.map(item=>'<li>'+esc(item.name||'镜头')+
+        '：'+esc(item.reason||'承接关系不一致')+'</li>').join('')+'</ul>'+
+        '<p class="subtle">建议先重跑提示的镜头。只有明确接受潜在接缝时，才继续合并。</p>';
+      modal('镜头承接已过期',body,'仍然合并',()=>{
+        rebuildFinal(true);
+      });
+    }else if(message.status==='error'){
+      modal('无法重组影片','<p>'+esc(message.error||'请查看后台日志。')+'</p>');
+    }
+  }
+
   function saveToHost(){
     if(hostReadonly)return;
     if(aiJob){toast('AI 增强仍在进行，请完成或取消后再保存');return;}
@@ -1835,7 +1877,9 @@
     'toggle-prompt-view':()=>{finishPromptEdit();promptView=promptView==='visual'?'text':'visual';renderPrompt();},
     'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
     'save-close':saveToHost,
-    'queue-workflow':()=>queueWorkflow(), 
+    'queue-workflow':()=>queueWorkflow(),
+    'resume-workflow':()=>queueWorkflow('',true),
+    'rebuild-final':()=>rebuildFinal(),
     'rerun-clip':()=>rerunSelectedClip(),
     'import-physical-clip':()=>void importPhysicalClip(),
     'close-editor':()=>{if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
@@ -2038,6 +2082,7 @@
         toast(message.error||'未能提交指定片段');
         setHostReadonly(false);
       }
+      else if(message.type==='terrydirector:rebuild-status')receiveRebuildStatus(message);
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
