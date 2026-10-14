@@ -35,6 +35,13 @@ Missing predecessor context was rejected before B sampling with a clear “no va
 
 ## UI limit and errors
 
+**Product acceptance decision (2026-10-15):** The user explicitly chose to defer
+the final ComfyUI host-page click-to-GPU test and provisionally accept the UI
+workflow so that retiring Base/Advanced is not blocked. This is a release
+decision, **not** a claim that an integrated browser-to-GPU run was performed.
+The missing test remains a documented future regression case.
+
+
 In the actual editor embedded in a browser test harness, clicking **继续未完成** emitted `resumePrevious:true` for the three clips. Clicking **仅重跑此片段**, then confirming **开始重跑**, emitted `rerunClipId:"B"` and `resumePrevious:false`. Those are genuine DOM button clicks and the editor's real message payloads. The temporary harness was removed after testing. In the ComfyUI host page, the mini-editor overlay did not remain open in the available in-app browser, so a full UI click that queues a GPU job through the host bridge was not demonstrated. The GPU jobs above were queued through ComfyUI's API using the same payload semantics. This is the remaining acceptance gap; its cause is not established from this run, so no speculative source change was made.
 
 The initial reference run reports ComfyUI `error` after the intentional interrupt; its A/B files and manifest were intact. The changed-reference resume reports the expected compatibility error. The missing/incomplete context cases report expected validation errors. No unexpected GPU or encoding failure occurred. ComfyUI's history error text was garbled in one Python-console capture due to locale decoding; PowerShell UTF-8 retrieval showed the original Chinese messages.
