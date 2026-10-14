@@ -115,6 +115,23 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
                 media.merge_loop_clips(invalid, merge_final=True)
             self.assertTrue(all(path.is_file() for path in sources))
 
+            # Rebuilding Final from previous runs must not touch the original
+            # movie and must preserve exact ProRes/PCM frame/sample counts.
+            reassembled_root = root / "new_take"
+            (reassembled_root / "clips").mkdir(parents=True)
+            replacement = reassembled_root / "clips" / "002_new.mov"
+            shutil.copy2(sources[1], replacement)
+            mixed = [dict(part) for part in clips]
+            mixed[1]["path"] = str(replacement)
+            mixed[1]["run_signature"] = "new_take"
+            mixed_final = media.merge_loop_clips(
+                mixed, merge_final=True, output_root=reassembled_root,
+            )
+            self.assertEqual(int(stream(mixed_final, "v:0")["nb_frames"]), expected_frames)
+            self.assertEqual(int(stream(mixed_final, "a:0")["duration_ts"]),
+                             expected_frames * 2000)
+            self.assertTrue(Path(final).is_file())
+
 
     def test_mp4_frame_exact_overlap_and_nonoverlap(self):
         ffmpeg = shutil.which("ffmpeg")
