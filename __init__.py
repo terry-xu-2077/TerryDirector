@@ -22,6 +22,7 @@ from .director_loop import (
     TerryDirectorLoopCache,
     TerryDirectorLoopEnd,
     TerryDirectorLoopFrame,
+    TerryDirectorLoopReuse,
 )
 from .director_internal import (
     TerryDirectorCacheLatent,
@@ -60,6 +61,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorLoopCache,
             TerryDirectorLoopEnd,
             TerryDirectorLoopFrame,
+            TerryDirectorLoopReuse,
             TerryDirectorPackOutput,
             TerryDirectorCacheLatent,
             TerryDirectorLoadCachedLatent,
