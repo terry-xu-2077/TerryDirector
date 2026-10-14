@@ -501,7 +501,7 @@ class RunReport:
                 ]
                 lines.append("| " + " | ".join(values) + " |")
             lines.extend(["", "## 节点阶段耗时对照（来源：ComfyUI 原生执行事件）", "",
-                          "| # | 采样器 | VAE 解码 | 每段 VHS 编码 | RAM 清理 | 无损缓存写入 |",
+                          "| # | 采样器 | VAE 解码 | 每段 VHS 编码 | RAM 清理 | 片段编码保存 |",
                           "| ---: | ---: | ---: | ---: | ---: | ---: |"])
             for i, clip in enumerate(self.clips):
                 stages = list(clip["node_stages"].values())
@@ -553,7 +553,7 @@ class RunReport:
                         lines.append("  - " + cell(node_type) + "：" + number(seconds, "s"))
                 if clip["cache"]:
                     cache = clip["cache"]
-                    lines.append("- 无损缓存写入：" + number(cache.get("time_s"), "s") +
+                    lines.append("- 片段编码保存：" + number(cache.get("time_s"), "s") +
                                  "；大小 " + number(cache.get("size_mb"), "MB") +
                                  "；帧数 " + str(cache.get("frames") or "未采集"))
                 lines.append("")
@@ -620,7 +620,7 @@ class RunReport:
                     ", ".join(f"{step:.1f}" for step in high) or "未采集",
                 ]
                 lines.append("| " + " | ".join(values) + " |")
-            lines.extend(["", "## 各段模型加载、RAM 清理与无损缓存线索（日志来源）", "",
+            lines.extend(["", "## 各段模型加载、RAM 清理与片段编码线索（日志来源）", "",
                           "| # | H3 动态加载请求 | H3 Staged 最大 | TE 加载请求 | RAM 清理次数 | Torch 编译 graph breaks 最大 |",
                           "| ---: | ---: | ---: | ---: | ---: | ---: |"])
             for i in range(len(self.clips)):
@@ -651,7 +651,7 @@ class RunReport:
                                      number((b - a) / (1024 ** 3), "GiB"))
             cache_total = sum(c["cache"].get("size_mb", 0) or 0 for c in self.clips)
             if cache_total:
-                lines.append("- 逐段无损缓存累计大小（各段写入量之和）：" +
+                lines.append("- 逐段镜头视频累计大小（各段写入量之和）：" +
                              number(cache_total / 1024, "GiB"))
 
             lines.extend(["", "此表仅取匹配本次运行时间与片段时间的 SelfLiftAvatar 日志行，不是推断值；缺少原生日志时不填充。", "",
@@ -663,7 +663,7 @@ class RunReport:
 
             lines.extend([
                 "## 统计说明", "",
-                "- 整段耗时：循环信息节点开始至内部循环缓存完成，包含外部采样器、VAE、用户额外输出、缓存，非单纯 GPU 采样时间。",
+                "- 整段耗时：循环信息节点开始至内部逐段保存完成，包含外部采样器、VAE、用户额外输出、视频编码，非单纯 GPU 采样时间。",
                 "- 采样器耗时：ComfyUI 原生节点开始与结束事件测得，可能包含模型初始化、Self-Lift 多阶段与权重加载。",
                 "- 每步速度：只根据原生采样进度实际增加的步数与时间间隔计算。未上报步数则显示未采集；第一步可能包含初始化。",
                 "- GPU 总占用来自 CUDA 设备空闲量；PyTorch 显存仅包含 PyTorch 管理的当前进程内存。",
