@@ -34,6 +34,10 @@ from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_
 from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context
 from .director_loop_memory import log_loop_ram, release_completed_body
 from .director_loop_report import start_report, mark_clip, finish_report
+from .director_loop_state import (
+    clip_fingerprint, graph_fingerprint, plan_fingerprint,
+    incomplete_run, loop_folder,
+)
 
 # An allowlist of diagnosis-relevant numeric/model settings. Neither prompt
 # contents nor arbitrary asset paths are retained in performance reports.
@@ -334,6 +338,82 @@ def _plan_items(
         items.append(item)
     return items
 
+def _configure_run_integrity(
+    items, loop_id, seed, dynprompt, body, end_id, segment_format,
+    *, resume_mode=False,
+):
+    """Resolve a safe checkpoint before expanding any sampler nodes.
+
+    Signatures cover the authored result, used assets (size/mtime) and the
+    user sampler/VAE graph including its static upstream dependencies.
+    """
+    if not items:
+        return {"run_signature": None, "completed": 0, "total_generated": 0}
+    graph_hash = graph_fingerprint(dynprompt, body, loop_id, end_id, is_link)
+
+    def resolver(relative):
+        if not relative or not folder_paths.exists_annotated_filepath(relative):
+            raise FileNotFoundError("参与生成的参考资产已丢失：" + str(relative))
+        return folder_paths.get_annotated_filepath(relative)
+
+    recipes = [
+        clip_fingerprint(segment, seed, graph_hash, resolver)
+        for segment in items
+    ]
+    is_rerun = any(bool(item["_loop"].get("rerun_target")) for item in items)
+    if is_rerun and resume_mode:
+        raise ValueError("单镜头重跑与断点续跑不能同时使用")
+    plan_hash = (
+        plan_fingerprint(items, recipes, segment_format)
+        if not is_rerun else None
+    )
+
+    resumed = None
+    if resume_mode:
+        root = loop_folder(folder_paths.get_output_directory(), loop_id)
+        resumed = incomplete_run(root, items, recipes, plan_hash, segment_format)
+        if resumed is None:
+            raise ValueError(
+                "没有可续跑的相同工作流：时间线、提示词、Seed、"
+                "参考资产或采样工作流可能已变化。请正常运行新任务。"
+            )
+
+    for i, (item, recipe) in enumerate(zip(items, recipes)):
+        loop = item["_loop"]
+        loop["recipe_fingerprint"] = recipe
+        loop["plan_fingerprint"] = plan_hash
+        loop["body_fingerprint"] = graph_hash
+        if loop.get("action") == "reuse_result":
+            # Older results may not have a recipe key; keep them usable for
+            # compatibility. New tagged results must match current authoring.
+            previous = find_saved_clip(
+                loop_id, item["id"],
+                required_frames=item["output_frames"],
+            )
+            if previous and previous.get("recipe_fingerprint") not in (None, recipe):
+                raise ValueError(
+                    f"片段「{item['name']}」的历史视频与当前 Seed、提示词"
+                    "或工作流不兼容，无法作为重跑上下文。"
+                )
+        if resumed:
+            loop["run_signature"] = resumed["run_signature"]
+            loop["signature"] = (
+                f"{resumed['run_signature']}:{item['id']}:"
+                f"{item['h3_frames']}"
+            )
+            if i < len(resumed["prefix"]) and resumed["prefix"][i] is not None:
+                previous = resumed["prefix"][i]
+                loop["action"] = "resume_result"
+                loop["reuse_path"] = previous["path"]
+                loop["reuse_descriptor"] = previous
+    return {
+        "run_signature": resumed["run_signature"] if resumed
+                         else items[0]["_loop"]["run_signature"],
+        "completed": resumed["completed"] if resumed else 0,
+        "total_generated": sum(item.get("kind") != "entity" for item in items),
+    }
+
+
 class TerryDirectorLoopFrame(io.ComfyNode):
     """Hidden adapter: combine the current item and carried context into one port."""
 
@@ -528,7 +608,7 @@ class TerryDirectorLoopReuse(io.ComfyNode):
         action = loop.get("action")
         if action == "entity":
             path = safe_input_video(segment["source_asset"])
-        elif action == "reuse_result":
+        elif action in ("reuse_result", "resume_result"):
             path = str(loop.get("reuse_path") or "")
             if not os.path.isfile(path):
                 raise FileNotFoundError("上一次生成的视频结果已被移动或删除：" + path)
@@ -540,16 +620,19 @@ class TerryDirectorLoopReuse(io.ComfyNode):
         carry = load_tail_context(
             path, segment["output_frames"], int(loop["context_frames"]),
         )
-        descriptor = {
-            "segment_id": segment["id"],
-            "index": loop["index"],
-            "frames": segment["output_frames"],
-            "path": path,
-            "skip_in_final": True,
-            "context_source": action,
-            "run_signature": loop["run_signature"],
-            "loop_id": loop["loop_id"],
-        }
+        descriptor = (
+            dict(loop["reuse_descriptor"])
+            if action == "resume_result" else {
+                "segment_id": segment["id"],
+                "index": loop["index"],
+                "frames": segment["output_frames"],
+                "path": path,
+                "skip_in_final": True,
+                "context_source": action,
+                "run_signature": loop["run_signature"],
+                "loop_id": loop["loop_id"],
+            }
+        )
         carry["source_path"] = path
         carry["source_type"] = action
         try:
@@ -597,6 +680,10 @@ class TerryDirectorLooper(StartLoop):
                     "rerun_clip_id", default="", socketless=True,
                     tooltip="由时间线编辑器临时设置。留空为正常完整循环。",
                 ),
+                io.Boolean.Input(
+                    "resume_incomplete", default=False, socketless=True,
+                    tooltip="只复用严格匹配的未完成任务前缀；由编辑器临时设置。",
+                ),
             ],
             outputs=[
                 LoopContextData.Output("loop_context", display_name="循环上下文"),
@@ -614,6 +701,7 @@ class TerryDirectorLooper(StartLoop):
         tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
         llama_config=None,
         rerun_clip_id="",
+        resume_incomplete=False,
     ):
         loop_id = str(_one(cls.hidden.unique_id))
         items = _plan_items(
@@ -629,6 +717,20 @@ class TerryDirectorLooper(StartLoop):
         loop = dynprompt.get_node(loop_id)
         body = set(loop["_loop_body"])
         end_id = loop["_loop_end"]
+        end_inputs = dynprompt.get_node(end_id).get("inputs") or {}
+        segment_format = str(_one(end_inputs.get("segment_format", MOV_HQ)))
+        run_info = _configure_run_integrity(
+            items, loop_id, _one(seed), dynprompt, body,
+            end_id, segment_format,
+            resume_mode=bool(_one(resume_incomplete)),
+        )
+        if run_info["completed"]:
+            print(
+                f"[TerryDirector Loop][Resume] "
+                f"reusing {run_info['completed']}/{run_info['total_generated']} "
+                f"completed clips from {run_info['run_signature']}",
+                flush=True,
+            )
         expanded, last_body_ids = _expand_director_loop(
             dynprompt, loop_id, body, end_id, items, "{}"
         )
