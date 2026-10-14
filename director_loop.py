@@ -31,6 +31,7 @@ from .director_loop_adapters import (
 )
 from .director_core import config_json, normalize_config
 from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips
+from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context
 from .director_loop_memory import log_loop_ram, release_completed_body
 from .director_loop_report import start_report, mark_clip, finish_report
 
@@ -233,26 +234,72 @@ def _plan_items(
     config_data, seed, tail_reference_prompt, loop_id,
     adapter_id=DEFAULT_LOOP_ADAPTER,
     llama_config=None,
+    rerun_clip_id="",
 ):
     # Fail before creating any cache directory if the model has no adapter.
     adapter = get_loop_adapter(adapter_id)
     config = normalize_config(config_data)
-    document = prepare_document_for_queue(
-        config["document"], llama_config, str(loop_id)
-    )
+    rerun_clip_id = str(rerun_clip_id or "").strip()
+    document = config["document"]
+    if rerun_clip_id:
+        for clip in document["clips"]:
+            if clip["id"] != rerun_clip_id:
+                clip["aiOptOut"] = True
+    for clip in document["clips"]:
+        if clip.get("kind") == "entity":
+            clip["aiOptOut"] = True
+    document = prepare_document_for_queue(document, llama_config, str(loop_id))
     plan = adapter.compile_plan(
         document, tail_reference_prompt,
         compiler=compile_timeline,
     )
+    all_segments = plan["segments"]
+    if rerun_clip_id:
+        target_index = next(
+            (i for i, part in enumerate(all_segments)
+             if part["id"] == rerun_clip_id), None
+        )
+        if target_index is None:
+            raise ValueError(
+                "不能单独重跑：目标镜头不存在或已挂起。"
+                "请在时间线中选择有效的生成片段。"
+            )
+        target = all_segments[target_index]
+        if target["kind"] == "entity":
+            raise ValueError("实体视频本身不会采样。请选择生成片段进行重跑。")
+        previous = all_segments[target_index-1] if target_index else None
+        needs_previous = target["continuity"]["kind"] in (
+            "tail_reference", "tail_frame", "overlap",
+        )
+        selected = [previous, target] if previous and needs_previous else [target]
+    else:
+        selected = all_segments
+
     run_signature = uuid.uuid4().hex
     cache_key = f"loop-{loop_id}"
-    # The per-run MOV/MP4 directory is created lazily by each saved segment.
+    # Each new take has a fresh output directory. Prior MOVs are never overwritten.
     items = []
-    for position, segment in enumerate(plan["segments"]):
-        next_segment = (
-            plan["segments"][position + 1]
-            if position + 1 < len(plan["segments"]) else None
+    for position, segment in enumerate(selected):
+        action = (
+            "entity" if segment["kind"] == "entity"
+            else "reuse_result" if rerun_clip_id and segment["id"] != rerun_clip_id
+            else "generate"
         )
+        previous_result = None
+        if action == "reuse_result":
+            previous_result = find_saved_clip(
+                loop_id, segment["id"], required_frames=segment["output_frames"]
+            )
+            if previous_result is None:
+                raise FileNotFoundError(
+                    f"片段「{rerun_clip_id}」缺少承接上下文："
+                    f"未找到上一镜头「{segment['name']}」的有效 MOV/MP4。"
+                    "请先生成上一镜头，或导入实体视频。"
+                )
+        elif action == "entity":
+            safe_input_video(segment["source_asset"])
+        
+        next_segment = selected[position + 1] if position + 1 < len(selected) else None
         next_continuity = (next_segment or {}).get("continuity", {})
         context_frames = (
             max(1, int(next_continuity.get("frames", 1)))
@@ -264,6 +311,9 @@ def _plan_items(
         item["_loop"] = {
             "adapter_id": adapter.info.adapter_id,
             "index": int(position),
+            "action": action,
+            "rerun_target": rerun_clip_id,
+            "reuse_path": previous_result["path"] if previous_result else None,
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
             "cache_key": cache_key,
             "run_signature": run_signature,
@@ -312,7 +362,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
     """Adapt ComfyUI's native List loop expansion without exposing internal wires.
 
     Per iteration: LoopIteration -> private LoopFrame -> user H3 graph
-    -> private encoded MOV/MP4 LoopCache. The descriptor is accumulated and the compact
+    -> per-clip MOV/MP4 encoder (or existing video reuse). The descriptor and compact
     context feeds the next LoopIteration. Native LoopProgress and LoopResult
     coordinate the original End boundary through the execution_list block.
     """
@@ -352,53 +402,62 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
         )
         frame.set_override_display_id(opener_id)
 
-        copies = {}
-        for node_id in sorted(body):
-            original = dynprompt.get_node(node_id)
-            copy = graph.node(original["class_type"], f"{position}_{node_id}")
-            copy.set_override_display_id(node_id)
-            copies[node_id] = copy
+        if item["_loop"]["action"] != "generate":
+            # Existing MOV and imported physical clips never traverse the
+            # user's sampler/VAE body. They still produce carry context for
+            # the next generated segment in normal ComfyUI execution order.
+            reused = graph.node(
+                "TerryDirectorLoopReuse", f"reuse_{position}",
+                loop_context=frame.out(0),
+            )
+            descriptor, carry = reused.out(0), reused.out(1)
+            copies = {}
+        else:
+            copies = {}
+            for node_id in sorted(body):
+                original = dynprompt.get_node(node_id)
+                copy = graph.node(original["class_type"], f"{position}_{node_id}")
+                copy.set_override_display_id(node_id)
+                copies[node_id] = copy
 
-        def copied_link(value):
-            if not is_link(value):
+            def copied_link(value):
+                if not is_link(value):
+                    return value
+                if value[0] == opener_id:
+                    if int(value[1]) != 0:
+                        raise ValueError("循环开始只暴露一个循环上下文输出")
+                    return frame.out(0)
+                if value[0] in copies:
+                    return copies[value[0]].out(value[1])
                 return value
-            if value[0] == opener_id:
-                if int(value[1]) != 0:
-                    raise ValueError("循环开始只暴露一个循环上下文输出")
-                return frame.out(0)
-            if value[0] in copies:
-                return copies[value[0]].out(value[1])
-            return value
 
-        for node_id, copy in copies.items():
-            original = dynprompt.get_node(node_id)
-            for name, value in original.get("inputs", {}).items():
-                copy.set_input(name, copied_link(value))
-            if original["class_type"] == "TerryDirectorLoopInfo":
-                copy.set_input("release_node_ids", json.dumps(previous_body_ids))
-            if "_loop_end" in original:
-                copied_loop_metadata[copy.id] = {
-                    "_loop_body": [copies[n].id for n in original["_loop_body"]],
-                    "_loop_end": copies[original["_loop_end"]].id,
-                }
+            for node_id, copy in copies.items():
+                original = dynprompt.get_node(node_id)
+                for name, value in original.get("inputs", {}).items():
+                    copy.set_input(name, copied_link(value))
+                if original["class_type"] == "TerryDirectorLoopInfo":
+                    copy.set_input("release_node_ids", json.dumps(previous_body_ids))
+                if "_loop_end" in original:
+                    copied_loop_metadata[copy.id] = {
+                        "_loop_body": [copies[n].id for n in original["_loop_body"]],
+                        "_loop_end": copies[original["_loop_end"]].id,
+                    }
 
-        # The user-facing End node is not cloned. The loop boundary only
-        # accepts media that the user's generation graph has already decoded.
-        cache_inputs = {
-            "loop_context": frame.out(0),
-            "images": copied_link(end_inputs["images"]),
-            "audio": copied_link(end_inputs["audio"]),
-            "segment_format": end_inputs.get("segment_format", MOV_HQ),
-        }
-        if is_link(end_inputs.get("dependency")):
-            cache_inputs["dependency"] = copied_link(end_inputs["dependency"])
+            cache_inputs = {
+                "loop_context": frame.out(0),
+                "images": copied_link(end_inputs["images"]),
+                "audio": copied_link(end_inputs["audio"]),
+                "segment_format": end_inputs.get("segment_format", MOV_HQ),
+            }
+            if is_link(end_inputs.get("dependency")):
+                cache_inputs["dependency"] = copied_link(end_inputs["dependency"])
 
-        cache = graph.node(
-            "TerryDirectorLoopCache", f"cache_{position}",
-            **cache_inputs,
-        )
-        cache.set_override_display_id(close_id)
-        descriptor, carry = cache.out(0), cache.out(1)
+            cache = graph.node(
+                "TerryDirectorLoopCache", f"cache_{position}",
+                **cache_inputs,
+            )
+            cache.set_override_display_id(close_id)
+            descriptor, carry = cache.out(0), cache.out(1)
         result_inputs[f"output{position}"] = descriptor
         previous_dependencies = [descriptor, carry]
 
@@ -426,6 +485,55 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
     for node_id, metadata in copied_loop_metadata.items():
         expanded[node_id].update(metadata)
     return expanded, previous_body_ids
+
+
+class TerryDirectorLoopReuse(io.ComfyNode):
+    """Use an existing output MOV or imported video without sampling."""
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="TerryDirectorLoopReuse",
+            display_name="TerryDirector 已有视频上下文（内部）",
+            category="TerryDirector/循环/内部",
+            is_dev_only=True,
+            inputs=[LoopContextData.Input("loop_context")],
+            outputs=[
+                io.String.Output(display_name="复用片段"),
+                io.AnyType.Output(display_name="连续性上下文"),
+            ],
+        )
+
+    @classmethod
+    def execute(cls, loop_context):
+        segment, _ = _require_loop_context(loop_context)
+        loop = segment["_loop"]
+        action = loop.get("action")
+        if action == "entity":
+            path = safe_input_video(segment["source_asset"])
+        elif action == "reuse_result":
+            path = str(loop.get("reuse_path") or "")
+            if not os.path.isfile(path):
+                raise FileNotFoundError("上一次生成的视频结果已被移动或删除：" + path)
+        else:
+            raise ValueError("无效的片段复用模式")
+
+        # Maintain the authored source range, even if the reused clip is
+        # followed by a single-target rerun rather than a full render.
+        carry = load_tail_context(
+            path, segment["output_frames"], int(loop["context_frames"]),
+        )
+        descriptor = {
+            "segment_id": segment["id"],
+            "index": loop["index"],
+            "frames": segment["output_frames"],
+            "path": path,
+            "skip_in_final": True,
+            "context_source": action,
+            "run_signature": loop["run_signature"],
+        }
+        _notify(loop["loop_id"], segment["id"], "completed")
+        return io.NodeOutput(json.dumps(descriptor, ensure_ascii=False), carry)
 
 
 class TerryDirectorLooper(StartLoop):
@@ -459,6 +567,10 @@ class TerryDirectorLooper(StartLoop):
                     default=DEFAULT_TAIL_REFERENCE_PROMPT, multiline=True,
                     dynamic_prompts=False, socketless=True,
                 ),
+                io.String.Input(
+                    "rerun_clip_id", default="", socketless=True,
+                    tooltip="由时间线编辑器临时设置。留空为正常完整循环。",
+                ),
             ],
             outputs=[
                 LoopContextData.Output("loop_context", display_name="循环上下文"),
@@ -475,6 +587,7 @@ class TerryDirectorLooper(StartLoop):
         config_json,
         tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
         llama_config=None,
+        rerun_clip_id="",
     ):
         loop_id = str(_one(cls.hidden.unique_id))
         items = _plan_items(
@@ -483,6 +596,7 @@ class TerryDirectorLooper(StartLoop):
             _one(tail_reference_prompt),
             loop_id,
             llama_config=_one(llama_config),
+            rerun_clip_id=_one(rerun_clip_id),
         )
         dynprompt = cls.hidden.dynprompt
         execution_list = cls.hidden.execution_list
@@ -502,6 +616,7 @@ class TerryDirectorLooper(StartLoop):
         for key in ("images", "audio", "dependency"):
             remaining_inputs.pop(key, None)
         remaining_inputs["release_node_ids"] = json.dumps(last_body_ids)
+        remaining_inputs["rerun_clip_id"] = str(_one(rerun_clip_id) or "")
         execution_list.add_node(end_id)
         execution_list.add_external_block(end_id)
         execution_list.inhibit_nodes(body)
@@ -750,6 +865,7 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                     ),
                 ),
                 io.String.Input("release_node_ids", optional=True, advanced=True),
+                io.String.Input("rerun_clip_id", optional=True, advanced=True),
                 io.Combo.Input(
                     "segment_format", display_name="片段保存格式",
                     options=list(FORMATS), default=MOV_HQ, socketless=True,
@@ -774,7 +890,7 @@ class TerryDirectorLoopEnd(io.ComfyNode):
     @classmethod
     def execute(cls, bit_depth="auto", color_space="sRGB",
                 release_node_ids=None, segment_format=MOV_HQ,
-                merge_final=True, **kwargs):
+                merge_final=True, rerun_clip_id="", **kwargs):
         # Existing workflow widgets remain for backwards compatibility. The
         # new MOV/MP4 encoder is SDR Rec.709-only: do not silently relabel HDR.
         if str(_one(color_space)) not in ("sRGB", "None", ""):
@@ -810,21 +926,35 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             )
         gc.collect()
 
-        descriptions = [
+        all_parts = [
             json.loads(str(_one(item))) if isinstance(_one(item), str)
             else dict(_one(item))
             for item in descriptors
         ]
+        # Context-only entity videos and reused predecessors are never emitted
+        # into the final movie or its run manifest.
+        descriptions = [part for part in all_parts if not part.get("skip_in_final")]
         format_name = str(_one(segment_format))
         if any(part.get("segment_format") != format_name for part in descriptions):
             raise ValueError("循环输出设置与已经编码的片段格式不一致")
-        merged_path = merge_loop_clips(
-            descriptions, merge_final=bool(_one(merge_final)),
+        is_rerun = bool(str(_one(rerun_clip_id) or ""))
+        # An isolated rerun updates only its movie result. It must not
+        # accidentally replace the original Final with an incomplete render.
+        for index, part in enumerate(descriptions):
+            original_index = part["index"]
+            part["index"] = index
+            if index == 0 and all_parts and all_parts[0].get("skip_in_final"):
+                part["trim_head_frames"] = 0
+                part["gap_before_frames"] = 0
+        merged_path = (
+            merge_loop_clips(descriptions, merge_final=bool(_one(merge_final)))
+            if descriptions and not is_rerun else None
         )
-        # Keep the original VIDEO socket for old connected SaveVideo nodes.
-        # The file is already encoded; a downstream SaveVideo may copy it again.
         video = InputImpl.VideoFromFile(merged_path) if merged_path else None
-        clips_root = str(os.path.dirname(os.path.dirname(descriptions[0]["path"])))
+        clips_root = (
+            str(os.path.dirname(os.path.dirname(descriptions[0]["path"])))
+            if descriptions else ""
+        )
         try:
             identity = json.loads(str(descriptors[0]))
             markdown = finish_report(
