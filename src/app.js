@@ -29,7 +29,8 @@
     duplicate:'M9 9h12v12H9zM15 9V3H3v12h6',
     help:'M9 8a3 3 0 1 1 6 1c-1 2-3 2-3 5m0 3h.1M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
     dice:'M4 4h16v16H4zM8 8h.1M16 8h.1M12 12h.1M8 16h.1M16 16h.1',edit:'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z',folder:'M3 7V4h7l2 3h9v13H3z',
-    keyboard:'M2 5h20v14H2zM5 9h1m3 0h1m3 0h1m3 0h1M5 12h1m3 0h1m3 0h1m3 0h1M7 16h10'
+    keyboard:'M2 5h20v14H2zM5 9h1m3 0h1m3 0h1m3 0h1M5 12h1m3 0h1m3 0h1m3 0h1M7 16h10',
+    refresh:'M20 7v5h-5M4 17v-5h5M6 9a7 7 0 0 1 12-2l2 5M4 12l2 5a7 7 0 0 0 12-2'
   };
   function icon(name){return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name]||paths.film}"/></svg>`;}
   const actionNames={home:'项目',help:'操作说明',undo:'撤销',redo:'重做',pointer:'选择',hand:'平移',sort:'排序',snap:'吸附',chain:'后续联动',duplicate:'复制',delete:'删除',suspend:'挂起','zoom-out':'缩小','zoom-in':'放大',fit:'适应全部','close-dialog':'关闭'};
@@ -151,7 +152,7 @@
   let state={globalPrompt:'',aiGlobalPrompt:'',globalPromptMode:'user',globalAiMetadata:{},autoAiEnhance:false,clips:C.copy(initial),selected:null,assetIds:[]},history=new C.History();
   let resolutionEditBefore=null;
   let title='特瑞 · 荒星三镜头',promptView='visual',globalPromptView='visual',editBefore=null,durationEditBefore=null,nextId=embedded?1:5,nextAsset=1,toastTimer=0,timeline=null,embedDirty=false,hostReadonly=false,defaultTransitionMode='tail_reference';
-  let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null;
+  let promptEditor=null,globalPromptEditor=null,globalModal=null,transitionMenu=null,clipContextMenu=null;
   let replacingAssetId=null,replacingAssetBusy=false,stopAssetZoom=null;
   const temporaryAssetUrls=new Set();
   // Sort mode temporarily owns the timeline; restore this preference on exit.
@@ -162,7 +163,7 @@
   app.innerHTML=`
     <header class="topbar">
       <div class="brand"><span class="brand-mark"><img src="assets/mark.svg" alt="" aria-hidden="true"></span><span>时间线编辑器</span></div>
-      <div class="top-timeline-leading"><button class="button ghost" data-action="new" title="在播放头处插入片段；空白足够时不移动后续片段">${icon('plus')}新建片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前自动AI增强提示</span></label></div>
+      <div class="top-timeline-leading"><button class="button ghost" data-action="new" title="在播放头处插入片段；空白足够时不移动后续片段">${icon('plus')}新建片段</button><button class="button ghost" data-action="import-physical-clip" type="button" title="从资产池中的视频插入一个不会经过 AI 采样的实体片段">${icon('film')}实体片段</button><button class="button ghost global-prompt-button" data-action="global-prompt" type="button" title="编辑对启用片段生效的全局提示词">${icon('edit')}全局提示词</button><button class="button ghost ai-all-button" data-action="enhance-all" type="button" disabled title="使用 Llama 批量增强片段提示词">${icon('spark')}一键增强所有提示词</button><label class="ai-auto-label" title="工作流运行前统一增强全部片段"><input id="autoAiEnhance" type="checkbox" disabled><span>生成前自动AI增强提示</span></label></div>
       <div class="top-timeline-duration"><span>总时长</span><output id="timelineDuration" aria-label="总时长">00:00:00:00</output><button class="timeline-generate" data-action="queue-workflow" type="button" title="生成整个 ComfyUI 工作流" aria-label="生成整个 ComfyUI 工作流">${icon('play')}<span>生成</span></button></div>
       <div class="top-actions">${embedded?'':`<span class="prototype">H3 Skill · 静态增强稿</span>`}<div class="top-data-actions"><button class="button ghost top-data-button" data-action="import-timeline" type="button" title="导入 TerryDirector 时间线数据">${icon('upload')}导入</button><button class="button ghost top-data-button" data-action="export-timeline" type="button" title="导出 TerryDirector 时间线数据">${icon('download')}导出</button></div><button class="button primary save-close" data-action="save-close">${icon('check')}保存并退出</button>${embedded?`<button class="editor-close" data-action="close-editor" title="关闭并返回 ComfyUI" aria-label="关闭并返回 ComfyUI">${icon('close')}</button>`:''}</div>
     </header>
@@ -174,7 +175,7 @@
     <div id="timelineResize" class="resize-h" role="separator" tabindex="0" aria-label="调整时间线高度" aria-orientation="horizontal"></div>
     <main id="workspace" class="workspace">
       <section class="prompt-panel" aria-label="提示词编辑">
-        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.1" inputmode="decimal" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><div class="clip-seed-control" title="留空时跟随 TerryDirector 节点 Seed；填写后仅当前片段使用此 Seed"><span>Seed</span><input id="clipSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 Seed" placeholder="跟随"><button id="clipSeedRandom" type="button" title="随机当前片段 Seed" aria-label="随机当前片段 Seed">${icon('dice')}</button></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
+        <header class="composer-heading"><div class="clip-identity"><span class="clip-number-badge" id="clipNumber"></span><input id="clipName" class="clip-name" aria-label="片段名称" maxlength="60"><button class="clip-name-edit" data-action="edit-clip-name" type="button" title="编辑片段名称" aria-label="编辑片段名称">${icon('edit')}</button><button class="clip-rerun-action" data-action="rerun-clip" type="button" title="仅重新生成此片段，其他片段不采样">${icon('refresh')}<span>仅重跑此片段</span></button></div><div class="clip-duration-control" aria-label="片段时长"><input id="clipDurationNumber" type="number" min="1" step="0.1" inputmode="decimal" aria-label="片段秒数"><span>s</span><input id="clipDurationRange" type="range" min="1" max="15" step="0.0416667" aria-label="片段秒数滑块"></div><div class="clip-seed-control" title="留空时跟随 TerryDirector 节点 Seed；填写后仅当前片段使用此 Seed"><span>Seed</span><input id="clipSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 Seed" placeholder="跟随"><button id="clipSeedRandom" type="button" title="随机当前片段 Seed" aria-label="随机当前片段 Seed">${icon('dice')}</button></div><label class="clip-global-toggle" title="编译时在当前片段提示词前拼接全局提示词"><input id="useGlobalPrompt" type="checkbox" checked><span>使用全局</span></label><button class="prompt-view-switch" data-action="toggle-prompt-view" type="button" aria-label="切换提示词显示方式" aria-pressed="false"><span>可视化</span><i aria-hidden="true"></i><span>纯文本</span></button></header>
         <div class="ai-prompt-toolbar"><div class="ai-prompt-tabs" role="group" aria-label="提示词版本"><button type="button" class="ai-prompt-tab is-selected" data-action="prompt-user">用户提示词</button><button type="button" class="ai-prompt-tab" data-action="prompt-ai">AI 增强提示词</button></div><div class="ai-prompt-actions"><div class="clip-ai-seed-control" title="留空时跟随 TerryDirector Llama 的全局 AI Seed；填写后仅当前片段 AI 增强使用此 Seed"><span>AI Seed</span><input id="clipAiSeedInput" type="text" inputmode="numeric" autocomplete="off" maxlength="20" aria-label="当前片段 AI Seed" placeholder="跟随"><button id="clipAiSeedRandom" type="button" title="随机当前片段 AI Seed" aria-label="随机当前片段 AI Seed">${icon('dice')}</button></div><button class="button ghost ai-prompt-button" type="button" data-action="ai-enhance" disabled>${icon('spark')}AI 提示增强</button><button class="button ghost ai-cancel-button" type="button" data-action="ai-cancel" hidden>取消增强</button></div></div>
         <div class="prompt-editor"><div class="prompt-editor-body"><textarea id="promptText" aria-label="当前片段提示词" placeholder="描述这个片段的画面、动作和声音。" spellcheck="false"></textarea><div id="promptVisual" class="prompt-visual h3-editor" contenteditable="true" role="textbox" aria-label="可视化提示词编辑器" aria-multiline="true" spellcheck="false" tabindex="0" data-placeholder="描述片段，输入 @ 引用素材，输入 / 插入 H3 语法"></div><div id="noClip" class="empty-state" hidden><strong>从一个片段开始</strong><p>在时间线上新建片段，再填写提示词与参考资产。</p><button class="button" data-action="new">${icon('plus')}新建片段</button></div></div><div class="prompt-head prompt-editor-footer"><span class="subtle prompt-help">@ 引用素材　/ H3 语法</span><span id="aiStatus" class="subtle ai-prompt-status"></span><span id="promptCount" class="subtle prompt-count"></span></div></div>
 
@@ -227,6 +228,8 @@
   function closeTransitionMenu(){
     transitionMenu?.remove();
     transitionMenu=null;
+    clipContextMenu?.remove();
+    clipContextMenu=null;
   }
   function setHostReadonly(value){
     const next=!!value;
@@ -927,7 +930,16 @@
   function renderAll(){
     if(!state.clips.some(c=>c.id===state.selected))state.selected=state.clips[0]?.id||null;
     syncAllReferences();
-    const c=current();$('#clipNumber').textContent=c?`片段 ${state.clips.indexOf(c)+1}`:'暂无片段';
+    const c=current();$('#clipNumber').textContent=c
+      ?`${c.kind==='entity'?'实体片段':'片段'} ${state.clips.indexOf(c)+1}`:'暂无片段';
+    const rerunButton=$('[data-action=rerun-clip]');
+    if(rerunButton){
+      rerunButton.hidden=!c||c.kind==='entity';
+      rerunButton.disabled=!embedded||hostReadonly||!c||c.suspended||c.kind==='entity';
+      rerunButton.title=c?.suspended?'请先恢复此片段，再单独重跑':'只执行选中镜头；自动从原始时间线的上一镜头 MOV 或实体视频读取承接上下文';
+    }
+    const importPhysicalButton=$('[data-action=import-physical-clip]');
+    if(importPhysicalButton)importPhysicalButton.disabled=hostReadonly;
     $('#clipName').value=c?.name||'';$('#clipName').disabled=!c||hostReadonly;$('#clipName').hidden=!c;
     const suspendButton=$('[data-action=suspend]');
     if(suspendButton){
@@ -1027,7 +1039,7 @@
     mutate(()=>{
       const prev=state.clips.at(-1),prev2=state.clips.at(-2);
       const start=insertionFrame===null?(prev?Math.max(prev.start+1,prev.end-48,prev2?.end||0):0):insertionFrame;
-      const c=template?C.copy(template):{name,prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},seed:null,aiSeed:null,audio:true,guide:'画面参考',refs:[],suspended:false};
+      const c=template?C.copy(template):{name,kind:'generated',sourceAssetId:'',prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{},useGlobalPrompt:true,transitionMode:defaultTransitionMode,resolution:{...R.DEFAULT},seed:null,aiSeed:null,audio:true,guide:'画面参考',refs:[],suspended:false};
       if(template)Object.assign(c,{aiPrompt:'',promptMode:'user',aiOptOut:false,aiMetadata:{}});
       const duration=template?template.end-template.start:10*C.FPS;
       Object.assign(c,{id:'clip-'+nextId++,name,start,
@@ -1403,6 +1415,8 @@
     const clips=C.orderClips((Array.isArray(raw.clips)?raw.clips:[]).map((clip,index)=>{
       const start=Math.max(0,Number.parseInt(clip?.start,10)||0),end=Math.max(start+1,Number.parseInt(clip?.end,10)||start+C.FPS*10);
       return {id:String(clip?.id||`clip-${index+1}`),name:String(clip?.name||`片段 ${String(index+1).padStart(2,'0')}`),
+        kind:clip?.kind==='entity'?'entity':'generated',
+        sourceAssetId:String(clip?.sourceAssetId||''),
         start,end,prompt:String(clip?.prompt||''),aiPrompt:String(clip?.aiPrompt||''),promptMode:clip?.promptMode==='ai'?'ai':'user',
         aiOptOut:clip?.aiOptOut===true,aiMetadata:clip?.aiMetadata&&typeof clip.aiMetadata==='object'?C.copy(clip.aiMetadata):{},
         refs:(Array.isArray(clip?.refs)?clip.refs.map(String):[]).filter(id=>validAssets.has(id)),
@@ -1427,7 +1441,7 @@
     return {version:2,fps:C.FPS,selected:state.selected,globalPrompt:state.globalPrompt,
       aiGlobalPrompt:state.aiGlobalPrompt||'',globalPromptMode:state.globalPromptMode==='ai'?'ai':'user',
       globalAiMetadata:state.globalAiMetadata||{},autoAiEnhance:!!state.autoAiEnhance,
-      clips:state.clips.map(({id,name,start,end,seed,aiSeed,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,start,end,seed:normalizeClipSeedValue(seed),aiSeed:normalizeClipSeedValue(aiSeed),prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
+      clips:state.clips.map(({id,name,kind,sourceAssetId,start,end,seed,aiSeed,prompt,aiPrompt,promptMode,aiMetadata,aiOptOut,refs,useGlobalPrompt,transitionMode,suspended})=>({id,name,kind:kind==='entity'?'entity':'generated',sourceAssetId:sourceAssetId||'',start,end,seed:normalizeClipSeedValue(seed),aiSeed:normalizeClipSeedValue(aiSeed),prompt,aiPrompt:aiPrompt||'',promptMode:promptMode==='ai'?'ai':'user',aiMetadata:aiMetadata||{},aiOptOut:!!aiOptOut,refs:[...refs],useGlobalPrompt:useGlobalPrompt!==false,transitionMode:normalizeTransitionMode(transitionMode,'tail_reference'),suspended:!!suspended})),
       assets:poolEntries().filter(a=>a.source?.path).map(a=>({id:a.id,name:a.name,kind:a.kind,number:a.number,
         ...(cleanAssetAlias(a.displayName)?{displayName:cleanAssetAlias(a.displayName)}:{}),
         source:{type:'comfy-input',path:a.source.path}}))};
@@ -1644,7 +1658,10 @@
     $('#dialogSaveChanges').onclick=()=>{d.close();saveToHost();};
     if(!d.open)d.showModal();
   }
-  function queueWorkflow(){
+  function queueWorkflow(rerunClipId=''){
+    if(rerunClipId && (current()?.id!==rerunClipId || current()?.kind==='entity' || current()?.suspended)){
+      toast('请选择一个未挂起的生成片段进行重跑');return;
+    }
     if(hostReadonly||aiJob){if(aiJob)toast('AI 增强执行中，不能提交视频生成');return;}
     finishDurationEdit();finishPromptEdit();syncAllReferences();
     if(!embedded){toast('正式嵌入 ComfyUI 后可从这里运行整个工作流。');return;}
@@ -1652,7 +1669,8 @@
     window.parent.postMessage({type:'terrydirector:dirty',dirty:false},hostOrigin);
     window.parent.postMessage({
       type:'terrydirector:queue-workflow',
-      document:documentPayload()
+      document:documentPayload(),
+      rerunClipId:String(rerunClipId||'')
     },hostOrigin);
   }
   function saveToHost(){
@@ -1690,7 +1708,9 @@
     'toggle-prompt-view':()=>{finishPromptEdit();promptView=promptView==='visual'?'text':'visual';renderPrompt();},
     'edit-clip-name':()=>{const input=$('#clipName');if(!input?.disabled){input.focus();input.select();}},
     'save-close':saveToHost,
-    'queue-workflow':queueWorkflow,
+    'queue-workflow':()=>queueWorkflow(), 
+    'rerun-clip':()=>rerunSelectedClip(),
+    'import-physical-clip':()=>void importPhysicalClip(),
     'close-editor':()=>{if(aiJob){toast('AI 增强仍在运行，请完成后再退出');return;}if(embedded)window.parent.postMessage({type:'terrydirector:request-close'},hostOrigin);},
     'close-dialog':()=>{stopDialogMedia();$('#dialog').close();},
     undo:()=>{finishPromptEdit();timeline.cancel();const prev=history.undo(state);if(prev){state=prev;renderAll();markEdited();}},
