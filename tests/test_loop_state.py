@@ -27,7 +27,10 @@ def clip(identifier, start, end, kind="generated"):
         "start_frame": start, "end_frame": end,
         "h3_frames": 56, "output_frames": end-start,
         "transition_mode": "tail_reference", "continuity": continuity,
-        "assembly": {"trim_head_frames": 12 if continuity["kind"] == "overlap" else 0},
+        "assembly": {
+            "trim_head_frames": 12 if continuity["kind"] == "overlap" else 0,
+            "gap_before_frames": 0,
+        },
         "assets": {"images": [], "videos": [], "audios": []},
         "source_asset": None,
     }
