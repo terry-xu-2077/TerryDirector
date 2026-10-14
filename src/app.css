@@ -1666,3 +1666,24 @@ dialog[data-mode="global-prompt"] .prompt-editor-footer .prompt-count {
 .td-clip-context-menu button:hover:not(:disabled) { background: rgba(255,159,67,.13); }
 .td-clip-context-menu button:disabled { opacity: .55; cursor: default; }
 .td-clip-context-menu svg { width: 15px; height: 15px; color: #efa45d; }
+
+/* Recovery is an explicit action next to Generate, not another mode toggle. */
+#app .td-resume-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid rgba(131,163,192,.28);
+  border-radius: 8px;
+  color: var(--tdn-text);
+  background: rgba(131,163,192,.07);
+  font-size: 11px;
+  white-space: nowrap;
+}
+#app .td-resume-button svg { width: 14px; height: 14px; }
+#app .td-resume-button:disabled { opacity: .4; cursor: default; }
+@media (max-width: 760px) {
+  #app > .topbar .top-timeline-duration { flex-wrap: wrap; }
+}
