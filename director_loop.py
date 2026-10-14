@@ -30,13 +30,9 @@ from .director_loop_adapters import (
     get_loop_adapter,
 )
 from .director_core import config_json, normalize_config
-from .director_loop_video import TerryDirectorStreamVideo
+from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips
 from .director_loop_memory import log_loop_ram, release_completed_body
 from .director_loop_report import start_report, mark_clip, finish_report
-from .director_internal import (
-    TerryDirectorDecodeSegmentToCache,
-    prepare_base_run_cache,
-)
 
 # An allowlist of diagnosis-relevant numeric/model settings. Neither prompt
 # contents nor arbitrary asset paths are retained in performance reports.
@@ -250,7 +246,7 @@ def _plan_items(
     )
     run_signature = uuid.uuid4().hex
     cache_key = f"loop-{loop_id}"
-    prepare_base_run_cache(cache_key, run_signature)
+    # The per-run MOV/MP4 directory is created lazily by each saved segment.
     items = []
     for position, segment in enumerate(plan["segments"]):
         next_segment = (
@@ -316,7 +312,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
     """Adapt ComfyUI's native List loop expansion without exposing internal wires.
 
     Per iteration: LoopIteration -> private LoopFrame -> user H3 graph
-    -> private lossless LoopCache. The descriptor is accumulated and the compact
+    -> private encoded MOV/MP4 LoopCache. The descriptor is accumulated and the compact
     context feeds the next LoopIteration. Native LoopProgress and LoopResult
     coordinate the original End boundary through the execution_list block.
     """
@@ -392,6 +388,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
             "loop_context": frame.out(0),
             "images": copied_link(end_inputs["images"]),
             "audio": copied_link(end_inputs["audio"]),
+            "segment_format": end_inputs.get("segment_format", MOV_HQ),
         }
         if is_link(end_inputs.get("dependency")):
             cache_inputs["dependency"] = copied_link(end_inputs["dependency"])
@@ -642,24 +639,25 @@ class TerryDirectorLoopCondition(io.ComfyNode):
         return io.NodeOutput(result)
 
 class TerryDirectorLoopCache(io.ComfyNode):
-    """Cache one already-decoded loop segment and return compact continuity context."""
+    """Encode one independent clip and retain compact raw continuity context."""
 
     @classmethod
     def define_schema(cls):
         return io.Schema(
             node_id="TerryDirectorLoopCache",
-            display_name="TerryDirector 循环缓存",
+            display_name="TerryDirector 片段保存（内部）",
             category="TerryDirector/循环/内部",
             is_dev_only=True,
-            description="内部无损分段缓存与紧凑连续性上下文。",
+            description="逐轮编码 MOV/MP4 镜头；仅保留必要的原始承接上下文。",
             inputs=[
                 LoopContextData.Input("loop_context", display_name="循环上下文"),
                 io.Image.Input("images", display_name="已解码画面"),
                 io.Audio.Input("audio", display_name="已解码音频"),
                 io.AnyType.Input("dependency", display_name="循环结束依赖", optional=True),
+                io.Combo.Input("segment_format", options=list(FORMATS), default=MOV_HQ),
             ],
             outputs=[
-                io.String.Output(display_name="分段缓存"),
+                io.String.Output(display_name="片段文件"),
                 io.AnyType.Output(display_name="下一片段上下文"),
             ],
             hidden=[io.Hidden.execution_list],
@@ -670,53 +668,42 @@ class TerryDirectorLoopCache(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, loop_context, images, audio, dependency=None):
+    def execute(cls, loop_context, images, audio, dependency=None,
+                segment_format=MOV_HQ):
         segment, _previous_context = _require_loop_context(loop_context)
         loop = segment["_loop"]
-        assembly = segment["assembly"]
-        log_loop_ram("before_disk_write", segment["id"], cls.hidden.execution_list)
-        cache_started = time.perf_counter()
-        result = TerryDirectorDecodeSegmentToCache.execute(
-            images=images,
-            audio=audio,
-            cache_key=loop["cache_key"],
-            run_signature=loop["run_signature"],
-            segment_id=segment["id"],
-            signature=loop["signature"],
-            output_frames=int(segment["output_frames"]),
-            trim_head_frames=int(assembly["trim_head_frames"]),
-            gap_frames=int(assembly["gap_before_frames"]),
-            gap_after_frames=int(assembly["gap_after_frames"]),
-            context_frames=int(loop["context_frames"]),
-            fps=24,
+        log_loop_ram("before_clip_save", segment["id"], cls.hidden.execution_list)
+        started = time.perf_counter()
+        descriptor_text, carry_images, carry_audio = save_loop_segment(
+            images=images, audio=audio, segment=segment,
+            format_name=str(segment_format),
         )
-        cache_elapsed = time.perf_counter() - cache_started
-        # The file-backed VIDEO ignores additional descriptor metadata; tagging
-        # the descriptor keeps multi-looper runs isolated in LoopEnd.
-        descriptor = json.loads(str(result[0]))
-        log_loop_ram("after_disk_write", segment["id"], cls.hidden.execution_list, descriptor["path"])
+        elapsed = time.perf_counter() - started
+        descriptor = json.loads(descriptor_text)
+        log_loop_ram(
+            "after_clip_save", segment["id"], cls.hidden.execution_list,
+            descriptor["path"],
+        )
         try:
-            cache_mb = os.path.getsize(descriptor["path"]) / (1024 * 1024)
+            clip_mb = os.path.getsize(descriptor["path"]) / (1024 * 1024)
             mark_clip(
                 loop["loop_id"], loop["run_signature"], loop["index"], "completed",
-                cache_seconds=cache_elapsed, cache_mb=cache_mb,
-                cache_frames=int(descriptor.get("frames") or 0),
+                cache_seconds=elapsed, cache_mb=clip_mb,
+                cache_frames=int(descriptor["frames"]),
             )
         except Exception as exc:
             print(f"[TerryDirector Loop][Report] 片段计时失败: {exc}", flush=True)
         _notify(loop["loop_id"], segment["id"], "completed")
-        descriptor["loop_id"] = str(loop["loop_id"])
-        descriptor["run_signature"] = str(loop["run_signature"])
         return io.NodeOutput(
-            json.dumps(descriptor, ensure_ascii=False),
-            {"images": result[1], "audio": result[2]},
+            descriptor_text,
+            {"images": carry_images, "audio": carry_audio},
         )
 
 class TerryDirectorLoopEnd(io.ComfyNode):
-    """Low-memory VIDEO wrapper for already-decoded loop segment media.
+    """Save editable per-clip video during each loop; optionally assemble final.
 
-    LoopEnd never decodes LATENT and never exposes segment LATENT. The user
-    graph must provide final IMAGE/AUDIO for each iteration.
+    Never decodes LATENT. Users connect already decoded IMAGE/AUDIO; each
+    generated clip is permanently saved before the next iteration begins.
     """
 
     @classmethod
@@ -729,9 +716,9 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             is_input_list=True,
             is_output_node=True,
             description=(
-                "接收外部 IMAGE/AUDIO，输出流式 VIDEO 和每轮循环的 Markdown 性能记录。"
-                "记录包含逐段耗时、原生进度步速、GPU 显存和系统内存，"
-                "自动保存至 ComfyUI output/TerryDirector/reports。"
+                "每段立即保存完整 MOV ProRes 422 HQ（默认）或 MP4 H.264；"
+                "可选在全部完成后按时间线重叠精确裁切并合并整片，不再缓存完整 .pt。"
+                "旧 VIDEO 输出保留兼容，合并关闭时该输出为空。"
             ),
             inputs=[
                 io.Image.Input(
@@ -763,10 +750,19 @@ class TerryDirectorLoopEnd(io.ComfyNode):
                     ),
                 ),
                 io.String.Input("release_node_ids", optional=True, advanced=True),
+                io.Combo.Input(
+                    "segment_format", display_name="片段保存格式",
+                    options=list(FORMATS), default=MOV_HQ, socketless=True,
+                ),
+                io.Boolean.Input(
+                    "merge_final", display_name="循环结束合并整片",
+                    default=True, socketless=True,
+                ),
             ],
             outputs=[
-                io.Video.Output(display_name="视频"),
+                io.Video.Output(display_name="最终整片（合并开启时）"),
                 io.String.Output(display_name="循环记录 Markdown"),
+                io.String.Output(display_name="片段输出目录"),
             ],
             hidden=[io.Hidden.execution_list, io.Hidden.unique_id],
         )
@@ -776,7 +772,9 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         return float("NaN")
 
     @classmethod
-    def execute(cls, bit_depth="auto", color_space="sRGB", release_node_ids=None, **kwargs):
+    def execute(cls, bit_depth="auto", color_space="sRGB",
+                release_node_ids=None, segment_format=MOV_HQ,
+                merge_final=True, **kwargs):
         results = cls.hidden.execution_list.get_external_block_result(
             _one(cls.hidden.unique_id)
         )
@@ -805,12 +803,21 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             )
         gc.collect()
 
-        video = TerryDirectorStreamVideo(
-            descriptors,
-            fps=24,
-            bit_depth=_one(bit_depth),
-            color_space=_one(color_space),
+        descriptions = [
+            json.loads(str(_one(item))) if isinstance(_one(item), str)
+            else dict(_one(item))
+            for item in descriptors
+        ]
+        format_name = str(_one(segment_format))
+        if any(part.get("segment_format") != format_name for part in descriptions):
+            raise ValueError("循环输出设置与已经编码的片段格式不一致")
+        merged_path = merge_loop_clips(
+            descriptions, merge_final=bool(_one(merge_final)),
         )
+        # Keep the original VIDEO socket for old connected SaveVideo nodes.
+        # The file is already encoded; a downstream SaveVideo may copy it again.
+        video = InputImpl.VideoFromFile(merged_path) if merged_path else None
+        clips_root = str(os.path.dirname(os.path.dirname(descriptions[0]["path"])))
         try:
             identity = json.loads(str(descriptors[0]))
             markdown = finish_report(
@@ -820,5 +827,5 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         except Exception as exc:
             print(f"[TerryDirector Loop][Report] 输出报告失败：{exc}", flush=True)
             markdown = "# TerryDirector 循环性能记录\n\n报告生成失败，VIDEO 输出不受影响。\n"
-        return io.NodeOutput(video, markdown)
+        return io.NodeOutput(video, markdown, clips_root)
 
