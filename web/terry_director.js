@@ -1,8 +1,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { bindSecondPassTakeover } from "./td_secondpass_takeover.js";
 import { activeLoopClip, collectLoopSamplerProgress } from "./td_loop_progress.js";
-import { effectiveClipLayout, previewClipLayout } from "./td_timeline_projection.js";
+import { effectiveClipLayout } from "./td_timeline_projection.js";
 import {
   findLoopMemorySources,
   readLoopOutputResolution,
@@ -10,9 +9,6 @@ import {
 import { createLoopOutputCheckCard } from "./td_loop_output_check.js";
 import { installLoopRegionOverlay } from "./td_loop_region.js";
 
-const NODE_CLASS = "TerryDirector";
-const ADVANCED_NODE_CLASS = "TerryDirectorAdvanced";
-const OUTPUT_NODE_CLASS = "TerryDirectorOutput";
 const LOOP_NODE_CLASS = "TerryDirectorLooper";
 const LOOP_END_NODE_CLASS = "TerryDirectorLoopEnd";
 const LOOP_INFO_NODE_CLASS = "TerryDirectorLoopInfo";
@@ -35,24 +31,11 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   "TerryWireBusPack", "TerryWireBusUnpack",
   "TerryWirelessBusPack", "TerryWirelessBusUnpack",
 ]);
-const isDirector = node => [NODE_CLASS, ADVANCED_NODE_CLASS, LOOP_NODE_CLASS].includes(node?.comfyClass);
-const CONFIG_NODE_CLASS = "TerryDirectorConfig";
-const CONFIG_ADVANCED_WIDGETS = new Set([
-  "multiple",
-  "sampler",
-  "sigmas",
-  "sigmas_denoise",
-]);
+const isDirector = node => node?.comfyClass === LOOP_NODE_CLASS;
 const FPS = 24;
-const DIRECTOR_MIN_WIDTH = 460;
 const LOOP_DEFAULT_WIDTH = 360;
 const LOOP_DEFAULT_HEIGHT = 220;
 const LOOP_MIN_WIDTH = 320;
-const ADVANCED_NODE_MIN_HEIGHT = 620;
-
-function directorMinWidth(node) {
-  return node?.comfyClass === LOOP_NODE_CLASS ? LOOP_MIN_WIDTH : DIRECTOR_MIN_WIDTH;
-}
 
 function applyNewLoopDefaultSize(node) {
   if (![LOOP_NODE_CLASS, LOOP_END_NODE_CLASS].includes(node?.comfyClass)) return;
@@ -60,8 +43,6 @@ function applyNewLoopDefaultSize(node) {
   // only the constructor default. Loaded/pasted geometry can overwrite it.
   node.setSize?.([LOOP_DEFAULT_WIDTH, LOOP_DEFAULT_HEIGHT]);
 }
-const ADVANCED_PREVIEW_BASE_WIDTH = 440;
-const ADVANCED_TIMELINE_MIN_CLIP_WIDTH = 40;
 const OUTPUT_MEMORY_NOTICE_GIB = 4;
 const OUTPUT_MEMORY_HIGH_GIB = 8;
 
@@ -402,7 +383,6 @@ function applyProgressState(detail) {
     for (const [index, nodeStates] of segments) {
       const clip = clips[index];
       if (!clip) continue;
-      if (node.__tdRerunActiveClipId && clip.id !== node.__tdRerunActiveClipId) continue;
       const previous = activity[clip.id];
       const now = performance.now();
       const sample = nodeStates.find(state => /td_s\d+_sample(?:$|[^a-z0-9])/i.test(String(state.node_id)));
@@ -851,7 +831,6 @@ function writeConfig(node, config, render = true) {
   if (widget.value !== nextValue) {
     node.__tdRunActivity = null;
     node.__tdPromptId = null;
-    if (node.comfyClass === ADVANCED_NODE_CLASS) node.__tdRerunCacheReady = false;
   }
   widget.value = nextValue;
   widget.callback?.(widget.value);
@@ -952,7 +931,6 @@ function timelineHtml(documentData, activity = {}) {
 function renderNode(node) {
   const root = node.__tdRoot;
   if (!root) return;
-  if (node.comfyClass === ADVANCED_NODE_CLASS) return renderAdvancedNode(node);
 
   const config = readConfig(node);
   const doc = config.document;
@@ -2010,7 +1988,6 @@ function ensureEditorOverlay() {
         if (widget) widget.value = rerunClipId;
         if (resumeWidget) resumeWidget.value = resumePrevious;
         node.__tdLocalRunLock = true;
-        if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
         node.__tdRunActivity = blankActivity(node);
         pushActivity(node);
         try {
@@ -2151,12 +2128,9 @@ app.registerExtension({
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
-    } else if (node.comfyClass === CONFIG_NODE_CLASS) {
-      queueMicrotask(() => applyConfigAdvancedVisibility(node));
     } else if (node.comfyClass === LOOP_CONDITION_NODE_CLASS) {
       queueMicrotask(() => mountLoopConditionNode(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
-               node.comfyClass === LOOP_END_NODE_CLASS) {
+    } else if (node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
     }
   },
@@ -2164,12 +2138,9 @@ app.registerExtension({
     queueMicrotask(() => bindLoopMemorySource(node));
     if (isDirector(node)) {
       queueMicrotask(() => mountNode(node));
-    } else if (node.comfyClass === CONFIG_NODE_CLASS) {
-      queueMicrotask(() => applyConfigAdvancedVisibility(node));
     } else if (node.comfyClass === LOOP_CONDITION_NODE_CLASS) {
       queueMicrotask(() => mountLoopConditionNode(node));
-    } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
-               node.comfyClass === LOOP_END_NODE_CLASS) {
+    } else if (node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
     }
   },
