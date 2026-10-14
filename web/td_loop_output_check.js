@@ -84,6 +84,8 @@ export function createLoopOutputCheckCard(estimate, diskState = {}, options = {}
     : "分辨率待确定";
   const spec = count + "段 · " + (Number(seconds.toFixed(1))) + " 秒 · " +
     resolutionText + " · 24 帧/秒";
+  const delivery = (options.segmentFormat || "MOV · ProRes 422 HQ") +
+    (options.mergeFinal === false ? " · 只保存镜头" : " · 合并 Final");
 
   const free = disk
     ? formatLoopDiskSpace(disk.freeBytes)
@@ -100,6 +102,7 @@ export function createLoopOutputCheckCard(estimate, diskState = {}, options = {}
     : ' title="粗略规划空间，含合并过程临时文件；不是精确文件体积。"';
   const html = title +
     row("视频规格", spec) +
+    row("片段格式", delivery) +
     row("片段输出空间", diskSummary, diskExtra);
   return {
     className: "td-output-memory-card is-loop-check" +
