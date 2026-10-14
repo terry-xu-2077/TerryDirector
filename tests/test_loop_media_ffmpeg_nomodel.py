@@ -116,5 +116,65 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
             self.assertTrue(all(path.is_file() for path in sources))
 
 
+    def test_mp4_frame_exact_overlap_and_nonoverlap(self):
+        ffmpeg = shutil.which("ffmpeg")
+        ffprobe = shutil.which("ffprobe")
+
+        def frame_count(path):
+            result = subprocess.run([
+                ffprobe, "-v", "error", "-count_frames",
+                "-select_streams", "v:0", "-show_entries",
+                "stream=nb_read_frames", "-of", "csv=p=0", str(path),
+            ], capture_output=True, check=True, text=True, timeout=120)
+            return int(result.stdout.strip())
+
+        with tempfile.TemporaryDirectory(prefix="td_real_mp4_") as temp:
+            root = Path(temp)
+            folder = root / "clips"
+            folder.mkdir()
+            originals = [folder / f"{i:03d}.mp4" for i in (1, 2)]
+            for i, path in enumerate(originals):
+                subprocess.run([
+                    ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+                    "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24:duration=1",
+                    "-f", "lavfi", "-i",
+                    f"sine=frequency={440+120*i}:sample_rate=48000:duration=1",
+                    "-c:v", "libx264", "-crf", "17", "-pix_fmt", "yuv420p",
+                    "-g", "48", "-c:a", "aac", "-b:a", "192k",
+                    "-f", "mp4", str(path),
+                ], check=True, capture_output=True, timeout=120)
+
+            stubs = {
+                "folder_paths": types.SimpleNamespace(get_output_directory=lambda: str(root)),
+                "numpy": types.ModuleType("numpy"),
+                "torch": types.ModuleType("torch"),
+            }
+            with mock.patch.dict(sys.modules, stubs):
+                spec = importlib.util.spec_from_file_location(
+                    "_td_media_mp4_no_torch_test", ROOT / "director_loop_media.py",
+                )
+                media = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(media)
+
+            template = {
+                "frames": 24, "width": 320, "height": 180, "channels": 1,
+                "fps": 24, "run_signature": "media-mp4",
+                "segment_format": media.MP4_H264,
+            }
+            clips = [
+                dict(template, index=i, path=str(path),
+                     trim_head_frames=0, gap_before_frames=0)
+                for i, path in enumerate(originals)
+            ]
+            copied = media.merge_loop_clips(clips, merge_final=True)
+            self.assertEqual(frame_count(copied), 48)
+            Path(copied).unlink()
+            clips[1]["trim_head_frames"] = 7
+            clips[1]["gap_before_frames"] = 6
+            recoded = media.merge_loop_clips(clips, merge_final=True)
+            self.assertEqual(frame_count(recoded), 24 + 6 + 24 - 7)
+            self.assertTrue(all(path.is_file() for path in originals))
+
+
 if __name__ == "__main__":
     unittest.main()
