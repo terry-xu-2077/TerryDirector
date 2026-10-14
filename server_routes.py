@@ -204,9 +204,9 @@ async def terrydirector_capabilities(request: web.Request) -> web.Response:
 
 
 def _temp_disk_space(directory: str) -> dict:
-    """Read the available space on the drive that stores ComfyUI's .pt cache.
+    """Read free space on the actual media-output drive.
 
-    Do not expose the absolute temp directory through the browser API.
+    Do not expose the absolute output directory through the browser API.
     Windows returns a drive label (e.g. G:), Linux a generic disk label.
     """
     path = Path(directory).resolve()
@@ -221,9 +221,9 @@ def _temp_disk_space(directory: str) -> dict:
 
 @PromptServer.instance.routes.get("/terrydirector/api/temp-space")
 async def terrydirector_temp_space(request: web.Request) -> web.Response:
-    """Show honest disk headroom before a long lossless segment run."""
+    """Show output-drive headroom before generating MOV/MP4 clips."""
     try:
-        result = _temp_disk_space(folder_paths.get_temp_directory())
+        result = _temp_disk_space(folder_paths.get_output_directory())
     except (OSError, ValueError):
         result = {"available": False, "drive": None, "free_bytes": None}
     return web.json_response(result, headers={"Cache-Control": "no-store"})
