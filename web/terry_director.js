@@ -197,34 +197,10 @@ function loopExecutionTarget(node) {
   if (ends.length !== 1) {
     throw new Error("TerryDirector 循环需要恰好一个已连线的「循环结束」节点");
   }
-  // If the loop has exactly one downstream video save, include the final
-  // merge/encode in the partial-queue target. Otherwise run the loop boundary
-  // alone and leave downstream processing to the normal ComfyUI queue.
-  const endNode = graph?.getNodeById?.(Number(ends[0])) ||
-    graph?._nodes?.find(item => String(item.id) === ends[0]);
-  const downstreamSeen = new Set();
-  const pending = [endNode];
-  const saves = new Set();
-  while (pending.length) {
-    const current = pending.shift();
-    if (!current || downstreamSeen.has(current.id)) continue;
-    downstreamSeen.add(current.id);
-    if (current.comfyClass === "SaveVideo") {
-      saves.add(String(current.id));
-      continue;
-    }
-    if (current.comfyClass === LOOP_NODE_CLASS) continue;
-    for (const output of current.outputs || []) {
-      for (const linkId of output.links || []) {
-        const link = graph?.links?.[linkId];
-        if (!link) continue;
-        const next = graph?.getNodeById?.(link.target_id) ||
-          graph?._nodes?.find(item => item.id === link.target_id);
-        if (next && !downstreamSeen.has(next.id)) pending.push(next);
-      }
-    }
-  }
-  return saves.size === 1 ? [...saves][0] : ends[0];
+  // LoopEnd now saves clips and optionally Final internally. Do not trigger
+  // an old downstream SaveVideo when the user clicks the director Run button,
+  // otherwise the already encoded Final would be saved a second time.
+  return ends[0];
 }
 
 function queueDirectorNode(node) {
@@ -853,7 +829,7 @@ function applyLoopSamplerProgress(detail) {
     const now = performance.now();
     const startedAt = record.startedAt || now;
     // Sampling at N/N is not yet a finished segment: VAE decode and the
-    // lossless .pt cache still have to complete. Only the cache event sets 100%.
+    // per-clip MOV/MP4 encoding still has to finish. Only the saved event sets 100%.
     const progress = Math.min(0.99, sample.fraction);
     if (record.status === RUN_RUNNING &&
         record.progress === progress &&
@@ -1673,7 +1649,11 @@ function renderOutputMemoryInfo(node) {
 
   if (isLoopEnd) {
     refreshTempDiskSpace();
-    const card = createLoopOutputCheckCard(estimate, tdTempDisk);
+    const segmentFormat = node.widgets?.find(widget => widget.name === "segment_format")?.value;
+    const mergeFinal = node.widgets?.find(widget => widget.name === "merge_final")?.value;
+    const card = createLoopOutputCheckCard(estimate, tdTempDisk, {
+      segmentFormat, mergeFinal,
+    });
     root.className = card.className;
     root.innerHTML = card.html;
   } else if (estimate.state === "disconnected") {
@@ -1681,10 +1661,10 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
+        <strong>${isLoopEnd ? "逐段视频输出" : "合并画面内存"}</strong>
       </div>
       <div class="td-output-memory-note">${isLoopEnd
-        ? "连接循环信息与官方 H3 工作流后显示流式输出概况。"
+        ? "连接循环信息与工作流后显示片段输出概况。"
         : "连接 TerryDirector 后显示预计内存占用。"}</div>
     `;
   } else if (estimate.state === "advanced") {
@@ -1714,7 +1694,7 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
+        <strong>${isLoopEnd ? "逐段视频输出" : "合并画面内存"}</strong>
       </div>
       <div class="td-output-memory-note">${estimate.hint || "正在读取时间线与分辨率信息…"}</div>
     `;
@@ -1735,7 +1715,7 @@ function renderOutputMemoryInfo(node) {
       </div>
       <div class="td-output-memory-note">
         ${isLoopEnd
-          ? "逐段无损缓存，交由 SaveVideo 单次流式编码；无需物化整段 IMAGE / AUDIO。"
+          ? "逐段 MOV/MP4 保存，循环结束可选按重叠裁切合并；不生成完整 .pt 缓存。"
           : estimate.level === "high"
             ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
             : estimate.level === "notice"
