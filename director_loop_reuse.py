@@ -69,6 +69,11 @@ def video_info(path):
         duration = float(data.get("format", {}).get("duration") or 0)
         channels = int(audio.get("channels") or 0) if audio else 0
         has_audio = audio is not None
+        frame_count = video.get("nb_frames")
+        video_frames = (
+            int(frame_count)
+            if frame_count not in (None, "N/A", "") else None
+        )
     else:
         # imageio-ffmpeg can ship ffmpeg without ffprobe. ComfyUI already
         # depends on PyAV, so inspecting the container must work in that case.
@@ -84,6 +89,7 @@ def video_info(path):
                 duration = float(video.duration * video.time_base)
             has_audio = audio is not None
             channels = int(getattr(audio.codec_context, "channels", 0) or 0) if audio else 0
+            video_frames = int(video.frames) if int(video.frames or 0) > 0 else None
     if width <= 0 or height <= 0 or duration <= 0 or duration > 36000:
         raise ValueError("实体视频尺寸或时长无效")
     return {
@@ -92,6 +98,7 @@ def video_info(path):
         "duration": duration,
         "has_audio": has_audio,
         "audio_channels": channels,
+        "video_frames": video_frames,
     }
 
 
