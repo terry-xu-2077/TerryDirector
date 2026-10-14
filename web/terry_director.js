@@ -29,7 +29,7 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   "KSampler", "KSamplerAdvanced",
   "ResolutionSelector", "PrimitiveInt", "PrimitiveFloat",
   "PrimitiveString", "Reroute", "GetNode", "SetNode",
-  "MiniMaxH3VAEDecodeFast", "VAELoader",
+  "MiniMaxH3VAEDecodeFast", "TerryDirectorH3X2LowRAMDecode", "VAELoader",
   "TerryXuMemoryCleanup", "LTXVSeparateAVLatent",
   "SelfLiftAvatarH3Sampler", "TerryDirectorSelfLiftSampler",
   "TerryWireBusPack", "TerryWireBusUnpack",
