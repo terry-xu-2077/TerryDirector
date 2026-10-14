@@ -157,7 +157,7 @@ function upstreamThroughReroutes(node, upstream, inputName = null) {
 }
 
 function knownFastDecodeScale(decodeNode, upstream) {
-  if (decodeNode?.comfyClass !== "MiniMaxH3VAEDecodeFast") return null;
+  if (!["MiniMaxH3VAEDecodeFast", "TerryDirectorH3X2LowRAMDecode"].includes(decodeNode?.comfyClass)) return null;
   const vaeNode = upstreamThroughReroutes(upstream?.(decodeNode, "vae"), upstream);
   if (vaeNode?.comfyClass !== "VAELoader") return null;
   const vaeName = basename(widgetValue(vaeNode, "vae_name"));
