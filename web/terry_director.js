@@ -1086,6 +1086,7 @@ function defaultDocument() {
         useGlobalPrompt: true,
         transitionMode: "tail_reference",
         suspended: false,
+        kind: "generated",
       },
     ],
     assets: [],
@@ -1141,6 +1142,8 @@ function normalizeConfig(value) {
         return {
           id: String(raw?.id || `clip-${index + 1}`),
           name: String(raw?.name || `片段 ${String(index + 1).padStart(2, "0")}`),
+          kind: raw?.kind === "entity" ? "entity" : "generated",
+          sourceAssetId: String(raw?.sourceAssetId || ""),
           start,
           end,
           seed: normalizeAuthoredSeed(raw?.seed),
@@ -3445,19 +3448,47 @@ function ensureEditorOverlay() {
       writeConfig(node, next);
       editorDirty = false;
 
-      node.__tdLocalRunLock = true;
-      if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
-      node.__tdRunActivity = blankActivity(node);
-      pushActivity(node);
-
-      void queueDirectorNode(node).then(queued => {
-        if (!queued && !node.__tdPromptId) {
-          node.__tdLocalRunLock = false;
-          pushActivity(node);
+      const rerunClipId = String(message.rerunClipId || "").trim();
+      void (async () => {
+        const widget = node.widgets?.find(item => item.name === "rerun_clip_id");
+        if (rerunClipId) {
+          if (node.comfyClass !== LOOP_NODE_CLASS || !widget) {
+            throw new Error("只有 TerryDirector 循环器支持单片段重跑");
+          }
+          const response = await fetch("/terrydirector/api/rerun-check", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              loop_id: String(node.id), clip_id: rerunClipId, document: next.document,
+            }),
+          });
+          const checked = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(checked.error || "承接上下文预检查失败");
         }
-      }).catch(() => {
+
+        if (widget) widget.value = rerunClipId;
+        node.__tdLocalRunLock = true;
+        if (node.comfyClass === ADVANCED_NODE_CLASS) beginAdvancedLivePreview(node);
+        node.__tdRunActivity = blankActivity(node);
+        pushActivity(node);
+        try {
+          const queued = await queueDirectorNode(node);
+          if (!queued && !node.__tdPromptId) {
+            node.__tdLocalRunLock = false;
+            pushActivity(node);
+          }
+        } finally {
+          // The payload has been serialized for ComfyUI by this point.
+          // Do not accidentally rerun this clip in the next ordinary Queue.
+          if (widget) widget.value = "";
+          node.setDirtyCanvas?.(true, true);
+        }
+      })().catch(error => {
         node.__tdLocalRunLock = false;
         pushActivity(node);
+        frame?.contentWindow?.postMessage({
+          type: "terrydirector:run-error",
+          error: String(error?.message || "提交单片段重跑失败"),
+        }, location.origin);
       });
     } else if (message.type === "terrydirector:save" && activeNode) {
       const next = readConfig(activeNode);
