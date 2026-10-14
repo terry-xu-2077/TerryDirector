@@ -30,7 +30,7 @@ from .director_loop_adapters import (
     get_loop_adapter,
 )
 from .director_core import config_json, normalize_config
-from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips
+from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips, complete_isolated_rerun
 from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context
 from .director_loop_memory import log_loop_ram, release_completed_body
 from .director_loop_report import start_report, mark_clip, finish_report
@@ -551,6 +551,12 @@ class TerryDirectorLoopReuse(io.ComfyNode):
         }
         carry["source_path"] = path
         carry["source_type"] = action
+        try:
+            mark_clip(
+                loop["loop_id"], loop["run_signature"], loop["index"], "completed",
+            )
+        except Exception:
+            pass
         _notify(loop["loop_id"], segment["id"], "completed")
         return io.NodeOutput(json.dumps(descriptor, ensure_ascii=False), carry)
 
@@ -983,6 +989,8 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             part["index"] = index
             index += 1
             skipped_since_output = False
+        if is_rerun and descriptions:
+            complete_isolated_rerun(descriptions, str(_one(rerun_clip_id)))
         merged_path = (
             merge_loop_clips(descriptions, merge_final=bool(_one(merge_final)))
             if descriptions and not is_rerun else None
