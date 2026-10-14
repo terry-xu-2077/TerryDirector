@@ -115,6 +115,11 @@ class TestResume(unittest.TestCase):
         doc["clips"][0]["prompt"] = "Different scene"
         p2 = self.mod.plan_fingerprint(doc, 1, plan, a, "MOV · ProRes 422 HQ")
         self.assertNotEqual(p1, p2)
+        doc["selected"] = "clip-one"
+        p3 = self.mod.plan_fingerprint(doc, 1, plan, a, "MOV · ProRes 422 HQ")
+        doc["selected"] = "clip-two"
+        p4 = self.mod.plan_fingerprint(doc, 1, plan, a, "MOV · ProRes 422 HQ")
+        self.assertEqual(p3, p4, "switching focused clip cannot break resume")
 
 
 if __name__ == "__main__":
