@@ -9,7 +9,6 @@ The video merge uses stream copy; audio is reconstructed at sample precision.
 
 from __future__ import annotations
 
-from fractions import Fraction
 import json
 import os
 from pathlib import Path
@@ -127,6 +126,16 @@ def _inspect_mov(path, *, expected_frames, require_audio=True):
                 raise RuntimeError("MOV 音频不是 PCM 24-bit")
             if int(audio.codec_context.sample_rate) != OUTPUT_SAMPLE_RATE:
                 raise RuntimeError("MOV PCM 音频采样率不是 48 kHz")
+            if audio.duration is not None:
+                audio_samples = round(
+                    float(audio.duration * audio.time_base) * OUTPUT_SAMPLE_RATE
+                )
+                expected_samples = int(expected_frames) * SAMPLES_PER_FRAME
+                if audio_samples != expected_samples:
+                    raise RuntimeError(
+                        f"MOV 音频采样数不匹配：{audio_samples} != "
+                        f"{expected_samples}，文件 {path}"
+                    )
         return {"frames": frame_count, "width": int(video.width),
                 "height": int(video.height),
                 "channels": int(audios[0].codec_context.channels) if audios else 0}
@@ -405,8 +414,8 @@ def merge_loop_mov_clips(descriptors, *, final_name="Final.mov"):
             for entry in entries:
                 file.write(_ffconcat_file_line(entry["path"]) + "\n")
                 if entry["trim"]:
-                    file.write(f"inpoint {Fraction(entry['trim'], FPS)}\n")
-                file.write(f"outpoint {Fraction(entry['frames'], FPS)}\n")
+                    file.write(f"inpoint {entry['trim'] / FPS:.9f}\n")
+                file.write(f"outpoint {entry['frames'] / FPS:.9f}\n")
 
         _ffmpeg_run([
             "-safe", "0", "-f", "concat", "-i", concat_file,
