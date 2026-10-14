@@ -46,6 +46,11 @@ jobs:
         run: python -m unittest discover -s tests -p test_loop_x2_adapter.py -v
       - name: MOV/MP4 frame-exact clip and merge tests (needs Torch + FFmpeg)
         run: python -m unittest discover -s tests -p test_loop_media.py -v
+      - name: Install FFmpeg for real media regression
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -n 1
       - name: Real ProRes MOV and exact PCM without PyTorch
         run: python -m unittest discover -s tests -p test_loop_media_ffmpeg_nomodel.py -v
       - name: Suspended timeline JS syntax and regression
