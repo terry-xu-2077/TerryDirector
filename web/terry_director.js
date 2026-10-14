@@ -1681,7 +1681,7 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
+        <strong>${isLoopEnd ? "逐段 ProRes MOV" : "合并画面内存"}</strong>
       </div>
       <div class="td-output-memory-note">${isLoopEnd
         ? "连接循环信息与官方 H3 工作流后显示流式输出概况。"
@@ -1714,7 +1714,7 @@ function renderOutputMemoryInfo(node) {
     root.innerHTML = `
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">i</span>
-        <strong>${isLoopEnd ? "流式视频输出" : "合并画面内存"}</strong>
+        <strong>${isLoopEnd ? "逐段 ProRes MOV" : "合并画面内存"}</strong>
       </div>
       <div class="td-output-memory-note">${estimate.hint || "正在读取时间线与分辨率信息…"}</div>
     `;
@@ -1727,7 +1727,7 @@ function renderOutputMemoryInfo(node) {
       <div class="td-output-memory-title">
         <span class="td-output-memory-icon">${isLoopEnd ? "i" : estimate.level === "high" ? "!" : "i"}</span>
         <strong>${isLoopEnd
-          ? `流式视频 · 避免约 <b>${memory} GB</b> 整段画面占用`
+          ? `逐片段 MOV · 避免约 <b>${memory} GB</b> 整段画面常驻`
           : `合并整段画面预计占用 <b>${memory} GB</b> 内存`}</strong>
       </div>
       <div class="td-output-memory-meta">
@@ -1735,7 +1735,7 @@ function renderOutputMemoryInfo(node) {
       </div>
       <div class="td-output-memory-note">
         ${isLoopEnd
-          ? "逐段无损缓存，交由 SaveVideo 单次流式编码；无需物化整段 IMAGE / AUDIO。"
+          ? "逐段保存完整 ProRes MOV；循环结束可按时间线裁切并流复制合并 Final.mov，无需 .pt 缓存。"
           : estimate.level === "high"
             ? "内存占用很高，后续图像节点可能需要更多内存；长时间线建议使用 Advanced。"
             : estimate.level === "notice"
