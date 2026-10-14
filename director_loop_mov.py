@@ -469,3 +469,10 @@ def merge_loop_mov_clips(descriptors, *, final_name="Final.mov"):
         for path in (concat_file, audio_filter, video_temp, audio_temp, final_temp):
             if os.path.isfile(path):
                 os.remove(path)
+        # Gap MOVs were generated only for assembling Final.mov. Never delete
+        # user-created source clips (temporary_gap=False).
+        for entry in entries:
+            if entry["temporary_gap"]:
+                gap_path = Path(entry["path"])
+                if gap_path.parent == root and gap_path.name.startswith(".gap_"):
+                    gap_path.unlink(missing_ok=True)
