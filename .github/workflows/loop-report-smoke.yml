@@ -8,6 +8,7 @@ on:
       - feature/timeline-clip-reorder
       - feature/loop-clip-rerun-media
       - feature/loop-resume-final-rebuild
+      - cleanup/retire-base-advanced
     paths:
       - director_loop.py
       - director_loop_reuse.py
