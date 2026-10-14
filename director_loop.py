@@ -409,6 +409,7 @@ def _expand_director_loop(dynprompt, opener_id, body, close_id, items, initial_v
             reused = graph.node(
                 "TerryDirectorLoopReuse", f"reuse_{position}",
                 loop_context=frame.out(0),
+                release_node_ids=json.dumps(previous_body_ids),
             )
             descriptor, carry = reused.out(0), reused.out(1)
             copies = {}
@@ -497,7 +498,11 @@ class TerryDirectorLoopReuse(io.ComfyNode):
             display_name="TerryDirector 已有视频上下文（内部）",
             category="TerryDirector/循环/内部",
             is_dev_only=True,
-            inputs=[LoopContextData.Input("loop_context")],
+            inputs=[
+                LoopContextData.Input("loop_context"),
+                io.String.Input("release_node_ids", optional=True, advanced=True),
+            ],
+            hidden=[io.Hidden.execution_list],
             outputs=[
                 io.String.Output(display_name="复用片段"),
                 io.AnyType.Output(display_name="连续性上下文"),
@@ -505,9 +510,14 @@ class TerryDirectorLoopReuse(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, loop_context):
+    def execute(cls, loop_context, release_node_ids=None):
         segment, _ = _require_loop_context(loop_context)
         loop = segment["_loop"]
+        if release_node_ids:
+            released = release_completed_body(
+                cls.hidden.execution_list, json.loads(release_node_ids)
+            )
+            print(f"[TerryDirector RAM] pre-reuse released={released}", flush=True)
         action = loop.get("action")
         if action == "entity":
             path = safe_input_video(segment["source_asset"])
@@ -940,12 +950,22 @@ class TerryDirectorLoopEnd(io.ComfyNode):
         is_rerun = bool(str(_one(rerun_clip_id) or ""))
         # An isolated rerun updates only its movie result. It must not
         # accidentally replace the original Final with an incomplete render.
-        for index, part in enumerate(descriptions):
-            original_index = part["index"]
-            part["index"] = index
-            if index == 0 and all_parts and all_parts[0].get("skip_in_final"):
+        skipped_since_output = False
+        index = 0
+        for part in all_parts:
+            if part.get("skip_in_final"):
+                skipped_since_output = True
+                continue
+            # Omitted entity clips are context anchors, not frames in Final.
+            # The first generated clip after such an anchor must keep its
+            # original head: trimming it would discard the only visible
+            # frames of that transition.
+            if skipped_since_output:
                 part["trim_head_frames"] = 0
                 part["gap_before_frames"] = 0
+            part["index"] = index
+            index += 1
+            skipped_since_output = False
         merged_path = (
             merge_loop_clips(descriptions, merge_final=bool(_one(merge_final)))
             if descriptions and not is_rerun else None
