@@ -548,6 +548,7 @@ class TerryDirectorLoopReuse(io.ComfyNode):
             "skip_in_final": True,
             "context_source": action,
             "run_signature": loop["run_signature"],
+            "loop_id": loop["loop_id"],
         }
         carry["source_path"] = path
         carry["source_type"] = action
