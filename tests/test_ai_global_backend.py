@@ -71,7 +71,7 @@ def test_global_vlm_scope_and_asset_integrity():
                 return self
             def __exit__(self, exc_type, exc, traceback):
                 return False
-            def chat(self, messages, seed, cancel):
+            def chat(self, messages, seed, cancel, *, comfy_interrupt=False):
                 call_seeds.append(seed)
                 return sample_result
 
