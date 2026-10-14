@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import mimetypes
-import re
 import shutil
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from server import PromptServer
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
 INPUT_ROOT = Path(folder_paths.get_input_directory()).resolve()
-OUTPUT_ROOT = Path(folder_paths.get_output_directory()).resolve()
 SUPPORTED = {
     "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".svg"},
     "video": {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"},
@@ -208,77 +206,6 @@ async def terrydirector_upload(request: web.Request) -> web.Response:
         "name": target.name,
         "kind": kind,
         "preview_url": _view_url(relative),
-    })
-
-
-@PromptServer.instance.routes.get("/terrydirector/api/latent-upscalers")
-async def terrydirector_latent_upscalers(request: web.Request) -> web.Response:
-    try:
-        models = list(folder_paths.get_filename_list("latent_upscale_models"))
-    except Exception:
-        models = []
-    return web.json_response({"models": models})
-
-
-def _read_advanced_json(cache_dir: Path, name: str):
-    path = (cache_dir / name).resolve()
-    cache_root = (OUTPUT_ROOT / ".terrydirector_cache").resolve()
-    if not _within(cache_root, path) or not path.is_file():
-        return None
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    return value if isinstance(value, dict) else None
-
-
-def _valid_output_video(value):
-    if not isinstance(value, dict) or not value.get("filename"):
-        return None
-    rel = Path(str(value.get("subfolder") or "")) / str(value.get("filename") or "")
-    candidate = (OUTPUT_ROOT / rel).resolve()
-    if not _within(OUTPUT_ROOT, candidate) or not candidate.is_file():
-        return None
-    return value
-
-
-@PromptServer.instance.routes.get("/terrydirector/api/advanced-state")
-async def terrydirector_advanced_state(request: web.Request) -> web.Response:
-    node_id = str(request.query.get("node_id") or "").strip()
-    if not node_id:
-        return web.json_response({"state": None, "checkpoint": None})
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", node_id)[:160]
-    cache_dir = (OUTPUT_ROOT / ".terrydirector_cache" / safe).resolve()
-    cache_root = (OUTPUT_ROOT / ".terrydirector_cache").resolve()
-    if not _within(cache_root, cache_dir):
-        return web.json_response({"state": None, "checkpoint": None})
-
-    state = _read_advanced_json(cache_dir, "state.json")
-    checkpoint = _read_advanced_json(cache_dir, "checkpoint.json")
-
-    if isinstance(state, dict):
-        video = _valid_output_video(state.get("video"))
-        if state.get("video") is not None and video is None:
-            state = None
-
-    if isinstance(checkpoint, dict):
-        partial_video = _valid_output_video(checkpoint.get("partial_video"))
-        if checkpoint.get("partial_video") is not None and partial_video is None:
-            checkpoint = dict(checkpoint)
-            checkpoint.pop("partial_video", None)
-
-    return web.json_response({"state": state, "checkpoint": checkpoint})
-
-
-@PromptServer.instance.routes.get("/terrydirector/api/capabilities")
-async def terrydirector_capabilities(request: web.Request) -> web.Response:
-    try:
-        import nodes as comfy_nodes
-        kj_preview = "ModelPreviewOverrideKJ" in comfy_nodes.NODE_CLASS_MAPPINGS
-    except Exception:
-        kj_preview = False
-    return web.json_response({
-        "multi_frame_preview": bool(kj_preview),
     })
 
 
