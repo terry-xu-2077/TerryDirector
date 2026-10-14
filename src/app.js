@@ -956,6 +956,17 @@
       const label=suspendButton.querySelector('span');
       if(label)label.textContent=`${all?'恢复':'挂起'}${total>1?` (${total})`:''}`;
     }
+    const isPhysical=!!c&&c.kind==='entity';
+    $('.clip-seed-control').hidden=isPhysical;
+    $('.ai-prompt-toolbar').hidden=isPhysical;
+    if(isPhysical){
+      $('#promptText').readOnly=true;
+      $('#promptVisual').contentEditable='false';
+      $('#useGlobalPrompt').disabled=true;
+      $('#promptText').placeholder='实体视频不会执行 AI 生成。它仅作为下一镜头的上下文来源。';
+    }else{
+      $('#promptText').placeholder='描述这个片段的画面、动作和声音。';
+    }
     const sortButton=$('[data-action=sort]');
     if(sortButton){
       sortButton.disabled=hostReadonly;
@@ -1000,6 +1011,7 @@
     onSelect:id=>select(id),onFrame:()=>{},
     onPreview:clips=>{renderTiming(clips);const index=clips.findIndex(c=>c.id===state.selected);$('#clipNumber').textContent=index>=0?`片段 ${index+1}`:'暂无片段';},
     onDragEnd:()=>timeline.invalidate(),
+    onContextMenu:openClipContextMenu,
     onCommit:(clips,beforeClips)=>{finishPromptEdit();const before={...C.copy(state),clips:beforeClips};state.clips=clips;commit(before);},
     onView:v=>{const max=Math.max(v.visible,v.contentWidth),width=Math.min(100,v.visible/max*100);$('#scrollThumb').style.width=width+'%';$('#scrollThumb').style.left=Math.min(100-width,v.scroll/max*100)+'%';$('#zoomRange').value=Math.log(v.ppf/.22)/Math.log(24/.22)*100;}
   });
@@ -1054,6 +1066,113 @@
     if(insertionFrame!==null)timeline.setFrame(insertionFrame);
     else timeline.fit();
   }
+  function rerunSelectedClip(){
+    const clip=current();
+    if(!clip||clip.kind==='entity'||clip.suspended||hostReadonly)return;
+    if(!embedded){toast('仅重跑需要连接 ComfyUI 的循环器。');return;}
+    modal('仅重跑此片段',
+      '<p><strong>'+esc(clip.name)+'</strong> 将单独重新采样。'
+      +'上一镜头若为尾帧参考、尾帧续接或重叠关系，'
+      +'将自动读取上一轮保存的 MOV/MP4 或实体视频。</p>'
+      +'<p class="subtle">其他片段不会重新生成，也不会修改挂起状态。'
+      +'本次重跑不覆盖此前完整成片。</p>',
+      '开始重跑',()=>{queueWorkflow(clip.id);});
+  }
+
+  async function importPhysicalClip(){
+    if(hostReadonly)return;
+    const videos=poolEntries().filter(a=>a.kind==='video'&&a.source?.type==='comfy-input');
+    if(!videos.length){
+      toast('请先将视频上传或从 ComfyUI input 加入资产池，再添加实体片段。');
+      return;
+    }
+    modal('导入实体视频片段',
+      '<p class="subtle">实体片段不执行采样，仅用于给下一个镜头提供尾帧或重叠区上下文；'
+      +'默认不进入最终合并影片。</p>'
+      +'<label class="input-picker-location" for="entityVideoAsset">选择资产池视频</label>'
+      +'<select id="entityVideoAsset" class="td-entity-video-select">'
+      +videos.map(a=>'<option value="'+esc(a.id)+'">'+esc(assetDisplayName(a))+'</option>').join('')
+      +'</select><p class="subtle" id="entityVideoInfo">正在读取视频时长…</p>',
+      '插入时间线',()=>{
+        const choice=$('#entityVideoAsset')?.value;
+        const asset=videos.find(a=>a.id===choice);
+        const frames=Number($('#entityVideoAsset')?.dataset.frames)||0;
+        if(!asset||frames<1){toast('请先选择有效的视频');return false;}
+        const insertionFrame=timeline?.frame??(state.clips.at(-1)?.end||0);
+        const clip={
+          id:'clip-'+nextId++,
+          kind:'entity',sourceAssetId:asset.id,
+          name:assetDisplayName(asset),start:insertionFrame,end:insertionFrame+frames,
+          prompt:'',aiPrompt:'',promptMode:'user',aiOptOut:true,
+          aiMetadata:{},useGlobalPrompt:false,transitionMode:defaultTransitionMode,
+          refs:[],seed:null,aiSeed:null,resolution:{...R.DEFAULT},
+          suspended:false,
+        };
+        mutate(()=>{
+          state.clips=C.insertClipAtFrame(state.clips,clip,insertionFrame);
+          state.selected=clip.id;
+        });
+        timeline?.setSelection([clip.id],clip.id,false);
+        timeline?.setFrame(insertionFrame);
+        toast('已添加实体视频片段。运行时它只提供上下文，不会采样。');
+      });
+    const select=$('#entityVideoAsset'),info=$('#entityVideoInfo'),confirm=$('#dialogConfirm');
+    $('#dialog').dataset.mode='physical-clip';
+    async function inspect(){
+      const selected=videos.find(a=>a.id===select.value);
+      select.dataset.frames='';
+      confirm.disabled=true;
+      info.textContent='正在读取视频规格…';
+      if(!selected)return;
+      try{
+        if(!embedded){
+          select.dataset.frames=String(10*C.FPS);
+          info.textContent='静态演示：暂按 10 秒插入，实际使用时读取源视频长度。';
+        }else{
+          const response=await fetch(
+            '/terrydirector/api/video-info?path='+encodeURIComponent(selected.source.path),
+            {cache:'no-store'}
+          );
+          const result=await response.json();
+          if(!response.ok)throw new Error(result.error||'无法读取视频信息');
+          // Avoid a stale async request assigning the duration of a different asset.
+          if(select.value!==selected.id)return;
+          select.dataset.frames=String(result.frames_24fps);
+          info.textContent=result.frames_24fps+' 帧 · '+
+            Number((result.frames_24fps/C.FPS).toFixed(2))+' 秒 · '+
+            result.width+'×'+result.height+
+            (result.has_audio?' · 含音轨':' · 无音轨，承接时使用静音');
+        }
+        confirm.disabled=false;
+      }catch(error){
+        if(select.value===selected.id)info.textContent=error?.message||'视频信息读取失败';
+      }
+    }
+    select.addEventListener('change',()=>void inspect());
+    void inspect();
+  }
+
+  function openClipContextMenu(clip,position){
+    closeTransitionMenu();
+    if(!clip)return;
+    select(clip.id,false);
+    const menu=document.createElement('div');
+    menu.className='td-clip-context-menu';
+    const isEntity=clip.kind==='entity';
+    menu.innerHTML='<button type="button" '+(isEntity||hostReadonly||clip.suspended?'disabled':'')+'>'
+      +icon(isEntity?'film':'refresh')+
+      '<span>'+(isEntity?'实体视频（无需采样）':'仅重跑此片段')+'</span></button>';
+    document.body.append(menu);
+    const bounds=menu.getBoundingClientRect();
+    menu.style.left=Math.max(8,Math.min(innerWidth-bounds.width-8,position.clientX))+'px';
+    menu.style.top=Math.max(8,Math.min(innerHeight-bounds.height-8,position.clientY))+'px';
+    menu.querySelector('button').addEventListener('click',()=>{
+      menu.remove();clipContextMenu=null;
+      rerunSelectedClip();
+    });
+    clipContextMenu=menu;
+  }
+
   // A reference is written into the clip's single prompt. The refs array is a
   // derived list of stable asset IDs; removing a prompt tag never deletes media.
   function appendReferences(clip,ids){
@@ -1890,7 +2009,10 @@
       e.currentTarget.close();
     }
   });
-  window.addEventListener('pointerdown',e=>{if(transitionMenu&&!transitionMenu.contains(e.target))closeTransitionMenu();},true);
+  window.addEventListener('pointerdown',e=>{
+    if(clipContextMenu&&!clipContextMenu.contains(e.target)){clipContextMenu.remove();clipContextMenu=null;}
+    if(transitionMenu&&!transitionMenu.contains(e.target))closeTransitionMenu();
+  },true);
   if(embedded){
     window.addEventListener('message',event=>{
       if(event.origin!==hostOrigin||event.source!==window.parent)return;
@@ -1904,6 +2026,10 @@
       else if(message.type==='terrydirector:ai-patch')applyHostAiPatch(message.clips);
       else if(message.type==='terrydirector:preferences')defaultTransitionMode=normalizeTransitionMode(message.defaultTransitionMode,'tail_reference');
       else if(message.type==='terrydirector:activity')applyHostActivity(message.activity);
+      else if(message.type==='terrydirector:run-error'){
+        toast(message.error||'未能提交指定片段');
+        setHostReadonly(false);
+      }
       else if(message.type==='terrydirector:request-save')saveToHost();
       else if(message.type==='terrydirector:confirm-close')confirmCloseEditor();
     });
