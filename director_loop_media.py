@@ -295,7 +295,7 @@ def save_loop_segment(
     ext, codec = _encoder(format_name)
     root = _run_dir(loop["cache_key"], loop["run_signature"])
     clip_name = (
-        f"{int(loop['index']) + 1:03d}_{_safe(segment['name'])}_"
+        f"{int(loop.get('authored_index', loop['index'])) + 1:03d}_{_safe(segment['name'])}_"
         f"{_safe(segment['id'])}.{ext}"
     )
     output_path = root / "clips" / clip_name
