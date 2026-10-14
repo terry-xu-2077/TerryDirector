@@ -1764,12 +1764,40 @@ function refreshAllOutputMemoryInfo() {
   }
 }
 
+// Cleanup and reroute nodes forward their input without changing its value.
+// Follow only known pass-throughs when resolving the owning timeline.
+function followLoopConditionPassthrough(source) {
+  const visited = new Set();
+  for (let depth = 0; source?.node && depth < 16; depth += 1) {
+    const upstream = source.node;
+    const type = upstream.comfyClass;
+    const passthrough = type === "Reroute" ||
+      type === "TerryXuMemoryCleanup" ||
+      type === "RAMCleanup" ||
+      type === "VRAMCleanup";
+    if (!passthrough) return source;
+    if (Number(source.outputIndex) !== 0 || visited.has(upstream)) return null;
+    visited.add(upstream);
+    const inputName = type === "Reroute" ? upstream.inputs?.[0]?.name : "anything";
+    if (!inputName) return null;
+    source = linkedOutputForInput(upstream, inputName);
+  }
+  return null;
+}
+
 function loopConditionLooper(node) {
   if (node?.comfyClass !== LOOP_CONDITION_NODE_CLASS) return null;
-  const info = linkedNodeForInput(node, "segment_data");
-  if (info?.comfyClass !== LOOP_INFO_NODE_CLASS) return null;
-  const looper = linkedNodeForInput(info, "loop_context");
-  return looper?.comfyClass === LOOP_NODE_CLASS ? looper : null;
+  const info = followLoopConditionPassthrough(
+    linkedOutputForInput(node, "segment_data")
+  );
+  // LoopInfo output 4 carries segment_data; other outputs do not.
+  if (info?.node?.comfyClass !== LOOP_INFO_NODE_CLASS ||
+      Number(info.outputIndex) !== 4) return null;
+  const looper = followLoopConditionPassthrough(
+    linkedOutputForInput(info.node, "loop_context")
+  );
+  return looper?.node?.comfyClass === LOOP_NODE_CLASS &&
+    Number(looper.outputIndex) === 0 ? looper.node : null;
 }
 
 function loopConditionSnapshot(node) {
