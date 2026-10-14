@@ -415,12 +415,12 @@ def rebuild_final_from_saved_clips(
         depends_on_previous = continuity.get("kind") in (
             "overlap", "tail_frame", "tail_reference",
         )
-        if (depends_on_previous and not previous_was_entity
-                and previous_source is not None
-                and descriptor.get("upstream_source")
-                and Path(str(descriptor["upstream_source"])).resolve()
+        if depends_on_previous and not previous_was_entity and previous_source is not None:
+            upstream = descriptor.get("upstream_source")
+            if (not upstream or Path(str(upstream)).resolve()
                     != Path(previous_source).resolve()):
-            stale.append(part_id)
+                # Missing provenance is "unverified", not automatically fresh.
+                stale.append(part_id)
         descriptor["index"] = len(selected)
         descriptor["trim_head_frames"] = (
             0 if previous_was_entity
