@@ -309,7 +309,10 @@
     const frames=C.effectiveClipLayout(clips).at(-1)?.end||0,output=$('#timelineDuration');
     const text=C.timecode(frames);
     if(output.textContent!==text)output.textContent=text;
-    output.title=`实际生成总时长 · ${C.FPS} FPS · ${frames} 帧；挂起片段不计时、不留空位；正常片段之间有意保留的空隙/重叠按编译规则计算。编辑时间轴仍显示挂起片段以便恢复。`;
+    const hasPhysical=clips.some(clip=>clip.kind==='entity'&&!clip.suspended);
+    output.title=hasPhysical
+      ?`创作时间线总时长 · ${frames} 帧（含实体视频上下文）；实体片段不参与 Final，完整成片时长可能更短。`
+      :`实际生成总时长 · ${C.FPS} FPS · ${frames} 帧；挂起片段不计时、不留空位；正常片段之间有意保留的空隙/重叠按编译规则计算。`;
     output.setAttribute('aria-label',`总时长 ${C.seconds(frames)}，${frames} 帧`);
   }
   function renderClipDuration(clips=state.clips){
