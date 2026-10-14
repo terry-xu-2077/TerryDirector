@@ -303,8 +303,16 @@ def save_loop_segment(
     # The encoded clip intentionally keeps its overlapping head. Only the
     # final assembled movie applies the head trim.
     descriptor = {
-        "index": int(loop["index"]), "segment_id": str(segment["id"]),
+        "index": int(loop["index"]),
+        "authored_index": int(loop.get("authored_index", loop["index"])),
+        "segment_id": str(segment["id"]),
         "name": str(segment["name"]),
+        "seed": str(loop["seed"]),
+        "continuity": dict(segment.get("continuity") or {}),
+        "transition_mode": str(segment.get("transition_mode") or ""),
+        "upstream_source": loop.get("upstream_path"),
+        "upstream_type": loop.get("upstream_type"),
+        "rerun_target": loop.get("rerun_target") or None,
         "path": str(output_path),
         "frames": frames,
         "trim_head_frames": int(assembly["trim_head_frames"]),
@@ -328,6 +336,32 @@ def save_loop_segment(
         flush=True,
     )
     return json.dumps(descriptor, ensure_ascii=False), context_images, carry
+
+
+
+def complete_isolated_rerun(descriptors: list[dict], clip_id: str):
+    """Commit a new take without touching any earlier full-length Final."""
+    if not descriptors:
+        raise ValueError("重跑没有生成任何片段")
+    root = Path(descriptors[0]["path"]).resolve().parent.parent
+    for item in descriptors:
+        if str(item.get("segment_id")) != str(clip_id):
+            raise ValueError("单片段重跑混入了其他已保存镜头")
+    manifest = root / "timeline.json"
+    if not manifest.is_file():
+        raise FileNotFoundError("本次重跑的视频文件记录缺失")
+    with open(manifest, encoding="utf-8") as source:
+        state = json.load(source)
+    state["status"] = "completed"
+    state["rerun_target"] = str(clip_id)
+    state["final"] = None
+    _atomic_json(manifest, state)
+    (root / ".recovery" / "next_context.npz").unlink(missing_ok=True)
+    print(
+        f"[TerryDirector Loop][Rerun] {clip_id}: "
+        f"saved {descriptors[0]['path']} without overwriting Final",
+        flush=True,
+    )
 
 
 def _raw_audio(path: str, channels: int, directory: Path) -> Path:
