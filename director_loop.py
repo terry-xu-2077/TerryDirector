@@ -775,6 +775,13 @@ class TerryDirectorLoopEnd(io.ComfyNode):
     def execute(cls, bit_depth="auto", color_space="sRGB",
                 release_node_ids=None, segment_format=MOV_HQ,
                 merge_final=True, **kwargs):
+        # Existing workflow widgets remain for backwards compatibility. The
+        # new MOV/MP4 encoder is SDR Rec.709-only: do not silently relabel HDR.
+        if str(_one(color_space)) not in ("sRGB", "None", ""):
+            raise ValueError(
+                "新片段编码目前仅支持 SDR / Rec.709。旧版 HDR 选项尚未"
+                "适配 ProRes/MP4，请将 color_space 改为 sRGB。"
+            )
         results = cls.hidden.execution_list.get_external_block_result(
             _one(cls.hidden.unique_id)
         )
