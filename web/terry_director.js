@@ -1732,7 +1732,7 @@ function renderOutputMemoryInfo(node) {
       const height = Math.max(
         Number(node.size?.[1]) || 0,
         Number(computed?.[1]) || 0,
-        isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 205) :
+        isLoopEnd ? (estimate?.state === "disconnected" ? 165 : 245) :
           (estimate?.state === "ready" ? 205 : 185)
       );
       node.setSize?.([width, height]);
@@ -1974,8 +1974,8 @@ function mountOutputNode(node) {
       root,
       {
         hideOnZoom: false,
-        getMinHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 86 : 76,
-        getMaxHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 106 : 96,
+        getMinHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 120 : 76,
+        getMaxHeight: () => node.comfyClass === LOOP_END_NODE_CLASS ? 160 : 96,
         margin: 5,
       }
     );
@@ -1991,7 +1991,7 @@ function mountOutputNode(node) {
       Math.max(
         Number(node.size?.[1]) || 0,
         Number(computed?.[1]) || 0,
-        node.comfyClass === LOOP_END_NODE_CLASS ? 205 : 185
+        node.comfyClass === LOOP_END_NODE_CLASS ? 245 : 185
       ),
     ]);
   }
