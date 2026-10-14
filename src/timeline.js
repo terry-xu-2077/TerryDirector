@@ -23,7 +23,11 @@
       on('pointercancel', this.cancel); on('lostpointercapture', this.cancel);
       on('pointerleave', function () { if (!this.drag) { this.hover = null; this.invalidate(); } });
       on('wheel', this.wheel, { passive:false });
-      on('contextmenu', function(e) { e.preventDefault(); });
+      on('contextmenu', function(e) {
+        e.preventDefault();
+        const clip=this.hitTest(this.point(e));
+        if(clip)this.options.onContextMenu?.(clip,{clientX:e.clientX,clientY:e.clientY});
+      });
       this.resize(); this.fit();
     }
     readTheme() {
@@ -323,9 +327,10 @@
           ctx.shadowColor=t.selection;ctx.shadowBlur=15;
         }
         const selected=(this.selectedIds||new Set([this.selected])).has(c.id),suspended=!!c.suspended;
-        let fill=suspended?t.inset:t.clip;
+        const physical=c.kind==='entity';
+        let fill=suspended?t.inset:(physical?'#34495c':t.clip);
         if(selected&&!suspended){const g=ctx.createLinearGradient(x,y,x+width,y+ch);g.addColorStop(0,t.selected);g.addColorStop(1,t.highlight);fill=g;}
-        this.rect(ctx,x,y,width,ch,8,fill,selected?t.selection:(suspended?t.muted:t.border));
+        this.rect(ctx,x,y,width,ch,8,fill,selected?t.selection:(suspended?t.muted:(physical?'#6b97b6':t.border)));
         ctx.shadowBlur=0;ctx.shadowColor='transparent';
         ctx.save();ctx.beginPath();ctx.roundRect(x+1,y+1,Math.max(1,width-2),ch-2,7);ctx.clip();
         const img=this.image(this.options.getImage?.(c));
@@ -333,7 +338,7 @@
         // A permanent neon start light: a bright vertical core with a soft
         // horizontal glow. The active clip path clips every glow pixel inside
         // the clip, so the light never creates a fake gap or spills outside.
-        const startInk=suspended?t.muted:(selected?t.selection:t.start);
+        const startInk=suspended?t.muted:(selected?t.selection:(physical?'#6aa2c7':t.start));
         const glowWidth=Math.min(selected?18:14,Math.max(0,width-2));
         if(glowWidth>0){
           const startGlow=ctx.createLinearGradient(x+1,y,x+1+glowWidth,y);
@@ -345,7 +350,7 @@
         // Use the available vertical room: metadata sits near the top while
         // generation state sits near the bottom instead of crowding one band.
         const titleY=y+18,statusY=y+ch-15,badgeTop=titleY-11;
-        const badge=`片段 ${i+1}`;
+        const badge=physical?`实体 ${i+1}`:`片段 ${i+1}`;
         ctx.font='12px "Segoe UI","Microsoft YaHei",sans-serif';const badgeWidth=ctx.measureText(badge).width+14;
         this.rect(ctx,x+13,badgeTop,badgeWidth,22,5,t.inset);
         ctx.fillStyle=t.text;ctx.fillText(badge,x+20,titleY);
@@ -369,6 +374,7 @@
         }
         ctx.fillStyle=enhancing?(t.effect||t.progress):failed?t.warning:t.muted;
         const text=suspended?'已挂起 · 编译为空白'
+          :physical?'实体视频 · 跳过生成 · 提供上下文'
           :enhancing?'AI增强中'
           :failed?`生成失败 · ${activity.error||'请查看 ComfyUI 错误'}`
           :visualDone?(activity.real?`已完成 · 生成耗时 ${seconds}s`:`已完成 · 生成耗时 ${seconds}s${activity.example?' · 示例':' · 模拟'}`)
