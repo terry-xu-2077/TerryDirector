@@ -306,11 +306,18 @@ def _plan_items(
             if next_continuity.get("kind") == "overlap" else 1
         )
         item = dict(segment)
+        item["assembly"] = dict(segment["assembly"])
+        if position and selected[position-1]["kind"] == "entity":
+            # The imported predecessor is context-only. Its overlap guides
+            # generation but must not delete the new clip's first frames.
+            item["assembly"]["trim_head_frames"] = 0
+            item["assembly"]["gap_before_frames"] = 0
         segment_seed = segment.get("seed")
         effective_seed = int(seed) if segment_seed is None else int(segment_seed)
         item["_loop"] = {
             "adapter_id": adapter.info.adapter_id,
             "index": int(position),
+            "authored_index": int(segment["index"]),
             "action": action,
             "rerun_target": rerun_clip_id,
             "reuse_path": previous_result["path"] if previous_result else None,
@@ -542,6 +549,8 @@ class TerryDirectorLoopReuse(io.ComfyNode):
             "context_source": action,
             "run_signature": loop["run_signature"],
         }
+        carry["source_path"] = path
+        carry["source_type"] = action
         _notify(loop["loop_id"], segment["id"], "completed")
         return io.NodeOutput(json.dumps(descriptor, ensure_ascii=False), carry)
 
@@ -723,7 +732,8 @@ class TerryDirectorLoopInfo(io.ComfyNode):
             "previous_context": previous_context,
         }
         return io.NodeOutput(
-            int(segment["_loop"]["index"]),
+            int(segment["_loop"].get("authored_index", segment["_loop"]["index"]))
+                if segment["_loop"].get("rerun_target") else int(segment["_loop"]["index"]),
             segment["prompt"],
             adapter.sampling_frames(segment),
             int(segment["_loop"]["seed"]),
@@ -797,6 +807,9 @@ class TerryDirectorLoopCache(io.ComfyNode):
                 segment_format=MOV_HQ):
         segment, _previous_context = _require_loop_context(loop_context)
         loop = segment["_loop"]
+        if isinstance(_previous_context, dict):
+            loop["upstream_path"] = _previous_context.get("source_path")
+            loop["upstream_type"] = _previous_context.get("source_type")
         log_loop_ram("before_clip_save", segment["id"], cls.hidden.execution_list)
         started = time.perf_counter()
         descriptor_text, carry_images, carry_audio = save_loop_segment(
@@ -821,7 +834,11 @@ class TerryDirectorLoopCache(io.ComfyNode):
         _notify(loop["loop_id"], segment["id"], "completed")
         return io.NodeOutput(
             descriptor_text,
-            {"images": carry_images, "audio": carry_audio},
+            {
+                "images": carry_images, "audio": carry_audio,
+                "source_path": descriptor["path"],
+                "source_type": "generated",
+            },
         )
 
 class TerryDirectorLoopEnd(io.ComfyNode):
