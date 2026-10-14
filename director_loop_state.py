@@ -248,7 +248,9 @@ def select_current_takes(
     prev = None
     for part, recipe in zip(segments, recipe_hashes):
         if part.get("kind") == "entity":
-            prev = {"kind": "entity", "source": part["source_asset"]["source"]["path"]}
+            rel = str(part["source_asset"]["source"]["path"])
+            source = str(Path(resolver(rel)).resolve()) if resolver else rel
+            prev = {"kind": "entity", "source": source}
             continue
         # In a rebuild request we have the current authored document and seed,
         # but cannot safely query a live Comfy graph from a separate HTTP
@@ -296,13 +298,19 @@ def select_current_takes(
             )
             actual_source = entry.get("upstream_source")
             # Unknown metadata is treated as stale, not silently compatible.
-            if not previous_source or not actual_source or (
-                prev.get("kind") == "generated"
-                and Path(actual_source).resolve() != Path(previous_source).resolve()
-            ) or (
-                prev.get("kind") == "entity"
-                and Path(actual_source).name != Path(previous_source).name
-            ):
+            recorded_stat = entry.get("upstream_stat") or {}
+            replaced_source = False
+            if prev.get("kind") == "entity" and previous_source:
+                try:
+                    current_stat = Path(previous_source).stat()
+                    replaced_source = (
+                        int(recorded_stat.get("size", -1)) != current_stat.st_size
+                        or int(recorded_stat.get("mtime_ns", -1)) != current_stat.st_mtime_ns
+                    )
+                except (OSError, TypeError, ValueError):
+                    replaced_source = True
+            if (not previous_source or not actual_source or replaced_source
+                or Path(actual_source).resolve() != Path(previous_source).resolve()):
                 stale.append({
                     "segment_id": part["id"],
                     "name": part["name"],
