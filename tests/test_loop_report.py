@@ -203,7 +203,7 @@ class LoopReportTests(unittest.TestCase):
             self.run.clip_event(0, "end")
         report = self.run.markdown()
         self.assertIn("VAEDecode：125.00 s", report)
-        self.assertIn("缓存写入：9.20 s", report)
+        self.assertIn("片段编码保存：9.20 s", report)
 
     def test_external_selflift_log_parser_uses_real_clip_time(self):
         # These are representative lines from the submitted 4h work session,
