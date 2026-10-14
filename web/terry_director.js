@@ -2876,7 +2876,10 @@ function mountNode(node) {
     }
     hideBackingWidget(configWidget(node));
     hideBackingWidget(tailReferencePromptWidget(node));
-    if (node.comfyClass === LOOP_NODE_CLASS) hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
+    if (node.comfyClass === LOOP_NODE_CLASS) {
+      hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
+    }
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
       hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
@@ -2897,7 +2900,10 @@ function mountNode(node) {
   if (!backing) return;
   hideBackingWidget(backing);
   hideBackingWidget(tailReferencePromptWidget(node));
-  if (node.comfyClass === LOOP_NODE_CLASS) hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
+  if (node.comfyClass === LOOP_NODE_CLASS) {
+      hideBackingWidget(node.widgets?.find(w => w.name === "initial_iteration_value"));
+      hideBackingWidget(node.widgets?.find(w => w.name === "rerun_clip_id"));
+    }
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     hideBackingWidget(node.widgets?.find(w => w.name === "save_subfolder"));
     hideBackingWidget(node.widgets?.find(w => w.name === "filename_prefix"));
