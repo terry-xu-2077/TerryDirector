@@ -13,8 +13,8 @@ TerryDirector 是一套直接运行在 **ComfyUI** 中的视频镜头编排节�
 - **镜头连续性**：尾帧参考、尾帧续接、独立镜头与重叠区条件；自动利用上一片段的实际结果。
 - **片段级 Seed**：每个片段可单独指定生成 Seed；留空时继续跟随 TerryDirector 节点的全局 Seed。
 - **片段级 AI Seed**：每个片段可单独指定提示词增强 Seed；留空时跟随 TerryDirector Llama 的全局 AI Seed。
-- **通用循环器主线**：将任意兼容的 ComfyUI 视频生成工作流置入循环域，逐段生成。原 Base / Advanced 已封存隐藏，历史工作流仍可加载。
-- **Self-Lift**：循环体可接入现有 H3 / Self-Lift 或将来其他已适配的采样节点；历史 Base / Advanced 的内置二采功能仅作为旧工作流兼容保留。
+- **通用循环器主线**：将兼容的 ComfyUI 视频生成工作流置入循环域，逐段生成。旧 Base / Advanced 已停止注册，旧工作流须使用旧版提交打开或迁移至循环器。
+- **Self-Lift**：循环体可接入现有 H3 / Self-Lift 或将来其他已适配的采样节点；独立 TerryDirector SelfLift 采样能力保留，旧版二采配置链已移除。
 - **可剪辑镜头交付**：每轮立即保存完整镜头为 MOV / ProRes 422 HQ（默认）或 MP4 / H.264。无需完整 .pt；结束时可选按重叠帧裁切、音频同步后生成 Final.mov / Final.mp4；各镜头原文件保留。
 - **仅重跑指定镜头**：在时间线编辑器标题栏或右键菜单执行，自动从上一镜头历史 MOV/MP4 提取真实尾帧或重叠音画；找不到来源时拒绝运行，不改变原有挂起关系。重跑另存一个版本，不覆盖旧 Final。
 - **实体视频片段**：从已有 ComfyUI input 视频资产插入蓝灰色上下文片段；循环跳过其 AI 采样，允许后续镜头以其尾帧或重叠区域作为条件；目前只作上下文，不参与 Final。
@@ -33,50 +33,21 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 
 ## 节点一览
 
-Base、Advanced、专属配置与旧输出节点已隐藏注册，旧工作流继续可加载，但不再面向新项目推荐。
+已移除 Base / Advanced 及其专属配置与输出节点的新版本注册。**请先备份旧工作流**；若必须打开旧节点，请切换到历史提交 `b751b93` 或使用 Git 历史恢复。新工作流只使用循环器及通用增强节点。
 
 | 节点 | 用途 |
 | --- | --- |
-| **TerryDirector 配置** | 汇集模型、CLIP、视频／音频 VAE、分辨率和普通采样参数 |
-| **TerryDirector 二采配置** | 配置内置 Self-Lift；可选连接到导演配置 |
-| **TerryDirector Llama** | 共享本地 Llama / VLM 推理能力，供导演与其它 Terry 编辑器调用 AI 提示增强 |
-| **TerryDirector 提示词增强编辑器** | 简易多行 STRING 编辑器；连接 TerryDirector Llama 后可用编辑框角落的 ✦ 直接增强当前提示词 |
-| **TerryDirector** | 基础时间线生成节点，提供导演输出 |
-| **TerryDirector Advanced** | 高级生成、视频审片、无损分段缓存、局部重跑与中断恢复 |
-| **TerryDirector 输出** | 将基础导演输出转换为分段 LATENT、合并 IMAGE、合并 AUDIO |
-| **TerryDirector 循环开始** | 按时间线驱动普通视频生成节点组 |
-| **TerryDirector 循环信息** | 输出提示词、采样帧数、Seed、片段数据与图片／视频／音频参考 |
-| **TerryDirector 循环条件** | 将前一段实际画面／声音应用于当前段的 H3 条件 |
-| **TerryDirector 循环结束** | 每轮编码完整 MOV / MP4 镜头，保留原始承接上下文；结束时可选自动裁切重叠并合并成片，另输出循环性能 Markdown 与片段目录 |
+| **TerryDirector 循环开始** | 时间线驱动外部生成工作流；支持从历史 MOV/MP4 续跑 |
+| **TerryDirector 循环信息** | 输出镜头提示词、Seed、帧数、参考素材和片段数据 |
+| **TerryDirector 循环条件** | 为 H3 当前镜头应用尾帧或重叠音画条件 |
+| **TerryDirector 循环结束** | 每轮保存 MOV/MP4，按需组合 Final，输出执行报告和片段目录 |
+| **TerryDirector Llama** | 共享本地 Llama/VLM 的提示词增强能力 |
+| **TerryDirector 提示词增强编辑器** | 连接 Llama 后增强 STRING 提示词 |
+| **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
 
-部分内部节点会自动注册供执行图使用，不需要手动添加到画布。
+独立 SelfLift 内部节点仍可被现有工作流按节点 ID 使用，但不再提供 Base / Advanced 的封装式二采配置。
 
 ## 怎样连接
-
-### 旧版 Base / Advanced（封存兼容）
-
-以下两种模式仅供打开已有工作流，新任务推荐使用时间线循环器。
-
-#### 标准模式
-
-```text
-模型 / CLIP / 视频VAE / 音频VAE ─→ TerryDirector 配置
-                                      │
-                                      ▼
-                                TerryDirector
-                                      │ 导演输出
-                                      ▼
-                              TerryDirector 输出
-                              ├─ 分段潜变量
-                              ├─ 合并画面 ─┐
-                              └─ 合并音频 ─┴─→ CreateVideo → SaveVideo
-```
-
-启用 Self-Lift 时，在「TerryDirector 配置」之前接入 **TerryDirector 二采配置**；普通采样参数会在二采接管后置灰。标准与 Advanced 共用二采配置体系。
-
-#### Advanced 模式
-
-将上图中的主节点换成 **TerryDirector Advanced**；视频由 Advanced 自行保存，支持审片、已生成片段重跑和中断恢复。Advanced 的文件化输出**不等同于**基础模式的完整 IMAGE / AUDIO；需要编辑完整画面时请使用基础模式。
 
 ### 时间线循环器
 
@@ -100,7 +71,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
                                                   └─ 片段输出目录
 ```
 
-循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的低透明度 **圆角凸包「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环结束节点内直接设置「片段保存格式」（默认 MOV · ProRes 422 HQ，另有 MP4 · H.264）以及「循环结束合并整片」（默认开启）。片段在每轮结束时立即编码为完整原镜头视频；最终合并按时间线自动裁掉新片段的重叠开头，精准对齐 24fps 视频和 48kHz 音频。默认无需连接下游 SaveVideo，若仍连接旧 SaveVideo 则可能重复保存最终视频。报告自动保存在 `output/TerryDirector/reports/`，内容涵盖逐段耗时、真实采样进度与显存/RAM 采样峰值；采样器未上报步数时不估算每步速度。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO；当前片段元数据由循环器内部注入，因此无需再从「循环信息」手动拉一根「片段数据」到循环结束。它不接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；文件输出到 `output/TerryDirector/renders/<loop>/<run>/clips/`，最终整片位于同一运行目录 `Final.mov` 或 `Final.mp4`，配套 `timeline.json`。需要断点恢复时保留最近的必要上下文，但**自动跳过已成功片段从失败镜头续跑仍在开发中**。
+循环开始与循环结束之间会自动绘制一个不参与执行、不写入工作流分组的低透明度 **圆角凸包「TerryDirector 循环域」**，用于像 Houdini For-Each Block 一样直观看出循环体范围；区域会随循环体节点移动和连接关系自动更新。循环信息对齐官方 H3 参考上限，提供 9 个图片、3 个视频和 3 个独立音频参考输出；视频会以 24 fps IMAGE 帧序列交给官方 H3 Reference to Video。循环结束节点内直接设置「片段保存格式」（默认 MOV · ProRes 422 HQ，另有 MP4 · H.264）以及「循环结束合并整片」（默认开启）。片段在每轮结束时立即编码为完整原镜头视频；最终合并按时间线自动裁掉新片段的重叠开头，精准对齐 24fps 视频和 48kHz 音频。默认无需连接下游 SaveVideo，若仍连接旧 SaveVideo 则可能重复保存最终视频。报告自动保存在 `output/TerryDirector/reports/`，内容涵盖逐段耗时、真实采样进度与显存/RAM 采样峰值；采样器未上报步数时不估算每步速度。循环结束只接收用户工作流已经解码完成的 IMAGE/AUDIO；当前片段元数据由循环器内部注入，因此无需再从「循环信息」手动拉一根「片段数据」到循环结束。它不接收视频／音频 VAE、不执行 LATENT 解码，也不输出分段 LATENT。需要继续使用采样 LATENT 时，直接从循环体里的采样器分支。循环结束会显示时长、分辨率、预计临时磁盘占用与剩余空间；文件输出到 `output/TerryDirector/renders/<loop>/<run>/clips/`，最终整片位于同一运行目录 `Final.mov` 或 `Final.mp4`，配套 `timeline.json`。断点续跑可自动跳过此前已完成的有效片段；单镜头重跑后可复用既有 MOV/MP4 重组新 Final，不覆盖旧片段或旧 Final。
 
 ## 时间线与编辑
 
@@ -110,7 +81,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
 
 ## 使用边界
 
-TerryDirector 当前以 24 fps 编排视频；不同生成链对帧数和参考素材有各自限制。标准模式的完整 IMAGE 输出仍需要足够系统内存；Advanced 的历史无损缓存及新循环器的 MOV/MP4 输出依赖磁盘空间；当前循环不再默认生成整段 .pt。Self-Lift 性能、画质和显存占用与模型、分辨率、注意力后端及工作流配置有关。
+TerryDirector 当前以 24 fps 编排视频；不同生成链对帧数和参考素材有各自限制。循环器 MOV/MP4 输出需要足够磁盘空间，不默认生成整段 .pt。Self-Lift 性能、画质和显存占用与模型、分辨率、注意力后端及工作流配置有关。
 
 循环器的模型适配器中，`minimax_h3` 已可运行，`ltx_2_5` 仍是明确禁用的预留实现。不会静默把 LTX 数据按 H3 方式解码。
 
