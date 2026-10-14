@@ -6,8 +6,15 @@ on:
       - main
       - fix/loop-vae-ram-recovery
       - feature/timeline-clip-reorder
+      - feature/loop-clip-rerun-media
     paths:
       - director_loop.py
+      - director_loop_reuse.py
+      - director_compile.py
+      - director_core.py
+      - tests/test_loop_clip_reuse.py
+      - src/timeline.js
+      - src/app.css
       - director_loop_media.py
       - director_node.py
       - server_routes.py
@@ -37,7 +44,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
-        run: python -m py_compile director_loop.py director_node.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py director_loop_video.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
+        run: python -m py_compile director_loop.py director_loop_reuse.py director_compile.py director_core.py director_node.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py director_loop_video.py tests/test_loop_clip_reuse.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
+      - name: Physical clip compilation and saved-result lookup
+        run: python -m unittest discover -s tests -p test_loop_clip_reuse.py -v
       - name: Report regression tests
         run: python -m unittest discover -s tests -p test_loop_report.py -v
       - name: X2 temporal window planner regression
@@ -56,6 +65,8 @@ jobs:
       - name: Suspended timeline JS syntax and regression
         run: |
           node --check src/core.js
+          node --check src/app.js
+          node --check src/timeline.js
           node --check src/app.js
           node --input-type=module --check < web/td_timeline_projection.js
           node --input-type=module --check < web/terry_director.js
