@@ -62,6 +62,10 @@ _DIAG_FIELDS = {
     ),
     "RAMCleanup": ("clean_file_cache", "clean_processes", "clean_dlls", "retry_times"),
     "TerryXuMemoryCleanup": ("clean_ram", "clean_vram", "unload_models"),
+    "TerryDirectorH3X2LowRAMDecode": (
+        "temporal_tile_frames", "temporal_context_frames",
+        "spatial_tile_size", "spatial_tile_overlap", "seam_warning_threshold",
+    ),
     "VHS_VideoCombine": ("format", "frame_rate", "crf", "pix_fmt", "save_output"),
     "TerryDirectorLoopInfo": (),
     "TerryDirectorLoopCondition": (),
