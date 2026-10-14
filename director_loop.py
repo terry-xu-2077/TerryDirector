@@ -32,6 +32,9 @@ from .director_loop_adapters import (
 from .director_core import config_json, normalize_config
 from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips, complete_isolated_rerun
 from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context
+from .director_loop_resume import (
+    plan_fingerprint, workflow_fingerprint, find_resume_checkpoint,
+)
 from .director_loop_memory import log_loop_ram, release_completed_body
 from .director_loop_report import start_report, mark_clip, finish_report
 
@@ -235,11 +238,17 @@ def _plan_items(
     adapter_id=DEFAULT_LOOP_ADAPTER,
     llama_config=None,
     rerun_clip_id="",
+    resume_previous=False,
+    workflow_hash="",
+    segment_format=MOV_HQ,
 ):
     # Fail before creating any cache directory if the model has no adapter.
     adapter = get_loop_adapter(adapter_id)
     config = normalize_config(config_data)
     rerun_clip_id = str(rerun_clip_id or "").strip()
+    resume_previous = bool(resume_previous)
+    if resume_previous and rerun_clip_id:
+        raise ValueError("续跑未完成任务与单片段重跑不能同时执行")
     document = config["document"]
     if rerun_clip_id:
         for clip in document["clips"]:
@@ -275,17 +284,42 @@ def _plan_items(
     else:
         selected = all_segments
 
-    run_signature = uuid.uuid4().hex
     cache_key = f"loop-{loop_id}"
+    fingerprint = plan_fingerprint(
+        document, seed, plan, workflow_hash, segment_format,
+    )
+    checkpoint = None
+    if resume_previous:
+        checkpoint = find_resume_checkpoint(
+            loop_id, fingerprint, all_segments, segment_format,
+        )
+        if checkpoint is None:
+            raise ValueError(
+                "未找到与当前时间线、工作流及编码格式完全匹配的未完成任务。"
+                "请检查历史 MOV 文件是否存在；为安全起见不会自动重用参数不一致的结果。"
+            )
+        if rerun_clip_id:
+            raise ValueError("续跑不能和单片段重跑一起执行")
+    run_signature = (checkpoint["run_signature"]
+                     if checkpoint else uuid.uuid4().hex)
+    reused_prefix = checkpoint["completed"] if checkpoint else []
+    print(
+        f"[TerryDirector Loop] {'RESUME' if checkpoint else 'FRESH'} "
+        f"run={run_signature}, matching_completed={len(reused_prefix)}, "
+        f"fingerprint={fingerprint[:12]}", flush=True,
+    )
     # Each new take has a fresh output directory. Prior MOVs are never overwritten.
     items = []
     for position, segment in enumerate(selected):
         action = (
             "entity" if segment["kind"] == "entity"
+            else "resume_result" if checkpoint and position < len(reused_prefix)
             else "reuse_result" if rerun_clip_id and segment["id"] != rerun_clip_id
             else "generate"
         )
-        previous_result = None
+        previous_result = (
+            reused_prefix[position] if action == "resume_result" else None
+        )
         if action == "reuse_result":
             previous_result = find_saved_clip(
                 loop_id, segment["id"], required_frames=segment["output_frames"]
@@ -321,6 +355,8 @@ def _plan_items(
             "action": action,
             "rerun_target": rerun_clip_id,
             "reuse_path": previous_result["path"] if previous_result else None,
+            "reuse_descriptor": previous_result if action == "resume_result" else None,
+            "plan_fingerprint": fingerprint,
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
             "cache_key": cache_key,
             "run_signature": run_signature,
@@ -528,10 +564,10 @@ class TerryDirectorLoopReuse(io.ComfyNode):
         action = loop.get("action")
         if action == "entity":
             path = safe_input_video(segment["source_asset"])
-        elif action == "reuse_result":
+        elif action in ("reuse_result", "resume_result"):
             path = str(loop.get("reuse_path") or "")
             if not os.path.isfile(path):
-                raise FileNotFoundError("上一次生成的视频结果已被移动或删除：" + path)
+                raise FileNotFoundError("上一轮视频文件已被移动或删除：" + path)
         else:
             raise ValueError("无效的片段复用模式")
 
@@ -540,16 +576,18 @@ class TerryDirectorLoopReuse(io.ComfyNode):
         carry = load_tail_context(
             path, segment["output_frames"], int(loop["context_frames"]),
         )
-        descriptor = {
+        descriptor = dict(loop.get("reuse_descriptor") or {})
+        descriptor.update({
             "segment_id": segment["id"],
             "index": loop["index"],
             "frames": segment["output_frames"],
             "path": path,
-            "skip_in_final": True,
+            "skip_in_final": action != "resume_result",
             "context_source": action,
             "run_signature": loop["run_signature"],
+            "plan_fingerprint": loop.get("plan_fingerprint"),
             "loop_id": loop["loop_id"],
-        }
+        })
         carry["source_path"] = path
         carry["source_type"] = action
         try:
@@ -597,6 +635,10 @@ class TerryDirectorLooper(StartLoop):
                     "rerun_clip_id", default="", socketless=True,
                     tooltip="由时间线编辑器临时设置。留空为正常完整循环。",
                 ),
+                io.Boolean.Input(
+                    "resume_previous", default=False, socketless=True,
+                    tooltip="仅在请求恢复上次未完成的同一工作流时设置。",
+                ),
             ],
             outputs=[
                 LoopContextData.Output("loop_context", display_name="循环上下文"),
@@ -614,8 +656,16 @@ class TerryDirectorLooper(StartLoop):
         tail_reference_prompt=DEFAULT_TAIL_REFERENCE_PROMPT,
         llama_config=None,
         rerun_clip_id="",
+        resume_previous=False,
     ):
         loop_id = str(_one(cls.hidden.unique_id))
+        dynprompt = cls.hidden.dynprompt
+        loop = dynprompt.get_node(loop_id)
+        body = set(loop["_loop_body"])
+        end_id = loop["_loop_end"]
+        end_inputs = dynprompt.get_node(end_id).get("inputs", {})
+        format_name = str(end_inputs.get("segment_format", MOV_HQ))
+        workflow_hash = workflow_fingerprint(dynprompt, body)
         items = _plan_items(
             _one(config_json),
             _one(seed),
@@ -623,12 +673,11 @@ class TerryDirectorLooper(StartLoop):
             loop_id,
             llama_config=_one(llama_config),
             rerun_clip_id=_one(rerun_clip_id),
+            resume_previous=_one(resume_previous),
+            workflow_hash=workflow_hash,
+            segment_format=format_name,
         )
-        dynprompt = cls.hidden.dynprompt
         execution_list = cls.hidden.execution_list
-        loop = dynprompt.get_node(loop_id)
-        body = set(loop["_loop_body"])
-        end_id = loop["_loop_end"]
         expanded, last_body_ids = _expand_director_loop(
             dynprompt, loop_id, body, end_id, items, "{}"
         )
