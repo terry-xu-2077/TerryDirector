@@ -70,7 +70,7 @@
 
 ## 循环器与模型适配
 
-当前循环器使用 ComfyUI 原生循环控制，能够传递片段上下文、复用 H3 的帧数／Guide 和无损缓存，最终返回文件化 VIDEO 给官方 SaveVideo。输出端口固定为 `VIDEO`、可选的 `LATENT` 列表；片段采样进度来自 ComfyUI 实际执行事件。流式输出必须保留足够临时磁盘空间。
+**现行循环器**使用 ComfyUI 原生循环控制，驱动用户自行搭建的 H3/SelfLift 等生成链。每段生成完成立即编码为 MOV / ProRes 422 HQ（默认）或 MP4 / H.264，不再默认保存完整 `.pt`；循环结束可选按时间线重叠裁切并合并为 `Final.mov` / `Final.mp4`。循环结束输出最终 `VIDEO`（关闭合并时为空）、性能记录 Markdown、片段目录；无需再依赖下游 SaveVideo 执行最终编码。支持根据历史视频或实体视频承接单镜头重跑，片段采样进度来自 ComfyUI 执行事件。输出盘需要预留镜头文件及合并临时文件空间。
 
 `minimax_h3` 为默认适配器；`ltx_2_5` 为未完成的注册占位，`ready=False`，不会静默退回 H3 解码。模型选择 UI 尚未对 LTX 开放，后续适配需独立 GPU 验收。
 
@@ -84,9 +84,9 @@
 - 边界：现有 IMAGE 输出接口仍要求完整解码缓冲区与最终 IMAGE 同时存在；15 秒段只余约 2 GiB 系统可用内存，其他进程占用或更长的单段仍可能 OOM。持久化失败缓存路径已改到 output 目录并在 ComfyUI 重启后加载，但自动从中断片段续跑、实际 BF16 工作流与完整 14 段尚未验证。
 - 后续兼容方案：新增 TerryDirector 自带的可选 `TerryDirector H3 2X 低内存解码`，使用原版第三方 `MiniMaxH3VAEDecodeFast` 公开接口按 51 帧（含 39 帧因果上下文）的小窗口处理并写入唯一最终 IMAGE 缓冲区，**不要求也不修改第三方解码器源码**。此方案与上面的 13 段验收配置不是同一实现；目前仅有窗口分割和模拟后端的离线回归，仍需新的 GPU 实测，不得把之前的 13 段结果算作该适配器通过。另已修复成功保存后新路径的运行缓存清理，失败/中断缓存仍保留。
 
-### 单片段重跑与实体视频 RTX 3090 验收（2026-10-14，开发分支）
+### 单片段重跑与实体视频 RTX 3090 验收（2026-10-14，本地验证记录）
 
-- 源码基点：`origin/main` 的 `1024b5a58c47351df03e8782d9889cfbea3df72f`；开发分支 `validation/rerun-physical-gpu-20261014`，未合并 main。启动器运行 ID `39108-1791960961870-7`，ComfyUI `b26625f`，RTX 3090、PyTorch `2.11.0+cu130`。以现有 H3/SelfLift API 工作流 `recovery_backup_20261014/ram_fix_10s_api.json` 为链路，改为普通 H3 VAE 解码、608×352（约 0.2 MP）、每段 48 输出帧（H3 合法采样 56 帧）、24 fps；保留原模型、LoRA、8 步调度、SelfLift 与 CFG 设置。生成前 AI、额外 VHS/SaveVideo 支路关闭，以避免第二次编码。提交的是等价于编辑器 `rerun_clip_id` 的 API 请求；本轮未人工点击编辑器按钮，也未运行可选 2X VAE。
+- 源码基点：`origin/main` 的 `1024b5a58c47351df03e8782d9889cfbea3df72f`；测试提交所在分支 `validation/rerun-physical-gpu-20261014`（验收时尚未合并 main）。启动器运行 ID `39108-1791960961870-7`，ComfyUI `b26625f`，RTX 3090、PyTorch `2.11.0+cu130`。以现有 H3/SelfLift API 工作流 `recovery_backup_20261014/ram_fix_10s_api.json` 为链路，改为普通 H3 VAE 解码、608×352（约 0.2 MP）、每段 48 输出帧（H3 合法采样 56 帧）、24 fps；保留原模型、LoRA、8 步调度、SelfLift 与 CFG 设置。生成前 AI、额外 VHS/SaveVideo 支路关闭，以避免第二次编码。提交的是等价于编辑器 `rerun_clip_id` 的 API 请求；本轮未人工点击编辑器按钮，也未运行可选 2X VAE。
 - 输出根目录：`ComfyUI/output/TerryDirector/renders/loop-295/`；同名 JSON 性能报告位于 `ComfyUI/output/TerryDirector/reports/`，本机可重放 API 请求位于工作区 `.codex-run/td_clip_acceptance/`。下表耗时和峰值取各次 TerryDirector JSON 报告，RAM 为全系统已用、RSS 为 ComfyUI 进程、VRAM 为 NVML 全设备已用，单位 GiB；这些采样峰值不等于模型独占分配。
 
 | 任务 / 运行目录前缀 | 实际耗时 | RAM / RSS / VRAM 峰值 | 结果 |
