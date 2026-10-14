@@ -30,7 +30,10 @@ from .director_loop_adapters import (
     get_loop_adapter,
 )
 from .director_core import config_json, normalize_config
-from .director_loop_media import FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips, complete_isolated_rerun
+from .director_loop_media import (
+    FORMATS, MOV_HQ, save_loop_segment, merge_loop_clips,
+    complete_isolated_rerun, rebuild_final_from_saved_clips,
+)
 from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_context
 from .director_loop_resume import (
     plan_fingerprint, workflow_fingerprint, find_resume_checkpoint,
@@ -357,6 +360,13 @@ def _plan_items(
             "reuse_path": previous_result["path"] if previous_result else None,
             "reuse_descriptor": previous_result if action == "resume_result" else None,
             "plan_fingerprint": fingerprint,
+            "assembly_plan": [{
+                "id": part["id"], "name": part["name"],
+                "kind": part.get("kind", "generated"),
+                "output_frames": part["output_frames"],
+                "continuity": part["continuity"],
+                "assembly": part["assembly"],
+            } for part in all_segments] if rerun_clip_id and segment["id"] == rerun_clip_id else None,
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
             "cache_key": cache_key,
             "run_signature": run_signature,
@@ -1039,11 +1049,22 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             part["index"] = index
             index += 1
             skipped_since_output = False
+        rebuilt = None
         if is_rerun and descriptions:
             complete_isolated_rerun(descriptions, str(_one(rerun_clip_id)))
+            if bool(_one(merge_final)):
+                rebuilt, notices = rebuild_final_from_saved_clips(
+                    loop_id=descriptions[0]["loop_id"],
+                    current=descriptions[0],
+                    assembly_plan=descriptions[0].get("assembly_plan") or [],
+                    format_name=format_name,
+                )
+                if notices:
+                    print("[TerryDirector Loop][Rebuild] " + "; ".join(notices), flush=True)
         merged_path = (
+            rebuilt if is_rerun else
             merge_loop_clips(descriptions, merge_final=bool(_one(merge_final)))
-            if descriptions and not is_rerun else None
+            if descriptions else None
         )
         video = InputImpl.VideoFromFile(merged_path) if merged_path else None
         clips_root = (
