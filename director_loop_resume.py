@@ -20,7 +20,7 @@ def canonical_hash(value) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def workflow_fingerprint(dynprompt, body_ids) -> str:
+def workflow_fingerprint(dynprompt, body_ids, is_link) -> str:
     """Hash loop body *and linked upstream nodes* (models, LoRAs, schedules).
 
     Loop control node inputs are separately covered by plan_fingerprint.
@@ -45,9 +45,7 @@ def workflow_fingerprint(dynprompt, body_ids) -> str:
         inputs = dict(node.get("inputs") or {})
         nodes.append({"id": node_id, "type": node.get("class_type"), "inputs": inputs})
         for value in inputs.values():
-            if isinstance(value, list) and len(value) == 2 and (
-                isinstance(value[0], (int, str))
-            ) and isinstance(value[1], int):
+            if is_link(value):
                 pending.append(str(value[0]))
     return canonical_hash(sorted(nodes, key=lambda row: row["id"]))
 
@@ -139,7 +137,8 @@ def find_resume_checkpoint(loop_id, fingerprint, segments, video_format):
                 if not verified_clip(entry, root, segment, video_format, fingerprint):
                     break
                 completed.append(entry)
-            if 0 < len(completed) < len(segments):
+            if (0 < len(completed) < len(segments)
+                    and any(part is not None for part in completed)):
                 return {
                     "run_signature": run_id,
                     "root": str(manifest.parent),
