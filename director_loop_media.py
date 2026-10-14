@@ -482,24 +482,35 @@ def _concat_video(parts: list[tuple[Path, int, int]], destination: Path, format_
     _probe_video(str(destination), expected_frames)
 
 
-def merge_loop_clips(descriptors: list[dict], *, merge_final: bool) -> str | None:
+def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
+                     output_root: str | Path | None = None) -> str | None:
     """Frame-accurate final file from persisted full clips, with exact PCM samples."""
     if not descriptors:
         raise ValueError("循环没有生成有效片段")
     ordered = sorted(descriptors, key=lambda part: int(part["index"]))
     format_name = ordered[0]["segment_format"]
     ext, codec = _encoder(format_name)
-    root = Path(ordered[0]["path"]).resolve().parent.parent
+    root = (Path(output_root).resolve() if output_root is not None
+            else Path(ordered[0]["path"]).resolve().parent.parent)
     expected_run = str(ordered[0]["run_signature"])
+    allow_versions = output_root is not None
+    # When remuxing multiple saved takes, every source must remain under the
+    # same loop-ID's owned render tree. Never accept arbitrary manifest paths.
+    safe_source_root = root.parent
     if not all(
-        str(part.get("run_signature")) == expected_run
+        (allow_versions or str(part.get("run_signature")) == expected_run)
         and str(part.get("segment_format")) == format_name
         and int(part.get("fps", 0)) == FPS
         and int(part.get("width", 0)) == int(ordered[0]["width"])
         and int(part.get("height", 0)) == int(ordered[0]["height"])
         and int(part.get("channels", 0)) == int(ordered[0]["channels"])
         and Path(part["path"]).is_file()
-        and Path(part["path"]).resolve().parent.parent == root
+        and ((
+            Path(part["path"]).resolve().parent.parent == root
+        ) if not allow_versions else (
+            Path(part["path"]).resolve().is_relative_to(safe_source_root)
+            and Path(part["path"]).resolve().parent.name == "clips"
+        ))
         for part in ordered
     ):
         raise ValueError("循环片段编码参数、运行签名或输出路径不一致")
