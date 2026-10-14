@@ -272,12 +272,32 @@ def select_current_takes(
                     expected_recipe=recipe_for(row),
                     required_format=segment_format)
         ), None)
+        legacy_take = False
+        if entry is None and seed is not None:
+            # Users may have ProRes clips saved before recipe fingerprints
+            # were introduced. Permit explicit opt-in assembly, but never
+            # silently claim that those results match current authoring.
+            entry = next((
+                row for row in histories
+                if str(row.get("segment_id")) == str(part["id"])
+                and not row.get("recipe_fingerprint")
+                and _descriptor_valid(row, loop_root,
+                        expected_frames=part["output_frames"],
+                        required_format=segment_format)
+            ), None)
+            legacy_take = entry is not None
         if entry is None:
             problems.append(f"片段「{part['name']}」没有匹配当前参数的已保存视频")
             prev = {"kind": "missing"}
             continue
 
         entry = dict(entry)
+        if legacy_take:
+            stale.append({
+                "segment_id": part["id"],
+                "name": part["name"],
+                "reason": "旧版 MOV 缺少生成指纹，无法保证与当前 Seed 或提示词一致",
+            })
         entry["index"] = len(chosen)
         assembly = part["assembly"]
         entry["trim_head_frames"] = int(assembly["trim_head_frames"])
