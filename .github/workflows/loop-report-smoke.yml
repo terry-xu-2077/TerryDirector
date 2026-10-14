@@ -3,9 +3,17 @@ name: TerryDirector loop report regression
 on:
   push:
     branches:
+      - main
+      - fix/loop-vae-ram-recovery
       - feature/timeline-clip-reorder
     paths:
       - director_loop.py
+      - director_loop_memory.py
+      - director_loop_video.py
+      - director_loop_x2_windows.py
+      - director_loop_x2_decode.py
+      - tests/test_loop_x2_windows.py
+      - tests/test_loop_x2_adapter.py
       - director_loop_report.py
       - director_loop_logmetrics.py
       - tests/test_loop_report.py
@@ -23,9 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
-        run: python -m py_compile director_loop.py director_loop_report.py director_loop_logmetrics.py tests/test_loop_report.py
+        run: python -m py_compile director_loop.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py director_loop_video.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
       - name: Report regression tests
         run: python -m unittest discover -s tests -p test_loop_report.py -v
+      - name: X2 temporal window planner regression
+        run: python -m unittest discover -s tests -p test_loop_x2_windows.py -v
+      - name: X2 adapter regression (runs when PyTorch is available)
+        run: python -m unittest discover -s tests -p test_loop_x2_adapter.py -v
       - name: Suspended timeline JS syntax and regression
         run: |
           node --check src/core.js
