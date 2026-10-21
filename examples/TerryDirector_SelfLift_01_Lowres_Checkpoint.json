@@ -1,0 +1,1050 @@
+{
+  "id": "01821bfb-51c9-4a3e-ae88-a6a538337151",
+  "revision": 0,
+  "last_node_id": 17,
+  "last_link_id": 24,
+  "nodes": [
+    {
+      "id": 1,
+      "type": "UNETLoader",
+      "pos": [
+        50,
+        80
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UNETLoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "default"
+      ],
+      "title": "H3 模型 · 请按本机权重选择"
+    },
+    {
+      "id": 2,
+      "type": "CLIPLoader",
+      "pos": [
+        50,
+        230
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            2
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPLoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "minimax",
+        "default"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "VAELoader",
+      "pos": [
+        50,
+        400
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            3,
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "minimax_h3_video_vae_int8_convrot.safetensors"
+      ],
+      "title": "视频 VAE"
+    },
+    {
+      "id": 4,
+      "type": "VAELoader",
+      "pos": [
+        50,
+        535
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            4,
+            21
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "title": "音频 VAE"
+    },
+    {
+      "id": 5,
+      "type": "ModelPreviewOverrideKJ",
+      "pos": [
+        475,
+        70
+      ],
+      "size": [
+        320,
+        300
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 1
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": null
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            5,
+            6
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ModelPreviewOverrideKJ"
+      },
+      "widgets_values": [
+        512,
+        80,
+        true,
+        12,
+        12,
+        "none",
+        ""
+      ],
+      "title": "KJ · 低清动态预览（可选）"
+    },
+    {
+      "id": 6,
+      "type": "MiniMaxH3ReferenceToVideo",
+      "pos": [
+        480,
+        510
+      ],
+      "size": [
+        365,
+        475
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 2
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 3
+        },
+        {
+          "name": "audio_vae",
+          "type": "VAE",
+          "link": 4
+        },
+        {
+          "name": "ref_images.ref_image_0",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "ref_videos.ref_video_0",
+          "type": "IMAGE",
+          "link": null
+        },
+        {
+          "name": "ref_video_audios.ref_video_audio_0",
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "ref_audios.ref_audio_0",
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "prompt",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "prompt"
+          }
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "height"
+          }
+        },
+        {
+          "name": "length",
+          "type": "INT",
+          "link": null,
+          "widget": {
+            "name": "length"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "links": [
+            7,
+            8
+          ]
+        },
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            13
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MiniMaxH3ReferenceToVideo",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "Photorealistic cinematic video, a solitary astronaut walking slowly across a desolate salt flat at dusk. Fine wind-driven dust, natural human movement and expressive posture, slow dolly-in, soft backlighting, atmospheric haze, no cuts and no captions. Audio: footsteps crunching on salt and distant wind, no background music.",
+        384,
+        224,
+        124,
+        "match"
+      ],
+      "title": "H3 提示词 · 384×224"
+    },
+    {
+      "id": 7,
+      "type": "ConditioningZeroOut",
+      "pos": [
+        920,
+        815
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "conditioning",
+          "type": "CONDITIONING",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            9
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ConditioningZeroOut",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 8,
+      "type": "BasicScheduler",
+      "pos": [
+        920,
+        60
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            10,
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "BasicScheduler",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "simple",
+        8,
+        1
+      ],
+      "title": "完整 8 步 Sigma"
+    },
+    {
+      "id": 9,
+      "type": "SplitSigmas",
+      "pos": [
+        1300,
+        70
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 10
+        }
+      ],
+      "outputs": [
+        {
+          "name": "high_sigmas",
+          "type": "SIGMAS",
+          "links": [
+            11
+          ]
+        },
+        {
+          "name": "low_sigmas",
+          "type": "SIGMAS",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SplitSigmas",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        6
+      ],
+      "title": "第一个输出：前 6 步"
+    },
+    {
+      "id": 10,
+      "type": "KSamplerSelect",
+      "pos": [
+        920,
+        265
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            12
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSamplerSelect",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "euler"
+      ],
+      "title": "Euler"
+    },
+    {
+      "id": 11,
+      "type": "SamplerCustom",
+      "pos": [
+        1660,
+        330
+      ],
+      "size": [
+        325,
+        335
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 6
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 8
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 9
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 12
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 11
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            14
+          ]
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": [
+            15,
+            18,
+            20
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SamplerCustom",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        true,
+        42021,
+        "fixed",
+        5
+      ],
+      "title": "ComfyUI 原生低清 6/8"
+    },
+    {
+      "id": 12,
+      "type": "EmptyMiniMaxH3LatentAV",
+      "pos": [
+        920,
+        1070
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            16
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyMiniMaxH3LatentAV",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        768,
+        448,
+        124
+      ],
+      "title": "目标 768×448 · 只用于检查点"
+    },
+    {
+      "id": 13,
+      "type": "TerryDirectorSaveLowresCheckpoint",
+      "pos": [
+        2080,
+        245
+      ],
+      "size": [
+        340,
+        340
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "low_state",
+          "type": "LATENT",
+          "link": 14
+        },
+        {
+          "name": "low_clean",
+          "type": "LATENT",
+          "link": 15
+        },
+        {
+          "name": "source",
+          "type": "LATENT",
+          "link": 16
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 17
+        }
+      ],
+      "outputs": [
+        {
+          "name": "checkpoint",
+          "type": "TERRYDIRECTOR_SELFLIFT_CHECKPOINT",
+          "links": null
+        },
+        {
+          "name": "checkpoint_id",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirectorSaveLowresCheckpoint"
+      },
+      "widgets_values": [
+        6,
+        42021,
+        5,
+        "示例-宇航员盐湖镜头"
+      ],
+      "title": "持久化 SelfLift 检查点"
+    },
+    {
+      "id": 14,
+      "type": "VAEDecode",
+      "pos": [
+        2080,
+        830
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 18
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 19
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            22
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [],
+      "title": "x0 低清审片画面"
+    },
+    {
+      "id": 15,
+      "type": "VAEDecodeAudio",
+      "pos": [
+        2080,
+        1035
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 20
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 21
+        }
+      ],
+      "outputs": [
+        {
+          "name": "AUDIO",
+          "type": "AUDIO",
+          "links": [
+            23
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecodeAudio",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [],
+      "title": "x0 低清审片声音"
+    },
+    {
+      "id": 16,
+      "type": "CreateVideo",
+      "pos": [
+        2470,
+        835
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 22
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 23
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            24
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CreateVideo",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        24,
+        "auto",
+        "sRGB",
+        "none"
+      ]
+    },
+    {
+      "id": 17,
+      "type": "SaveVideo",
+      "pos": [
+        2810,
+        835
+      ],
+      "size": [
+        315,
+        220
+      ],
+      "flags": {},
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 24
+        }
+      ],
+      "outputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SaveVideo",
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "video/TerryDirector_SelfLift_Lowres",
+        "auto",
+        "auto",
+        "auto"
+      ],
+      "title": "保存低清审片视频"
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      5,
+      0,
+      "MODEL"
+    ],
+    [
+      2,
+      2,
+      0,
+      6,
+      0,
+      "CLIP"
+    ],
+    [
+      3,
+      3,
+      0,
+      6,
+      1,
+      "VAE"
+    ],
+    [
+      4,
+      4,
+      0,
+      6,
+      2,
+      "VAE"
+    ],
+    [
+      5,
+      5,
+      0,
+      8,
+      0,
+      "MODEL"
+    ],
+    [
+      6,
+      5,
+      0,
+      11,
+      0,
+      "MODEL"
+    ],
+    [
+      7,
+      6,
+      0,
+      7,
+      0,
+      "CONDITIONING"
+    ],
+    [
+      8,
+      6,
+      0,
+      11,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      9,
+      7,
+      0,
+      11,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      10,
+      8,
+      0,
+      9,
+      0,
+      "SIGMAS"
+    ],
+    [
+      11,
+      9,
+      0,
+      11,
+      4,
+      "SIGMAS"
+    ],
+    [
+      12,
+      10,
+      0,
+      11,
+      3,
+      "SAMPLER"
+    ],
+    [
+      13,
+      6,
+      1,
+      11,
+      5,
+      "LATENT"
+    ],
+    [
+      14,
+      11,
+      0,
+      13,
+      0,
+      "LATENT"
+    ],
+    [
+      15,
+      11,
+      1,
+      13,
+      1,
+      "LATENT"
+    ],
+    [
+      16,
+      12,
+      0,
+      13,
+      2,
+      "LATENT"
+    ],
+    [
+      17,
+      8,
+      0,
+      13,
+      3,
+      "SIGMAS"
+    ],
+    [
+      18,
+      11,
+      1,
+      14,
+      0,
+      "LATENT"
+    ],
+    [
+      19,
+      3,
+      0,
+      14,
+      1,
+      "VAE"
+    ],
+    [
+      20,
+      11,
+      1,
+      15,
+      0,
+      "LATENT"
+    ],
+    [
+      21,
+      4,
+      0,
+      15,
+      1,
+      "VAE"
+    ],
+    [
+      22,
+      14,
+      0,
+      16,
+      0,
+      "IMAGE"
+    ],
+    [
+      23,
+      15,
+      0,
+      16,
+      1,
+      "AUDIO"
+    ],
+    [
+      24,
+      16,
+      0,
+      17,
+      0,
+      "VIDEO"
+    ]
+  ],
+  "groups": [
+    {
+      "title": "01 · H3 模型 + KJ 预览",
+      "bounding": [
+        18,
+        38,
+        852,
+        750
+      ],
+      "color": "#596777",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "02 · 原生低清采样 / 完整 Sigmas",
+      "bounding": [
+        885,
+        18,
+        1140,
+        1350
+      ],
+      "color": "#497A7A",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "03 · 检查点 + 低清视频",
+      "bounding": [
+        2040,
+        208,
+        1135,
+        1150
+      ],
+      "color": "#A87638",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.73,
+      "offset": [
+        40,
+        60
+      ]
+    }
+  },
+  "version": 0.4
+}
