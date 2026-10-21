@@ -6,11 +6,12 @@
 
 **不另写低清采样器。** 使用 ComfyUI 原生 `SamplerCustom` 或 `SamplerCustomAdvanced` + `Euler`，KJ `Model Preview Override` 仍直接放在低清 MODEL 链路上。TerryDirector 只负责保留用于 SelfLift 的原生两路采样输出，随后读取并执行剩余高清部分。不修改、不导入 selflift-Avatar 源码。
 
-本阶段仅增加三个可见节点：
+本阶段增加三个底层节点，并额外提供一个不重复造采样器的便捷节点：
 
 - **TerryDirector 保存低清检查点**：保存原生 `output` 与 `denoised_output`、原始目标分辨率 AV LATENT、完整 SIGMAS、Seed 和 CFG。
 - **TerryDirector 读取低清检查点**：按镜头名和 ID 选择已有记录，输出轻量引用（不会立刻把所有 Latent 加载到 RAM）。
 - **TerryDirector SelfLift 高清续采**：内部加载检查点，采用现有 TerryDirector SelfLift 分辨率提升代码，执行剩余 Euler 步数。
+- **TerryDirector SelfLift 暂停/继续**：封装保存与恢复，单工作流通过模式切换完成两阶段执行。暂停后软阻断高清下游；继续时四路低清输入使用 ComfyUI 原生惰性求值，不会再次触发低清采样。
 
 原本的一体式 `TerryDirector SelfLift (Internal)` 保持不变，以便 A/B 对照。
 
@@ -44,6 +45,30 @@ SamplerCustom denoised_output   → 保存低清检查点.low_clean
 - 若用 H3 的参考图、尾帧、输入音频、遮罩：低清端须正确应用与低分辨率匹配的条件；高清端须提供与原生成一致的 Conditioning。检查点存储原始目标 Latent（含静态遮罩），**并不存储序列化 CONDITIONING 或模型权重**。
 - `rho=0.6, upscaler_model=none` 是 SelfLift-zero / pixel-anchor 验证入口；若使用 H3 外部 Latent Upscaler，优先尝试 `rho=0` 并从下拉框选择 Upscaler，尽量保持与原一体式工作流参数一致。
 - 只支持标准 Euler / `s_churn=0`、H3 双流 Latent 与非终止 Sigma 检查点。其余采样器或仅有普通最终 Latent 的视频均不能当作有效 SelfLift 恢复点。
+
+## 便捷节点：TerryDirector SelfLift 暂停/继续
+
+在保留显式保存/读取节点的同时，新增一个紧凑的中转节点，示例见 [单工作流 03](../examples/TerryDirector_SelfLift_03_Pause_Continue.json)：
+
+```text
+SamplerCustom 的 output / denoised_output
+              │
+              ▼
+TerryDirector SelfLift 暂停/继续
+              │
+              ▼
+TerryDirector SelfLift 高清续采
+              │
+              ▼
+           SaveVideo
+```
+
+- **暂停并保存**：要求 `low_state`、`low_clean`、`source`、完整 `sigmas`，调用已有保存函数创建新的检查点。返回本次检查点 ID，`checkpoint` 插口输出一个**无错误的 ExecutionBlocker**，下游高清和视频编码不会执行。
+- **继续高清**：直接从节点的 `checkpoint_id` 读取并校验检查点；四个低清插口都标记为 `lazy=True`，不请求输入值，所以即使连线还在，ComfyUI 也不会计算低清采样节点。读取成功才把真实检查点交给高清续采节点。
+- **ID 持久化**：ComfyUI 的 `executed` UI 事件带回保存成功的 UUID；TerryDirector Web 扩展把它写回同一节点的 `checkpoint_id` widget，并同步更新节点标题。**暂停完成后请保存工作流**，保证关闭/重新打开 ComfyUI 时该 ID 仍保留。
+- 切回暂停并重新运行，将创建新的检查点，旧版本不被覆盖；原来的「保存」和「读取」两个节点仍可跨工作流使用。
+- **执行边界**：惰性求值只跳过暂停节点的上游低清依赖。如果同一画布另有低清 `SaveVideo` 等独立输出节点，ComfyUI 仍会按其连接独立运行低清。03 号示例刻意不包含这条独立输出分支，以保证“继续高清不重跑低清”。
+- 如果暂停执行时浏览器已经断线，工作流 widget 可能没有收到自动更新；检查点仍在磁盘上，可以通过显式读取节点找回 ID。第一版没有另外引入全局任务库。
 
 ## 持久化边界
 
