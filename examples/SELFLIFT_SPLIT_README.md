@@ -6,6 +6,23 @@
 | --- | --- | --- |
 | ① | [TerryDirector_SelfLift_01_Lowres_Checkpoint.json](TerryDirector_SelfLift_01_Lowres_Checkpoint.json) | 生成 `state.safetensors` / `manifest.json`，同时输出低清审片视频 |
 | ② | [TerryDirector_SelfLift_02_Highres_Resume.json](TerryDirector_SelfLift_02_Highres_Resume.json) | 从之前的检查点恢复，跳过低清阶段，输出高清 MP4（含音频） |
+| ③ | [TerryDirector_SelfLift_03_Pause_Continue.json](TerryDirector_SelfLift_03_Pause_Continue.json) | 单工作流通过「暂停并保存/继续高清」两种模式自动保存及恢复 |
+
+## ③ 单工作流「暂停/继续」示例（推荐体验）
+
+新增：[TerryDirector_SelfLift_03_Pause_Continue.json](TerryDirector_SelfLift_03_Pause_Continue.json)。
+
+这份示例无需手动摆「保存检查点」和「读取检查点」，同一张画布将原生 `SamplerCustom` 接至 **TerryDirector SelfLift 暂停/继续**，再连接 **TerryDirector SelfLift 高清续采** 与 `SaveVideo`。
+
+1. 导入③，确认模型文件存在、总步数为 8、低清前缀为 6，Seed=42021、CFG=5，且暂停节点位于两段之间。
+2. 首次选择 **「暂停并保存」**，点击 Queue。原生低清采样会运行 6 步，保存新的磁盘检查点，**高清节点和高清 SaveVideo 会被静默阻断**。此时可通过 KJ 的实时动态预览观察低清效果。
+3. 暂停成功后，本节点的 `checkpoint_id` 会由前端从执行结果**自动回填**，并在节点标题显示短 ID。请**保存工作流**，保证重启后该 ID 仍在。
+4. 审片认可后，只把同一个节点的模式切为 **「继续高清」**，再 Queue。无须断开任何前面连接：4 个低清输入被标记为 ComfyUI 原生 lazy input，不会请求上游低清采样。高清节点仅执行余下 2 步。
+5. 下一次要重新审片，只需切回「暂停并保存」重新 Queue，即产生一个全新的不可变检查点，保留之前的数据。
+
+**注意**：为真实保证「继续高清」不重跑低清，这份③示例只把 KJ 作为低清过程预览，**没有再挂另一个低清 `SaveVideo` 输出节点**。如果同时在同一画布放置并激活低清视频输出，ComfyUI 仍然必须运行那条独立的低清输出分支；惰性输入只能跳过本节点路径上的低清依赖。
+
+旧的显式「保存低清检查点」与「读取低清检查点」节点、工作流①和②全部保留，仍用于跨工作流读取、技术对照和回归测试。
 
 ## 运行顺序
 
