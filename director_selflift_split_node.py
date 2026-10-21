@@ -128,16 +128,18 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
         )
 
     @classmethod
-    def check_lazy_status(cls, mode, low_state=None, low_clean=None,
-                          source=None, sigmas=None, **kwargs):
+    def check_lazy_status(cls, mode, **kwargs):
         if mode == "继续高清":
             # Crucial: do not touch/evaluate any connected low-res inputs.
             return []
         if mode == "暂停并保存":
-            return [key for key, value in (
-                ("low_state", low_state), ("low_clean", low_clean),
-                ("source", source), ("sigmas", sigmas)
-            ) if value is None]
+            # Absent optional sockets do not exist in input_data_all. Asking
+            # ComfyUI to evaluate an absent socket raises NodeInputError before
+            # execute() can issue our clear Chinese missing-input message.
+            return [
+                name for name in ("low_state", "low_clean", "source", "sigmas")
+                if name in kwargs and kwargs[name] is None
+            ]
         return []
 
     @classmethod
