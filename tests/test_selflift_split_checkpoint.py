@@ -107,6 +107,60 @@ class CheckpointTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "校验失败"):
             self.module.load_checkpoint(cid)
 
+    def test_highres_consumes_only_remaining_sigmas_and_preserves_audio(self):
+        from torch.nn import functional as F
+        resume = importlib.import_module(PKG + ".director_selflift_resume")
+        cid = self.module.save_checkpoint(**self.inputs())
+
+        class Format:
+            def process_in(self, x): return x
+            def process_out(self, x): return x
+
+        class Flow:
+            def noise_scaling(self, sigma, noise, clean): return sigma * noise + (1 - sigma) * clean
+            def inverse_noise_scaling(self, sigma, x): return x / (1 - sigma)
+
+        class Model:
+            def __init__(self):
+                self.model = self
+                self.format = Format()
+                self.flow = Flow()
+            def get_model_object(self, name):
+                return self.format if name == "latent_format" else self.flow
+
+        class Backend:
+            device = torch.device("cpu")
+            dtype = torch.float32
+            def __init__(self):
+                self.sample_calls = []
+            def validate(self, model, high_model, sampler): pass
+            def interrupt(self): pass
+            def noise(self, latent, seed, batch_index): return torch.zeros_like(latent)
+            def pack(self, streams): return Nested(*streams)
+            def split(self, value): return list(value.unbind())
+            def mask_model(self, model, source, masks): return model
+            def preview(self, model, steps): return None
+            def sample(self, model, noise, positive, negative, cfg, sampler, sigmas,
+                       latent, callback, seed):
+                self.sample_calls.append(sigmas.cpu().tolist())
+                for step in range(len(sigmas) - 1):
+                    callback(step, None, None, len(sigmas) - 1)
+                return latent
+
+        backend = Backend()
+        result = resume.resume_highres(
+            checkpoint={"checkpoint_id": cid}, model=Model(), positive=[],
+            negative=[], vae=None, sampler=None, rho=0.0, w_min=0.5,
+            w_max=1.0, upscaler_model="fake",
+            _backend=backend,
+            _lifter=lambda x, target, _: F.interpolate(
+                x, size=(x.shape[2], *target), mode="nearest"))
+        self.assertEqual(len(backend.sample_calls), 1)
+        self.assertEqual(len(backend.sample_calls[0]), 3)  # remaining two steps
+        av = result["samples"].unbind()
+        self.assertEqual(tuple(av[0].shape), (1, 4, 3, 4, 8))
+        self.assertTrue(torch.equal(av[1], torch.ones(1, 2, 4, 3) * 2))
+
     def test_checkpoint_is_immutable_version(self):
         cid1 = self.module.save_checkpoint(**self.inputs())
         cid2 = self.module.save_checkpoint(**self.inputs())
