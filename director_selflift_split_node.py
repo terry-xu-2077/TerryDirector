@@ -87,6 +87,116 @@ class TerryDirectorReadLowresCheckpoint(io.ComfyNode):
                              matched["checkpoint_id"])
 
 
+class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
+    """An explicit, disk-backed pause boundary for a native low-res Euler sampler.
+
+    All four latent/sigma inputs are lazy. In 'continue' mode ComfyUI therefore
+    has no reason to evaluate the upstream low-res sampler at all. In 'pause'
+    mode an ExecutionBlocker travels along the checkpoint output so an attached
+    high-res sampler and its video encoder cannot accidentally run.
+    """
+
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="TerryDirectorSelfLiftPauseResume",
+            display_name="TerryDirector SelfLift 暂停/继续",
+            category="TerryDirector/SelfLift",
+            description=(
+                "暂停：运行低清上游并将可恢复的检查点自动保存到磁盘，高清下游不执行。"
+                "继续：跳过全部低清上游，自动读取上次保存的检查点并开始高清。"
+                "保存后会自动将检查点 ID 写到本节点，保存工作流后下次仍可继续。"
+            ),
+            is_output_node=True,
+            inputs=[
+                io.Combo.Input("mode", options=["暂停并保存", "继续高清"], default="暂停并保存"),
+                io.String.Input("checkpoint_id", default="",
+                                tooltip="暂停成功后会自动写入。也可以粘贴现有的完整检查点 ID。"),
+                io.String.Input("name", default="未命名低清镜头"),
+                io.Int.Input("transition_step", default=6, min=1, max=10000),
+                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff),
+                io.Float.Input("cfg", default=5.0, min=0.0, max=100.0),
+                io.Latent.Input("low_state", display_name="低清 output", optional=True, lazy=True),
+                io.Latent.Input("low_clean", display_name="低清 denoised_output", optional=True, lazy=True),
+                io.Latent.Input("source", display_name="目标分辨率原始 Latent", optional=True, lazy=True),
+                io.Sigmas.Input("sigmas", display_name="完整 SIGMAS", optional=True, lazy=True),
+            ],
+            outputs=[
+                CheckpointData.Output("checkpoint", display_name="高清检查点"),
+                io.String.Output("checkpoint_id", display_name="检查点 ID"),
+            ],
+        )
+
+    @classmethod
+    def check_lazy_status(cls, mode, low_state=None, low_clean=None,
+                          source=None, sigmas=None, **kwargs):
+        if mode == "继续高清":
+            # Crucial: do not touch/evaluate any connected low-res inputs.
+            return []
+        if mode == "暂停并保存":
+            return [key for key, value in (
+                ("low_state", low_state), ("low_clean", low_clean),
+                ("source", source), ("sigmas", sigmas)
+            ) if value is None]
+        return []
+
+    @classmethod
+    def execute(cls, mode, checkpoint_id, name, transition_step, seed, cfg,
+                low_state=None, low_clean=None, source=None, sigmas=None):
+        from comfy_execution.graph_utils import ExecutionBlocker
+
+        if mode == "暂停并保存":
+            missing = [label for label, value in (
+                ("低清 output", low_state), ("低清 denoised_output", low_clean),
+                ("目标分辨率原始 Latent", source), ("完整 SIGMAS", sigmas)
+            ) if value is None]
+            if missing:
+                raise ValueError("暂停/继续：暂停模式缺少输入：" + "、".join(missing))
+            saved_id = save_checkpoint(
+                low_state=low_state, low_clean=low_clean, source=source,
+                sigmas=sigmas, transition_step=transition_step, seed=seed,
+                cfg=cfg, name=name,
+            )
+            # A soft execution blocker on ONLY the checkpoint output prevents
+            # every downstream high-res consumer from executing in pause mode.
+            # The ID and UI status are still returned and can be persisted.
+            return io.NodeOutput(
+                ExecutionBlocker(None), saved_id,
+                ui={"terrydirector_selflift_checkpoint": [{
+                    "checkpoint_id": saved_id, "mode": "paused",
+                    "name": str(name).strip()[:120] or "未命名低清镜头",
+                }]},
+            )
+        if mode == "继续高清":
+            selected_id = str(checkpoint_id or "").strip()
+            if not selected_id:
+                raise ValueError(
+                    "暂停/继续：当前没有可继续的检查点，请先以“暂停并保存”模式运行一次"
+                )
+            from .director_selflift_checkpoint import load_checkpoint
+            try:
+                saved = load_checkpoint(selected_id)
+            except (FileNotFoundError, OSError) as exc:
+                raise ValueError("暂停/继续：指定的检查点不存在或已被删除") from exc
+            except (KeyError, ValueError, RuntimeError) as exc:
+                raise ValueError(f"暂停/继续：检查点损坏或不兼容：{exc}") from exc
+            manifest = saved["manifest"]
+            return io.NodeOutput(
+                {"checkpoint_id": selected_id}, selected_id,
+                ui={"terrydirector_selflift_checkpoint": [{
+                    "checkpoint_id": selected_id, "mode": "continued",
+                    "name": manifest["name"],
+                }]},
+            )
+        raise ValueError("暂停/继续：无效的模式")
+
+    @classmethod
+    def fingerprint_inputs(cls, **kwargs):
+        # Fresh pause creates a new immutable checkpoint. Continue rechecks
+        # disk existence and content rather than using a stale cached ref.
+        return float("NaN")
+
+
 class TerryDirectorSelfLiftHighres(io.ComfyNode):
     @classmethod
     def define_schema(cls):
