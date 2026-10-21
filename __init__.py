@@ -5,6 +5,7 @@ from .director_selflift_split_node import (
     TerryDirectorSaveLowresCheckpoint,
     TerryDirectorReadLowresCheckpoint,
     TerryDirectorSelfLiftHighres,
+    TerryDirectorSelfLiftPauseResume,
 )
 from .director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
 from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
@@ -37,6 +38,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorSaveLowresCheckpoint,
             TerryDirectorReadLowresCheckpoint,
             TerryDirectorSelfLiftHighres,
+            TerryDirectorSelfLiftPauseResume,
             TerryDirectorH3X2LowRAMDecode,
             TerryDirectorLooper,
             TerryDirectorLoopInfo,
