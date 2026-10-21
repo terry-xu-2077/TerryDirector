@@ -45,6 +45,8 @@ def _prepare(low_state, low_clean, source, sigmas, transition_step):
     originals = _streams(source, "目标分辨率 latent")
     k = int(transition_step)
     validate_schedule(sigmas, k)
+    if float(sigmas[-1]) != 0.0:
+        raise ValueError("需要完整且以 sigma=0 结束的 SIGMAS，不能只保存低清前缀")
     if [tuple(x.shape) for x in states] != [tuple(x.shape) for x in cleans]:
         raise ValueError("output 与 denoised_output 形状不同")
     if states[0].shape[:3] != originals[0].shape[:3] or tuple(states[1].shape) != tuple(originals[1].shape):
