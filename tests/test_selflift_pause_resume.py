@@ -130,6 +130,9 @@ class PauseResumeTests(unittest.TestCase):
             mode="暂停并保存", low_state=None, low_clean=None,
             source=None, sigmas=None),
             ["low_state", "low_clean", "source", "sigmas"])
+        # Unconnected optional sockets are not evaluated and get a friendly
+        # validation error from execute() instead of an internal graph error.
+        self.assertEqual(node.check_lazy_status(mode="暂停并保存"), [])
 
     def test_pause_blocks_highres_and_continue_uses_same_disk_id(self):
         node = self.module.TerryDirectorSelfLiftPauseResume
