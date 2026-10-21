@@ -48,10 +48,10 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
             raise ValueError("SelfLift: 空间分块仅支持视频全生成、音频全保留")
     target = tuple(source[0].shape[-2:])
     fmt = model.get_model_object("latent_format")
-    # Native SamplerCustom's denoised_output has already undergone
-    # model.process_latent_out; convert it back to the model's x0 domain.
-    clean_internal = model.model.process_latent_in(low_clean[0].float())
-    clean_video_vae = fmt.process_out(clean_internal)
+    # Native SamplerCustom has already processed denoised_output into VAE
+    # latent space. Do not pass a bare video tensor through MiniMaxH3's
+    # AV process_latent_in/out (those methods also rescale packed audio).
+    clean_video_vae = low_clean[0].float()
     direct = anchor = None
     if need_direct:
         if upscaler_model != "none":
@@ -86,12 +86,12 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     unscaled_video = flow.inverse_noise_scaling(sigma_resume, video_next)
     # Native SamplerCustom's ordinary output already carries the audio stream
     # through the final low-res Euler interval. Do NOT advance audio twice.
-    video_resume = model.model.process_latent_out(unscaled_video)
+    video_resume = fmt.process_out(unscaled_video)
     resume = backend.pack([video_resume, low_state[1]])
     zero_noise = backend.pack([torch.zeros_like(video_resume),
                               torch.zeros_like(low_state[1])])
     del low_clean, low_state, noise, direct, anchor, clean_video_vae
-    del clean_high, clean_internal, video_state, video_next, unscaled_video
+    del clean_high, video_state, video_next, unscaled_video
     backend.interrupt()
     high_model = model
     if highres_tiling:
