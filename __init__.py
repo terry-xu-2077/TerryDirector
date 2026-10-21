@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from .director_selflift_node import TerryDirectorSelfLiftSampler
+from .director_selflift_split_node import (
+    TerryDirectorSaveLowresCheckpoint,
+    TerryDirectorReadLowresCheckpoint,
+    TerryDirectorSelfLiftHighres,
+)
 from .director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
 from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
 
@@ -29,6 +34,9 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorLlamaConfig,
             TerryDirectorPromptEnhancer,
             TerryDirectorSelfLiftSampler,
+            TerryDirectorSaveLowresCheckpoint,
+            TerryDirectorReadLowresCheckpoint,
+            TerryDirectorSelfLiftHighres,
             TerryDirectorH3X2LowRAMDecode,
             TerryDirectorLooper,
             TerryDirectorLoopInfo,
