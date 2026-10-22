@@ -1,7 +1,7 @@
 {
   "id": "f2dfb56b-4168-4706-bf35-69f8cde49260",
   "revision": 0,
-  "last_node_id": 26,
+  "last_node_id": 27,
   "last_link_id": 35,
   "nodes": [
     {
@@ -37,8 +37,7 @@
       "widgets_values": [
         "minimax_h3_fl2va_bf16.safetensors",
         "default"
-      ],
-      "title": "H3 模型 · FL2VA BF16（默认对照配置）"
+      ]
     },
     {
       "id": 2,
@@ -72,8 +71,7 @@
         "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "minimax",
         "default"
-      ],
-      "title": "Qwen3VL CLIP · INT8 ConvRot"
+      ]
     },
     {
       "id": 3,
@@ -106,8 +104,7 @@
       },
       "widgets_values": [
         "minimax_h3_video_vae_int8_convrot.safetensors"
-      ],
-      "title": "视频 VAE"
+      ]
     },
     {
       "id": 4,
@@ -140,8 +137,7 @@
       },
       "widgets_values": [
         "minimax_h3_audio_vae_fp32.safetensors"
-      ],
-      "title": "音频 VAE"
+      ]
     },
     {
       "id": 5,
@@ -195,8 +191,7 @@
         12,
         "taeh3.safetensors",
         ""
-      ],
-      "title": "KJ · 低清预览（默认对照配置）"
+      ]
     },
     {
       "id": 6,
@@ -309,8 +304,7 @@
         544,
         124,
         "match"
-      ],
-      "title": "H3 提示词 · 低清 0.5MP"
+      ]
     },
     {
       "id": 7,
@@ -387,8 +381,7 @@
         "simple",
         8,
         1
-      ],
-      "title": "完整 8 步 Sigma → H3 Sigma Refiner"
+      ]
     },
     {
       "id": 9,
@@ -431,8 +424,7 @@
       },
       "widgets_values": [
         6
-      ],
-      "title": "第一个输出：前 6 步（含 Sigma Refiner）"
+      ]
     },
     {
       "id": 10,
@@ -465,8 +457,7 @@
       },
       "widgets_values": [
         "euler"
-      ],
-      "title": "Euler"
+      ]
     },
     {
       "id": 11,
@@ -539,8 +530,7 @@
         8,
         "fixed",
         1
-      ],
-      "title": "ComfyUI 原生低清 6/8（seed=8, CFG=1）"
+      ]
     },
     {
       "id": 12,
@@ -574,8 +564,7 @@
         1920,
         1088,
         124
-      ],
-      "title": "目标 2.0MP · 只用于检查点"
+      ]
     },
     {
       "id": 13,
@@ -637,8 +626,7 @@
         6,
         8,
         1
-      ],
-      "title": "TerryDirector SelfLift 暂停/继续 · 0.5→2.0MP"
+      ]
     },
     {
       "id": 18,
@@ -705,8 +693,7 @@
         "manual",
         4,
         "auto"
-      ],
-      "title": "SelfLift 高清续采 · 2MP 空间分块（4块）"
+      ]
     },
     {
       "id": 19,
@@ -747,8 +734,7 @@
         "Node name for S&R": "VAEDecode",
         "cnr_id": "comfy-core"
       },
-      "widgets_values": [],
-      "title": "高清画面"
+      "widgets_values": []
     },
     {
       "id": 20,
@@ -789,8 +775,7 @@
         "Node name for S&R": "VAEDecodeAudio",
         "cnr_id": "comfy-core"
       },
-      "widgets_values": [],
-      "title": "高清声音"
+      "widgets_values": []
     },
     {
       "id": 21,
@@ -875,8 +860,7 @@
         "auto",
         "auto",
         "auto"
-      ],
-      "title": "高清结果"
+      ]
     },
     {
       "id": 23,
@@ -913,8 +897,7 @@
       },
       "widgets_values": [
         "comfy kitchen attention"
-      ],
-      "title": "高清 MODEL · Comfy Kitchen Attention"
+      ]
     },
     {
       "id": 24,
@@ -951,8 +934,7 @@
       },
       "widgets_values": [
         8
-      ],
-      "title": "高清 · head chunks = 8"
+      ]
     },
     {
       "id": 25,
@@ -990,8 +972,7 @@
       "widgets_values": [
         2,
         4096
-      ],
-      "title": "高清 · FF chunks=2 threshold=4096"
+      ]
     },
     {
       "id": 26,
@@ -1032,8 +1013,30 @@
         0.7,
         0,
         "cosine"
+      ]
+    },
+    {
+      "id": 27,
+      "type": "MarkdownNote",
+      "pos": [
+        -650,
+        80
       ],
-      "title": "参考 · 低噪 Sigma 细化 +1步"
+      "size": [
+        500,
+        300
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "# SelfLift · 0.5 MP → 2 MP 高分辨率方案\n\n这是较高分辨率的参考方案，不是默认审片工作流。\n\n- 目标高清分辨率约 2 MP（1920×1088），低清阶段约 0.5 MP。\n- 高清阶段启用了 4 块空间分块，并连接独立的高清 MODEL 优化链，以控制高分辨率采样的峰值显存。\n- 此方案更吃显存和系统资源。建议先用工作流 03 确认提示词、参考图和检查点流程，再测试本方案。\n- 检查点必须与当前提示词、参考条件、模型、Seed、CFG、目标分辨率和 Sigma 日程匹配。\n\n工作流节点保留默认名称；说明集中放在本便笺中。"
+      ]
     }
   ],
   "links": [
