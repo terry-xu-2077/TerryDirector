@@ -38,8 +38,8 @@ class TerryDirectorSaveLowresCheckpoint(io.ComfyNode):
                 io.Latent.Input("source", display_name="目标分辨率原始 Latent"),
                 io.Sigmas.Input("sigmas", display_name="完整 SIGMAS"),
                 io.Int.Input("transition_step", default=6, min=1, max=10000),
-                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff),
-                io.Float.Input("cfg", default=5.0, min=0.0, max=100.0),
+                io.Int.Input("seed", default=8, min=0, max=0xffffffffffffffff),
+                io.Float.Input("cfg", default=1.0, min=0.0, max=100.0),
                 io.String.Input("name", default="未命名低清镜头"),
             ],
             outputs=[
@@ -116,8 +116,8 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                                 tooltip="暂停成功后会自动写入。也可以粘贴现有的完整检查点 ID。"),
                 io.String.Input("name", default="未命名低清镜头"),
                 io.Int.Input("transition_step", default=6, min=1, max=10000),
-                io.Int.Input("seed", default=0, min=0, max=0xffffffffffffffff),
-                io.Float.Input("cfg", default=5.0, min=0.0, max=100.0),
+                io.Int.Input("seed", default=8, min=0, max=0xffffffffffffffff),
+                io.Float.Input("cfg", default=1.0, min=0.0, max=100.0),
                 io.Latent.Input("low_state", display_name="低清 output", optional=True, lazy=True),
                 io.Latent.Input("low_clean", display_name="低清 denoised_output", optional=True, lazy=True),
                 io.Latent.Input("source", display_name="目标分辨率原始 Latent", optional=True, lazy=True),
@@ -249,7 +249,7 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
                 io.Combo.Input("upscaler_model", options=available, default=default_model,
                                tooltip="必需：H3 3D Latent Upscaler。模型路径：models/latent_upscale_models/；不执行中间 VAE 往返。"),
                 io.Boolean.Input("highres_tiling", default=False,
-                                 tooltip="H3 高清空间分块，参考参数：开启。"
+                                 tooltip="H3 高清空间分块；默认关闭，需要降低高清阶段峰值显存时可开启。"
                                          "只有视频按空间分块，音频保留完整上下文。"),
                 io.Combo.Input("tiling_mode", options=["auto", "manual"], default="manual"),
                 io.Combo.Input("tiling_tiles", options=[2, 4, 6, 8], default=4),
