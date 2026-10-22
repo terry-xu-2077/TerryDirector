@@ -48,6 +48,25 @@ SamplerCustom denoised_output   → 保存低清检查点.low_clean
 - **外部 H3 Latent Upscaler**：`rho=0`，下拉框指定已安装的 H3 Upscaler 权重，无需强制 VAE 像素锚往返，优先用来与 SelfLift-Avatar 效果对照。
 - 只支持标准 Euler / `s_churn=0`、H3 双流 Latent 与非终止 Sigma 检查点。其余采样器或仅有普通最终 Latent 的视频均不能当作有效 SelfLift 恢复点。
 
+## 来自已验证工作流的高清参考参数（2026-10-22）
+
+用户提供的 `Self-Lift工作流-爱屋-1020.json` 使用 SelfLift-Avatar 的 `SelfLiftAvatarH3Sampler`，实际配置：
+
+```text
+CFG=1, transition_step=6, lowres_scale=0.5
+rho=0, w_min=0.5, w_max=1
+upscaler_model=minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors
+highres_tiling=true, tiling_mode=manual, tiling_tiles=4, tiling_axis=auto
+highres_tiling_mode=spatial
+```
+
+- 高清输入是单独的模型分支，顺序为 `ModelAttentionBackend(comfy kitchen attention)`、`MiniMaxLowVRAMAttention(head_chunks=8)`、`MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)`。TerryDirector 的 `TerryDirectorSelfLiftHighres` 因此增加可选 `high_res_model` 输入；没有单独接线时仍沿用原 `model`，不会影响旧工作流。
+- 参考中虽然出现 Spark/Veda 节点，但两者 `mode=4`（bypass），因此未把它们当作实际生效的加速配置。
+- `BasicScheduler` 为 simple/8 步，后面使用 `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)`；它对低噪尾段增加一步后，低清先走 6 步，高清续采剩余步数。
+- `highres_tiling_mode=spatial` 与 TerryDirector 现有 `director_selflift_tiling.py` 的空间切块方向一致，但实现未经过逐像素数值一致性验证。`highres_token_chunk=4096` / `highres_weight_cache_gb=4` 不在 spatial 模式下使用，暂不引入冗余 UI。
+- 正式参考样例放在 `examples/TerryDirector_SelfLift_04_Reference_2MP_Highres.json`：低清 960×544、高清 1920×1088、5 秒/124 帧。原参考的 15 秒、fl2va BF16 基础模型和 LoRA **没有无条件复制**；样例仍用现有 ref2va INT8 以限制同时变化的变量。03 号原生 nearest 小样例保留用于快速排错。
+- 学得的 3D Latent Upscaler 与 SelfLift-zero 的 VAE 像素锚不是相同操作；`rho=0` 使用前者，故高清阶段不需要再次整段解码/回编码，降低之前的 VAE 卡顿风险。
+
 ## 便捷节点：TerryDirector SelfLift 暂停/继续
 
 在保留显式保存/读取节点的同时，新增一个紧凑的中转节点，示例见 [单工作流 03](../examples/TerryDirector_SelfLift_03_Pause_Continue.json)：
