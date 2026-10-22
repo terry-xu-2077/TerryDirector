@@ -1,8 +1,8 @@
 {
   "id": "f2dfb56b-4168-4706-bf35-69f8cde49260",
   "revision": 0,
-  "last_node_id": 27,
-  "last_link_id": 35,
+  "last_node_id": 33,
+  "last_link_id": 47,
   "nodes": [
     {
       "id": 1,
@@ -253,7 +253,7 @@
         {
           "name": "width",
           "type": "INT",
-          "link": null,
+          "link": 39,
           "widget": {
             "name": "width"
           }
@@ -261,7 +261,7 @@
         {
           "name": "height",
           "type": "INT",
-          "link": null,
+          "link": 40,
           "widget": {
             "name": "height"
           }
@@ -269,7 +269,7 @@
         {
           "name": "length",
           "type": "INT",
-          "link": null,
+          "link": 44,
           "widget": {
             "name": "length"
           }
@@ -502,6 +502,33 @@
           "name": "latent_image",
           "type": "LATENT",
           "link": 13
+        },
+        {
+          "localized_name": "添加噪波",
+          "name": "add_noise",
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "add_noise"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "噪波种子",
+          "name": "noise_seed",
+          "type": "INT",
+          "widget": {
+            "name": "noise_seed"
+          },
+          "link": 46
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "widget": {
+            "name": "cfg"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -545,7 +572,35 @@
       "flags": {},
       "order": 12,
       "mode": 0,
-      "inputs": [],
+      "inputs": [
+        {
+          "localized_name": "宽度",
+          "name": "width",
+          "type": "INT",
+          "widget": {
+            "name": "width"
+          },
+          "link": 41
+        },
+        {
+          "localized_name": "高度",
+          "name": "height",
+          "type": "INT",
+          "widget": {
+            "name": "height"
+          },
+          "link": 42
+        },
+        {
+          "localized_name": "长度",
+          "name": "length",
+          "type": "INT",
+          "widget": {
+            "name": "length"
+          },
+          "link": 45
+        }
+      ],
       "outputs": [
         {
           "name": "LATENT",
@@ -560,7 +615,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        1920,
+        1888,
         1088,
         124
       ]
@@ -599,6 +654,60 @@
           "name": "sigmas",
           "type": "SIGMAS",
           "link": 17
+        },
+        {
+          "localized_name": "mode",
+          "name": "mode",
+          "type": "COMBO",
+          "widget": {
+            "name": "mode"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "checkpoint_id",
+          "name": "checkpoint_id",
+          "type": "STRING",
+          "widget": {
+            "name": "checkpoint_id"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "name",
+          "name": "name",
+          "type": "STRING",
+          "widget": {
+            "name": "name"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "transition_step",
+          "name": "transition_step",
+          "type": "INT",
+          "widget": {
+            "name": "transition_step"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "seed",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": 47
+        },
+        {
+          "localized_name": "cfg",
+          "name": "cfg",
+          "type": "FLOAT",
+          "widget": {
+            "name": "cfg"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -1032,6 +1141,395 @@
       "widgets_values": [
         "# SelfLift · 0.5 MP → 2 MP 高分辨率方案\n\n这是较高分辨率的参考方案，不是默认审片工作流。\n\n- 目标高清分辨率约 2 MP（1920×1088），低清阶段约 0.5 MP。\n- 高清阶段启用了 4 块空间分块，并连接独立的高清 MODEL 优化链，以控制高分辨率采样的峰值显存。\n- 此方案更吃显存和系统资源。建议先用工作流 03 确认提示词、参考图和检查点流程，再测试本方案。\n- 检查点必须与当前提示词、参考条件、模型、Seed、CFG、目标分辨率和 Sigma 日程匹配。\n\n工作流节点保留默认名称；说明集中放在本便笺中。"
       ]
+    },
+    {
+      "id": 28,
+      "type": "TerryDirectorDualSamplingResolutionSelector",
+      "pos": [
+        230,
+        810
+      ],
+      "size": [
+        360,
+        200
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "宽高比",
+          "name": "aspect_ratio",
+          "type": "COMBO",
+          "widget": {
+            "name": "aspect_ratio"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "低清百万像素",
+          "name": "lowres_megapixels",
+          "type": "FLOAT",
+          "widget": {
+            "name": "lowres_megapixels"
+          },
+          "link": 38
+        },
+        {
+          "localized_name": "高清百万像素",
+          "name": "highres_megapixels",
+          "type": "FLOAT",
+          "widget": {
+            "name": "highres_megapixels"
+          },
+          "link": 36
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "低清宽度",
+          "name": "lowres_width",
+          "type": "INT",
+          "links": [
+            39
+          ]
+        },
+        {
+          "localized_name": "低清高度",
+          "name": "lowres_height",
+          "type": "INT",
+          "links": [
+            40
+          ]
+        },
+        {
+          "localized_name": "高清宽度",
+          "name": "highres_width",
+          "type": "INT",
+          "links": [
+            41
+          ]
+        },
+        {
+          "localized_name": "高清高度",
+          "name": "highres_height",
+          "type": "INT",
+          "links": [
+            42
+          ]
+        },
+        {
+          "localized_name": "低清实际 MP",
+          "name": "lowres_actual_megapixels",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "localized_name": "高清实际 MP",
+          "name": "highres_actual_megapixels",
+          "type": "FLOAT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirectorDualSamplingResolutionSelector"
+      },
+      "widgets_values": [
+        "16:9 (Widescreen)",
+        0.5,
+        2
+      ],
+      "widgets_values_named": {
+        "aspect_ratio": "16:9 (Widescreen)",
+        "lowres_megapixels": 0.5,
+        "highres_megapixels": 2
+      }
+    },
+    {
+      "id": 29,
+      "type": "SeedNode",
+      "pos": [
+        60,
+        1250
+      ],
+      "size": [
+        270,
+        82
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "种子",
+          "name": "seed",
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "种子",
+          "name": "seed",
+          "type": "INT",
+          "links": [
+            46,
+            47
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SeedNode"
+      },
+      "widgets_values": [
+        8,
+        "fixed"
+      ],
+      "widgets_values_named": {
+        "seed": 8,
+        "control_after_generate": "fixed"
+      },
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 30,
+      "type": "PrimitiveFloat",
+      "pos": [
+        -570,
+        1180
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "值",
+          "name": "value",
+          "type": "FLOAT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "浮点",
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            43
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveFloat"
+      },
+      "widgets_values": [
+        5
+      ],
+      "widgets_values_named": {
+        "value": 5
+      },
+      "color": "#323",
+      "bgcolor": "#535"
+    },
+    {
+      "id": 31,
+      "type": "ComfyMathExpression",
+      "pos": [
+        -270,
+        1160
+      ],
+      "size": [
+        225,
+        141.999991807217
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "a",
+          "name": "values.a",
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 43
+        },
+        {
+          "localized_name": "b",
+          "name": "values.b",
+          "shape": 7,
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": null
+        },
+        {
+          "localized_name": "表达式",
+          "name": "expression",
+          "type": "STRING",
+          "widget": {
+            "name": "expression"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "浮点",
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "localized_name": "整数",
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            44,
+            45
+          ]
+        },
+        {
+          "localized_name": "布尔值",
+          "name": "BOOL",
+          "type": "BOOLEAN",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyMathExpression"
+      },
+      "widgets_values": [
+        "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17"
+      ],
+      "widgets_values_named": {
+        "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17"
+      }
+    },
+    {
+      "id": 32,
+      "type": "PrimitiveFloat",
+      "pos": [
+        -570,
+        850
+      ],
+      "size": [
+        270,
+        58
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "值",
+          "name": "value",
+          "type": "FLOAT",
+          "widget": {
+            "name": "value"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "浮点",
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            36,
+            37
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PrimitiveFloat"
+      },
+      "widgets_values": [
+        2
+      ],
+      "widgets_values_named": {
+        "value": 2
+      },
+      "color": "#323",
+      "bgcolor": "#535"
+    },
+    {
+      "id": 33,
+      "type": "ComfyMathExpression",
+      "pos": [
+        -270,
+        840
+      ],
+      "size": [
+        225,
+        141.999991807217
+      ],
+      "flags": {},
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "a",
+          "name": "values.a",
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": 37
+        },
+        {
+          "localized_name": "b",
+          "name": "values.b",
+          "shape": 7,
+          "type": "FLOAT,INT,BOOLEAN",
+          "link": null
+        },
+        {
+          "localized_name": "表达式",
+          "name": "expression",
+          "type": "STRING",
+          "widget": {
+            "name": "expression"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "浮点",
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            38
+          ]
+        },
+        {
+          "localized_name": "整数",
+          "name": "INT",
+          "type": "INT",
+          "links": null
+        },
+        {
+          "localized_name": "布尔值",
+          "name": "BOOL",
+          "type": "BOOLEAN",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ComfyMathExpression"
+      },
+      "widgets_values": [
+        "round(a * 10 / 4) / 10"
+      ],
+      "widgets_values_named": {
+        "expression": "round(a * 10 / 4) / 10"
+      }
     }
   ],
   "links": [
@@ -1298,6 +1796,102 @@
       26,
       0,
       "SIGMAS"
+    ],
+    [
+      36,
+      32,
+      0,
+      28,
+      2,
+      "FLOAT"
+    ],
+    [
+      37,
+      32,
+      0,
+      33,
+      0,
+      "FLOAT"
+    ],
+    [
+      38,
+      33,
+      0,
+      28,
+      1,
+      "FLOAT"
+    ],
+    [
+      39,
+      28,
+      0,
+      6,
+      8,
+      "INT"
+    ],
+    [
+      40,
+      28,
+      1,
+      6,
+      9,
+      "INT"
+    ],
+    [
+      41,
+      28,
+      2,
+      12,
+      0,
+      "INT"
+    ],
+    [
+      42,
+      28,
+      3,
+      12,
+      1,
+      "INT"
+    ],
+    [
+      43,
+      30,
+      0,
+      31,
+      0,
+      "FLOAT"
+    ],
+    [
+      44,
+      31,
+      1,
+      6,
+      10,
+      "INT"
+    ],
+    [
+      45,
+      31,
+      1,
+      12,
+      2,
+      "INT"
+    ],
+    [
+      46,
+      29,
+      0,
+      11,
+      7,
+      "INT"
+    ],
+    [
+      47,
+      29,
+      0,
+      13,
+      8,
+      "INT"
     ]
   ],
   "groups": [
