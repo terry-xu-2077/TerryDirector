@@ -29,7 +29,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 
 重启 ComfyUI，并在节点搜索中输入 **TerryDirector**。已有安装可在仓库内执行 `git switch main`、`git pull --ff-only` 后重启，浏览器缓存未更新时可按 `Ctrl+F5`。
 
-**环境与模型**：已验证的环境为 ComfyUI **0.39.0**（Windows、RTX 3090）；需自行提供 MiniMax H3 模型、文本编码器、视频／音频 VAE。Self-Lift 高清放大还需相应的 H3 latent upscaler 权重。外部模型加载、LoRA 和注意力优化节点是否需要安装，由你的实际工作流决定；本项目不会替你安装模型权重。
+**环境与模型**：建议使用最新版 ComfyUI（Windows、RTX 3090 实测环境）；需自行提供 MiniMax H3 模型、文本编码器、视频／音频 VAE。Self-Lift 高清放大还需相应的 H3 latent upscaler 权重。外部模型加载、LoRA 和注意力优化节点是否需要安装，由你的实际工作流决定；本项目不会替你安装模型权重。
 
 ## 节点一览
 
@@ -46,6 +46,10 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
 
 独立 SelfLift 内部节点仍可被现有工作流按节点 ID 使用，但不再提供 Base / Advanced 的封装式二采配置。
+
+### 分阶段 SelfLift 示例工作流
+
+推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；先运行低清审片，确认后再续采高清。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
 
 ## 怎样连接
 
