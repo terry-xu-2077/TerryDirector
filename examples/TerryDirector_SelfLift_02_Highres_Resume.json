@@ -70,10 +70,10 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "minimax_h3_fl2va_bf16.safetensors",
         "default"
       ],
-      "title": "需要与低清兼容的 H3 模型"
+      "title": "H3 模型 · FL2VA BF16（默认对照配置）"
     },
     {
       "id": 3,
@@ -104,10 +104,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "minimax",
         "default"
-      ]
+      ],
+      "title": "Qwen3VL CLIP · INT8 ConvRot"
     },
     {
       "id": 4,
@@ -279,12 +280,12 @@
       },
       "widgets_values": [
         "Photorealistic cinematic video, a solitary astronaut walking slowly across a desolate salt flat at dusk. Fine wind-driven dust, natural human movement and expressive posture, slow dolly-in, soft backlighting, atmospheric haze, no cuts and no captions. Audio: footsteps crunching on salt and distant wind, no background music.",
-        768,
-        448,
+        608,
+        352,
         124,
         "match"
       ],
-      "title": "H3 提示词 · 768×448"
+      "title": "H3 提示词 · 与低清检查点一致（0.2MP 条件）"
     },
     {
       "id": 7,
@@ -411,11 +412,11 @@
       "widgets_values": [
         "minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors",
         false,
-        "auto",
-        2,
+        "manual",
+        4,
         "auto"
       ],
-      "title": "SelfLift 高清续采 · H3 3D Upscaler"
+      "title": "SelfLift 高清续采 · 0.8MP（H3 3D Upscaler）"
     },
     {
       "id": 10,
