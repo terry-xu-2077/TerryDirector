@@ -36,6 +36,53 @@ class DualSamplingResolutionTests(unittest.TestCase):
         width, height = MATH.compute_resolution(0.2, "16:9 (Widescreen)")
         self.assertAlmostEqual(MATH.actual_megapixels(width, height), 0.214016)
 
+    def test_selflift_examples_share_resolution_length_and_seed(self):
+        import json
+
+        files = (
+            "TerryDirector_SelfLift_01_Lowres_Checkpoint.json",
+            "TerryDirector_SelfLift_03_Pause_Continue.json",
+            "TerryDirector_SelfLift_04_Reference_2MP_Highres.json",
+        )
+        for filename in files:
+            with self.subTest(workflow=filename):
+                workflow = json.loads(
+                    (ROOT / "examples" / filename).read_text(encoding="utf-8")
+                )
+                nodes = {node["id"]: node for node in workflow["nodes"]}
+                links = {link[0]: link for link in workflow["links"]}
+
+                def node_type(name):
+                    return next(node for node in nodes.values() if node["type"] == name)
+
+                def origin(target, input_name):
+                    socket = next(item for item in target["inputs"]
+                                  if item["name"] == input_name)
+                    return links[socket["link"]][1:3]
+
+                selector = node_type("TerryDirectorDualSamplingResolutionSelector")
+                low = node_type("MiniMaxH3ReferenceToVideo")
+                high = node_type("EmptyMiniMaxH3LatentAV")
+                sampler = node_type("SamplerCustom")
+                checkpoint = next(node for node in nodes.values() if node["type"] in {
+                    "TerryDirectorSelfLiftPauseResume",
+                    "TerryDirectorSaveLowresCheckpoint",
+                })
+                seed_node = node_type("SeedNode")
+
+                self.assertEqual(origin(low, "width"), [selector["id"], 0])
+                self.assertEqual(origin(low, "height"), [selector["id"], 1])
+                self.assertEqual(origin(high, "width"), [selector["id"], 2])
+                self.assertEqual(origin(high, "height"), [selector["id"], 3])
+                self.assertEqual(origin(low, "length"), origin(high, "length"))
+                duration_origin = origin(low, "length")
+                self.assertEqual(nodes[duration_origin[0]]["type"], "ComfyMathExpression")
+                self.assertEqual(duration_origin[1], 1)
+                self.assertEqual(origin(sampler, "noise_seed"), [seed_node["id"], 0])
+                self.assertEqual(origin(checkpoint, "seed"), [seed_node["id"], 0])
+                self.assertEqual(len([node for node in nodes.values()
+                                      if node["type"] == "TerryDirectorDualSamplingResolutionSelector"]), 1)
+
     def test_rejects_invalid_megapixels_and_ratio(self):
         for value in (0, -0.1, float("inf"), float("nan"), "not a number"):
             with self.subTest(value=value), self.assertRaises(ValueError):
