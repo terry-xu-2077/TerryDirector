@@ -1,8 +1,8 @@
 {
   "id": "01821bfb-51c9-4a3e-ae88-a6a538337151",
   "revision": 0,
-  "last_node_id": 17,
-  "last_link_id": 24,
+  "last_node_id": 18,
+  "last_link_id": 27,
   "nodes": [
     {
       "id": 1,
@@ -33,10 +33,10 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "minimax_h3_fl2va_bf16.safetensors",
         "default"
       ],
-      "title": "H3 模型 · 请按本机权重选择"
+      "title": "H3 模型 · FL2VA BF16（默认对照配置）"
     },
     {
       "id": 2,
@@ -67,10 +67,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "minimax",
         "default"
-      ]
+      ],
+      "title": "Qwen3VL CLIP · INT8 ConvRot"
     },
     {
       "id": 3,
@@ -185,15 +186,15 @@
         "Node name for S&R": "ModelPreviewOverrideKJ"
       },
       "widgets_values": [
-        512,
+        1024,
         80,
         true,
+        1,
         12,
-        12,
-        "none",
+        "taeh3.safetensors",
         ""
       ],
-      "title": "KJ · 低清动态预览（可选）"
+      "title": "KJ · 低清预览（默认对照配置）"
     },
     {
       "id": 6,
@@ -301,12 +302,12 @@
       },
       "widgets_values": [
         "Photorealistic cinematic video, a solitary astronaut walking slowly across a desolate salt flat at dusk. Fine wind-driven dust, natural human movement and expressive posture, slow dolly-in, soft backlighting, atmospheric haze, no cuts and no captions. Audio: footsteps crunching on salt and distant wind, no background music.",
-        384,
-        224,
+        608,
+        352,
         124,
         "match"
       ],
-      "title": "H3 提示词 · 384×224"
+      "title": "H3 提示词 · 低清审片 0.2MP"
     },
     {
       "id": 7,
@@ -370,8 +371,7 @@
           "name": "SIGMAS",
           "type": "SIGMAS",
           "links": [
-            10,
-            17
+            25
           ]
         }
       ],
@@ -384,14 +384,14 @@
         8,
         1
       ],
-      "title": "完整 8 步 Sigma"
+      "title": "完整 8 步 Sigma → H3 Sigma Refiner"
     },
     {
       "id": 9,
       "type": "SplitSigmas",
       "pos": [
-        1300,
-        70
+        1600,
+        60
       ],
       "size": [
         315,
@@ -404,7 +404,7 @@
         {
           "name": "sigmas",
           "type": "SIGMAS",
-          "link": 10
+          "link": 26
         }
       ],
       "outputs": [
@@ -428,7 +428,7 @@
       "widgets_values": [
         6
       ],
-      "title": "第一个输出：前 6 步"
+      "title": "第一个输出：前 6 步（含 Sigma Refiner）"
     },
     {
       "id": 10,
@@ -533,11 +533,11 @@
       },
       "widgets_values": [
         true,
-        42021,
+        8,
         "fixed",
-        5
+        1
       ],
-      "title": "ComfyUI 原生低清 6/8"
+      "title": "ComfyUI 原生低清 6/8（seed=8, CFG=1）"
     },
     {
       "id": 12,
@@ -568,11 +568,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        768,
-        448,
+        864,
+        480,
         124
       ],
-      "title": "目标 768×448 · 只用于检查点"
+      "title": "目标 0.8MP · 只用于检查点"
     },
     {
       "id": 13,
@@ -607,7 +607,7 @@
         {
           "name": "sigmas",
           "type": "SIGMAS",
-          "link": 17
+          "link": 27
         }
       ],
       "outputs": [
@@ -627,11 +627,11 @@
       },
       "widgets_values": [
         6,
-        42021,
-        5,
-        "示例-宇航员盐湖镜头"
+        8,
+        1,
+        "示例-宇航员盐湖镜头-对齐爱屋1020"
       ],
-      "title": "持久化 SelfLift 检查点"
+      "title": "保存低清检查点 · 0.2→0.8MP"
     },
     {
       "id": 14,
@@ -802,6 +802,48 @@
         "auto"
       ],
       "title": "保存低清审片视频"
+    },
+    {
+      "id": 18,
+      "type": "H3SigmaRefiner",
+      "pos": [
+        1270,
+        60
+      ],
+      "size": [
+        260,
+        155
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 25
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "links": [
+            26,
+            27
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3SigmaRefiner"
+      },
+      "widgets_values": [
+        1,
+        0.7,
+        0,
+        "cosine"
+      ],
+      "title": "H3 Sigma Refiner · 对齐爱屋1020"
     }
   ],
   "links": [
@@ -878,14 +920,6 @@
       "CONDITIONING"
     ],
     [
-      10,
-      8,
-      0,
-      9,
-      0,
-      "SIGMAS"
-    ],
-    [
       11,
       9,
       0,
@@ -932,14 +966,6 @@
       13,
       2,
       "LATENT"
-    ],
-    [
-      17,
-      8,
-      0,
-      13,
-      3,
-      "SIGMAS"
     ],
     [
       18,
@@ -996,6 +1022,30 @@
       17,
       0,
       "VIDEO"
+    ],
+    [
+      25,
+      8,
+      0,
+      18,
+      0,
+      "SIGMAS"
+    ],
+    [
+      26,
+      18,
+      0,
+      9,
+      0,
+      "SIGMAS"
+    ],
+    [
+      27,
+      18,
+      0,
+      13,
+      3,
+      "SIGMAS"
     ]
   ],
   "groups": [
