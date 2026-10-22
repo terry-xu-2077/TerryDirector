@@ -1,12 +1,13 @@
 # TerryDirector · SelfLift 分阶段示例工作流
 
-这三份 **ComfyUI 可导入的画布 JSON** 展示最小实现：原生低清采样 + KJ 实时预览 → 持久化检查点 → 另一个工作流读取检查点 → SelfLift 高清续采。
+以下 **ComfyUI 可导入的画布 JSON** 展示最小实现：原生低清采样 + KJ 实时预览 → 持久化检查点 → 另一个工作流读取检查点 → SelfLift 高清续采。
 
 | 顺序 | 文件 | 运行结果 |
 | --- | --- | --- |
 | ① | [TerryDirector_SelfLift_01_Lowres_Checkpoint.json](TerryDirector_SelfLift_01_Lowres_Checkpoint.json) | 生成 `state.safetensors` / `manifest.json`，同时输出低清审片视频 |
 | ② | [TerryDirector_SelfLift_02_Highres_Resume.json](TerryDirector_SelfLift_02_Highres_Resume.json) | 从之前的检查点恢复，跳过低清阶段，输出高清 MP4（含音频） |
 | ③ | [TerryDirector_SelfLift_03_Pause_Continue.json](TerryDirector_SelfLift_03_Pause_Continue.json) | 单工作流通过「暂停并保存/继续高清」两种模式自动保存及恢复 |
+| **④** | [TerryDirector_SelfLift_04_Reference_2MP_Highres.json](TerryDirector_SelfLift_04_Reference_2MP_Highres.json) | **参考真实 SelfLift-Avatar 高清配置：0.5 MP → 2.0 MP、3D Latent Upscaler、4 块空间分块、独立高清模型分支** |
 
 ## ③ 单工作流「暂停/继续」示例（推荐体验）
 
@@ -23,6 +24,24 @@
 **注意**：按钮使用 ComfyUI 的 `app.queuePrompt(0, 1, [targetNodeId])` 局部队列，不是启动整个工作流；在有多条并行线路时也只执行本节点这条线。为真实保证「继续高清」不重跑低清，这份③示例只把 KJ 作为低清过程预览，**没有再挂另一个低清 `SaveVideo` 输出节点**。如果同时在同一画布放置并激活低清视频输出，ComfyUI 仍然必须运行那条独立的低清输出分支；惰性输入只能跳过本节点路径上的低清依赖。
 
 旧的显式「保存低清检查点」与「读取低清检查点」节点、工作流①和②全部保留，仍用于跨工作流读取、技术对照和回归测试。
+
+## ④ 按真实 SelfLift-Avatar 工作流配置的 2MP 高清示例
+
+该示例参考 2026-10-20 的用户实战文件 `Self-Lift工作流-爱屋-1020.json`，**只借鉴已启用的高清链路、采样日程与分辨率；不替换参考图片、提示词、模型权重或套用原项目的 LoRA**。
+
+- 蓝色按钮：`960×544`（约 0.52MP）低清，先运行前 6 步并保存检查点
+- 柠檬绿按钮：`1920×1088`（约 2.09MP）高清，直接从同一检查点恢复，不重跑低清
+- `BasicScheduler=simple, steps=8`，再接 `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)`，**增加一项低噪细化步**；通过 `SplitSigmas(step=6)` 保留低清前缀，完整细化后日程写入检查点，高清继续剩余约 3 步
+- `CFG=1`、`rho=0`、`w_min=0.5`、`w_max=1`
+- `upscaler_model=minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`，需要已安装至 `models/latent_upscale_models/`；**高清转场由学得的 H3 3D Latent Upscaler 承担，避免 SelfLift-zero 的整段视频 VAE 往返**
+- `highres_tiling=true`、`tiling_mode=manual`、`tiling_tiles=4`、`tiling_axis=auto`，使用 TerryDirector 自有空间分块实现
+- 额外添加独立高清模型分支：`ModelAttentionBackend(comfy kitchen attention)` → `MiniMaxLowVRAMAttention(head_chunks=8)` → `MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)` → `SelfLift 高清续采.high_res_model`
+- 原参考工作流的 `highres_tiling_mode=spatial` 在 TerryDirector 对应上述空间分块。参考工作流中 `highres_token_chunk=4096` 和 `highres_weight_cache_gb=4` **仅对 Global 系列模式生效，此示例为 spatial，所以没有添加这两个不生效的控件**。
+- 原参考工作流 `MiniMaxH3SparkAttentionSM86`、`VedaSparseAttention`、KJ Preview Override、H3 Speed Slider LoRA **均为旁路 mode=4**；其中其他高清模型链和 `dmad...full_critic` LoRA 为启用状态。④ 只迁移采样/分块/独立模型低显存参数，不自动应用不同基础模型的 LoRA。
+
+④ 的模型仍沿用③的小型技术示例中使用的 H3 ref2va Pruned INT8 权重和 124 帧（约 5 秒），**没有自动换成原参考的 `minimax_h3_fl2va_bf16` 和 15 秒**。这可以让你先聚焦比较高清续采配置，而不把基础模型、LoRA、片长同时改变。④ 使用的 `H3SigmaRefiner`、`MiniMaxLowVRAMAttention`、`MiniMaxChunkFeedForward` 等外部节点应在你的 ComfyUI 环境中已安装。
+
+**重要差异：** TerryDirector 目前是自研的 H3 空间分块（包含空间交叠/混合），不宣称与 SelfLift-Avatar 的实现逐像素一致。先以 5 秒的 0.5MP→2MP 进行显存、耗时、画质验收，稳定后再考虑迁移到 15 秒。如果旧检查点由不同 Sigma 日程/分辨率产生，不能拿它当作④参数的对应低清结果；应使用④蓝色按钮先生成一次。
 
 ## 运行顺序
 
