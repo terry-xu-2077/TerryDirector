@@ -1139,7 +1139,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "# SelfLift · 0.5 MP → 2 MP 高分辨率方案\n\n这是较高分辨率的参考方案，不是默认审片工作流。\n\n- 目标高清分辨率约 2 MP（1888×1088），低清阶段约 0.5 MP。\n- 「双采样分辨率选择器」统一控制 0.5 / 2.0 MP，时长公式统一连接两段输入，种子也在采样器与检查点间共用。\n- 高清阶段启用了 4 块空间分块，并连接独立的高清 MODEL 优化链，以控制高分辨率采样的峰值显存。\n- 此方案更吃显存和系统资源。建议先用工作流 03 确认提示词、参考图和检查点流程，再测试本方案。\n- 检查点必须与当前提示词、参考条件、模型、Seed、CFG、目标分辨率和 Sigma 日程匹配。\n\n工作流节点保留默认名称；说明集中放在本便笺中。"
+        "# SelfLift · 0.5 MP → 2 MP 高分辨率方案\n\n这是较高分辨率的参考方案，不是默认审片工作流。\n\n- 目标高清分辨率约 2 MP（1888×1088），低清阶段约 0.5 MP。\n- 「双采样分辨率选择器」统一控制 0.5 / 2.0 MP，时长公式统一连接两段输入，种子也在采样器与检查点间共用。\n- 高清阶段启用了 4 块空间分块，并连接独立的高清 MODEL 优化链，以控制高分辨率采样的峰值显存。\n- 此方案更吃显存和系统资源。建议先用工作流 03 确认提示词、参考图和检查点流程，再测试本方案。\n- 检查点必须与当前提示词、参考条件、模型、Seed、CFG、目标分辨率和 Sigma 日程匹配。\n\n工作流节点保留默认名称；说明集中放在本便笺中。\n\n分辨率：只需修改唯一的「高清百万像素」输入；低清目标 MP 自动等于高清 MP / 4，不必再接独立的低清 MP 公式。"
       ]
     },
     {
@@ -1165,15 +1165,6 @@
             "name": "aspect_ratio"
           },
           "link": null
-        },
-        {
-          "localized_name": "低清百万像素",
-          "name": "lowres_megapixels",
-          "type": "FLOAT",
-          "widget": {
-            "name": "lowres_megapixels"
-          },
-          "link": 38
         },
         {
           "localized_name": "高清百万像素",
@@ -1236,12 +1227,10 @@
       },
       "widgets_values": [
         "16:9 (Widescreen)",
-        0.5,
         2
       ],
       "widgets_values_named": {
         "aspect_ratio": "16:9 (Widescreen)",
-        "lowres_megapixels": 0.5,
         "highres_megapixels": 2
       }
     },
@@ -1417,7 +1406,7 @@
       "id": 32,
       "type": "PrimitiveFloat",
       "pos": [
-        -570,
+        -90,
         850
       ],
       "size": [
@@ -1444,8 +1433,7 @@
           "name": "FLOAT",
           "type": "FLOAT",
           "links": [
-            36,
-            37
+            36
           ]
         }
       ],
@@ -1460,76 +1448,6 @@
       },
       "color": "#323",
       "bgcolor": "#535"
-    },
-    {
-      "id": 33,
-      "type": "ComfyMathExpression",
-      "pos": [
-        -270,
-        840
-      ],
-      "size": [
-        225,
-        141.999991807217
-      ],
-      "flags": {},
-      "order": 36,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "a",
-          "name": "values.a",
-          "type": "FLOAT,INT,BOOLEAN",
-          "link": 37
-        },
-        {
-          "localized_name": "b",
-          "name": "values.b",
-          "shape": 7,
-          "type": "FLOAT,INT,BOOLEAN",
-          "link": null
-        },
-        {
-          "localized_name": "表达式",
-          "name": "expression",
-          "type": "STRING",
-          "widget": {
-            "name": "expression"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "浮点",
-          "name": "FLOAT",
-          "type": "FLOAT",
-          "links": [
-            38
-          ]
-        },
-        {
-          "localized_name": "整数",
-          "name": "INT",
-          "type": "INT",
-          "links": null
-        },
-        {
-          "localized_name": "布尔值",
-          "name": "BOOL",
-          "type": "BOOLEAN",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ComfyMathExpression"
-      },
-      "widgets_values": [
-        "round(a * 10 / 4) / 10"
-      ],
-      "widgets_values_named": {
-        "expression": "round(a * 10 / 4) / 10"
-      }
     }
   ],
   "links": [
@@ -1800,22 +1718,6 @@
     [
       36,
       32,
-      0,
-      28,
-      2,
-      "FLOAT"
-    ],
-    [
-      37,
-      32,
-      0,
-      33,
-      0,
-      "FLOAT"
-    ],
-    [
-      38,
-      33,
       0,
       28,
       1,
