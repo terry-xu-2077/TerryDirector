@@ -69,6 +69,19 @@ class CheckpointTests(unittest.TestCase):
                     sigmas=sigmas, transition_step=2,
                     seed=42, cfg=5.0, name="镜头 03 人物近景")
 
+    def test_no_pixel_anchor_or_nearest_api_in_either_selflift_path(self):
+        import inspect
+        continuous = importlib.import_module(PKG + ".director_selflift")
+        resume = importlib.import_module(PKG + ".director_selflift_resume")
+        mathlib = importlib.import_module(PKG + ".director_selflift_math")
+        for fn in (continuous.sample_selflift, resume.resume_highres):
+            signature = inspect.signature(fn)
+            for removed in ("vae", "rho", "w_min", "w_max"):
+                self.assertNotIn(removed, signature.parameters)
+        self.assertFalse(hasattr(continuous, "_pixel_endpoint"))
+        self.assertFalse(hasattr(mathlib, "correct_endpoint"))
+        self.assertNotIn("mode", inspect.signature(mathlib.spatial_resize).parameters)
+
     def test_save_load_roundtrip_and_metadata(self):
         cp = self.module
         cid = cp.save_checkpoint(**self.inputs())
