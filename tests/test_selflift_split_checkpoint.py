@@ -158,34 +158,27 @@ class CheckpointTests(unittest.TestCase):
         backend = Backend()
         result = resume.resume_highres(
             checkpoint={"checkpoint_id": cid}, model=Model(), positive=[],
-            negative=[], vae=None, sampler=None, rho=0.0, w_min=0.5,
-            w_max=1.0, upscaler_model="fake",
+            negative=[], sampler=None, upscaler_model="test-h3-learned.safetensors",
             _backend=backend,
             _lifter=lambda x, target, _: F.interpolate(
-                x, size=(x.shape[2], *target), mode="nearest"))
+                x, size=(x.shape[2], *target), mode="trilinear", align_corners=False))
         self.assertEqual(len(backend.sample_calls), 1)
         self.assertEqual(len(backend.sample_calls[0]), 3)  # remaining two steps
         av = result["samples"].unbind()
         self.assertEqual(tuple(av[0].shape), (1, 4, 3, 4, 8))
         self.assertTrue(torch.equal(av[1], torch.ones(1, 2, 4, 3) * 2))
 
-        # Fast mode is intentionally explicit and must never invoke either
-        # an external learned upscaler or VAE pixel roundtrip.
-        def forbidden_lifter(*args):
-            raise AssertionError("nearest should not invoke H3 upscaler")
 
-        fast_backend = Backend()
-        quick = resume.resume_highres(
-            checkpoint={"checkpoint_id": cid}, model=Model(),
-            positive=[], negative=[], vae=None, sampler=None,
-            rho=0.0, w_min=0.5, w_max=1.0,
-            upscaler_model="nearest", _backend=fast_backend,
-            _lifter=forbidden_lifter)
-        self.assertEqual(len(fast_backend.sample_calls), 1)
-        self.assertEqual(len(fast_backend.sample_calls[0]), 3)
-        quick_streams = quick["samples"].unbind()
-        self.assertTrue(torch.equal(quick_streams[1], av[1]))
-        self.assertEqual(tuple(quick_streams[0].shape), tuple(av[0].shape))
+        # No fallback: attempts to run the deleted nearest/none routes fail
+        # before any expensive backend or VideoVAE is touched.
+        for rejected in ("none", "nearest", ""):
+            with self.subTest(upscaler=rejected), self.assertRaisesRegex(
+                ValueError, "H3 3D Latent Upscaler"
+            ):
+                resume.resume_highres(
+                    checkpoint={"checkpoint_id": cid}, model=Model(),
+                    positive=[], negative=[], sampler=None,
+                    upscaler_model=rejected, _backend=Backend())
 
     def test_reference_highres_uses_dedicated_model_and_manual_spatial_4_tiles(self):
         # The reference workflow has independent low/high model branches.
@@ -240,9 +233,12 @@ class CheckpointTests(unittest.TestCase):
         backend = Backend()
         result = resume.resume_highres(
             checkpoint={"checkpoint_id": cid}, model=low_model,
-            high_res_model=high_model, positive=[], negative=[], vae=None,
-            sampler=None, rho=0.0, w_min=0.5, w_max=1.0,
-            upscaler_model="nearest", highres_tiling=True,
+            high_res_model=high_model, positive=[], negative=[],
+            sampler=None, upscaler_model="test-h3-learned.safetensors",
+            _lifter=lambda x, target, _: __import__("torch").nn.functional.interpolate(
+                x, size=(x.shape[2], *target), mode="trilinear",
+                align_corners=False),
+            highres_tiling=True,
             tiling_mode="manual", tiling_tiles=4, tiling_axis="auto",
             _backend=backend)
         self.assertEqual(backend.validated, (low_model, high_model))
