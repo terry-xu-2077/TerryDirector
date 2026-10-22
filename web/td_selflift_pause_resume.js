@@ -119,9 +119,12 @@ function ensureStyle() {
     ".td-selflift-action .td-selflift-info{font-size:11px;display:flex;gap:8px;",
     "align-items:center;justify-content:space-between;color:#aab1be;min-height:18px;}",
     ".td-selflift-action .td-selflift-status{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;}",
-    ".td-selflift-action .td-selflift-reset{border:0;background:none;color:#aab1be;",
-    "font:inherit;text-decoration:underline;cursor:pointer;padding:0 2px;white-space:nowrap;}",
-    ".td-selflift-action .td-selflift-reset:hover{color:#fff;}",
+    ".td-selflift-action .td-selflift-reset{border:1px solid rgba(111,185,255,.34);",
+    "border-radius:6px;background:rgba(93,171,255,.12);color:#91ccff;",
+    "font:inherit;font-weight:750;text-decoration:none;cursor:pointer;padding:4px 8px;",
+    "white-space:nowrap;transition:background .15s ease,border-color .15s ease,color .15s ease;}",
+    ".td-selflift-action .td-selflift-reset:hover{color:#c4e6ff;border-color:rgba(111,185,255,.72);background:rgba(93,171,255,.22);}",
+    ".td-selflift-action .td-selflift-reset:focus-visible{outline:2px solid #91ccff;outline-offset:2px;}",
   ].join("");
   document.head.append(style);
 }
