@@ -135,7 +135,7 @@ git show a3348dc:tests/test_selflift_internal.py
 
 ## 分阶段 SelfLift 审片工作流基线（2026-10-22）
 
-- 默认示例：`examples/TerryDirector_SelfLift_03_Pause_Continue.json`；低清审片约 0.2 MP（608×352），高清目标约 0.8 MP（864×480），124 帧。
+- 默认示例：`examples/TerryDirector_SelfLift_03_Pause_Continue.json`；低清审片约 0.2 MP（608×352），高清目标约 0.8 MP（1216×672），124 帧。
 - 模型栈：`minimax_h3_fl2va_bf16.safetensors` + `qwen3vl_32b_minimax_h3_int8_convrot.safetensors`；视频 VAE INT8 ConvRot、音频 VAE FP32。
 - 采样：固定 seed=8、CFG=1；`BasicScheduler(simple,8)` → `H3SigmaRefiner(1,0.7,0,cosine)` → `SplitSigmas(step=6)`；H3 3D Latent Upscaler BF16；高清空间分块默认关闭。
 - 用户实测该对齐工作流一次高清任务显示 `Prompt executed in 160.42 seconds`，并确认画面正常、耗时较先前任务短。此为单次用户实测，不是受控基准，也不代表不同硬件或配置的速度承诺。
