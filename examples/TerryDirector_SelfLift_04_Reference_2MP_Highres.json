@@ -35,10 +35,10 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+        "minimax_h3_fl2va_bf16.safetensors",
         "default"
       ],
-      "title": "H3 模型 · 请按本机权重选择"
+      "title": "H3 模型 · FL2VA BF16（默认对照配置）"
     },
     {
       "id": 2,
@@ -69,10 +69,11 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+        "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "minimax",
         "default"
-      ]
+      ],
+      "title": "Qwen3VL CLIP · INT8 ConvRot"
     },
     {
       "id": 3,
@@ -187,15 +188,15 @@
         "Node name for S&R": "ModelPreviewOverrideKJ"
       },
       "widgets_values": [
-        512,
+        1024,
         80,
         true,
+        1,
         12,
-        12,
-        "none",
+        "taeh3.safetensors",
         ""
       ],
-      "title": "KJ · 低清动态预览（可选）"
+      "title": "KJ · 低清预览（默认对照配置）"
     },
     {
       "id": 6,
@@ -309,7 +310,7 @@
         124,
         "match"
       ],
-      "title": "H3 提示词 · 384×224"
+      "title": "H3 提示词 · 低清 0.5MP"
     },
     {
       "id": 7,
@@ -387,7 +388,7 @@
         8,
         1
       ],
-      "title": "完整 8 步 Sigma"
+      "title": "完整 8 步 Sigma → H3 Sigma Refiner"
     },
     {
       "id": 9,
@@ -431,7 +432,7 @@
       "widgets_values": [
         6
       ],
-      "title": "第一个输出：前 6 步"
+      "title": "第一个输出：前 6 步（含 Sigma Refiner）"
     },
     {
       "id": 10,
@@ -535,11 +536,11 @@
       },
       "widgets_values": [
         true,
-        20261003,
+        8,
         "fixed",
         1
       ],
-      "title": "ComfyUI 原生低清 6/8"
+      "title": "ComfyUI 原生低清 6/8（seed=8, CFG=1）"
     },
     {
       "id": 12,
@@ -574,7 +575,7 @@
         1088,
         124
       ],
-      "title": "目标 768×448 · 只用于检查点"
+      "title": "目标 2.0MP · 只用于检查点"
     },
     {
       "id": 13,
@@ -634,10 +635,10 @@
         "",
         "参考-0.5MP低清转2.0MP高清",
         6,
-        20261003,
+        8,
         1
       ],
-      "title": "TerryDirector · 暂停 / 继续（切换这里）"
+      "title": "TerryDirector SelfLift 暂停/继续 · 0.5→2.0MP"
     },
     {
       "id": 18,
@@ -705,7 +706,7 @@
         4,
         "auto"
       ],
-      "title": "SelfLift 高清续采 · H3 3D Upscaler · Spatial 4块"
+      "title": "SelfLift 高清续采 · 2MP 空间分块（4块）"
     },
     {
       "id": 19,
