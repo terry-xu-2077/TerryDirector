@@ -493,15 +493,15 @@
       },
       "widgets_values": [
         "Photorealistic cinematic video, a solitary astronaut walking slowly across a desolate salt flat at dusk. Fine wind-driven dust, natural human movement and expressive posture, slow dolly-in, soft backlighting, atmospheric haze, no cuts and no captions. Audio: footsteps crunching on salt and distant wind, no background music.",
-        384,
-        224,
+        608,
+        352,
         124,
         "match"
       ],
       "widgets_values_named": {
         "prompt": "Photorealistic cinematic video, a solitary astronaut walking slowly across a desolate salt flat at dusk. Fine wind-driven dust, natural human movement and expressive posture, slow dolly-in, soft backlighting, atmospheric haze, no cuts and no captions. Audio: footsteps crunching on salt and distant wind, no background music.",
-        "width": 384,
-        "height": 224,
+        "width": 608,
+        "height": 352,
         "length": 124,
         "ref_image_size": "match"
       }
@@ -895,13 +895,13 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        864,
-        480,
+        1216,
+        672,
         124
       ],
       "widgets_values_named": {
-        "width": 864,
-        "height": 480,
+        "width": 1216,
+        "height": 672,
         "length": 124
       }
     },
@@ -1888,7 +1888,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "# SelfLift · 默认推荐：低清审片 → 高清续采\n\n目标：低清约 0.2 MP（608×352），高清约 0.8 MP（864×480），124 帧。\n\n1. 首次点击 TerryDirectorSelfLiftPauseResume 节点中的主按钮「生成低清」，运行低清采样并保存检查点。\n2. 先检查低清视频。确认镜头、表演和构图符合预期后，再点击变为柠檬绿色的「继续高清」按钮。\n3. 如果不满意，点击节点右下方的「重新生成低清」按钮，重新生成低清结果；旧检查点不会被当作本次续采依据。\n4. 继续高清前不要更换提示词、参考图或影响检查点兼容性的参数。\n\n模型权重与 H3 Sigma Refiner 必须在本机可用。工作流节点保留默认名称；说明集中放在本便笺中。"
+        "# SelfLift · 默认推荐：低清审片 → 高清续采\n\n目标：低清约 0.2 MP（608×352），高清约 0.8 MP（1216×672），124 帧。\n\n1. 首次点击 TerryDirectorSelfLiftPauseResume 节点中的主按钮「生成低清」，运行低清采样并保存检查点。\n2. 先检查低清视频。确认镜头、表演和构图符合预期后，再点击变为柠檬绿色的「继续高清」按钮。\n3. 如果不满意，点击节点右下方的「重新生成低清」按钮，重新生成低清结果；旧检查点不会被当作本次续采依据。\n4. 同一个 SeedNode 同时供给低清原生采样和高清检查点；同一个时长公式同时供给低清条件和高清原始 Latent。\n5. 继续高清前不要更换提示词、参考图或影响检查点兼容性的参数。\n\n模型权重与 H3 Sigma Refiner 必须在本机可用。工作流节点保留默认名称；说明集中放在本便笺中。"
       ]
     },
     {
