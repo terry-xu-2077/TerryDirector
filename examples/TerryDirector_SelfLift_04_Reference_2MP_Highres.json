@@ -1,8 +1,8 @@
 {
   "id": "f2dfb56b-4168-4706-bf35-69f8cde49260",
   "revision": 0,
-  "last_node_id": 25,
-  "last_link_id": 34,
+  "last_node_id": 26,
+  "last_link_id": 35,
   "nodes": [
     {
       "id": 1,
@@ -375,8 +375,7 @@
           "name": "SIGMAS",
           "type": "SIGMAS",
           "links": [
-            10,
-            17
+            35
           ]
         }
       ],
@@ -1001,6 +1000,48 @@
         4096
       ],
       "title": "高清 · FF chunks=2 threshold=4096"
+    },
+    {
+      "id": 26,
+      "type": "H3SigmaRefiner",
+      "pos": [
+        1260,
+        1020
+      ],
+      "size": [
+        260,
+        155
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 35
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "links": [
+            10,
+            17
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "H3SigmaRefiner"
+      },
+      "widgets_values": [
+        1,
+        0.7,
+        0,
+        "cosine"
+      ],
+      "title": "参考 · 低噪 Sigma 细化 +1步"
     }
   ],
   "links": [
@@ -1078,7 +1119,7 @@
     ],
     [
       10,
-      8,
+      26,
       0,
       9,
       0,
@@ -1134,7 +1175,7 @@
     ],
     [
       17,
-      8,
+      26,
       0,
       13,
       3,
@@ -1275,6 +1316,14 @@
       18,
       6,
       "MODEL"
+    ],
+    [
+      35,
+      8,
+      0,
+      26,
+      0,
+      "SIGMAS"
     ]
   ],
   "groups": [
