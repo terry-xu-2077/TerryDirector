@@ -46,3 +46,8 @@ Upscaler 权重 `minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors` 应放�
 最终用于导出视频和音频的 VAE 解码仍然保留；本次移除的是高清采样前的中间 VAE 往返。
 
 详细架构：[SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md](../docs/SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md)。
+
+
+## 工作流节点命名
+
+示例工作流保留 ComfyUI 节点的默认名称，不通过自定义节点标题解释用途。每个工作流内的 **Markdown Note** 节点负责说明用途、关键参数与运行顺序；实际参数仍以节点控件和本机可用模型为准。
