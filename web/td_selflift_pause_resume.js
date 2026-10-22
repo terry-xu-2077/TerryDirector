@@ -163,7 +163,7 @@ function refresh(node) {
     button.disabled = busy;
     ico.innerHTML = blue ? PAUSE_ICON : PLAY_ICON;
     label.textContent = busy
-      ? (run.mode === "checking" ? "检查检查点…" : run.mode === "pause" ? "低清生成中…" : "高清续采中…")
+      ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "低清生成中…" : "高清续采中…")
       : (blue ? "生成低清 · 暂停" : "继续高清");
     status.textContent = run?.error || (ready
       ? (name ? name.slice(0, 18) + " · " : "") + "检查点 " + id.slice(0, 8) + " 已保存"
