@@ -43,7 +43,9 @@ SamplerCustom denoised_output   → 保存低清检查点.low_clean
 - **低清用于采样的 H3 AV LATENT** 应由原生节点创建在实际低清尺寸；**保存节点的 source** 必须是相同时长/音频流、目标高分辨率的原始 AV LATENT。低清和高清两路的音频潜变量形状必须一致。
 - **审片**可把 `denoised_output` 接入原生 H3 视频/音频解码输出，保存一个低清 MP4。它不是 SelfLift 后续计算的检查点，只是供人工审片的视觉/音频参考。
 - 若用 H3 的参考图、尾帧、输入音频、遮罩：低清端须正确应用与低分辨率匹配的条件；高清端须提供与原生成一致的 Conditioning。检查点存储原始目标 Latent（含静态遮罩），**并不存储序列化 CONDITIONING 或模型权重**。
-- `rho=0.6, upscaler_model=none` 是 SelfLift-zero / pixel-anchor 验证入口；若使用 H3 外部 Latent Upscaler，优先尝试 `rho=0` 并从下拉框选择 Upscaler，尽量保持与原一体式工作流参数一致。
+- **快速功能验证（新示例默认）**：`rho=0, upscaler_model=nearest` 直接最近邻放大潜空间视频帧，无需 VideoVAE 像素往返；**这是排查运行链路的技术档位，不能等价于成熟 SelfLift 高清画质**。
+- **SelfLift-zero**：`rho=0.6, upscaler_model=none` 会触发低清视频 VAE 解码、图像放大、高清 VAE 回编码。在 ComfyUI 动态显存下可能非常耗时，已添加解码、插值、回编码的分阶段日志。检查点独立保存，不必为了换参数重新跑低清。
+- **外部 H3 Latent Upscaler**：`rho=0`，下拉框指定已安装的 H3 Upscaler 权重，无需强制 VAE 像素锚往返，优先用来与 SelfLift-Avatar 效果对照。
 - 只支持标准 Euler / `s_churn=0`、H3 双流 Latent 与非终止 Sigma 检查点。其余采样器或仅有普通最终 Latent 的视频均不能当作有效 SelfLift 恢复点。
 
 ## 便捷节点：TerryDirector SelfLift 暂停/继续
@@ -86,7 +88,7 @@ TerryDirector SelfLift 高清续采
 ## 第一阶段验收
 
 1. CPU：检查点序列化、H3 AV 双流拆包/组包、Sigma 非终止校验、损坏文件拒绝、版本隔离。
-2. 本地 ComfyUI 0.39+ / 3090：原生低清 5/8 步、KJ 12 FPS 采样预览、最终 x0 解码、保存检查点。
+2. 本地最新版 ComfyUI / RTX 3090：原生低清 5/8 步、KJ 12 FPS 采样预览、最终 x0 解码、保存检查点。
 3. **关闭再打开 ComfyUI**，独立新工作流选择同一检查点，高清节点执行剩余 3 步。
 4. 与现有一体式 `TerryDirectorSelfLiftSampler` 在同一 Model、Prompt、Seed、Sigma、分辨率、放大器、CFG 下 A/B 比较。重点确认**画面、音频、口型和剩余步数**。
 5. 测试异常：错误模型、原始条件发生变化、遮罩、错误参考尺寸、磁盘不足、坏文件、执行中断后再次加载。
