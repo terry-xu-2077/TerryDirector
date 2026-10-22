@@ -127,18 +127,28 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
             ],
         )
 
+    @staticmethod
+    def _lazy_item(value, key):
+        # ComfyUI V3's lazy executor invokes build_nested_inputs with
+        # create_dynamic_tuple=True. Thus *every* supplied field is passed as
+        # (value, input_id), including the MODE combo. Comparing the raw
+        # tuple to a string silently bypasses the entire low-res pipeline.
+        if (isinstance(value, tuple) and len(value) == 2
+                and value[1] == key):
+            return value[0]
+        return value
+
     @classmethod
     def check_lazy_status(cls, mode, **kwargs):
-        if mode == "继续高清":
-            # Crucial: do not touch/evaluate any connected low-res inputs.
+        selected = cls._lazy_item(mode, "mode")
+        if selected == "继续高清":
             return []
-        if mode == "暂停并保存":
-            # Absent optional sockets do not exist in input_data_all. Asking
-            # ComfyUI to evaluate an absent socket raises NodeInputError before
-            # execute() can issue our clear Chinese missing-input message.
+        if selected == "暂停并保存":
+            # Do not request unconnected optional sockets: let execute()
+            # give a friendly missing-input error instead of NodeInputError.
             return [
                 name for name in ("low_state", "low_clean", "source", "sigmas")
-                if name in kwargs and kwargs[name] is None
+                if name in kwargs and cls._lazy_item(kwargs[name], name) is None
             ]
         return []
 
