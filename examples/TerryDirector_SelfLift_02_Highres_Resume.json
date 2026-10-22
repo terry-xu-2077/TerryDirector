@@ -1,7 +1,7 @@
 {
   "id": "993c1899-f45a-46fd-898a-0f6a7e5933b4",
   "revision": 0,
-  "last_node_id": 13,
+  "last_node_id": 14,
   "last_link_id": 17,
   "nodes": [
     {
@@ -38,8 +38,7 @@
       },
       "widgets_values": [
         "（暂无检查点，请先运行保存节点）"
-      ],
-      "title": "按名称选择保存的低清镜头"
+      ]
     },
     {
       "id": 2,
@@ -72,8 +71,7 @@
       "widgets_values": [
         "minimax_h3_fl2va_bf16.safetensors",
         "default"
-      ],
-      "title": "H3 模型 · FL2VA BF16（默认对照配置）"
+      ]
     },
     {
       "id": 3,
@@ -107,8 +105,7 @@
         "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "minimax",
         "default"
-      ],
-      "title": "Qwen3VL CLIP · INT8 ConvRot"
+      ]
     },
     {
       "id": 4,
@@ -284,8 +281,7 @@
         352,
         124,
         "match"
-      ],
-      "title": "H3 提示词 · 与低清检查点一致（0.2MP 条件）"
+      ]
     },
     {
       "id": 7,
@@ -415,8 +411,7 @@
         "manual",
         4,
         "auto"
-      ],
-      "title": "SelfLift 高清续采 · 0.8MP（H3 3D Upscaler）"
+      ]
     },
     {
       "id": 10,
@@ -583,8 +578,30 @@
         "auto",
         "auto",
         "auto"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "MarkdownNote",
+      "pos": [
+        -650,
+        80
       ],
-      "title": "输出高清视频"
+      "size": [
+        500,
+        300
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "# SelfLift · 从检查点继续高清\n\n用途：读取已经保存的低清检查点，直接执行高清续采，不重新运行低清采样。\n\n- 在 TerryDirectorReadLowresCheckpoint 节点中选择要继续的检查点。\n- 使用与保存检查点时兼容的 H3 模型、提示词、参考图、Seed、CFG、目标分辨率及 Sigma 日程。\n- 高清结果由 H3 3D Latent Upscaler 过渡到目标分辨率，再完成剩余采样步骤。\n- 如果找不到检查点，或低清与高清工作流的关键参数不一致，请返回低清工作流重新生成检查点。\n\n工作流节点保留默认名称；说明集中放在本便笺中。"
+      ]
     }
   ],
   "links": [
