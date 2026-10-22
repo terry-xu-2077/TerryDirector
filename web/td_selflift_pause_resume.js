@@ -194,6 +194,16 @@ function resetForLowres(node) {
   refresh(node);
 }
 
+function hideInternalControl(item) {
+  if (!item) return;
+  item.type = "hidden";
+  item.hidden = true;
+  item.computeSize = () => [0, 0];
+  item.draw = () => {};
+  if (item.element) item.element.style.display = "none";
+  if (item.inputEl) item.inputEl.style.display = "none";
+}
+
 function attach(node) {
   if (node?.comfyClass !== CLASS_NAME) return;
   if (!node.__tdSelfLiftBound) {
@@ -208,6 +218,9 @@ function attach(node) {
         return value;
       };
     }
+    // They still serialize into the workflow; the button now owns the mode
+    // switch. Avoid a second mode widget contradicting the visible action.
+    hideInternalControl(widget(node, "mode"));
   }
   if (!node.__tdSelfLiftRoot) {
     ensureStyle();
