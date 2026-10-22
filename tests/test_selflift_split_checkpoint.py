@@ -161,6 +161,24 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(tuple(av[0].shape), (1, 4, 3, 4, 8))
         self.assertTrue(torch.equal(av[1], torch.ones(1, 2, 4, 3) * 2))
 
+        # Fast mode is intentionally explicit and must never invoke either
+        # an external learned upscaler or VAE pixel roundtrip.
+        def forbidden_lifter(*args):
+            raise AssertionError("nearest should not invoke H3 upscaler")
+
+        fast_backend = Backend()
+        quick = resume.resume_highres(
+            checkpoint={"checkpoint_id": cid}, model=Model(),
+            positive=[], negative=[], vae=None, sampler=None,
+            rho=0.0, w_min=0.5, w_max=1.0,
+            upscaler_model="nearest", _backend=fast_backend,
+            _lifter=forbidden_lifter)
+        self.assertEqual(len(fast_backend.sample_calls), 1)
+        self.assertEqual(len(fast_backend.sample_calls[0]), 3)
+        quick_streams = quick["samples"].unbind()
+        self.assertTrue(torch.equal(quick_streams[1], av[1]))
+        self.assertEqual(tuple(quick_streams[0].shape), tuple(av[0].shape))
+
     def test_checkpoint_is_immutable_version(self):
         cid1 = self.module.save_checkpoint(**self.inputs())
         cid2 = self.module.save_checkpoint(**self.inputs())
