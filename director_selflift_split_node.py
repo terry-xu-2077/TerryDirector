@@ -225,7 +225,7 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         from .director_selflift_upscaler import list_models
-        available = ["none"] + list_models()
+        available = ["nearest", "none"] + list_models()
         return io.Schema(
             node_id="TerryDirectorSelfLiftHighres",
             display_name="TerryDirector SelfLift 高清续采",
@@ -240,10 +240,11 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
                 io.Conditioning.Input("negative"),
                 io.Vae.Input("vae", display_name="视频 VAE"),
                 io.Sampler.Input("sampler", display_name="Euler 采样器"),
-                io.Float.Input("rho", default=0.6, min=0.0, max=1.0),
+                io.Float.Input("rho", default=0.0, min=0.0, max=1.0),
                 io.Float.Input("w_min", default=0.5, min=0.0, max=1.0),
                 io.Float.Input("w_max", default=1.0, min=0.0, max=1.0),
-                io.Combo.Input("upscaler_model", options=available, default="none"),
+                io.Combo.Input("upscaler_model", options=available, default="nearest",
+                               tooltip="nearest：只用于快速验证分段续采，不做 VAE 往返；none + rho>0：SelfLift-zero，可能很慢；外部权重：H3 Latent Upscaler"),
                 io.Boolean.Input("highres_tiling", default=False),
                 io.Combo.Input("tiling_mode", options=["auto", "manual"], default="auto"),
                 io.Combo.Input("tiling_tiles", options=[2, 4, 6, 8], default=2),
