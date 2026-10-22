@@ -240,14 +240,20 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
                 io.Conditioning.Input("negative"),
                 io.Vae.Input("vae", display_name="视频 VAE"),
                 io.Sampler.Input("sampler", display_name="Euler 采样器"),
+                io.Model.Input("high_res_model", display_name="独立高清 MODEL（可选）",
+                               optional=True,
+                               tooltip="可单独连接高清模型加速/低显存处理分支；留空沿用 model。"
+                                       "参考 SelfLift-Avatar 的 low_res_model / high_res_model 架构。"),
                 io.Float.Input("rho", default=0.0, min=0.0, max=1.0),
                 io.Float.Input("w_min", default=0.5, min=0.0, max=1.0),
                 io.Float.Input("w_max", default=1.0, min=0.0, max=1.0),
                 io.Combo.Input("upscaler_model", options=available, default="nearest",
                                tooltip="nearest：只用于快速验证分段续采，不做 VAE 往返；none + rho>0：SelfLift-zero，可能很慢；外部权重：H3 Latent Upscaler"),
-                io.Boolean.Input("highres_tiling", default=False),
-                io.Combo.Input("tiling_mode", options=["auto", "manual"], default="auto"),
-                io.Combo.Input("tiling_tiles", options=[2, 4, 6, 8], default=2),
+                io.Boolean.Input("highres_tiling", default=False,
+                                 tooltip="H3 高清空间分块，参考参数：开启。"
+                                         "只有视频按空间分块，音频保留完整上下文。"),
+                io.Combo.Input("tiling_mode", options=["auto", "manual"], default="manual"),
+                io.Combo.Input("tiling_tiles", options=[2, 4, 6, 8], default=4),
                 io.Combo.Input("tiling_axis", options=["auto", "width", "height"], default="auto"),
             ],
             outputs=[io.Latent.Output("latent", display_name="高清音视频 Latent")],
@@ -256,10 +262,11 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
     @classmethod
     def execute(cls, checkpoint, model, positive, negative, vae, sampler,
                 rho, w_min, w_max, upscaler_model, highres_tiling=False,
-                tiling_mode="auto", tiling_tiles=2, tiling_axis="auto"):
+                tiling_mode="manual", tiling_tiles=4, tiling_axis="auto",
+                high_res_model=None):
         return io.NodeOutput(resume_highres(
-            checkpoint=checkpoint, model=model, positive=positive,
-            negative=negative, vae=vae, sampler=sampler,
+            checkpoint=checkpoint, model=model, high_res_model=high_res_model,
+            positive=positive, negative=negative, vae=vae, sampler=sampler,
             rho=rho, w_min=w_min, w_max=w_max, upscaler_model=upscaler_model,
             highres_tiling=highres_tiling, tiling_mode=tiling_mode,
             tiling_tiles=tiling_tiles, tiling_axis=tiling_axis,
