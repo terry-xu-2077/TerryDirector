@@ -18,7 +18,8 @@ from .director_selflift_math import correct_endpoint, validate_options
 def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
                    rho, w_min, w_max, upscaler_model,
                    highres_tiling=False, tiling_mode="auto", tiling_tiles=2,
-                   tiling_axis="auto", _backend=None, _lifter=None):
+                   tiling_axis="auto", high_res_model=None,
+                   _backend=None, _lifter=None):
     from .director_selflift_checkpoint import load_checkpoint
     if isinstance(checkpoint, dict):
         checkpoint = checkpoint.get("checkpoint_id")
@@ -53,7 +54,11 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
                            or tiling_tiles not in {2, 4, 6, 8}):
         raise ValueError("SelfLift: 高清空间分块参数无效")
     backend = _backend or ComfyBackend()
-    backend.validate(model, model, sampler)
+    # The reference SelfLift-Avatar workflow supplies a separate high-res
+    # model branch. Keep original model for saved latent-format/flow semantics,
+    # but use the selected high model for actual remaining Euler evaluations.
+    high_model = high_res_model if high_res_model is not None else model
+    backend.validate(model, high_model, sampler)
     backend.interrupt()
     source = [s.to(backend.device) for s in saved["source"]]
     low_clean = [s.to(backend.device) for s in saved["clean"]]
@@ -126,15 +131,18 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     del low_clean, low_state, noise, direct, anchor, clean_video_vae
     del clean_high, video_state, video_next, unscaled_video
     backend.interrupt()
-    high_model = model
     if highres_tiling:
+        logging.info(
+            "[TerryDirector SelfLift split] 高清 H3 空间分块：mode=%s tiles=%d axis=%s",
+            tiling_mode, tiling_tiles, tiling_axis,
+        )
         high_model = backend.tiled_model(
             high_model, [tuple(s.shape) for s in source],
             tiling_mode, tiling_tiles, tiling_axis)
     high_model = backend.mask_model(high_model, source, masks)
     sigmas = saved["sigmas"].to(backend.device)
     total_steps = sigmas.numel() - 1
-    preview = backend.preview(model, total_steps)
+    preview = backend.preview(high_model, total_steps)
     high_calls = 0
 
     def callback(step, clean, state, total):
