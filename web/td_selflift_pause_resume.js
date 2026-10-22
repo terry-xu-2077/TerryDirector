@@ -18,6 +18,49 @@ const OUTPUT_TYPES = new Set(["SaveVideo", "VHS_VideoCombine", "SaveImage",
   "SaveAnimatedWEBP", "SaveAnimatedPNG", "SaveAudio"]);
 const MIN_WIDTH = 350;
 const STYLE_ID = "td-selflift-action-style";
+const pendingBranchSubmissions = [];
+
+function bindPartialPromptTracking() {
+  if (api.__tdSelfLiftPartialTrackingBound) return;
+  api.__tdSelfLiftPartialTrackingBound = true;
+  const original = api.queuePrompt.bind(api);
+  api.queuePrompt = async (number, data, options) => {
+    const output = data?.output || {};
+    const explicit = Array.isArray(options?.partialExecutionTargets)
+      ? options.partialExecutionTargets.map(String) : [];
+    // Match the exact partial target, not any downstream node or other branch.
+    // Fallback for an app.queuePrompt wrapper which dropped the partial target.
+    const index = pendingBranchSubmissions.findIndex(req =>
+      Object.prototype.hasOwnProperty.call(output, req.targetId) &&
+      (explicit.includes(req.targetId) || explicit.length === 0));
+    if (index < 0) return original(number, data, options);
+    const [req] = pendingBranchSubmissions.splice(index, 1);
+    try {
+      const result = await original(number, data, {
+        ...(options || {}),
+        partialExecutionTargets: [req.targetId],
+      });
+      if (req.node.__tdSelfLiftRun === req.run) {
+        if (result?.prompt_id) {
+          req.run.promptId = String(result.prompt_id);
+        } else {
+          req.run.busy = false;
+          req.run.error = "ComfyUI 未返回有效的任务编号，请检查任务队列";
+          refresh(req.node);
+        }
+      }
+      return result;
+    } catch (error) {
+      if (req.node.__tdSelfLiftRun === req.run) {
+        req.run.busy = false;
+        req.run.error = error?.message || String(error);
+        refresh(req.node);
+      }
+      throw error;
+    }
+  };
+}
+
 
 function widget(node, name) {
   return node?.widgets?.find(item => item.name === name);
@@ -120,7 +163,7 @@ function refresh(node) {
     button.disabled = busy;
     ico.innerHTML = blue ? PAUSE_ICON : PLAY_ICON;
     label.textContent = busy
-      ? (run.mode === "pause" ? "低清生成中…" : "高清续采中…")
+      ? (run.mode === "checking" ? "检查检查点…" : run.mode === "pause" ? "低清生成中…" : "高清续采中…")
       : (blue ? "生成低清 · 暂停" : "继续高清");
     status.textContent = run?.error || (ready
       ? (name ? name.slice(0, 18) + " · " : "") + "检查点 " + id.slice(0, 8) + " 已保存"
@@ -185,29 +228,35 @@ function showError(error) {
 
 async function runBranch(node) {
   if (node.__tdSelfLiftRun?.busy) return;
-  // An ID by itself does not prove that the low-res result still exists.
-  // This also handles re-opening a saved workflow after cleaning output/.
-  if (UUID_RE.test(checkpointId(node))) await checkCheckpoint(node);
-  const ready = hasCheckpoint(node);
-  const target = ready ? findDownstreamOutput(node) : node;
-  const mode = ready ? "continue" : "pause";
-
-  // The mode is a normal serialized widget, so ComfyUI's queued prompt gets
-  // the correct value. A queued, paused job targets ONLY this node, not every
-  // output in the current workflow.
-  setWidget(node, "mode", ready ? "继续高清" : "暂停并保存");
-  node.__tdSelfLiftRun = { busy: true, mode, promptId: null, error: "" };
+  const run = { busy: true, mode: "checking", promptId: null, error: "" };
+  node.__tdSelfLiftRun = run;
   refresh(node);
+  let request = null;
   try {
-    // Matches the partial-queue calling convention already used by the
-    // TerryDirector Looper. The Looper API guard preserves its own targets.
-    const result = await app.queuePrompt(0, 1, [String(target.id)]);
-    if (result?.prompt_id && node.__tdSelfLiftRun) {
-      node.__tdSelfLiftRun.promptId = String(result.prompt_id);
-    }
-  } catch (error) {
-    node.__tdSelfLiftRun = { busy: false, mode, error: error?.message || String(error) };
+    // An ID by itself does not prove the on-disk checkpoint still exists.
+    if (UUID_RE.test(checkpointId(node))) await checkCheckpoint(node);
+    const ready = hasCheckpoint(node);
+    const target = ready ? findDownstreamOutput(node) : node;
+    run.mode = ready ? "continue" : "pause";
+
+    // Set the serialized mode before ComfyUI builds the prompt.
+    setWidget(node, "mode", ready ? "继续高清" : "暂停并保存");
+    request = { node, run, targetId: String(target.id) };
+    pendingBranchSubmissions.push(request);
     refresh(node);
+    // This is the same partial-execution API TerryDirector Looper uses.
+    // The interceptor binds the returned prompt_id to this exact node.
+    await app.queuePrompt(0, 1, [request.targetId]);
+  } catch (error) {
+    if (request) {
+      const i = pendingBranchSubmissions.indexOf(request);
+      if (i >= 0) pendingBranchSubmissions.splice(i, 1);
+    }
+    if (node.__tdSelfLiftRun === run) {
+      run.busy = false;
+      run.error = error?.message || String(error);
+      refresh(node);
+    }
     showError(error);
   }
 }
@@ -318,13 +367,25 @@ function bindExecutionResult() {
     refresh(node);
   });
 
+  // Fallback correlation if a third-party queue wrapper suppresses the
+  // prompt response. Ignore unrelated executing events.
+  api.addEventListener("executing", event => {
+    const detail = event.detail || {};
+    if (detail.node == null || !detail.prompt_id) return;
+    const node = app.graph?.getNodeById?.(Number(detail.node));
+    if (node?.comfyClass === CLASS_NAME && node.__tdSelfLiftRun?.busy &&
+        !node.__tdSelfLiftRun.promptId) {
+      node.__tdSelfLiftRun.promptId = String(detail.prompt_id);
+    }
+  });
+
   for (const eventName of ["execution_success", "execution_error", "execution_interrupted"]) {
     api.addEventListener(eventName, event => {
       const info = event.detail || {};
       for (const node of app.graph?._nodes || []) {
         if (node.comfyClass !== CLASS_NAME || !node.__tdSelfLiftRun?.busy) continue;
         const run = node.__tdSelfLiftRun;
-        if (run.promptId && String(run.promptId) !== String(info.prompt_id)) continue;
+        if (!run.promptId || String(run.promptId) !== String(info.prompt_id)) continue;
         if (eventName !== "execution_success") {
           run.error = info.exception_message || (eventName === "execution_interrupted"
             ? "执行已中断" : "生成失败；检查 ComfyUI 控制台");
@@ -338,7 +399,10 @@ function bindExecutionResult() {
 
 app.registerExtension({
   name: "TerryDirector.SelfLiftPauseResumeUI",
-  async setup() { bindExecutionResult(); },
+  async setup() {
+    bindPartialPromptTracking();
+    bindExecutionResult();
+  },
   nodeCreated(node) { queueMicrotask(() => attach(node)); },
   loadedGraphNode(node) { queueMicrotask(() => attach(node)); },
 });
