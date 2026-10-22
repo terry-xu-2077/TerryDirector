@@ -59,6 +59,14 @@ def compute_resolution(megapixels: float, aspect_ratio: str = "16:9 (Widescreen)
     return width, height
 
 
+def compute_sampling_resolutions(highres_megapixels: float, aspect_ratio: str = "16:9 (Widescreen)") -> tuple[tuple[int, int], tuple[int, int]]:
+    """Both sampling resolutions from one target: low-res pixel area is 1/4 of high-res."""
+    # Validate the user-controlled value before deriving the low-resolution target.
+    high_width, high_height = compute_resolution(highres_megapixels, aspect_ratio)
+    low_width, low_height = compute_resolution(float(highres_megapixels) / 4.0, aspect_ratio)
+    return (low_width, low_height), (high_width, high_height)
+
+
 def actual_megapixels(width: int, height: int) -> float:
     """Return the actual pixel area in megapixels after grid rounding."""
     return int(width) * int(height) / 1_000_000
