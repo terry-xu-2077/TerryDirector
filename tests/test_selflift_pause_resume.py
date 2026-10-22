@@ -134,6 +134,31 @@ class PauseResumeTests(unittest.TestCase):
         # validation error from execute() instead of an internal graph error.
         self.assertEqual(node.check_lazy_status(mode="暂停并保存"), [])
 
+    def test_v3_lazy_inputs_are_wrapped_as_value_input_id_tuples(self):
+        # This is ComfyUI's actual _io.build_nested_inputs(...,
+        # create_dynamic_tuple=True) calling convention. Ignoring it made
+        # the previous pause mode immediately finish with no low-res sampling.
+        node = self.module.TerryDirectorSelfLiftPauseResume
+        self.assertEqual(node.check_lazy_status(
+            mode=("暂停并保存", "mode"),
+            low_state=(None, "low_state"),
+            low_clean=(None, "low_clean"),
+            source=(None, "source"),
+            sigmas=(None, "sigmas")),
+            ["low_state", "low_clean", "source", "sigmas"])
+        self.assertEqual(node.check_lazy_status(
+            mode=("继续高清", "mode"),
+            low_state=(None, "low_state"),
+            low_clean=(None, "low_clean"),
+            source=(None, "source"),
+            sigmas=(None, "sigmas")), [])
+        self.assertEqual(node.check_lazy_status(
+            mode=("暂停并保存", "mode"),
+            low_state=({"samples": "cached"}, "low_state"),
+            low_clean=(None, "low_clean"),
+            source=({"samples": "cached"}, "source"),
+            sigmas=(None, "sigmas")), ["low_clean", "sigmas"])
+
     def test_pause_blocks_highres_and_continue_uses_same_disk_id(self):
         node = self.module.TerryDirectorSelfLiftPauseResume
         saved = node.execute(mode="暂停并保存", **self.data())
