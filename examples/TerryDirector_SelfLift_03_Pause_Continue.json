@@ -1,7 +1,7 @@
 {
   "id": "54de5d70-17de-4eef-9abc-e792e34bf3f0",
   "revision": 0,
-  "last_node_id": 34,
+  "last_node_id": 35,
   "last_link_id": 49,
   "nodes": [
     {
@@ -49,7 +49,6 @@
           ]
         }
       ],
-      "title": "H3 模型 · 对齐 Self-Lift Avatar（FL2VA BF16）",
       "properties": {
         "Node name for S&R": "UNETLoader",
         "cnr_id": "comfy-core"
@@ -168,7 +167,6 @@
           ]
         }
       ],
-      "title": "视频 VAE",
       "properties": {
         "Node name for S&R": "VAELoader",
         "cnr_id": "comfy-core"
@@ -216,7 +214,6 @@
           ]
         }
       ],
-      "title": "音频 VAE",
       "properties": {
         "Node name for S&R": "VAELoader",
         "cnr_id": "comfy-core"
@@ -330,7 +327,6 @@
           ]
         }
       ],
-      "title": "KJ · 低清预览（对齐爱屋对照工作流）",
       "properties": {
         "Node name for S&R": "ModelPreviewOverrideKJ"
       },
@@ -491,7 +487,6 @@
           ]
         }
       ],
-      "title": "H3 提示词 · 低清由目标 0.8MP 自动换算",
       "properties": {
         "Node name for S&R": "MiniMaxH3ReferenceToVideo",
         "cnr_id": "comfy-core"
@@ -608,7 +603,6 @@
           ]
         }
       ],
-      "title": "完整 8 步 Sigma（后接 H3SigmaRefiner）",
       "properties": {
         "Node name for S&R": "BasicScheduler",
         "cnr_id": "comfy-core"
@@ -671,7 +665,6 @@
           "links": null
         }
       ],
-      "title": "第一个输出：前 6 步（基于 Refiner 后 SIGMAS）",
       "properties": {
         "Node name for S&R": "SplitSigmas",
         "cnr_id": "comfy-core"
@@ -719,7 +712,6 @@
           ]
         }
       ],
-      "title": "Euler",
       "properties": {
         "Node name for S&R": "KSamplerSelect",
         "cnr_id": "comfy-core"
@@ -828,7 +820,6 @@
           ]
         }
       ],
-      "title": "ComfyUI 原生低清 6/8（seed=8, CFG=1）",
       "properties": {
         "Node name for S&R": "SamplerCustom",
         "cnr_id": "comfy-core"
@@ -899,7 +890,6 @@
           ]
         }
       ],
-      "title": "目标 0.8MP · 只用于检查点",
       "properties": {
         "Node name for S&R": "EmptyMiniMaxH3LatentAV",
         "cnr_id": "comfy-core"
@@ -1029,7 +1019,6 @@
           "links": null
         }
       ],
-      "title": "TerryDirector SelfLift 暂停/继续 · 默认审片示例（0.2→0.8MP）",
       "properties": {
         "Node name for S&R": "TerryDirectorSelfLiftPauseResume"
       },
@@ -1159,7 +1148,6 @@
           ]
         }
       ],
-      "title": "SelfLift 高清续采 · H3 3D Upscaler（默认关闭空间分块）",
       "properties": {
         "Node name for S&R": "TerryDirectorSelfLiftHighres"
       },
@@ -1216,7 +1204,6 @@
           ]
         }
       ],
-      "title": "高清画面",
       "properties": {
         "Node name for S&R": "VAEDecode",
         "cnr_id": "comfy-core"
@@ -1260,7 +1247,6 @@
           ]
         }
       ],
-      "title": "高清声音",
       "properties": {
         "Node name for S&R": "VAEDecodeAudio",
         "cnr_id": "comfy-core"
@@ -1428,7 +1414,6 @@
           "links": null
         }
       ],
-      "title": "高清结果",
       "properties": {
         "Node name for S&R": "SaveVideo",
         "cnr_id": "comfy-core"
@@ -1532,8 +1517,7 @@
         "aspect_ratio": "16:9 (Widescreen)",
         "megapixels": 0.2,
         "multiple": 32
-      },
-      "title": "低清审片 · 0.2MP"
+      }
     },
     {
       "id": 26,
@@ -1621,8 +1605,7 @@
         "aspect_ratio": "16:9 (Widescreen)",
         "megapixels": 0.8,
         "multiple": 32
-      },
-      "title": "高清目标 · 0.8MP"
+      }
     },
     {
       "id": 27,
@@ -1742,8 +1725,7 @@
         "value": 0.8
       },
       "color": "#323",
-      "bgcolor": "#535",
-      "title": "Float (Target MP = 0.8)"
+      "bgcolor": "#535"
     },
     {
       "id": 29,
@@ -1856,7 +1838,6 @@
           ]
         }
       ],
-      "title": "Float (Duration)",
       "properties": {
         "Node name for S&R": "PrimitiveFloat"
       },
@@ -2050,7 +2031,6 @@
           ]
         }
       ],
-      "title": "H3 Sigma Refiner · 对齐爱屋1020",
       "properties": {
         "Node name for S&R": "H3SigmaRefiner"
       },
@@ -2068,6 +2048,29 @@
       },
       "color": "#233",
       "bgcolor": "#355"
+    },
+    {
+      "id": 35,
+      "type": "MarkdownNote",
+      "pos": [
+        -650,
+        80
+      ],
+      "size": [
+        500,
+        300
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "# SelfLift · 默认推荐：低清审片 → 高清续采\n\n目标：低清约 0.2 MP（608×352），高清约 0.8 MP（864×480），124 帧。\n\n1. 首次点击 TerryDirectorSelfLiftPauseResume 节点中的主按钮「生成低清」，运行低清采样并保存检查点。\n2. 先检查低清视频。确认镜头、表演和构图符合预期后，再点击变为柠檬绿色的「继续高清」按钮。\n3. 如果不满意，点击节点右下方的「重新生成低清」按钮，重新生成低清结果；旧检查点不会被当作本次续采依据。\n4. 继续高清前不要更换提示词、参考图或影响检查点兼容性的参数。\n\n模型权重与 H3 Sigma Refiner 必须在本机可用。工作流节点保留默认名称；说明集中放在本便笺中。"
+      ]
     }
   ],
   "links": [
