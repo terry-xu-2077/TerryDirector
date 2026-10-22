@@ -43,7 +43,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector 循环结束** | 每轮保存 MOV/MP4，按需组合 Final，输出执行报告和片段目录 |
 | **TerryDirector Llama** | 共享本地 Llama/VLM 的提示词增强能力 |
 | **TerryDirector 提示词增强编辑器** | 连接 Llama 后增强 STRING 提示词 |
-| **TerryDirector 双采样分辨率选择器** | 共用宽高比，分别计算低清 / 高清采样分辨率，并提供动态预览 |
+| **TerryDirector 双采样分辨率选择器** | 只输入高清目标 MP，低清自动取 1/4；共用宽高比并实时预览两组分辨率 |
 | **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
 
 独立 SelfLift 内部节点仍可被现有工作流按节点 ID 使用，但不再提供 Base / Advanced 的封装式二采配置。
