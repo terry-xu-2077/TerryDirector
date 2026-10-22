@@ -12,7 +12,7 @@ from time import perf_counter
 import torch
 
 from .director_selflift import ComfyBackend
-from .director_selflift_math import spatial_resize, validate_options
+from .director_selflift_math import validate_options
 
 
 def resume_highres(*, checkpoint, model, positive, negative, sampler,
@@ -30,8 +30,8 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
     seed = int(manifest["seed"])
     k = int(manifest["transition_step"])
     validate_options(cfg, 0.5)
-    if upscaler_model in {"", "none", None}:
-        raise ValueError("SelfLift: 已移除中间 VAE 往返，请选择 nearest 或 H3 Latent Upscaler")
+    if not upscaler_model or upscaler_model in {"none", "nearest"}:
+        raise ValueError("SelfLift: 高清续采只支持 H3 3D Latent Upscaler，请选择有效的模型文件")
     logging.info(
         "[TerryDirector SelfLift split] 开始 Latent-only 续采 checkpoint=%s "
         "low=%s high=%s upscaler=%s",
@@ -63,18 +63,14 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
     # latent space. Do not pass a bare video tensor through MiniMaxH3's
     # AV process_latent_in/out (those methods also rescale packed audio).
     clean_video_vae = low_clean[0].float()
-    if upscaler_model == "nearest":
-        clean_lift = spatial_resize(clean_video_vae, target, mode="nearest")
-        logging.info("[TerryDirector SelfLift split] 最近邻 Latent 放大完成")
-    else:
-        logging.info("[TerryDirector SelfLift split] 开始 H3 3D Latent Upscaler")
-        lifted_at = perf_counter()
-        if _lifter is None:
-            from .director_selflift_upscaler import learned_lift
-            _lifter = learned_lift
-        clean_lift = _lifter(clean_video_vae, target, upscaler_model)
-        logging.info("[TerryDirector SelfLift split] H3 3D Latent Upscaler 完成 %.1fs",
-                     perf_counter() - lifted_at)
+    logging.info("[TerryDirector SelfLift split] 开始 H3 3D Latent Upscaler")
+    lifted_at = perf_counter()
+    if _lifter is None:
+        from .director_selflift_upscaler import learned_lift
+        _lifter = learned_lift
+    clean_lift = _lifter(clean_video_vae, target, upscaler_model)
+    logging.info("[TerryDirector SelfLift split] H3 3D Latent Upscaler 完成 %.1fs",
+                 perf_counter() - lifted_at)
     if tuple(clean_lift.shape) != tuple(source[0].shape):
         raise ValueError("SelfLift: Latent 放大后视频形状不匹配")
     clean_high = fmt.process_in(clean_lift)
