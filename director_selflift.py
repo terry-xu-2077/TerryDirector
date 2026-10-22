@@ -6,6 +6,7 @@ import of another plugin, or fallback to an external sampler is performed.
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 import torch
 from torch.nn import functional as F
 
@@ -114,9 +115,18 @@ class ComfyBackend:
 def _pixel_endpoint(video, vae, target, interrupt):
     """A separate decode/resize/encode per batch member; no temporal resampling."""
     endpoints = []
-    for item in video.split(1):
+    for batch_no, item in enumerate(video.split(1), 1):
         interrupt()
+        stage_at = perf_counter()
+        logging.info(
+            "[TerryDirector SelfLift] 像素锚 batch=%d：开始视频 VAE 解码；shape=%s",
+            batch_no, tuple(item.shape),
+        )
         frames = vae.decode(item)
+        logging.info(
+            "[TerryDirector SelfLift] 像素锚 batch=%d：视频 VAE 解码完成 %.1fs",
+            batch_no, perf_counter() - stage_at,
+        )
         if frames.ndim == 5:
             frames = frames.reshape(-1, *frames.shape[-3:])
         if frames.ndim != 4 or any(n == 0 for n in frames.shape) or frames.shape[1] % video.shape[-2] or frames.shape[2] % video.shape[-1]:
@@ -126,6 +136,10 @@ def _pixel_endpoint(video, vae, target, interrupt):
         dtype = vae.vae_dtype if vae.vae_dtype in (torch.float16, torch.bfloat16, torch.float32) else torch.float32
         if device.type == "cpu":
             dtype = torch.float32
+        logging.info(
+            "[TerryDirector SelfLift] 像素锚 batch=%d：开始图像插值 frames=%d output=%s",
+            batch_no, frames.shape[0], pixels,
+        )
         resized = torch.empty((frames.shape[0], *pixels, frames.shape[-1]), dtype=dtype, device="cpu")
         for start in range(0, frames.shape[0], 32):
             interrupt()
@@ -133,7 +147,16 @@ def _pixel_endpoint(video, vae, target, interrupt):
             chunk = F.interpolate(chunk, size=pixels, mode="bicubic", align_corners=False, antialias=True)
             resized[start:start + 32] = chunk.movedim(1, -1).to(device="cpu")
         del frames, chunk
+        logging.info(
+            "[TerryDirector SelfLift] 像素锚 batch=%d：开始高清视频 VAE 回编码；"
+            "若此处耗时很长，请检查显存/共享 GPU 内存",
+            batch_no,
+        )
         encoded = vae.encode(resized).float()
+        logging.info(
+            "[TerryDirector SelfLift] 像素锚 batch=%d：高清视频 VAE 回编码完成 %.1fs",
+            batch_no, perf_counter() - stage_at,
+        )
         expected = (*item.shape[:3], *target)
         if tuple(encoded.shape) != expected:
             raise ValueError(f"TerryDirector SelfLift: VAE 回编码改变了时长/形状 {tuple(encoded.shape)} != {expected}")
