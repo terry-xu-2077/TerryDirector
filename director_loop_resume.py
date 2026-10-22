@@ -50,7 +50,8 @@ def workflow_fingerprint(dynprompt, body_ids, is_link) -> str:
     return canonical_hash(sorted(nodes, key=lambda row: row["id"]))
 
 
-def plan_fingerprint(document, seed, compiled, workflow_hash, video_format):
+def plan_fingerprint(document, seed, compiled, workflow_hash, video_format,
+                     output_profile=None):
     """Hash the *effective* authored content, not a random per-run UUID."""
     # Cursor focus and the selected card do not alter generated content.
     # Do not accidentally invalidate a resumable run when the user switches
@@ -86,15 +87,12 @@ def plan_fingerprint(document, seed, compiled, workflow_hash, video_format):
         } for segment in compiled["segments"]],
         "workflow": workflow_hash,
         "format": video_format,
-        "schema": 1,
+        # The user's final SaveVideo path is part of task identity. Moving or
+        # renaming the destination intentionally starts a new task.
+        "output_profile": output_profile or {},
+        "schema": 2,
     }
     return canonical_hash(relevant)
-
-
-def _loop_root(loop_id) -> Path:
-    from .director_loop_media import _safe
-    return (Path(folder_paths.get_output_directory()) / "TerryDirector"
-            / "renders" / _safe(f"loop-{loop_id}")).resolve()
 
 
 def _within(file: Path, root: Path) -> bool:
@@ -105,7 +103,8 @@ def _within(file: Path, root: Path) -> bool:
         return False
 
 
-def verified_clip(entry, root: Path, segment, video_format, fingerprint=None):
+def verified_clip(entry, root: Path, segment, video_format, fingerprint=None,
+                  run_stem=None):
     """Never trust descriptor paths, format or durations without checks."""
     if not isinstance(entry, dict):
         return False
@@ -113,6 +112,8 @@ def verified_clip(entry, root: Path, segment, video_format, fingerprint=None):
         media = Path(entry["path"]).resolve()
         return (
             _within(media, root)
+            and media.parent == root
+            and (not run_stem or media.name.startswith(str(run_stem) + "_"))
             and media.is_file()
             and media.stat().st_size > 0
             and media.suffix.lower() in (".mov", ".mp4")
@@ -126,16 +127,18 @@ def verified_clip(entry, root: Path, segment, video_format, fingerprint=None):
         return False
 
 
-def find_resume_checkpoint(loop_id, fingerprint, segments, video_format):
+def find_resume_checkpoint(output_profile, fingerprint, segments, video_format):
     """Return newest *incomplete* exact-match run and its completed prefix.
 
     The prefix is ordered and contiguous. Never reuse a partial segment or a
     saved movie from a different creative/workflow fingerprint.
     """
-    root = _loop_root(loop_id)
+    from .director_loop_storage import manifest_glob, profile_directory, storage_from_manifest
+
+    root = profile_directory(output_profile)
     if not root.is_dir():
         return None
-    candidates = sorted(root.glob("*/timeline.json"),
+    candidates = sorted(root.glob(manifest_glob(output_profile)),
                         key=lambda file: file.stat().st_mtime_ns, reverse=True)
     for manifest in candidates:
         try:
@@ -144,7 +147,11 @@ def find_resume_checkpoint(loop_id, fingerprint, segments, video_format):
                 continue
             if state.get("plan_fingerprint") != fingerprint:
                 continue
-            run_id = manifest.parent.name
+            if state.get("output_profile") != output_profile:
+                continue
+            run_id = str(state.get("run_signature") or "")
+            if not run_id:
+                continue
             indexed = {int(entry["index"]): entry
                        for entry in state.get("clips", [])}
             completed = []
@@ -155,16 +162,16 @@ def find_resume_checkpoint(loop_id, fingerprint, segments, video_format):
                     completed.append(None)
                     continue
                 entry = indexed.get(i)
-                if not verified_clip(entry, root, segment, video_format, fingerprint):
+                if not verified_clip(
+                    entry, root, segment, video_format, fingerprint, manifest.stem,
+                ):
                     break
                 completed.append(entry)
-            if (0 < len(completed) < len(segments)
+            if (0 < len(completed) <= len(segments)
                     and any(part is not None for part in completed)):
                 return {
-                    "run_signature": run_id,
-                    "root": str(manifest.parent),
+                    **storage_from_manifest(manifest, state),
                     "completed": completed,
-                    "manifest": str(manifest),
                 }
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             continue

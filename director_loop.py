@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 import time
-import uuid
 
 import folder_paths
 import numpy as np
@@ -38,7 +37,9 @@ from .director_loop_reuse import find_saved_clip, safe_input_video, load_tail_co
 from .director_loop_resume import (
     plan_fingerprint, workflow_fingerprint, find_resume_checkpoint,
 )
+from .director_loop_storage import allocate_run, resolve_output_profile
 from .director_loop_memory import log_loop_ram, release_completed_body
+from .director_loop_merged_video import TerryDirectorMergedVideo
 from .director_loop_report import start_report, mark_clip, finish_report
 
 # An allowlist of diagnosis-relevant numeric/model settings. Neither prompt
@@ -244,6 +245,7 @@ def _plan_items(
     resume_previous=False,
     workflow_hash="",
     segment_format=MOV_HQ,
+    output_profile=None,
 ):
     # Fail before creating any cache directory if the model has no adapter.
     adapter = get_loop_adapter(adapter_id)
@@ -287,14 +289,14 @@ def _plan_items(
     else:
         selected = all_segments
 
-    cache_key = f"loop-{loop_id}"
+    output_profile = dict(output_profile or {})
     fingerprint = plan_fingerprint(
-        document, seed, plan, workflow_hash, segment_format,
+        document, seed, plan, workflow_hash, segment_format, output_profile,
     )
     checkpoint = None
     if resume_previous:
         checkpoint = find_resume_checkpoint(
-            loop_id, fingerprint, all_segments, segment_format,
+            output_profile, fingerprint, all_segments, segment_format,
         )
         if checkpoint is None:
             raise ValueError(
@@ -303,8 +305,13 @@ def _plan_items(
             )
         if rerun_clip_id:
             raise ValueError("续跑不能和单片段重跑一起执行")
-    run_signature = (checkpoint["run_signature"]
-                     if checkpoint else uuid.uuid4().hex)
+    storage = checkpoint or allocate_run(
+        output_profile,
+        fingerprint=fingerprint,
+        segment_format=segment_format,
+        loop_id=str(loop_id),
+    )
+    run_signature = storage["run_signature"]
     reused_prefix = checkpoint["completed"] if checkpoint else []
     print(
         f"[TerryDirector Loop] {'RESUME' if checkpoint else 'FRESH'} "
@@ -325,7 +332,8 @@ def _plan_items(
         )
         if action == "reuse_result":
             previous_result = find_saved_clip(
-                loop_id, segment["id"], required_frames=segment["output_frames"]
+                output_profile, segment["id"],
+                required_frames=segment["output_frames"]
             )
             if previous_result is None:
                 raise FileNotFoundError(
@@ -368,8 +376,11 @@ def _plan_items(
                 "assembly": part["assembly"],
             } for part in all_segments] if rerun_clip_id and segment["id"] == rerun_clip_id else None,
             "seed": max(0, min(0xFFFFFFFFFFFFFFFF, effective_seed)),
-            "cache_key": cache_key,
             "run_signature": run_signature,
+            "manifest_path": storage["manifest"],
+            "output_directory": storage["directory"],
+            "run_stem": storage["stem"],
+            "output_profile": output_profile,
             "context_frames": context_frames,
             "signature": (
                 f"{run_signature}:{segment['id']}:"
@@ -675,6 +686,7 @@ class TerryDirectorLooper(StartLoop):
         end_id = loop["_loop_end"]
         end_inputs = dynprompt.get_node(end_id).get("inputs", {})
         format_name = str(end_inputs.get("segment_format", MOV_HQ))
+        output_profile = resolve_output_profile(dynprompt.get_original_prompt(), end_id)
         workflow_hash = workflow_fingerprint(dynprompt, body, is_link)
         items = _plan_items(
             _one(config_json),
@@ -686,6 +698,7 @@ class TerryDirectorLooper(StartLoop):
             resume_previous=_one(resume_previous),
             workflow_hash=workflow_hash,
             segment_format=format_name,
+            output_profile=output_profile,
         )
         execution_list = cls.hidden.execution_list
         expanded, last_body_ids = _expand_director_loop(
@@ -1066,9 +1079,9 @@ class TerryDirectorLoopEnd(io.ComfyNode):
             merge_loop_clips(descriptions, merge_final=bool(_one(merge_final)))
             if descriptions else None
         )
-        video = InputImpl.VideoFromFile(merged_path) if merged_path else None
+        video = TerryDirectorMergedVideo(merged_path) if merged_path else None
         clips_root = (
-            str(os.path.dirname(os.path.dirname(descriptions[0]["path"])))
+            str(os.path.dirname(descriptions[0]["path"]))
             if descriptions else ""
         )
         try:

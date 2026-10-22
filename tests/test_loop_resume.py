@@ -26,9 +26,6 @@ class TestResume(unittest.TestCase):
         self.pkg.__path__ = [str(ROOT)]
         mocks = {
             PKG: self.pkg,
-            PKG + ".director_loop_media": types.SimpleNamespace(
-                _safe=lambda value: str(value).replace("/", "_"),
-            ),
             "folder_paths": types.SimpleNamespace(
                 get_output_directory=lambda: str(self.output),
             ),
@@ -42,14 +39,25 @@ class TestResume(unittest.TestCase):
         self.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.mod)
 
-    def _run(self, name, fp, statuses):
-        directory = self.output / "TerryDirector" / "renders" / "loop-42" / name
-        (directory / "clips").mkdir(parents=True)
+        self.profile = {
+            "filename_prefix": "video/test/timeline",
+            "resolved_prefix": "video/test/timeline",
+            "subfolder": "video/test",
+            "filename": "timeline",
+            "save_node_id": "9",
+            "save_settings": {"format": "auto"},
+            "schema": 1,
+        }
+
+    def _run(self, number, fp, statuses):
+        directory = self.output / "video" / "test"
+        directory.mkdir(parents=True, exist_ok=True)
+        stem = f"timeline_segments_{number:05d}"
         clips = []
         for index, status in enumerate(statuses):
             if not status:
                 break
-            media = directory / "clips" / (str(index) + ".mov")
+            media = directory / f"{stem}_{index + 1:03d}_clip.mov"
             media.write_bytes(b"movie packet")
             clips.append({
                 "segment_id": "clip-" + str(index),
@@ -58,41 +66,52 @@ class TestResume(unittest.TestCase):
                 "path": str(media),
                 "plan_fingerprint": fp,
             })
-        (directory / "timeline.json").write_text(json.dumps({
+        manifest = directory / f"{stem}.json"
+        manifest.write_text(json.dumps({
             "status": "in_progress", "plan_fingerprint": fp,
+            "run_signature": f"run-{number}",
+            "output_profile": self.profile,
             "clips": clips,
         }), "utf-8")
-        return directory
+        return manifest
 
     def test_contiguous_exact_signature(self):
         segments = [{"id": "clip-"+str(i), "output_frames": 48,
                      "kind": "generated"} for i in range(3)]
-        self._run("a", "stable", [1, 1, 0])
+        self._run(1, "stable", [1, 1, 0])
         found = self.mod.find_resume_checkpoint(
-            "42", "stable", segments, "MOV · ProRes 422 HQ"
+            self.profile, "stable", segments, "MOV · ProRes 422 HQ"
         )
-        self.assertEqual(found["run_signature"], "a")
+        self.assertEqual(found["run_signature"], "run-1")
         self.assertEqual(len(found["completed"]), 2)
         self.assertIsNone(self.mod.find_resume_checkpoint(
-            "42", "changed", segments, "MOV · ProRes 422 HQ"
+            self.profile, "changed", segments, "MOV · ProRes 422 HQ"
         ))
         self.assertIsNone(self.mod.find_resume_checkpoint(
-            "42", "stable", segments, "MP4 · H.264"
+            self.profile, "stable", segments, "MP4 · H.264"
         ))
 
     def test_does_not_accept_source_outside_owned_tree(self):
         segments = [{"id": "clip-"+str(i), "output_frames": 48,
                      "kind": "generated"} for i in range(2)]
-        root = self._run("bad", "fp", [1, 0])
-        statepath = root / "timeline.json"
+        statepath = self._run(2, "fp", [1, 0])
         state = json.loads(statepath.read_text("utf-8"))
         outside = self.output / "out.mov"
         outside.write_bytes(b"outside")
         state["clips"][0]["path"] = str(outside)
         statepath.write_text(json.dumps(state), "utf-8")
         self.assertIsNone(self.mod.find_resume_checkpoint(
-            "42", "fp", segments, "MOV · ProRes 422 HQ"
+            self.profile, "fp", segments, "MOV · ProRes 422 HQ"
         ))
+
+    def test_all_clips_saved_can_resume_final_assembly(self):
+        segments = [{"id": "clip-" + str(i), "output_frames": 48,
+                     "kind": "generated"} for i in range(2)]
+        self._run(4, "ready-to-merge", [1, 1])
+        found = self.mod.find_resume_checkpoint(
+            self.profile, "ready-to-merge", segments, "MOV · ProRes 422 HQ",
+        )
+        self.assertEqual(len(found["completed"]), 2)
 
     def test_graph_and_plan_changes_invalidate(self):
         node_map = {
@@ -120,6 +139,15 @@ class TestResume(unittest.TestCase):
         doc["selected"] = "clip-two"
         p4 = self.mod.plan_fingerprint(doc, 1, plan, a, "MOV · ProRes 422 HQ")
         self.assertEqual(p3, p4, "switching focused clip cannot break resume")
+
+        p5 = self.mod.plan_fingerprint(
+            doc, 1, plan, a, "MOV · ProRes 422 HQ", self.profile,
+        )
+        moved = dict(self.profile, subfolder="video/elsewhere")
+        p6 = self.mod.plan_fingerprint(
+            doc, 1, plan, a, "MOV · ProRes 422 HQ", moved,
+        )
+        self.assertNotEqual(p5, p6, "changing the save path must start a new task")
 
 
 if __name__ == "__main__":

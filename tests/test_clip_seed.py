@@ -55,6 +55,10 @@ def test_clip_seed_round_trip_and_compile():
         plan = compile_mod.compile_timeline(normalized)
         assert plan["segments"][0]["seed"] == 18446744073709551615
         assert plan["segments"][1]["seed"] is None
+    finally:
+        for key in list(sys.modules):
+            if key == PREFIX or key.startswith(PREFIX + "."):
+                sys.modules.pop(key, None)
 
 
 def test_clip_seed_is_clamped_without_browser_precision_loss():

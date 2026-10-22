@@ -340,6 +340,21 @@
   background: rgba(155,120,255,.2);
 }
 
+.td-resume-available {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border: 1.5px solid #d6ff45;
+  border-radius: 50%;
+  color: #d6ff45;
+  font: 700 11px/1 system-ui, sans-serif;
+  cursor: help;
+  box-shadow: 0 0 0 1px rgba(214,255,69,.08), 0 0 10px rgba(214,255,69,.16);
+}
+
 .td-mini-timeline {
   height: 40px;
 }
