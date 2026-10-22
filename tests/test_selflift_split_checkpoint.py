@@ -81,6 +81,8 @@ class CheckpointTests(unittest.TestCase):
         self.assertFalse(hasattr(continuous, "_pixel_endpoint"))
         self.assertFalse(hasattr(mathlib, "correct_endpoint"))
         self.assertNotIn("mode", inspect.signature(mathlib.spatial_resize).parameters)
+        # Highres checkpoint resume accepts only the selected workflow MODEL.
+        self.assertNotIn("high_res_model", inspect.signature(resume.resume_highres).parameters)
 
     def test_save_load_roundtrip_and_metadata(self):
         cp = self.module
