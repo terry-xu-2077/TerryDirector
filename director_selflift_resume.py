@@ -11,12 +11,12 @@ from time import perf_counter
 
 import torch
 
-from .director_selflift import ComfyBackend, _pixel_endpoint
-from .director_selflift_math import correct_endpoint, validate_options
+from .director_selflift import ComfyBackend
+from .director_selflift_math import spatial_resize, validate_options
 
 
-def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
-                   rho, w_min, w_max, upscaler_model,
+def resume_highres(*, checkpoint, model, positive, negative, sampler,
+                   upscaler_model,
                    highres_tiling=False, tiling_mode="auto", tiling_tiles=2,
                    tiling_axis="auto", high_res_model=None,
                    _backend=None, _lifter=None):
@@ -29,26 +29,15 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     cfg = float(manifest["cfg"])
     seed = int(manifest["seed"])
     k = int(manifest["transition_step"])
-    validate_options(cfg, 0.5, rho, w_min, w_max)
-    need_pixel = rho > 0 and w_max > 0
-    need_direct = not (rho == 1 and w_min == 1)
+    validate_options(cfg, 0.5)
+    if upscaler_model in {"", "none", None}:
+        raise ValueError("SelfLift: 已移除中间 VAE 往返，请选择 nearest 或 H3 Latent Upscaler")
     logging.info(
-        "[TerryDirector SelfLift split] 开始续采 checkpoint=%s "
-        "low=%s high=%s rho=%.2f upscaler=%s",
+        "[TerryDirector SelfLift split] 开始 Latent-only 续采 checkpoint=%s "
+        "low=%s high=%s upscaler=%s",
         manifest["checkpoint_id"], manifest["low_video_shape"],
-        manifest["target_video_shape"], rho, upscaler_model,
+        manifest["target_video_shape"], upscaler_model,
     )
-    if need_pixel:
-        logging.warning(
-            "[TerryDirector SelfLift split] SelfLift-zero 像素锚已启用："
-            "需要低清视频 VAE 解码 + 放大 + 高清 VAE 重新编码；"
-            "这一阶段可能明显慢于两步 Euler 采样。"
-        )
-    if need_direct and upscaler_model == "none" and not need_pixel:
-        raise ValueError(
-            "SelfLift: rho=0 时请选择 nearest（快速验证，画质仅供测试）"
-            "或已安装的 H3 Latent Upscaler；none 需要启用像素锚修正"
-        )
     if highres_tiling and (tiling_mode not in {"auto", "manual"}
                            or tiling_axis not in {"auto", "width", "height"}
                            or tiling_tiles not in {2, 4, 6, 8}):
@@ -74,41 +63,21 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     # latent space. Do not pass a bare video tensor through MiniMaxH3's
     # AV process_latent_in/out (those methods also rescale packed audio).
     clean_video_vae = low_clean[0].float()
-    direct = anchor = None
-    if need_direct:
-        if upscaler_model not in {"none", "nearest"}:
-            logging.info("[TerryDirector SelfLift split] 开始 H3 Latent Upscaler")
-            lifted_at = perf_counter()
-            if _lifter is None:
-                from .director_selflift_upscaler import learned_lift
-                _lifter = learned_lift
-            direct = _lifter(clean_video_vae, target, upscaler_model)
-            logging.info(
-                "[TerryDirector SelfLift split] H3 Latent Upscaler 完成 %.1fs",
-                perf_counter() - lifted_at,
-            )
-        else:
-            from .director_selflift_math import spatial_resize
-            direct = spatial_resize(clean_video_vae, target, mode="nearest")
-            logging.info(
-                "[TerryDirector SelfLift split] %s 最近邻 Latent 放大完成；无需 VAE 往返",
-                upscaler_model,
-            )
-    if need_pixel:
-        pixel_at = perf_counter()
-        logging.info("[TerryDirector SelfLift split] 像素锚：开始 VAE 解码/放大/回编码")
-        anchor = _pixel_endpoint(clean_video_vae, vae, target, backend.interrupt)
-        logging.info(
-            "[TerryDirector SelfLift split] 像素锚 VAE 往返完成 %.1fs",
-            perf_counter() - pixel_at,
-        )
-    for value in (direct, anchor):
-        if value is not None and tuple(value.shape) != tuple(source[0].shape):
-            raise ValueError("SelfLift: 放大 Latent 形状错误")
-    direct = fmt.process_in(direct) if direct is not None else None
-    anchor = fmt.process_in(anchor) if anchor is not None else None
-    clean_high = correct_endpoint(direct, anchor, rho, w_min, w_max,
-                                  None if masks is None else masks[0])
+    if upscaler_model == "nearest":
+        clean_lift = spatial_resize(clean_video_vae, target, mode="nearest")
+        logging.info("[TerryDirector SelfLift split] 最近邻 Latent 放大完成")
+    else:
+        logging.info("[TerryDirector SelfLift split] 开始 H3 3D Latent Upscaler")
+        lifted_at = perf_counter()
+        if _lifter is None:
+            from .director_selflift_upscaler import learned_lift
+            _lifter = learned_lift
+        clean_lift = _lifter(clean_video_vae, target, upscaler_model)
+        logging.info("[TerryDirector SelfLift split] H3 3D Latent Upscaler 完成 %.1fs",
+                     perf_counter() - lifted_at)
+    if tuple(clean_lift.shape) != tuple(source[0].shape):
+        raise ValueError("SelfLift: Latent 放大后视频形状不匹配")
+    clean_high = fmt.process_in(clean_lift)
     if masks is not None:
         mask = masks[0].to(clean_high)
         clean_high = clean_high * mask + fmt.process_in(source[0].to(clean_high)) * (1 - mask)
@@ -128,7 +97,7 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     resume = backend.pack([video_resume, low_state[1]])
     zero_noise = backend.pack([torch.zeros_like(video_resume),
                               torch.zeros_like(low_state[1])])
-    del low_clean, low_state, noise, direct, anchor, clean_video_vae
+    del low_clean, low_state, noise, clean_lift, clean_video_vae
     del clean_high, video_state, video_next, unscaled_video
     backend.interrupt()
     if highres_tiling:
