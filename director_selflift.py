@@ -6,12 +6,10 @@ import of another plugin, or fallback to an external sampler is performed.
 from __future__ import annotations
 
 import logging
-from time import perf_counter
 import torch
-from torch.nn import functional as F
 
 from .director_selflift_math import (
-    ENGINE_ID, advance_euler, correct_endpoint, low_resolution, normalize_masks,
+    ENGINE_ID, advance_euler, low_resolution, normalize_masks,
     resize_guides, spatial_resize, validate_options, validate_schedule,
 )
 
@@ -112,65 +110,13 @@ class ComfyBackend:
         return configure_tiling(model, shapes, mode, tiles, axis)
 
 
-def _pixel_endpoint(video, vae, target, interrupt):
-    """A separate decode/resize/encode per batch member; no temporal resampling."""
-    endpoints = []
-    for batch_no, item in enumerate(video.split(1), 1):
-        interrupt()
-        stage_at = perf_counter()
-        logging.info(
-            "[TerryDirector SelfLift] 像素锚 batch=%d：开始视频 VAE 解码；shape=%s",
-            batch_no, tuple(item.shape),
-        )
-        frames = vae.decode(item)
-        logging.info(
-            "[TerryDirector SelfLift] 像素锚 batch=%d：视频 VAE 解码完成 %.1fs",
-            batch_no, perf_counter() - stage_at,
-        )
-        if frames.ndim == 5:
-            frames = frames.reshape(-1, *frames.shape[-3:])
-        if frames.ndim != 4 or any(n == 0 for n in frames.shape) or frames.shape[1] % video.shape[-2] or frames.shape[2] % video.shape[-1]:
-            raise ValueError("TerryDirector SelfLift: VAE 解码尺寸无法对应输入 latent")
-        pixels = (target[0] * (frames.shape[1] // video.shape[-2]), target[1] * (frames.shape[2] // video.shape[-1]))
-        device = torch.device(vae.device)
-        dtype = vae.vae_dtype if vae.vae_dtype in (torch.float16, torch.bfloat16, torch.float32) else torch.float32
-        if device.type == "cpu":
-            dtype = torch.float32
-        logging.info(
-            "[TerryDirector SelfLift] 像素锚 batch=%d：开始图像插值 frames=%d output=%s",
-            batch_no, frames.shape[0], pixels,
-        )
-        resized = torch.empty((frames.shape[0], *pixels, frames.shape[-1]), dtype=dtype, device="cpu")
-        for start in range(0, frames.shape[0], 32):
-            interrupt()
-            chunk = frames[start:start + 32].movedim(-1, 1).to(device=device, dtype=dtype)
-            chunk = F.interpolate(chunk, size=pixels, mode="bicubic", align_corners=False, antialias=True)
-            resized[start:start + 32] = chunk.movedim(1, -1).to(device="cpu")
-        del frames, chunk
-        logging.info(
-            "[TerryDirector SelfLift] 像素锚 batch=%d：开始高清视频 VAE 回编码；"
-            "若此处耗时很长，请检查显存/共享 GPU 内存",
-            batch_no,
-        )
-        encoded = vae.encode(resized).float()
-        logging.info(
-            "[TerryDirector SelfLift] 像素锚 batch=%d：高清视频 VAE 回编码完成 %.1fs",
-            batch_no, perf_counter() - stage_at,
-        )
-        expected = (*item.shape[:3], *target)
-        if tuple(encoded.shape) != expected:
-            raise ValueError(f"TerryDirector SelfLift: VAE 回编码改变了时长/形状 {tuple(encoded.shape)} != {expected}")
-        endpoints.append(encoded)
-        del resized
-    return torch.cat(endpoints, dim=0)
-
 
 def _snapshot(backend, samples):
     return [stream.detach().to(backend.device).clone() for stream in backend.split(samples)]
 
 
-def sample_selflift(*, model, positive, negative, vae, latent_image, sampler, sigmas,
-                    seed, cfg, transition_step, lowres_scale, rho, w_min, w_max,
+def sample_selflift(*, model, positive, negative, latent_image, sampler, sigmas,
+                    seed, cfg, transition_step, lowres_scale,
                     upscaler_model, high_res_model=None, highres_tiling=False,
                     tiling_mode="auto", tiling_tiles=2, tiling_axis="auto",
                     _backend=None, _lifter=None):
@@ -182,13 +128,13 @@ def sample_selflift(*, model, positive, negative, vae, latent_image, sampler, si
     Private injectable boundaries are solely for CPU regression tests.
     """
     validate_schedule(sigmas, transition_step)
-    validate_options(cfg, lowres_scale, rho, w_min, w_max)
+    validate_options(cfg, lowres_scale)
     if not 0 <= int(seed) < 1 << 64:
         raise ValueError("TerryDirector SelfLift: Seed 超出 64 位无符号范围")
-    need_pixel = rho > 0 and w_max > 0
-    need_direct = not (rho == 1 and w_min == 1)
-    if need_direct and upscaler_model == "none" and not need_pixel:
-        raise ValueError("TerryDirector SelfLift: 请选择 latent 放大模型，或启用有效的像素锚定修正")
+    if upscaler_model in {"", "none", None}:
+        raise ValueError(
+            "TerryDirector SelfLift: 已移除中间 VAE 往返，请选择 nearest 或 H3 Latent Upscaler"
+        )
     if highres_tiling and (tiling_mode not in {"auto", "manual"}
                            or tiling_axis not in {"auto", "width", "height"}
                            or tiling_tiles not in {2, 4, 6, 8}):
@@ -218,9 +164,10 @@ def sample_selflift(*, model, positive, negative, vae, latent_image, sampler, si
     preview = backend.preview(model, steps)
     boundary = {}
     low_calls = 0
-    logging.info("[TerryDirector SelfLift] engine=%s low=%s target=%s steps=%d+%d rho=%g tiling=%s",
+    logging.info("[TerryDirector SelfLift] engine=%s low=%s target=%s steps=%d+%d "
+                 "upscaler=%s tiling=%s",
                  ENGINE_ID, tuple(small_video.shape), tuple(source[0].shape), transition_step,
-                 steps - transition_step, rho, highres_tiling)
+                 steps - transition_step, upscaler_model, highres_tiling)
 
     def low_callback(step, clean, state, total):
         nonlocal low_calls
@@ -247,29 +194,21 @@ def sample_selflift(*, model, positive, negative, vae, latent_image, sampler, si
     latent_format = model.get_model_object("latent_format")
     clean_video_vae = latent_format.process_out(cleans[0].float())
     del states, cleans, low_latent, low_anchors, small_video, noise, low_model, low_masks
-    direct = anchor = None
-    if need_direct:
-        if upscaler_model != "none":
-            if _lifter is None:
-                from .director_selflift_upscaler import learned_lift
-                _lifter = learned_lift
-            direct = _lifter(clean_video_vae, target, upscaler_model)
-        else:
-            direct = spatial_resize(clean_video_vae, target, mode="nearest")
-    if need_pixel:
-        anchor = _pixel_endpoint(clean_video_vae, vae, target, backend.interrupt)
-    expected = tuple(source[0].shape)
-    for endpoint in (direct, anchor):
-        if endpoint is not None and tuple(endpoint.shape) != expected:
-            raise ValueError("TerryDirector SelfLift: 放大器改变了视频的 batch、通道或时长")
-    direct = latent_format.process_in(direct) if direct is not None else None
-    anchor = latent_format.process_in(anchor) if anchor is not None else None
-    clean_high = correct_endpoint(direct, anchor, rho, w_min, w_max, None if masks is None else masks[0])
+    if upscaler_model == "nearest":
+        lifted = spatial_resize(clean_video_vae, target, mode="nearest")
+    else:
+        if _lifter is None:
+            from .director_selflift_upscaler import learned_lift
+            _lifter = learned_lift
+        lifted = _lifter(clean_video_vae, target, upscaler_model)
+    if tuple(lifted.shape) != tuple(source[0].shape):
+        raise ValueError("TerryDirector SelfLift: Latent 放大器改变了视频 batch、通道或时长")
+    clean_high = latent_format.process_in(lifted)
     if masks is not None:
         mask = masks[0].to(clean_high)
         clean_high = clean_high * mask + latent_format.process_in(source[0].to(clean_high)) * (1 - mask)
     clean_high = clean_high.to(backend.device)
-    del clean_video_vae, direct, anchor
+    del clean_video_vae, lifted
     backend.interrupt()
     flow = model.get_model_object("model_sampling")
     new_noise = backend.noise(clean_high, (int(seed) + 1) % (1 << 64), batch_index).to(clean_high)
