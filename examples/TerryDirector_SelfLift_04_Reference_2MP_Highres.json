@@ -25,7 +25,6 @@
           "type": "MODEL",
           "links": [
             1,
-            19,
             31
           ]
         }
@@ -651,7 +650,8 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 19
+          "link": 34,
+          "localized_name": "高清采样 MODEL"
         },
         {
           "name": "positive",
@@ -667,11 +667,6 @@
           "name": "sampler",
           "type": "SAMPLER",
           "link": 23
-        },
-        {
-          "name": "high_res_model",
-          "type": "MODEL",
-          "link": 34
         }
       ],
       "outputs": [
@@ -1185,14 +1180,6 @@
       "TERRYDIRECTOR_SELFLIFT_CHECKPOINT"
     ],
     [
-      19,
-      1,
-      0,
-      18,
-      1,
-      "MODEL"
-    ],
-    [
       20,
       6,
       0,
@@ -1301,7 +1288,7 @@
       25,
       0,
       18,
-      5,
+      1,
       "MODEL"
     ],
     [
