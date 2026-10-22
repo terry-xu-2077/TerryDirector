@@ -20,6 +20,17 @@ class DualSamplingResolutionTests(unittest.TestCase):
         self.assertEqual(MATH.compute_resolution(0.8, "16:9 (Widescreen)"), (1216, 672))
         self.assertEqual(MATH.compute_resolution(2.0, "16:9 (Widescreen)"), (1888, 1088))
 
+    def test_single_highres_mp_derives_lowres_by_quarter_area(self):
+        for high_mp, expected_low, expected_high in (
+            (0.8, (608, 352), (1216, 672)),
+            (2.0, (960, 544), (1888, 1088)),
+        ):
+            with self.subTest(highres_megapixels=high_mp):
+                self.assertEqual(
+                    MATH.compute_sampling_resolutions(high_mp, "16:9 (Widescreen)"),
+                    (expected_low, expected_high),
+                )
+
     def test_rounds_both_dimensions_up_to_32(self):
         for megapixels in (0.05, 0.2, 0.8, 2.0, 4.0):
             width, height = MATH.compute_resolution(megapixels, "16:9 (Widescreen)")
@@ -61,6 +72,19 @@ class DualSamplingResolutionTests(unittest.TestCase):
                     return links[socket["link"]][1:3]
 
                 selector = node_type("TerryDirectorDualSamplingResolutionSelector")
+                self.assertEqual([socket["name"] for socket in selector["inputs"]],
+                                 ["aspect_ratio", "highres_megapixels"])
+                self.assertEqual(len(selector["widgets_values"]), 2)
+                self.assertEqual(
+                    origin(selector, "highres_megapixels")[1], 0)
+                self.assertEqual(
+                    nodes[origin(selector, "highres_megapixels")[0]]["type"],
+                    "PrimitiveFloat",
+                )
+                self.assertFalse(any(
+                    "round(a * 10 / 4)" in str(node.get("widgets_values", []))
+                    for node in nodes.values()
+                ))
                 low = node_type("MiniMaxH3ReferenceToVideo")
                 high = node_type("EmptyMiniMaxH3LatentAV")
                 sampler = node_type("SamplerCustom")
@@ -89,6 +113,10 @@ class DualSamplingResolutionTests(unittest.TestCase):
                 MATH.compute_resolution(value, "16:9")
         with self.assertRaises(ValueError):
             MATH.compute_resolution(0.2, "wide")
+
+        for bad in (0, -1.0, float("nan"), float("inf"), "bad"):
+            with self.subTest(single_input=bad), self.assertRaises(ValueError):
+                MATH.compute_sampling_resolutions(bad, "16:9")
 
 
 if __name__ == "__main__":
