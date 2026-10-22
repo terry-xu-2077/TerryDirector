@@ -1,7 +1,7 @@
 /** TerryDirector SelfLift pause/continue per-branch action.
  *
  * The big action belongs to this exact node, NOT the global ComfyUI Queue:
- * - Blue/pause: target only this checkpoint boundary; run low-res then block
+ * - Blue/start: target only this checkpoint boundary; run low-res then block
  *   any downstream high-res work. A successful saved checkpoint turns green.
  * - Lemon/play: target only one downstream video output of this branch; lazy
  *   low-res inputs stay untouched, and SelfLift resumes from the checkpoint.
@@ -126,9 +126,9 @@ function ensureStyle() {
   document.head.append(style);
 }
 
-const PAUSE_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
-  '<rect x="6" y="4.5" width="4.2" height="15" rx="1.2" fill="currentColor"/>' +
-  '<rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2" fill="currentColor"/></svg>';
+const ARROW_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+  '<path d="M4.5 12h15m-6-6 6 6-6 6" stroke="currentColor" ' +
+  'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
   '<path d="m7 4.5 12 7.5-12 7.5z" fill="currentColor"/></svg>';
 
@@ -161,10 +161,10 @@ function refresh(node) {
     const reset = root.querySelector(".td-selflift-reset");
     const busy = Boolean(run?.busy);
     button.disabled = busy;
-    ico.innerHTML = blue ? PAUSE_ICON : PLAY_ICON;
+    ico.innerHTML = blue ? ARROW_ICON : PLAY_ICON;
     label.textContent = busy
       ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "低清生成中…" : "高清续采中…")
-      : (blue ? "生成低清 · 暂停" : "继续高清");
+      : (blue ? "生成低清" : "继续高清");
     status.textContent = run?.error || (ready
       ? (name ? name.slice(0, 18) + " · " : "") + "检查点 " + id.slice(0, 8) + " 已保存"
       : (missing ? "原检查点文件不存在，请重新生成低清" : "尚无低清检查点"));
@@ -303,8 +303,8 @@ function attach(node) {
     const root = document.createElement("div");
     root.className = "td-selflift-action is-blue";
     root.innerHTML = '<button class="td-selflift-main" type="button">' +
-      '<span class="td-selflift-icon">' + PAUSE_ICON + '</span>' +
-      '<span class="td-selflift-action-label">生成低清 · 暂停</span></button>' +
+      '<span class="td-selflift-icon">' + ARROW_ICON + '</span>' +
+      '<span class="td-selflift-action-label">生成低清</span></button>' +
       '<div class="td-selflift-info"><span class="td-selflift-status">尚无低清检查点</span>' +
       '<button class="td-selflift-reset" type="button" hidden>重新生成低清</button></div>';
     root.addEventListener("pointerdown", e => e.stopPropagation());
