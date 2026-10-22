@@ -234,18 +234,15 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
             display_name="TerryDirector SelfLift 高清续采",
             category="TerryDirector/SelfLift",
             description=("从已保存的低清 x0 + sigma[k] 音视频状态恢复 SelfLift。"
-                         "必须连接与低清生成兼容的 H3 模型、原始条件和标准 Euler。"
+                         "将基础 H3 模型或优化后的高清 MODEL 接入唯一的 MODEL 输入；同时连接原始条件和标准 Euler。"
                          "不会再次运行低清阶段。"),
             inputs=[
                 CheckpointData.Input("checkpoint", display_name="低清检查点"),
-                io.Model.Input("model", display_name="高清 H3 模型"),
+                io.Model.Input("model", display_name="高清采样 MODEL",
+                               tooltip="连接基础 H3 MODEL 或已优化的高清 MODEL，由工作流自行选择。"),
                 io.Conditioning.Input("positive"),
                 io.Conditioning.Input("negative"),
                 io.Sampler.Input("sampler", display_name="Euler 采样器"),
-                io.Model.Input("high_res_model", display_name="独立高清 MODEL（可选）",
-                               optional=True,
-                               tooltip="可单独连接高清模型加速/低显存处理分支；留空沿用 model。"
-                                       "参考 SelfLift-Avatar 的 low_res_model / high_res_model 架构。"),
                 io.Combo.Input("upscaler_model", options=available, default=default_model,
                                tooltip="必需：H3 3D Latent Upscaler。模型路径：models/latent_upscale_models/；不执行中间 VAE 往返。"),
                 io.Boolean.Input("highres_tiling", default=False,
@@ -261,10 +258,9 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
     @classmethod
     def execute(cls, checkpoint, model, positive, negative, sampler,
                 upscaler_model, highres_tiling=False,
-                tiling_mode="manual", tiling_tiles=4, tiling_axis="auto",
-                high_res_model=None):
+                tiling_mode="manual", tiling_tiles=4, tiling_axis="auto"):
         return io.NodeOutput(resume_highres(
-            checkpoint=checkpoint, model=model, high_res_model=high_res_model,
+            checkpoint=checkpoint, model=model,
             positive=positive, negative=negative, sampler=sampler,
             upscaler_model=upscaler_model,
             highres_tiling=highres_tiling, tiling_mode=tiling_mode,
