@@ -46,6 +46,9 @@
 
 ## 内置 Self-Lift（已确认参数与效果）
 
+> **2026-10-22 实现口径更新**：本节以下性能记录属于历史测试。现有 SelfLift 运行时已删除中间 VAE 往返、像素锚参数及最近邻高清分支，统一通过 H3 3D Latent Upscaler。历史耗时不代表本次新版的性能验收。
+
+
 二采配置入口：`TerryDirector 二采配置 → TerryDirector 配置 → TerryDirector / TerryDirector Advanced`。不依赖外部 SelfLiftAvatarH3Sampler。
 
 | 参数 | 验证过的默认设置 |
@@ -55,7 +58,6 @@
 | lowres_scale | 0.5 |
 | sampler / scheduler | Euler / simple |
 | sigma refine | 开启；附加步数 1、start 0.7、end 0、cosine |
-| rho / w_min / w_max | 0 / 0.5 / 1 |
 | 高清分块 | 关闭（`highres_tiling=false`） |
 | 目标放大模型 | `minimax_h3_latent_upscaler_3d_fp16.safetensors`（需自行提供） |
 | 独立高清 MODEL | 可不接，复用主模型 |
