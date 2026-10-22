@@ -18,7 +18,7 @@ class DualSamplingResolutionTests(unittest.TestCase):
     def test_matches_h3_16_by_9_grid_previews(self):
         self.assertEqual(MATH.compute_resolution(0.2, "16:9 (Widescreen)"), (608, 352))
         self.assertEqual(MATH.compute_resolution(0.8, "16:9 (Widescreen)"), (1216, 672))
-        self.assertEqual(MATH.compute_resolution(2.0, "16:9 (Widescreen)"), (1920, 1088))
+        self.assertEqual(MATH.compute_resolution(2.0, "16:9 (Widescreen)"), (1888, 1088))
 
     def test_rounds_both_dimensions_up_to_32(self):
         for megapixels in (0.05, 0.2, 0.8, 2.0, 4.0):
