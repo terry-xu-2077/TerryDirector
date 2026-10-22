@@ -193,10 +193,10 @@ class CheckpointTests(unittest.TestCase):
                     positive=[], negative=[], sampler=None,
                     upscaler_model=rejected, _backend=Backend())
 
-    def test_reference_highres_uses_dedicated_model_and_manual_spatial_4_tiles(self):
-        # The reference workflow has independent low/high model branches.
-        # The existing fake backend suffices to check their routing without
-        # loading GPU weights, and keeps the same disk checkpoint.
+    def test_selected_model_and_manual_spatial_4_tiles(self):
+        # The caller selects a single optimized or unmodified MODEL in the
+        # workflow graph. Verify that it drives format, validation, tiling,
+        # and Euler rather than a hidden optional-model override.
         resume = importlib.import_module(PKG + ".director_selflift_resume")
         cid = self.module.save_checkpoint(**self.inputs())
 
@@ -242,11 +242,11 @@ class CheckpointTests(unittest.TestCase):
                     callback(step, None, None, len(sigmas) - 1)
                 return latent
 
-        low_model, high_model = Model(), Model()
+        selected_model = Model()
         backend = Backend()
         result = resume.resume_highres(
-            checkpoint={"checkpoint_id": cid}, model=low_model,
-            high_res_model=high_model, positive=[], negative=[],
+            checkpoint={"checkpoint_id": cid}, model=selected_model,
+            positive=[], negative=[],
             sampler=None, upscaler_model="test-h3-learned.safetensors",
             _lifter=lambda x, target, _: __import__("torch").nn.functional.interpolate(
                 x, size=(x.shape[2], *target), mode="trilinear",
@@ -254,10 +254,10 @@ class CheckpointTests(unittest.TestCase):
             highres_tiling=True,
             tiling_mode="manual", tiling_tiles=4, tiling_axis="auto",
             _backend=backend)
-        self.assertEqual(backend.validated, (low_model, high_model))
-        self.assertIs(backend.tiling[0], high_model)
+        self.assertEqual(backend.validated, (selected_model, selected_model))
+        self.assertIs(backend.tiling[0], selected_model)
         self.assertEqual(backend.tiling[2:], ("manual", 4, "auto"))
-        self.assertIs(backend.sampled_model, high_model)
+        self.assertIs(backend.sampled_model, selected_model)
         self.assertEqual(len(backend.used_sigmas), 3)  # k=2 of 4
         self.assertEqual(tuple(result["samples"].unbind()[0].shape),
                          (1, 4, 3, 4, 8))
