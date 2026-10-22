@@ -28,7 +28,29 @@ function checkpointId(node) {
 }
 
 function hasCheckpoint(node) {
-  return UUID_RE.test(checkpointId(node));
+  const id = checkpointId(node);
+  return UUID_RE.test(id) && node.__tdSelfLiftMissing !== id;
+}
+
+async function checkCheckpoint(node) {
+  const id = checkpointId(node);
+  if (!UUID_RE.test(id)) return false;
+  try {
+    const response = await api.fetchApi(
+      "/terrydirector/api/selflift/checkpoint-status?id=" + encodeURIComponent(id)
+    );
+    if (!response.ok) throw new Error("检查点状态查询失败");
+    const result = await response.json();
+    if (checkpointId(node) !== id) return hasCheckpoint(node);
+    node.__tdSelfLiftMissing = result.exists === true ? null : id;
+    refresh(node);
+    return result.exists === true;
+  } catch (error) {
+    // Do not discard the user's persisted checkpoint merely because HTTP
+    // momentarily failed. The backend validates it before running high-res.
+    console.warn("[TerryDirector SelfLift] checkpoint status:", error);
+    return hasCheckpoint(node);
+  }
 }
 
 function ensureStyle() {
@@ -78,7 +100,8 @@ function setWidget(node, name, value) {
 function refresh(node) {
   if (node?.comfyClass !== CLASS_NAME) return;
   const id = checkpointId(node);
-  const ready = UUID_RE.test(id);
+  const ready = hasCheckpoint(node);
+  const missing = UUID_RE.test(id) && node.__tdSelfLiftMissing === id;
   const name = String(widget(node, "name")?.value || "").trim();
   const run = node.__tdSelfLiftRun;
   const blue = !ready;
@@ -101,7 +124,7 @@ function refresh(node) {
       : (blue ? "生成低清 · 暂停" : "继续高清");
     status.textContent = run?.error || (ready
       ? (name ? name.slice(0, 18) + " · " : "") + "检查点 " + id.slice(0, 8) + " 已保存"
-      : "尚无低清检查点");
+      : (missing ? "原检查点文件不存在，请重新生成低清" : "尚无低清检查点"));
     reset.hidden = !ready || busy;
   }
   node.setDirtyCanvas?.(true, true);
@@ -162,6 +185,9 @@ function showError(error) {
 
 async function runBranch(node) {
   if (node.__tdSelfLiftRun?.busy) return;
+  // An ID by itself does not prove that the low-res result still exists.
+  // This also handles re-opening a saved workflow after cleaning output/.
+  if (UUID_RE.test(checkpointId(node))) await checkCheckpoint(node);
   const ready = hasCheckpoint(node);
   const target = ready ? findDownstreamOutput(node) : node;
   const mode = ready ? "continue" : "pause";
@@ -189,6 +215,7 @@ async function runBranch(node) {
 function resetForLowres(node) {
   if (node.__tdSelfLiftRun?.busy) return;
   setWidget(node, "checkpoint_id", "");
+  node.__tdSelfLiftMissing = null;
   setWidget(node, "mode", "暂停并保存");
   node.__tdSelfLiftRun = null;
   refresh(node);
@@ -257,6 +284,7 @@ function attach(node) {
       Number(node.computeSize?.()?.[1]) || 0)]);
   }
   refresh(node);
+  if (UUID_RE.test(checkpointId(node))) void checkCheckpoint(node);
 }
 
 function bindExecutionResult() {
@@ -273,6 +301,7 @@ function bindExecutionResult() {
 
     const id = result.checkpoint_id.trim();
     if (!UUID_RE.test(id)) return;
+    node.__tdSelfLiftMissing = null;
     setWidget(node, "checkpoint_id", id);
     if (result.name && result.mode === "continued") {
       setWidget(node, "name", String(result.name).slice(0, 120));
