@@ -225,30 +225,26 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         from .director_selflift_upscaler import list_models
-        available = ["nearest", "none"] + list_models()
+        available = ["nearest"] + [n for n in list_models() if n not in {"none", "nearest"}]
         return io.Schema(
             node_id="TerryDirectorSelfLiftHighres",
             display_name="TerryDirector SelfLift 高清续采",
             category="TerryDirector/SelfLift",
             description=("从已保存的低清 x0 + sigma[k] 音视频状态恢复 SelfLift。"
-                         "必须连接与低清生成兼容的 H3 模型、原始条件、VAE 和标准 Euler。"
+                         "必须连接与低清生成兼容的 H3 模型、原始条件和标准 Euler。"
                          "不会再次运行低清阶段。"),
             inputs=[
                 CheckpointData.Input("checkpoint", display_name="低清检查点"),
                 io.Model.Input("model", display_name="高清 H3 模型"),
                 io.Conditioning.Input("positive"),
                 io.Conditioning.Input("negative"),
-                io.Vae.Input("vae", display_name="视频 VAE"),
                 io.Sampler.Input("sampler", display_name="Euler 采样器"),
                 io.Model.Input("high_res_model", display_name="独立高清 MODEL（可选）",
                                optional=True,
                                tooltip="可单独连接高清模型加速/低显存处理分支；留空沿用 model。"
                                        "参考 SelfLift-Avatar 的 low_res_model / high_res_model 架构。"),
-                io.Float.Input("rho", default=0.0, min=0.0, max=1.0),
-                io.Float.Input("w_min", default=0.5, min=0.0, max=1.0),
-                io.Float.Input("w_max", default=1.0, min=0.0, max=1.0),
                 io.Combo.Input("upscaler_model", options=available, default="nearest",
-                               tooltip="nearest：只用于快速验证分段续采，不做 VAE 往返；none + rho>0：SelfLift-zero，可能很慢；外部权重：H3 Latent Upscaler"),
+                               tooltip="nearest：仅用于排错；正式高清选择已安装的 H3 3D Latent Upscaler。中途不再执行 VAE 往返。"),
                 io.Boolean.Input("highres_tiling", default=False,
                                  tooltip="H3 高清空间分块，参考参数：开启。"
                                          "只有视频按空间分块，音频保留完整上下文。"),
@@ -260,14 +256,14 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, checkpoint, model, positive, negative, vae, sampler,
-                rho, w_min, w_max, upscaler_model, highres_tiling=False,
+    def execute(cls, checkpoint, model, positive, negative, sampler,
+                upscaler_model, highres_tiling=False,
                 tiling_mode="manual", tiling_tiles=4, tiling_axis="auto",
                 high_res_model=None):
         return io.NodeOutput(resume_highres(
             checkpoint=checkpoint, model=model, high_res_model=high_res_model,
-            positive=positive, negative=negative, vae=vae, sampler=sampler,
-            rho=rho, w_min=w_min, w_max=w_max, upscaler_model=upscaler_model,
+            positive=positive, negative=negative, sampler=sampler,
+            upscaler_model=upscaler_model,
             highres_tiling=highres_tiling, tiling_mode=tiling_mode,
             tiling_tiles=tiling_tiles, tiling_axis=tiling_axis,
         ))
