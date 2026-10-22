@@ -17,7 +17,7 @@
 - **CLIP**：`qwen3vl_32b_minimax_h3_int8_convrot.safetensors`
 - **视频 VAE**：`minimax_h3_video_vae_int8_convrot.safetensors`
 - **音频 VAE**：`minimax_h3_audio_vae_fp32.safetensors`
-- **分辨率**：16:9；低清审片约 0.2 MP（608×352），高清目标约 0.8 MP（1216×672）；124 帧
+- **分辨率**：16:9；只输入高清目标 0.8 MP，自动推导低清 0.2 MP；预览低清 608×352、高清 1216×672；124 帧
 - **采样**：`BasicScheduler(simple, 8)` → `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)` → `SplitSigmas(step=6)`
 - **Seed / CFG**：固定 seed=8，CFG=1。低清原生采样器和检查点节点共用同一个 SeedNode，避免两处种子不一致。
 - **高清转场**：`minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`
@@ -26,7 +26,7 @@
 
 `H3SigmaRefiner` 增加一个低噪修整步；在完整 Sigma 日程上从第 6 步分段，因此高清会继续执行余下日程。检查点必须与对应模型、条件、目标分辨率和 Sigma 日程兼容。
 
-**统一输入**：工作流①、③、④均使用 `TerryDirector 双采样分辨率选择器` 替代各自独立或写死的分辨率值；低清生成和目标 Latent 使用同一个时长公式（默认 5 秒 → 124 帧）。工作流②从磁盘检查点恢复高清分辨率，因此不另设一个可能与检查点冲突的目标分辨率控件。
+**统一输入**：工作流①、③、④使用 `TerryDirector 双采样分辨率选择器`，**只有一个「高清百万像素」浮点输入**；低清 MP 由节点自动按高清 MP ÷ 4 计算，无需额外公式。低清条件和目标高清 Latent 使用同一个时长公式（默认 5 秒 → 124 帧），原生低清采样与检查点共用同一 SeedNode。工作流②从磁盘检查点恢复高清分辨率，因此不另设目标分辨率控件。
 
 ## 工作流③使用方式
 
