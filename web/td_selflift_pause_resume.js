@@ -129,6 +129,9 @@ function ensureStyle() {
 const ARROW_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
   '<path d="M4.5 12h15m-6-6 6 6-6 6" stroke="currentColor" ' +
   'stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const PAUSED_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+  '<rect x="6" y="4.5" width="4.2" height="15" rx="1.2" fill="currentColor"/>' +
+  '<rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2" fill="currentColor"/></svg>';
 const PLAY_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
   '<path d="m7 4.5 12 7.5-12 7.5z" fill="currentColor"/></svg>';
 
@@ -161,7 +164,10 @@ function refresh(node) {
     const reset = root.querySelector(".td-selflift-reset");
     const busy = Boolean(run?.busy);
     button.disabled = busy;
-    ico.innerHTML = blue ? ARROW_ICON : PLAY_ICON;
+    // Lemon green shows the persisted low-res PAUSED state. Clicking it
+    // starts high-res; only the running state switches to a play icon.
+    ico.innerHTML = blue ? ARROW_ICON
+      : (busy && run?.mode === "continue" ? PLAY_ICON : PAUSED_ICON);
     label.textContent = busy
       ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "低清生成中…" : "高清续采中…")
       : (blue ? "生成低清" : "继续高清");
