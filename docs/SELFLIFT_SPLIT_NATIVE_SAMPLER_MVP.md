@@ -59,7 +59,7 @@ highres_tiling=true, tiling_mode=manual, tiling_tiles=4, tiling_axis=auto
 highres_tiling_mode=spatial
 ```
 
-- 高清输入是单独的模型分支，顺序为 `ModelAttentionBackend(comfy kitchen attention)`、`MiniMaxLowVRAMAttention(head_chunks=8)`、`MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)`。TerryDirector 的 `TerryDirectorSelfLiftHighres` 因此增加可选 `high_res_model` 输入；没有单独接线时仍沿用原 `model`，不会影响旧工作流。
+- 高清节点只保留一个 **「高清采样 MODEL」** 输入口。工作流 ③ 直接接基础 H3 MODEL；工作流 ④ 可将 `ModelAttentionBackend(comfy kitchen attention)` → `MiniMaxLowVRAMAttention(head_chunks=8)` → `MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)` 的最终 MODEL 直接接入同一个口。节点内部不再区分基础/独立高清模型，也不做覆盖优先级判断。**旧版带两根 MODEL 输入的工作流须重新接线**，不可依赖旧槽位自动迁移。
 - 参考中虽然出现 Spark/Veda 节点，但两者 `mode=4`（bypass），因此未把它们当作实际生效的加速配置。
 - `BasicScheduler` 为 simple/8 步，后面使用 `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)`；它对低噪尾段增加一步后，低清先走 6 步，高清续采剩余步数。
 - `highres_tiling_mode=spatial` 与 TerryDirector 现有 `director_selflift_tiling.py` 的空间切块方向一致，但实现未经过逐像素数值一致性验证。`highres_token_chunk=4096` / `highres_weight_cache_gb=4` 不在 spatial 模式下使用，暂不引入冗余 UI。
