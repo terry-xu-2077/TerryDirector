@@ -249,14 +249,17 @@ function refresh(node) {
   watchAncestors(node);
   const ratioWidget = findWidget(node, ["aspect_ratio"]);
   const ratio = ratioFromLabel(ratioWidget?.value || "16:9 (Widescreen)");
+  const highMp = selectorInputValue(node, "highres_megapixels");
+  // The visual preview must always follow the same 1:4 area rule as Python.
+  const lowMp = highMp == null ? null : highMp / 4;
   setPreviewRow(
     node.__tdDualResolutionRoot.querySelector('[data-resolution="low"]'),
-    selectorInputValue(node, "lowres_megapixels"),
+    lowMp,
     ratio,
   );
   setPreviewRow(
     node.__tdDualResolutionRoot.querySelector('[data-resolution="high"]'),
-    selectorInputValue(node, "highres_megapixels"),
+    highMp,
     ratio,
   );
 }
