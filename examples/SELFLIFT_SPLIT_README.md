@@ -17,14 +17,16 @@
 - **CLIP**：`qwen3vl_32b_minimax_h3_int8_convrot.safetensors`
 - **视频 VAE**：`minimax_h3_video_vae_int8_convrot.safetensors`
 - **音频 VAE**：`minimax_h3_audio_vae_fp32.safetensors`
-- **分辨率**：16:9；低清审片约 0.2 MP（608×352），高清目标约 0.8 MP（864×480）；124 帧
+- **分辨率**：16:9；低清审片约 0.2 MP（608×352），高清目标约 0.8 MP（1216×672）；124 帧
 - **采样**：`BasicScheduler(simple, 8)` → `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)` → `SplitSigmas(step=6)`
-- **Seed / CFG**：固定 seed=8，CFG=1
+- **Seed / CFG**：固定 seed=8，CFG=1。低清原生采样器和检查点节点共用同一个 SeedNode，避免两处种子不一致。
 - **高清转场**：`minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`
 - **高清空间分块**：默认关闭；模式 manual、4 块、axis auto（只有开启开关后才生效）
 - **低清预览**：KJ 预览，最大预览分辨率 1024，1 帧、12 fps
 
 `H3SigmaRefiner` 增加一个低噪修整步；在完整 Sigma 日程上从第 6 步分段，因此高清会继续执行余下日程。检查点必须与对应模型、条件、目标分辨率和 Sigma 日程兼容。
+
+**统一输入**：工作流①、③、④均使用 `TerryDirector 双采样分辨率选择器` 替代各自独立或写死的分辨率值；低清生成和目标 Latent 使用同一个时长公式（默认 5 秒 → 124 帧）。工作流②从磁盘检查点恢复高清分辨率，因此不另设一个可能与检查点冲突的目标分辨率控件。
 
 ## 工作流③使用方式
 
@@ -41,7 +43,7 @@
 
 - **① 低清保存**：同样使用 BF16 FL2VA、INT8 ConvRot CLIP、CFG=1、seed=8、8 步 simple 日程 + H3 Sigma Refiner，低清采样约 0.2 MP，保存目标 0.8 MP latent 检查点。
 - **② 高清读取**：加载与检查点兼容的 BF16 FL2VA 和 INT8 ConvRot CLIP；提示词条件使用低清 0.2 MP 尺寸；高清节点默认关闭空间分块。
-- **④ 0.5→2 MP**：保留独立高清 MODEL 链 `ModelAttentionBackend → MiniMaxLowVRAMAttention(8) → MiniMaxChunkFeedForward(2,4096)`，并启用 4 块空间分块。该工作流的目标尺寸与显存压力更高，不作为默认审片样例。
+- **④ 0.5→2 MP**：实际取整为低清 960×544、高清 1888×1088；保留独立高清 MODEL 链 `ModelAttentionBackend → MiniMaxLowVRAMAttention(8) → MiniMaxChunkFeedForward(2,4096)`，并启用 4 块空间分块。该工作流的目标尺寸与显存压力更高，不作为默认审片样例。
 
 ## 模型要求
 
