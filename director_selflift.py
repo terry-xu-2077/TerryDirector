@@ -131,10 +131,8 @@ def sample_selflift(*, model, positive, negative, latent_image, sampler, sigmas,
     validate_options(cfg, lowres_scale)
     if not 0 <= int(seed) < 1 << 64:
         raise ValueError("TerryDirector SelfLift: Seed 超出 64 位无符号范围")
-    if upscaler_model in {"", "none", None}:
-        raise ValueError(
-            "TerryDirector SelfLift: 已移除中间 VAE 往返，请选择 nearest 或 H3 Latent Upscaler"
-        )
+    if not upscaler_model or upscaler_model in {"none", "nearest"}:
+        raise ValueError("TerryDirector SelfLift: 高清阶段必须使用 H3 3D Latent Upscaler")
     if highres_tiling and (tiling_mode not in {"auto", "manual"}
                            or tiling_axis not in {"auto", "width", "height"}
                            or tiling_tiles not in {2, 4, 6, 8}):
@@ -194,13 +192,10 @@ def sample_selflift(*, model, positive, negative, latent_image, sampler, sigmas,
     latent_format = model.get_model_object("latent_format")
     clean_video_vae = latent_format.process_out(cleans[0].float())
     del states, cleans, low_latent, low_anchors, small_video, noise, low_model, low_masks
-    if upscaler_model == "nearest":
-        lifted = spatial_resize(clean_video_vae, target, mode="nearest")
-    else:
-        if _lifter is None:
-            from .director_selflift_upscaler import learned_lift
-            _lifter = learned_lift
-        lifted = _lifter(clean_video_vae, target, upscaler_model)
+    if _lifter is None:
+        from .director_selflift_upscaler import learned_lift
+        _lifter = learned_lift
+    lifted = _lifter(clean_video_vae, target, upscaler_model)
     if tuple(lifted.shape) != tuple(source[0].shape):
         raise ValueError("TerryDirector SelfLift: Latent 放大器改变了视频 batch、通道或时长")
     clean_high = latent_format.process_in(lifted)
