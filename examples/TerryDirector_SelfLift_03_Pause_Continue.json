@@ -2,7 +2,7 @@
   "id": "54de5d70-17de-4eef-9abc-e792e34bf3f0",
   "revision": 0,
   "last_node_id": 36,
-  "last_link_id": 49,
+  "last_link_id": 51,
   "nodes": [
     {
       "id": 1,
@@ -455,7 +455,7 @@
           "widget": {
             "name": "length"
           },
-          "link": null
+          "link": 50
         },
         {
           "localized_name": "参考图像尺寸",
@@ -991,7 +991,7 @@
           "widget": {
             "name": "seed"
           },
-          "link": null
+          "link": 51
         },
         {
           "localized_name": "cfg",
@@ -1598,7 +1598,8 @@
           "type": "INT",
           "links": [
             41,
-            46
+            46,
+            50
           ]
         },
         {
@@ -1761,7 +1762,8 @@
           "name": "seed",
           "type": "INT",
           "links": [
-            45
+            45,
+            51
           ]
         }
       ],
@@ -2329,6 +2331,22 @@
       13,
       3,
       "SIGMAS"
+    ],
+    [
+      50,
+      29,
+      1,
+      6,
+      11,
+      "INT"
+    ],
+    [
+      51,
+      33,
+      0,
+      13,
+      8,
+      "INT"
     ]
   ],
   "groups": [
