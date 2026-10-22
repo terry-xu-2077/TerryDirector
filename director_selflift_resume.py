@@ -7,6 +7,7 @@ the already-advanced audio state, while denoised_output supplies the last x0.
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 
 import torch
 
@@ -21,6 +22,7 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     from .director_selflift_checkpoint import load_checkpoint
     if isinstance(checkpoint, dict):
         checkpoint = checkpoint.get("checkpoint_id")
+    started = perf_counter()
     saved = load_checkpoint(checkpoint)
     manifest = saved["manifest"]
     cfg = float(manifest["cfg"])
@@ -29,8 +31,23 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     validate_options(cfg, 0.5, rho, w_min, w_max)
     need_pixel = rho > 0 and w_max > 0
     need_direct = not (rho == 1 and w_min == 1)
+    logging.info(
+        "[TerryDirector SelfLift split] 开始续采 checkpoint=%s "
+        "low=%s high=%s rho=%.2f upscaler=%s",
+        manifest["checkpoint_id"], manifest["low_video_shape"],
+        manifest["target_video_shape"], rho, upscaler_model,
+    )
+    if need_pixel:
+        logging.warning(
+            "[TerryDirector SelfLift split] SelfLift-zero 像素锚已启用："
+            "需要低清视频 VAE 解码 + 放大 + 高清 VAE 重新编码；"
+            "这一阶段可能明显慢于两步 Euler 采样。"
+        )
     if need_direct and upscaler_model == "none" and not need_pixel:
-        raise ValueError("SelfLift: 请提供 H3 latent upscaler 或开启 rho 像素锚修正")
+        raise ValueError(
+            "SelfLift: rho=0 时请选择 nearest（快速验证，画质仅供测试）"
+            "或已安装的 H3 Latent Upscaler；none 需要启用像素锚修正"
+        )
     if highres_tiling and (tiling_mode not in {"auto", "manual"}
                            or tiling_axis not in {"auto", "width", "height"}
                            or tiling_tiles not in {2, 4, 6, 8}):
@@ -54,16 +71,32 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     clean_video_vae = low_clean[0].float()
     direct = anchor = None
     if need_direct:
-        if upscaler_model != "none":
+        if upscaler_model not in {"none", "nearest"}:
+            logging.info("[TerryDirector SelfLift split] 开始 H3 Latent Upscaler")
+            lifted_at = perf_counter()
             if _lifter is None:
                 from .director_selflift_upscaler import learned_lift
                 _lifter = learned_lift
             direct = _lifter(clean_video_vae, target, upscaler_model)
+            logging.info(
+                "[TerryDirector SelfLift split] H3 Latent Upscaler 完成 %.1fs",
+                perf_counter() - lifted_at,
+            )
         else:
             from .director_selflift_math import spatial_resize
             direct = spatial_resize(clean_video_vae, target, mode="nearest")
+            logging.info(
+                "[TerryDirector SelfLift split] %s 最近邻 Latent 放大完成；无需 VAE 往返",
+                upscaler_model,
+            )
     if need_pixel:
+        pixel_at = perf_counter()
+        logging.info("[TerryDirector SelfLift split] 像素锚：开始 VAE 解码/放大/回编码")
         anchor = _pixel_endpoint(clean_video_vae, vae, target, backend.interrupt)
+        logging.info(
+            "[TerryDirector SelfLift split] 像素锚 VAE 往返完成 %.1fs",
+            perf_counter() - pixel_at,
+        )
     for value in (direct, anchor):
         if value is not None and tuple(value.shape) != tuple(source[0].shape):
             raise ValueError("SelfLift: 放大 Latent 形状错误")
@@ -112,8 +145,17 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
         if preview is not None:
             preview(k + high_calls - 1, clean, state, total_steps)
 
+    logging.info(
+        "[TerryDirector SelfLift split] 进入高清 Euler 采样 %d 步（初始化已用 %.1fs）",
+        total_steps - k, perf_counter() - started,
+    )
+    sample_at = perf_counter()
     output = backend.sample(high_model, zero_noise, positive, negative, cfg,
                             sampler, sigmas[k:], resume, callback, seed)
+    logging.info(
+        "[TerryDirector SelfLift split] 高清 Euler 采样完成 %.1fs",
+        perf_counter() - sample_at,
+    )
     if high_calls != total_steps - k:
         raise RuntimeError("SelfLift: 高清采样步数不符")
     streams = backend.split(output)
@@ -122,7 +164,7 @@ def resume_highres(*, checkpoint, model, positive, negative, vae, sampler,
     if masks is not None:
         streams = [torch.where(m.to(s.device) == 0, original.to(s), s)
                    for s, original, m in zip(streams, source, masks)]
-    logging.info("[TerryDirector SelfLift split] checkpoint=%s high_steps=%d",
-                 manifest["checkpoint_id"], high_calls)
+    logging.info("[TerryDirector SelfLift split] checkpoint=%s high_steps=%d total=%.1fs",
+                 manifest["checkpoint_id"], high_calls, perf_counter() - started)
     return {"samples": backend.pack(
         [s.to(device=backend.device, dtype=backend.dtype) for s in streams])}
