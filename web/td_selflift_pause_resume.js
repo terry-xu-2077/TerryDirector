@@ -41,7 +41,7 @@ function ensureStyle() {
     ".td-selflift-action .td-selflift-main{width:100%;height:61px;border:0;",
     "border-radius:10px;display:flex;align-items:center;justify-content:center;",
     "gap:12px;cursor:pointer;transition:background .15s ease,transform .15s ease;",
-    "font:700 15px/1.2 inherit;letter-spacing:.25px;}",
+    "font-family:inherit;font-size:15px;font-weight:700;line-height:1.2;letter-spacing:.25px;}",
     ".td-selflift-action .td-selflift-main:active{transform:scale(.985)}",
     ".td-selflift-action .td-selflift-main:focus-visible{outline:2px solid white;outline-offset:2px}",
     ".td-selflift-action.is-blue .td-selflift-main{background:#307cff;color:#fff;}",
@@ -241,7 +241,7 @@ function attach(node) {
     node.__tdSelfLiftRoot = root;
     const width = Math.max(Number(node.size?.[0]) || 0, MIN_WIDTH);
     node.setSize?.([width, Math.max(Number(node.size?.[1]) || 0,
-      Number(node.computeSize?.()[1]) || 0)]);
+      Number(node.computeSize?.()?.[1]) || 0)]);
   }
   refresh(node);
 }
