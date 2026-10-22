@@ -1061,7 +1061,7 @@
           "link": 18
         },
         {
-          "localized_name": "高清 H3 模型",
+          "localized_name": "高清采样 MODEL",
           "name": "model",
           "type": "MODEL",
           "link": 44
@@ -1083,13 +1083,6 @@
           "name": "sampler",
           "type": "SAMPLER",
           "link": 23
-        },
-        {
-          "localized_name": "独立高清 MODEL（可选）",
-          "name": "high_res_model",
-          "shape": 7,
-          "type": "MODEL",
-          "link": null
         },
         {
           "localized_name": "upscaler_model",
