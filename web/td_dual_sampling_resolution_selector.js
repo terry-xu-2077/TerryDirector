@@ -181,7 +181,7 @@ function outputValue(source, outputSlot, visited) {
       const variables = {};
       for (const input of source.inputs || []) {
         const value = inputValue(source, input.name, new Set(visited));
-        if (value != null) variables[String(input.name).toLowerCase()] = value;
+        if (value != null) variables[String(input.name).split(".").pop().toLowerCase()] = value;
       }
       return evaluateExpression(expression.value, variables);
     }
