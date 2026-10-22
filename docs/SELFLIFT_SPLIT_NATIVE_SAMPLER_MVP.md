@@ -10,7 +10,7 @@
 
 - **TerryDirector 保存低清检查点**：保存原生 `output` 与 `denoised_output`、原始目标分辨率 AV LATENT、完整 SIGMAS、Seed 和 CFG。
 - **TerryDirector 读取低清检查点**：按镜头名和 ID 选择已有记录，输出轻量引用（不会立刻把所有 Latent 加载到 RAM）。
-- **TerryDirector SelfLift 高清续采**：内部加载检查点，采用现有 TerryDirector SelfLift 分辨率提升代码，执行剩余 Euler 步数。
+- **TerryDirector SelfLift 高清续采**：内部加载检查点，必经 H3 3D Latent Upscaler 后执行剩余 Euler 步数。
 - **TerryDirector SelfLift 暂停/继续**：封装保存与恢复，单工作流通过模式切换完成两阶段执行。暂停后软阻断高清下游；继续时四路低清输入使用 ComfyUI 原生惰性求值，不会再次触发低清采样。
 
 原本的一体式 `TerryDirector SelfLift (Internal)` 保持不变，以便 A/B 对照。
@@ -35,7 +35,7 @@ SamplerCustom denoised_output   → 保存低清检查点.low_clean
 [读取低清检查点] ── checkpoint ─→ [SelfLift 高清续采]
 [相同或兼容的 H3 模型] ─────────→ [SelfLift 高清续采.model]
 [相同正负条件] ─────────────────→ [SelfLift 高清续采.positive / negative]
-[视频 VAE] / [KSamplerSelect=euler] → [SelfLift 高清续采]
+[H3 3D Latent Upscaler 模型名] / [KSamplerSelect=euler] → [SelfLift 高清续采]
 [SelfLift 高清续采.latent] → H3 原生视频/音频解码 → SaveVideo
 ```
 
@@ -43,9 +43,9 @@ SamplerCustom denoised_output   → 保存低清检查点.low_clean
 - **低清用于采样的 H3 AV LATENT** 应由原生节点创建在实际低清尺寸；**保存节点的 source** 必须是相同时长/音频流、目标高分辨率的原始 AV LATENT。低清和高清两路的音频潜变量形状必须一致。
 - **审片**可把 `denoised_output` 接入原生 H3 视频/音频解码输出，保存一个低清 MP4。它不是 SelfLift 后续计算的检查点，只是供人工审片的视觉/音频参考。
 - 若用 H3 的参考图、尾帧、输入音频、遮罩：低清端须正确应用与低分辨率匹配的条件；高清端须提供与原生成一致的 Conditioning。检查点存储原始目标 Latent（含静态遮罩），**并不存储序列化 CONDITIONING 或模型权重**。
-- **快速功能验证（新示例默认）**：`rho=0, upscaler_model=nearest` 直接最近邻放大潜空间视频帧，无需 VideoVAE 像素往返；**这是排查运行链路的技术档位，不能等价于成熟 SelfLift 高清画质**。
-- **SelfLift-zero**：`rho=0.6, upscaler_model=none` 会触发低清视频 VAE 解码、图像放大、高清 VAE 回编码。在 ComfyUI 动态显存下可能非常耗时，已添加解码、插值、回编码的分阶段日志。检查点独立保存，不必为了换参数重新跑低清。
-- **外部 H3 Latent Upscaler**：`rho=0`，下拉框指定已安装的 H3 Upscaler 权重，无需强制 VAE 像素锚往返，优先用来与 SelfLift-Avatar 效果对照。
+- **唯一高清转场路线：H3 3D Latent Upscaler**。从低清预测的 x0 直接在 Latent 空间放大，再按检查点 Sigma 恢复剩余 Euler；不执行中间视频 VAE 解码、插值后重新编码。
+- **不再支持**：`nearest`、`none`、SelfLift-zero 像素锚、`rho/w_min/w_max`。这些选项和对应计算函数已从节点 UI 和实际采样路径移除；模型文件必须放入 `models/latent_upscale_models/`。
+- **最终 VAE 输出保留**：正常 `VAEDecode` / `VAEDecodeAudio` 把最终音视频 Latent 变成媒体，不属于被删除的中间重复编解码。
 - 只支持标准 Euler / `s_churn=0`、H3 双流 Latent 与非终止 Sigma 检查点。其余采样器或仅有普通最终 Latent 的视频均不能当作有效 SelfLift 恢复点。
 
 ## 来自已验证工作流的高清参考参数（2026-10-22）
@@ -54,7 +54,6 @@ SamplerCustom denoised_output   → 保存低清检查点.low_clean
 
 ```text
 CFG=1, transition_step=6, lowres_scale=0.5
-rho=0, w_min=0.5, w_max=1
 upscaler_model=minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors
 highres_tiling=true, tiling_mode=manual, tiling_tiles=4, tiling_axis=auto
 highres_tiling_mode=spatial
@@ -64,8 +63,8 @@ highres_tiling_mode=spatial
 - 参考中虽然出现 Spark/Veda 节点，但两者 `mode=4`（bypass），因此未把它们当作实际生效的加速配置。
 - `BasicScheduler` 为 simple/8 步，后面使用 `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)`；它对低噪尾段增加一步后，低清先走 6 步，高清续采剩余步数。
 - `highres_tiling_mode=spatial` 与 TerryDirector 现有 `director_selflift_tiling.py` 的空间切块方向一致，但实现未经过逐像素数值一致性验证。`highres_token_chunk=4096` / `highres_weight_cache_gb=4` 不在 spatial 模式下使用，暂不引入冗余 UI。
-- 正式参考样例放在 `examples/TerryDirector_SelfLift_04_Reference_2MP_Highres.json`：低清 960×544、高清 1920×1088、5 秒/124 帧。原参考的 15 秒、fl2va BF16 基础模型和 LoRA **没有无条件复制**；样例仍用现有 ref2va INT8 以限制同时变化的变量。03 号原生 nearest 小样例保留用于快速排错。
-- 学得的 3D Latent Upscaler 与 SelfLift-zero 的 VAE 像素锚不是相同操作；`rho=0` 使用前者，故高清阶段不需要再次整段解码/回编码，降低之前的 VAE 卡顿风险。
+- 正式参考样例放在 `examples/TerryDirector_SelfLift_04_Reference_2MP_Highres.json`：低清 960×544、高清 1920×1088、5 秒/124 帧。原参考的 15 秒、fl2va BF16 基础模型和 LoRA **没有无条件复制**；样例仍用现有 ref2va INT8 以限制同时变化的变量。03 号工作流已改为 H3 3D Upscaler，小分辨率下也不再使用 nearest。
+- 实际高分辨率提升仅由学得的 H3 3D Latent Upscaler 承担；不再存在中间 VAE 往返支路或低质量最近邻降级路径。
 
 ## 便捷节点：TerryDirector SelfLift 暂停/继续
 
@@ -113,6 +112,12 @@ TerryDirector SelfLift 高清续采
 5. 测试异常：错误模型、原始条件发生变化、遮罩、错误参考尺寸、磁盘不足、坏文件、执行中断后再次加载。
 
 **限制（本次不做）：** 卡片式视频任务浏览浮窗、审核确认、高清多选队列、后台运行状态卡、自动模型/Conditioning 指纹校验、保存审片视频到任务包。当前节点名列表仅作为技术闭环入口，不能当作正式审片任务系统。
+
+## 旧工作流迁移提示
+
+以前的 `TerryDirectorSelfLiftHighres` 含有 `vae / rho / w_min / w_max` 输入，现在已全部移除。请重新导入已经更新的 02/03/04 号 JSON，或手工删除并重建高清续采节点连线；不要沿用旧的输入槽顺序。
+
+一体式 `TerryDirectorSelfLiftSampler`（Internal）同样已移除中间 VAE 输入与像素锚参数，仅允许真实 Upscaler 权重。已有合法低清检查点的磁盘格式不变，能否继续仍取决于模型、条件、Sigma 和 Latent 形状一致。
 
 ## 技术来源
 
