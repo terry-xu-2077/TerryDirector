@@ -374,7 +374,8 @@
         {
           "name": "model",
           "type": "MODEL",
-          "link": 2
+          "link": 2,
+          "localized_name": "高清采样 MODEL"
         },
         {
           "name": "positive",
