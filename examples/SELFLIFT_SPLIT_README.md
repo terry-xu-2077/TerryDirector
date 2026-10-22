@@ -1,6 +1,6 @@
 # TerryDirector · SelfLift 分阶段示例工作流
 
-这两份 **ComfyUI 可导入的画布 JSON** 展示最小实现：原生低清采样 + KJ 实时预览 → 持久化检查点 → 另一个工作流读取检查点 → SelfLift 高清续采。
+这三份 **ComfyUI 可导入的画布 JSON** 展示最小实现：原生低清采样 + KJ 实时预览 → 持久化检查点 → 另一个工作流读取检查点 → SelfLift 高清续采。
 
 | 顺序 | 文件 | 运行结果 |
 | --- | --- | --- |
@@ -38,12 +38,18 @@
 - 示例使用 `MiniMaxH3ReferenceToVideo`（ref2va）与同一段英文提示词，**没有强制连接参考图**，主要用于检查分阶段机制；人物一致性、视频质量是否适合正式制作还需真机验收。如果使用参考图/视频/音频，必须在高清工作流重新提供相同的对应条件，并检查参考尺寸策略；现有检查点并不保存 CONDITIONING 张量、模型权重或素材文件。
 - ComfyUI 原生 `SplitSigmas` 的第一个输出名叫 `high_sigmas`，但源码实际值是 `sigmas[:step+1]`，所以**工作流①将它作为低清前 6 步的 Sigmas**；完整 8 步的 Sigmas 另接保存节点。不要误用第二个输出。
 - KJ `Model Preview Override` 预设动态预览 12 帧、12 FPS、Tiny VAE=`none`；若已安装兼容的 `taeh3.safetensors`，可在 KJ 节点里切换，以改善预览效果。KJ 节点只参与实时预览，并不负责生成持久审片视频。
-- 高清示例预设 **SelfLift-zero**（`rho=0.6`、`upscaler_model=none`），不额外依赖 H3 Latent Upscaler 权重。想与 SelfLift-Avatar 常用的“外部 H3 放大”路线比较，可以将 `rho=0`，并改用你已安装的 H3 Latent Upscaler 权重。
+- **当前工作流②、③默认使用快速验证档**：`rho=0`、`upscaler_model=nearest`。该模式只放大 Latent，不做视频 VAE 解码/重新编码，目的是先确认保存、读取、剩余 Euler 高清采样和视频输出正常；**nearest 并不等于 SelfLift-Avatar 的正式高画质方案，不能用来评估最终成片质量**。
+- 要测试较慢的 **SelfLift-zero 像素锚修正**，手动改为 `rho=0.6`、`upscaler_model=none`。它会执行：低清 x0 → VAE 解码 → 像素放大 → 高清 VAE 回编码，然后才进入剩余 Euler 步数。此过程对 H3 视频 VAE 显存、主内存和时长更敏感。新增日志会分别打印开始/结束 VAE 解码、高清回编码与进入 Euler 阶段的时间。
+- 要测试 **外部 H3 Latent Upscaler**，改为 `rho=0` 并在 `upscaler_model` 中选择已安装的模型文件。该路线省去 SelfLift-zero 的完整 VAE 像素锚往返，但效果仍需要实测对比。
 - 示例中的相同 Seed、CFG、Prompt、模型、目标分辨率以及参考条件都是**手动保持一致**。现阶段没有完整模型或提示词指纹校验，使用错误条件可能仍然运行但产生与预期不一致的结果。
-- 这里的“可导入”表示 JSON 按实际 ComfyUI 节点 ID、输入槽和连接结构构建并完成静态检查；**未在你的 RTX 3090 上运行 GPU 验收**。若 ComfyUI 本地版本更旧或扩展版本不同，请以实际节点报错与接口为准。
+- 这里的“可导入”表示 JSON 按官方最新 ComfyUI 节点 ID、输入槽和连接结构构建并完成静态检查；**尚未在你的 RTX 3090 上完成 GPU 验收**。如本地安装的扩展接口变化，请以真实错误为准。
 
 ## 当前范围
 
 这两个工作流刻意没有接入 TerryDirector 时间线循环、任务卡浮窗、多选批量二采或后台状态卡；它们是第一阶段的技术闭环验收样例。
 
 详细设计与检查点约束参见 [SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md](../docs/SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md)。
+
+## VAE 长时间停留排查
+
+若日志出现 `继续高清：checkpoint=... 已读取` 和重复的视频 VAE 加载、十分钟都没有高清采样进度，先正常中断当前任务。检查高清节点是否意外仍设置 `rho=0.6 / upscaler_model=none`（老示例的原参数）。无需重新运行低清；升级代码后可保留之前绿色按钮中的同一检查点，先将高清节点改成 `rho=0 / upscaler_model=nearest`，点击绿色按钮验证高清续采。如果 nearest 能正常进入 Euler，而 SelfLift-zero 仍很慢，问题在 VAE 像素锚处理链路而非检查点读取。日志会标示具体卡在 VAE 解码还是回编码。
