@@ -940,7 +940,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "# SelfLift · 低清生成与保存检查点\n\n用途：先生成低清审片结果，并保存可供高清续采读取的检查点。\n\n- 目标：低清约 0.2 MP（608×352），检查点目标约 0.8 MP（1216×672）。\n- 运行前确认本机已安装工作流所需的 H3 模型、CLIP、VAE、KJ 预览节点及 H3 Sigma Refiner。\n- 「双采样分辨率选择器」输出低清与目标高清的宽高；同一个时长公式连接低清条件和原始目标 Latent；同一个种子同时供给低清采样器与检查点。\n- 低清采样完成后，检查点会写入 TerryDirector 的检查点目录；记下检查点名称，后续可在独立高清读取工作流中选择。\n- 若要继续同一次采样，保持模型、提示词、参考图、Seed、CFG、目标分辨率与 Sigma 日程一致。\n\n工作流节点保留默认名称；说明集中放在本便笺中。"
+        "# SelfLift · 低清生成与保存检查点\n\n用途：先生成低清审片结果，并保存可供高清续采读取的检查点。\n\n- 目标：低清约 0.2 MP（608×352），检查点目标约 0.8 MP（1216×672）。\n- 运行前确认本机已安装工作流所需的 H3 模型、CLIP、VAE、KJ 预览节点及 H3 Sigma Refiner。\n- 「双采样分辨率选择器」输出低清与目标高清的宽高；同一个时长公式连接低清条件和原始目标 Latent；同一个种子同时供给低清采样器与检查点。\n- 低清采样完成后，检查点会写入 TerryDirector 的检查点目录；记下检查点名称，后续可在独立高清读取工作流中选择。\n- 若要继续同一次采样，保持模型、提示词、参考图、Seed、CFG、目标分辨率与 Sigma 日程一致。\n\n工作流节点保留默认名称；说明集中放在本便笺中。\n\n分辨率：只需修改唯一的「高清百万像素」输入；低清目标 MP 自动等于高清 MP / 4，不必再接独立的低清 MP 公式。"
       ]
     },
     {
@@ -966,15 +966,6 @@
             "name": "aspect_ratio"
           },
           "link": null
-        },
-        {
-          "localized_name": "低清百万像素",
-          "name": "lowres_megapixels",
-          "type": "FLOAT",
-          "widget": {
-            "name": "lowres_megapixels"
-          },
-          "link": 30
         },
         {
           "localized_name": "高清百万像素",
@@ -1037,12 +1028,10 @@
       },
       "widgets_values": [
         "16:9 (Widescreen)",
-        0.2,
         0.8
       ],
       "widgets_values_named": {
         "aspect_ratio": "16:9 (Widescreen)",
-        "lowres_megapixels": 0.2,
         "highres_megapixels": 0.8
       }
     },
@@ -1218,7 +1207,7 @@
       "id": 24,
       "type": "PrimitiveFloat",
       "pos": [
-        -570,
+        -90,
         890
       ],
       "size": [
@@ -1245,8 +1234,7 @@
           "name": "FLOAT",
           "type": "FLOAT",
           "links": [
-            28,
-            29
+            28
           ]
         }
       ],
@@ -1261,76 +1249,6 @@
       },
       "color": "#323",
       "bgcolor": "#535"
-    },
-    {
-      "id": 25,
-      "type": "ComfyMathExpression",
-      "pos": [
-        -270,
-        880
-      ],
-      "size": [
-        225,
-        141.999991807217
-      ],
-      "flags": {},
-      "order": 28,
-      "mode": 0,
-      "inputs": [
-        {
-          "localized_name": "a",
-          "name": "values.a",
-          "type": "FLOAT,INT,BOOLEAN",
-          "link": 29
-        },
-        {
-          "localized_name": "b",
-          "name": "values.b",
-          "shape": 7,
-          "type": "FLOAT,INT,BOOLEAN",
-          "link": null
-        },
-        {
-          "localized_name": "表达式",
-          "name": "expression",
-          "type": "STRING",
-          "widget": {
-            "name": "expression"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "浮点",
-          "name": "FLOAT",
-          "type": "FLOAT",
-          "links": [
-            30
-          ]
-        },
-        {
-          "localized_name": "整数",
-          "name": "INT",
-          "type": "INT",
-          "links": null
-        },
-        {
-          "localized_name": "布尔值",
-          "name": "BOOL",
-          "type": "BOOLEAN",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ComfyMathExpression"
-      },
-      "widgets_values": [
-        "round(a * 10 / 4) / 10"
-      ],
-      "widgets_values_named": {
-        "expression": "round(a * 10 / 4) / 10"
-      }
     }
   ],
   "links": [
@@ -1537,22 +1455,6 @@
     [
       28,
       24,
-      0,
-      20,
-      2,
-      "FLOAT"
-    ],
-    [
-      29,
-      24,
-      0,
-      25,
-      0,
-      "FLOAT"
-    ],
-    [
-      30,
-      25,
       0,
       20,
       1,
