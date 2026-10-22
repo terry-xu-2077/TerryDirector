@@ -1,7 +1,7 @@
 {
   "id": "54de5d70-17de-4eef-9abc-e792e34bf3f0",
   "revision": 0,
-  "last_node_id": 35,
+  "last_node_id": 36,
   "last_link_id": 49,
   "nodes": [
     {
@@ -1432,182 +1432,6 @@
       }
     },
     {
-      "id": 23,
-      "type": "ResolutionSelector",
-      "pos": [
-        58.640386324628196,
-        834.764479871569
-      ],
-      "size": [
-        270,
-        150
-      ],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 12,
-      "mode": 0,
-      "showAdvanced": false,
-      "inputs": [
-        {
-          "localized_name": "宽高比",
-          "name": "aspect_ratio",
-          "type": "COMBO",
-          "widget": {
-            "name": "aspect_ratio"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "百万像素",
-          "name": "megapixels",
-          "type": "FLOAT",
-          "widget": {
-            "name": "megapixels"
-          },
-          "link": 37
-        },
-        {
-          "localized_name": "倍数",
-          "name": "multiple",
-          "type": "INT",
-          "widget": {
-            "name": "multiple"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "预览",
-          "name": "preview",
-          "shape": 7,
-          "type": "RESOLUTION_PREVIEW",
-          "widget": {
-            "name": "preview"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "宽度",
-          "name": "width",
-          "type": "INT",
-          "links": [
-            32
-          ]
-        },
-        {
-          "localized_name": "高度",
-          "name": "height",
-          "type": "INT",
-          "links": [
-            33
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ResolutionSelector"
-      },
-      "widgets_values": [
-        "16:9 (Widescreen)",
-        0.2,
-        32
-      ],
-      "widgets_values_named": {
-        "aspect_ratio": "16:9 (Widescreen)",
-        "megapixels": 0.2,
-        "multiple": 32
-      }
-    },
-    {
-      "id": 26,
-      "type": "ResolutionSelector",
-      "pos": [
-        -309.52682434576656,
-        1195.3349031952662
-      ],
-      "size": [
-        267.9805006266117,
-        160.69277144486597
-      ],
-      "flags": {
-        "collapsed": false
-      },
-      "order": 10,
-      "mode": 0,
-      "showAdvanced": false,
-      "inputs": [
-        {
-          "localized_name": "宽高比",
-          "name": "aspect_ratio",
-          "type": "COMBO",
-          "widget": {
-            "name": "aspect_ratio"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "百万像素",
-          "name": "megapixels",
-          "type": "FLOAT",
-          "widget": {
-            "name": "megapixels"
-          },
-          "link": 38
-        },
-        {
-          "localized_name": "倍数",
-          "name": "multiple",
-          "type": "INT",
-          "widget": {
-            "name": "multiple"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "预览",
-          "name": "preview",
-          "shape": 7,
-          "type": "RESOLUTION_PREVIEW",
-          "widget": {
-            "name": "preview"
-          },
-          "link": null
-        }
-      ],
-      "outputs": [
-        {
-          "localized_name": "宽度",
-          "name": "width",
-          "type": "INT",
-          "links": [
-            34
-          ]
-        },
-        {
-          "localized_name": "高度",
-          "name": "height",
-          "type": "INT",
-          "links": [
-            35
-          ]
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "ResolutionSelector"
-      },
-      "widgets_values": [
-        "16:9 (Widescreen)",
-        0.8,
-        32
-      ],
-      "widgets_values_named": {
-        "aspect_ratio": "16:9 (Widescreen)",
-        "megapixels": 0.8,
-        "multiple": 32
-      }
-    },
-    {
       "id": 27,
       "type": "ComfyMathExpression",
       "pos": [
@@ -2071,6 +1895,109 @@
       "widgets_values": [
         "# SelfLift · 默认推荐：低清审片 → 高清续采\n\n目标：低清约 0.2 MP（608×352），高清约 0.8 MP（864×480），124 帧。\n\n1. 首次点击 TerryDirectorSelfLiftPauseResume 节点中的主按钮「生成低清」，运行低清采样并保存检查点。\n2. 先检查低清视频。确认镜头、表演和构图符合预期后，再点击变为柠檬绿色的「继续高清」按钮。\n3. 如果不满意，点击节点右下方的「重新生成低清」按钮，重新生成低清结果；旧检查点不会被当作本次续采依据。\n4. 继续高清前不要更换提示词、参考图或影响检查点兼容性的参数。\n\n模型权重与 H3 Sigma Refiner 必须在本机可用。工作流节点保留默认名称；说明集中放在本便笺中。"
       ]
+    },
+    {
+      "id": 36,
+      "type": "TerryDirectorDualSamplingResolutionSelector",
+      "pos": [
+        200,
+        1050
+      ],
+      "size": [
+        360,
+        200
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "localized_name": "宽高比",
+          "name": "aspect_ratio",
+          "type": "COMBO",
+          "widget": {
+            "name": "aspect_ratio"
+          },
+          "link": null
+        },
+        {
+          "localized_name": "低清百万像素",
+          "name": "lowres_megapixels",
+          "type": "FLOAT",
+          "widget": {
+            "name": "lowres_megapixels"
+          },
+          "link": 37
+        },
+        {
+          "localized_name": "高清百万像素",
+          "name": "highres_megapixels",
+          "type": "FLOAT",
+          "widget": {
+            "name": "highres_megapixels"
+          },
+          "link": 38
+        }
+      ],
+      "outputs": [
+        {
+          "localized_name": "低清宽度",
+          "name": "lowres_width",
+          "type": "INT",
+          "links": [
+            32
+          ]
+        },
+        {
+          "localized_name": "低清高度",
+          "name": "lowres_height",
+          "type": "INT",
+          "links": [
+            33
+          ]
+        },
+        {
+          "localized_name": "高清宽度",
+          "name": "highres_width",
+          "type": "INT",
+          "links": [
+            34
+          ]
+        },
+        {
+          "localized_name": "高清高度",
+          "name": "highres_height",
+          "type": "INT",
+          "links": [
+            35
+          ]
+        },
+        {
+          "localized_name": "低清实际 MP",
+          "name": "lowres_actual_megapixels",
+          "type": "FLOAT",
+          "links": null
+        },
+        {
+          "localized_name": "高清实际 MP",
+          "name": "highres_actual_megapixels",
+          "type": "FLOAT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TerryDirectorDualSamplingResolutionSelector"
+      },
+      "widgets_values": [
+        "16:9 (Widescreen)",
+        0.2,
+        0.8
+      ],
+      "widgets_values_named": {
+        "aspect_ratio": "16:9 (Widescreen)",
+        "lowres_megapixels": 0.2,
+        "highres_megapixels": 0.8
+      }
     }
   ],
   "links": [
@@ -2252,16 +2179,16 @@
     ],
     [
       34,
-      26,
-      0,
+      36,
+      2,
       12,
       0,
       "INT"
     ],
     [
       35,
-      26,
-      1,
+      36,
+      3,
       12,
       1,
       "INT"
@@ -2270,7 +2197,7 @@
       37,
       27,
       0,
-      23,
+      36,
       1,
       "FLOAT"
     ],
@@ -2278,8 +2205,8 @@
       38,
       28,
       0,
-      26,
-      1,
+      36,
+      2,
       "FLOAT"
     ],
     [
@@ -2364,7 +2291,7 @@
     ],
     [
       32,
-      23,
+      36,
       0,
       6,
       9,
@@ -2372,7 +2299,7 @@
     ],
     [
       33,
-      23,
+      36,
       1,
       6,
       10,
@@ -2478,8 +2405,8 @@
     "ds": {
       "scale": 0.9337472856360102,
       "offset": [
-        650,
-        60
+        850,
+        -30
       ]
     }
   },
