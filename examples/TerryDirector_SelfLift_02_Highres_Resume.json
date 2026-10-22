@@ -130,7 +130,6 @@
           "type": "VAE",
           "links": [
             4,
-            9,
             12
           ]
         }
@@ -391,11 +390,6 @@
           "link": 8
         },
         {
-          "name": "vae",
-          "type": "VAE",
-          "link": 9
-        },
-        {
           "name": "sampler",
           "type": "SAMPLER",
           "link": 10
@@ -415,16 +409,13 @@
         "Node name for S&R": "TerryDirectorSelfLiftHighres"
       },
       "widgets_values": [
-        0,
-        0.5,
-        1,
-        "nearest",
+        "minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors",
         false,
         "auto",
         2,
         "auto"
       ],
-      "title": "SelfLift 分段高清 · nearest 快速验证（非正式画质）"
+      "title": "SelfLift 高清续采 · H3 3D Upscaler"
     },
     {
       "id": 10,
@@ -661,19 +652,11 @@
       "CONDITIONING"
     ],
     [
-      9,
-      4,
-      0,
-      9,
-      4,
-      "VAE"
-    ],
-    [
       10,
       8,
       0,
       9,
-      5,
+      4,
       "SAMPLER"
     ],
     [
