@@ -225,7 +225,10 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
     @classmethod
     def define_schema(cls):
         from .director_selflift_upscaler import list_models
-        available = ["nearest"] + [n for n in list_models() if n not in {"none", "nearest"}]
+        preferred = "minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors"
+        available = [n for n in list_models() if n not in {"", "none", "nearest"}]
+        default_model = preferred if preferred in available else (available[0] if available else preferred)
+        available = available or [preferred]
         return io.Schema(
             node_id="TerryDirectorSelfLiftHighres",
             display_name="TerryDirector SelfLift 高清续采",
@@ -243,8 +246,8 @@ class TerryDirectorSelfLiftHighres(io.ComfyNode):
                                optional=True,
                                tooltip="可单独连接高清模型加速/低显存处理分支；留空沿用 model。"
                                        "参考 SelfLift-Avatar 的 low_res_model / high_res_model 架构。"),
-                io.Combo.Input("upscaler_model", options=available, default="nearest",
-                               tooltip="nearest：仅用于排错；正式高清选择已安装的 H3 3D Latent Upscaler。中途不再执行 VAE 往返。"),
+                io.Combo.Input("upscaler_model", options=available, default=default_model,
+                               tooltip="必需：H3 3D Latent Upscaler。模型路径：models/latent_upscale_models/；不执行中间 VAE 往返。"),
                 io.Boolean.Input("highres_tiling", default=False,
                                  tooltip="H3 高清空间分块，参考参数：开启。"
                                          "只有视频按空间分块，音频保留完整上下文。"),
