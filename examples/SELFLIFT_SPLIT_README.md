@@ -33,6 +33,10 @@
 3. 工作流中的 LoadImage 节点示例指向 `黄昏盐滩独行宇航员镜头首帧图片生成.jpg`。若本机没有该图片，请替换为自己的参考图，或断开该参考图输入。
 4. 工作流①和②可以分开使用，但保存与读取必须对应同一组兼容参数；切换模型、参考条件、分辨率或 Sigma 日程时，请重新生成检查点。
 
+## 高清 MODEL 输入口
+
+`TerryDirectorSelfLiftHighres` 现只有一个 **「高清采样 MODEL」**。工作流 ②/③ 直接连接基础 H3 MODEL；工作流 ④ 将 `MiniMaxChunkFeedForward` 的最终优化 MODEL 直接连接此输入。要换模型或注意力优化策略，只需调整上游连线，不需要第二个 MODEL 插口。旧版含两个 MODEL 口的画布请重新导入已更新的示例，或手动删掉并重建高清节点以避免旧槽位错接。
+
 ## 独立工作流
 
 - **① 低清保存**：同样使用 BF16 FL2VA、INT8 ConvRot CLIP、CFG=1、seed=8、8 步 simple 日程 + H3 Sigma Refiner，低清采样约 0.2 MP，保存目标 0.8 MP latent 检查点。
