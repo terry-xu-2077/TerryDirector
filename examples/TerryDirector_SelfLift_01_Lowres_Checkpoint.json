@@ -1,7 +1,7 @@
 {
   "id": "01821bfb-51c9-4a3e-ae88-a6a538337151",
   "revision": 0,
-  "last_node_id": 18,
+  "last_node_id": 19,
   "last_link_id": 27,
   "nodes": [
     {
@@ -35,8 +35,7 @@
       "widgets_values": [
         "minimax_h3_fl2va_bf16.safetensors",
         "default"
-      ],
-      "title": "H3 模型 · FL2VA BF16（默认对照配置）"
+      ]
     },
     {
       "id": 2,
@@ -70,8 +69,7 @@
         "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
         "minimax",
         "default"
-      ],
-      "title": "Qwen3VL CLIP · INT8 ConvRot"
+      ]
     },
     {
       "id": 3,
@@ -104,8 +102,7 @@
       },
       "widgets_values": [
         "minimax_h3_video_vae_int8_convrot.safetensors"
-      ],
-      "title": "视频 VAE"
+      ]
     },
     {
       "id": 4,
@@ -138,8 +135,7 @@
       },
       "widgets_values": [
         "minimax_h3_audio_vae_fp32.safetensors"
-      ],
-      "title": "音频 VAE"
+      ]
     },
     {
       "id": 5,
@@ -193,8 +189,7 @@
         12,
         "taeh3.safetensors",
         ""
-      ],
-      "title": "KJ · 低清预览（默认对照配置）"
+      ]
     },
     {
       "id": 6,
@@ -306,8 +301,7 @@
         352,
         124,
         "match"
-      ],
-      "title": "H3 提示词 · 低清审片 0.2MP"
+      ]
     },
     {
       "id": 7,
@@ -383,8 +377,7 @@
         "simple",
         8,
         1
-      ],
-      "title": "完整 8 步 Sigma → H3 Sigma Refiner"
+      ]
     },
     {
       "id": 9,
@@ -427,8 +420,7 @@
       },
       "widgets_values": [
         6
-      ],
-      "title": "第一个输出：前 6 步（含 Sigma Refiner）"
+      ]
     },
     {
       "id": 10,
@@ -460,8 +452,7 @@
       },
       "widgets_values": [
         "euler"
-      ],
-      "title": "Euler"
+      ]
     },
     {
       "id": 11,
@@ -536,8 +527,7 @@
         8,
         "fixed",
         1
-      ],
-      "title": "ComfyUI 原生低清 6/8（seed=8, CFG=1）"
+      ]
     },
     {
       "id": 12,
@@ -571,8 +561,7 @@
         864,
         480,
         124
-      ],
-      "title": "目标 0.8MP · 只用于检查点"
+      ]
     },
     {
       "id": 13,
@@ -630,8 +619,7 @@
         8,
         1,
         "示例-宇航员盐湖镜头-对齐爱屋1020"
-      ],
-      "title": "保存低清检查点 · 0.2→0.8MP"
+      ]
     },
     {
       "id": 14,
@@ -672,8 +660,7 @@
         "Node name for S&R": "VAEDecode",
         "cnr_id": "comfy-core"
       },
-      "widgets_values": [],
-      "title": "x0 低清审片画面"
+      "widgets_values": []
     },
     {
       "id": 15,
@@ -714,8 +701,7 @@
         "Node name for S&R": "VAEDecodeAudio",
         "cnr_id": "comfy-core"
       },
-      "widgets_values": [],
-      "title": "x0 低清审片声音"
+      "widgets_values": []
     },
     {
       "id": 16,
@@ -800,8 +786,7 @@
         "auto",
         "auto",
         "auto"
-      ],
-      "title": "保存低清审片视频"
+      ]
     },
     {
       "id": 18,
@@ -842,8 +827,30 @@
         0.7,
         0,
         "cosine"
+      ]
+    },
+    {
+      "id": 19,
+      "type": "MarkdownNote",
+      "pos": [
+        -650,
+        80
       ],
-      "title": "H3 Sigma Refiner · 对齐爱屋1020"
+      "size": [
+        500,
+        300
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core"
+      },
+      "widgets_values": [
+        "# SelfLift · 低清生成与保存检查点\n\n用途：先生成低清审片结果，并保存可供高清续采读取的检查点。\n\n- 目标：低清约 0.2 MP（608×352），检查点目标约 0.8 MP（864×480）。\n- 运行前确认本机已安装工作流所需的 H3 模型、CLIP、VAE、KJ 预览节点及 H3 Sigma Refiner。\n- 低清采样完成后，检查点会写入 TerryDirector 的检查点目录；记下检查点名称，后续可在独立高清读取工作流中选择。\n- 若要继续同一次采样，保持模型、提示词、参考图、Seed、CFG、目标分辨率与 Sigma 日程一致。\n\n工作流节点保留默认名称；说明集中放在本便笺中。"
+      ]
     }
   ],
   "links": [
