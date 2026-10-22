@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from comfy_api.latest import io
 
-from .director_resolution_math import ASPECT_RATIO_OPTIONS, actual_megapixels, compute_resolution
+from .director_resolution_math import ASPECT_RATIO_OPTIONS, actual_megapixels, compute_sampling_resolutions
 
 
 class TerryDirectorDualSamplingResolutionSelector(io.ComfyNode):
@@ -14,7 +14,7 @@ class TerryDirectorDualSamplingResolutionSelector(io.ComfyNode):
             display_name="TerryDirector 双采样分辨率选择器",
             category="TerryDirector/分辨率",
             description=(
-                "将低清与高清采样分辨率集中到一个节点。两路百万像素输入独立计算，"
+                "一个高清百万像素输入控制双采样分辨率，低清自动取高清 MP 的 1/4。"
                 "共用宽高比；尺寸向上取整到 32 的倍数，以适配 H3 空间网格。"
                 "输出低清/高清各自的宽度、高度与取整后的实际百万像素。"
             ),
@@ -27,22 +27,13 @@ class TerryDirectorDualSamplingResolutionSelector(io.ComfyNode):
                     socketless=True,
                 ),
                 io.Float.Input(
-                    "lowres_megapixels",
-                    display_name="低清百万像素",
-                    default=0.2,
-                    min=0.01,
-                    max=16.0,
-                    step=0.05,
-                    tooltip="连接低清阶段的目标百万像素值。",
-                ),
-                io.Float.Input(
                     "highres_megapixels",
                     display_name="高清百万像素",
-                    default=2.0,
+                    default=0.8,
                     min=0.01,
                     max=16.0,
                     step=0.05,
-                    tooltip="连接高清阶段的目标百万像素值。",
+                    tooltip="唯一 MP 输入：低清自动使用此高清目标 MP 的 1/4（例如 0.8→0.2）。",
                 ),
             ],
             outputs=[
@@ -59,11 +50,11 @@ class TerryDirectorDualSamplingResolutionSelector(io.ComfyNode):
     def execute(
         cls,
         aspect_ratio="16:9 (Widescreen)",
-        lowres_megapixels=0.2,
-        highres_megapixels=2.0,
+        highres_megapixels=0.8,
     ):
-        low_width, low_height = compute_resolution(lowres_megapixels, aspect_ratio)
-        high_width, high_height = compute_resolution(highres_megapixels, aspect_ratio)
+        (low_width, low_height), (high_width, high_height) = compute_sampling_resolutions(
+            highres_megapixels, aspect_ratio
+        )
         return io.NodeOutput(
             low_width,
             low_height,
