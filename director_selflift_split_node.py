@@ -7,6 +7,8 @@ Connect BOTH sampler outputs to Save Checkpoint.
 """
 from __future__ import annotations
 
+import logging
+
 from comfy_api.latest import io
 
 from .director_selflift_checkpoint import list_checkpoints, save_checkpoint
@@ -169,6 +171,11 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                 sigmas=sigmas, transition_step=transition_step, seed=seed,
                 cfg=cfg, name=name,
             )
+            logging.info(
+                "[TerryDirector SelfLift] 暂停保存成功：镜头=%s checkpoint=%s "
+                "transition_step=%d (高清被阻断)",
+                name, saved_id, int(transition_step),
+            )
             # A soft execution blocker on ONLY the checkpoint output prevents
             # every downstream high-res consumer from executing in pause mode.
             # The ID and UI status are still returned and can be persisted.
@@ -193,6 +200,11 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
             except (KeyError, ValueError, RuntimeError) as exc:
                 raise ValueError(f"暂停/继续：检查点损坏或不兼容：{exc}") from exc
             manifest = saved["manifest"]
+            logging.info(
+                "[TerryDirector SelfLift] 继续高清：checkpoint=%s "
+                "已读取；低清采样输入不求值",
+                selected_id,
+            )
             return io.NodeOutput(
                 {"checkpoint_id": selected_id}, selected_id,
                 ui={"terrydirector_selflift_checkpoint": [{
