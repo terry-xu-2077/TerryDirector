@@ -700,16 +700,16 @@
         "Node name for S&R": "TerryDirectorSelfLiftHighres"
       },
       "widgets_values": [
-        0.6,
+        0,
         0.5,
         1,
-        "none",
+        "nearest",
         false,
         "auto",
         2,
         "auto"
       ],
-      "title": "第二次运行才开始高清"
+      "title": "SelfLift 分段高清 · nearest 快速验证（非正式画质）"
     },
     {
       "id": 19,
