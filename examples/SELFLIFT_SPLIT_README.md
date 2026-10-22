@@ -1,74 +1,53 @@
-# TerryDirector · SelfLift 分阶段示例工作流
+# TerryDirector · SelfLift 分阶段工作流
 
-以下 **ComfyUI 可导入的画布 JSON** 展示最小实现：原生低清采样 + KJ 实时预览 → 持久化检查点 → 另一个工作流读取检查点 → SelfLift 高清续采。
+**2026-10-22 起只支持 H3 3D Latent Upscaler 高清转场。** 已彻底移除中间 VAE 解码→放大→重新编码、SelfLift-zero 像素锚、`rho/w_min/w_max` 和 `nearest` 快速档。最终用于保存视频的 VAE 解码仍正常保留。
 
-| 顺序 | 文件 | 运行结果 |
+## 工作流
+
+| 编号 | 文件 | 作用 |
 | --- | --- | --- |
-| ① | [TerryDirector_SelfLift_01_Lowres_Checkpoint.json](TerryDirector_SelfLift_01_Lowres_Checkpoint.json) | 生成 `state.safetensors` / `manifest.json`，同时输出低清审片视频 |
-| ② | [TerryDirector_SelfLift_02_Highres_Resume.json](TerryDirector_SelfLift_02_Highres_Resume.json) | 从之前的检查点恢复，跳过低清阶段，输出高清 MP4（含音频） |
-| ③ | [TerryDirector_SelfLift_03_Pause_Continue.json](TerryDirector_SelfLift_03_Pause_Continue.json) | 单工作流通过「暂停并保存/继续高清」两种模式自动保存及恢复 |
-| **④** | [TerryDirector_SelfLift_04_Reference_2MP_Highres.json](TerryDirector_SelfLift_04_Reference_2MP_Highres.json) | **参考真实 SelfLift-Avatar 高清配置：0.5 MP → 2.0 MP、3D Latent Upscaler、4 块空间分块、独立高清模型分支** |
+| ① | [低清独立保存](TerryDirector_SelfLift_01_Lowres_Checkpoint.json) | 原生低清采样、低清审片视频、保存磁盘检查点 |
+| ② | [高清独立读取](TerryDirector_SelfLift_02_Highres_Resume.json) | 从已有检查点恢复，使用 H3 3D Upscaler 完成剩余 Euler |
+| ③ | [同画布暂停/继续](TerryDirector_SelfLift_03_Pause_Continue.json) | 蓝色按钮跑低清，柠檬绿暂停图标按钮继续高清 |
+| **④** | [0.5→2 MP 参考高清方案](TerryDirector_SelfLift_04_Reference_2MP_Highres.json) | 采用上传的 SelfLift-Avatar 工作流参数：学得的 Upscaler + Spatial 4 块 + 独立高清 MODEL |
 
-## ③ 单工作流「暂停/继续」示例（推荐体验）
+## 必需的放大器
 
-新增：[TerryDirector_SelfLift_03_Pause_Continue.json](TerryDirector_SelfLift_03_Pause_Continue.json)。
+`minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors` 应放在 ComfyUI 的 `models/latent_upscale_models/` 下。高清节点现在只枚举已安装的 H3 Latent Upscaler 文件；如果模型不存在，会明确报错，不会降级到 `nearest` 或 VAE 往返。
 
-这份示例无需手动摆「保存检查点」和「读取检查点」，同一张画布将原生 `SamplerCustom` 接至 **TerryDirector SelfLift 暂停/继续**，再连接 **TerryDirector SelfLift 高清续采** 与 `SaveVideo`。
+## ③ 同画布暂停/继续
 
-1. 导入③，确认模型文件存在、总步数为 8、低清前缀为 6，Seed=42021、CFG=5，且暂停节点位于两段之间。**暂停/继续节点上有一个蓝色的大按钮（向右箭头图标）**，无需再手动修改 mode 或使用 ComfyUI 全局 Queue。
-2. **第一次直接点击节点上的蓝色「生成低清」按钮**（向右箭头图标）。按钮只提交这一个节点作为 ComfyUI 局部执行目标；原生低清采样运行 6 步并保存检查点，高清节点和 SaveVideo 不会被触发。同时可以看 KJ 实时动态预览。**修复了 ComfyUI V3 lazy 状态参数为 `(value, input_id)` 元组时未触发低清采样的问题**。
-3. 低清完成并保存检查点后，前端自动回填检查点 ID，并将**大按钮切换为柠檬绿色「继续高清」**（双竖线暂停图标）。**绿色与暂停图标表示当前停在低清检查点，点击此按钮才启动高清续采**；高清运行时图标切换为播放符号。节点标题显示短 ID。请**保存工作流**，保证重启后该 ID 仍在。
-4. 审片认可后，**点击绿色「继续高清」按钮**：插件在此节点下游查找唯一的高清视频保存输出，并仅提交这个目标给 ComfyUI。其他并行的低清/高清线路不会被该按钮启动；低清的 4 个输入使用惰性求值，不再触发上游采样，高清节点完成余下 2 步。一个暂停节点对应一条明确的下游输出；如果分支有多个保存出口，会明确提示而不是任意选择。
-5. 想重新生成低清，点击大按钮下方的 **「重新生成低清」**，按钮恢复蓝色。下一次点击将创建全新的不可变检查点，旧数据不会覆盖。
+1. 打开工作流③。它预设 8 步 Euler、低清前 6 步、原生 `SamplerCustom`、124 帧。模型与其他资源按本地文件对应。
+2. 点击**蓝色向右箭头「生成低清」**，只提交此暂停节点作为局部执行目标，完成后保存独立检查点；高清分支不会运行。
+3. 保存成功后，按钮变为**柠檬绿色暂停图标「继续高清」**，节点自动记下检查点 ID；保存画布能保留 ID。
+4. 点击绿色按钮时，仅向 ComfyUI 提交该分支的高清视频输出，低清四路输入使用惰性求值，不会重新执行。
+5. 如需重新生成低清，使用「重新生成低清」清除当前选择并启动新一轮。
 
-**注意**：按钮使用 ComfyUI 的 `app.queuePrompt(0, 1, [targetNodeId])` 局部队列，不是启动整个工作流；在有多条并行线路时也只执行本节点这条线。为真实保证「继续高清」不重跑低清，这份③示例只把 KJ 作为低清过程预览，**没有再挂另一个低清 `SaveVideo` 输出节点**。如果同时在同一画布放置并激活低清视频输出，ComfyUI 仍然必须运行那条独立的低清输出分支；惰性输入只能跳过本节点路径上的低清依赖。
+②、③ 的参数虽然是小分辨率技术样例，但都**使用真实 H3 3D Upscaler**。不再提供低质量 `nearest` 路线。
 
-旧的显式「保存低清检查点」与「读取低清检查点」节点、工作流①和②全部保留，仍用于跨工作流读取、技术对照和回归测试。
+**注意：** 如果同一画布还连接了另一条独立的低清 `SaveVideo` 输出，ComfyUI 可能仍为了那条额外输出执行上游。③ 号示例刻意仅保留高清保存输出，KJ 负责实时低清预览。原生输出若不保存到文件，需要用生成预览审片。
 
-## ④ 按真实 SelfLift-Avatar 工作流配置的 2MP 高清示例
+## ④ 正式参考配置
 
-该示例参考 2026-10-20 的用户实战文件 `Self-Lift工作流-爱屋-1020.json`，**只借鉴已启用的高清链路、采样日程与分辨率；不替换参考图片、提示词、模型权重或套用原项目的 LoRA**。
+参考用户的 `Self-Lift工作流-爱屋-1020.json` 中**实际启用**的参数，而不是盲目复制所有节点：
 
-- 蓝色按钮：`960×544`（约 0.52MP）低清，先运行前 6 步并保存检查点
-- 柠檬绿按钮：`1920×1088`（约 2.09MP）高清，直接从同一检查点恢复，不重跑低清
-- `BasicScheduler=simple, steps=8`，再接 `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)`，**增加一项低噪细化步**；通过 `SplitSigmas(step=6)` 保留低清前缀，完整细化后日程写入检查点，高清继续剩余约 3 步
-- `CFG=1`、`rho=0`、`w_min=0.5`、`w_max=1`
-- `upscaler_model=minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`，需要已安装至 `models/latent_upscale_models/`；**高清转场由学得的 H3 3D Latent Upscaler 承担，避免 SelfLift-zero 的整段视频 VAE 往返**
-- `highres_tiling=true`、`tiling_mode=manual`、`tiling_tiles=4`、`tiling_axis=auto`，使用 TerryDirector 自有空间分块实现
-- 额外添加独立高清模型分支：`ModelAttentionBackend(comfy kitchen attention)` → `MiniMaxLowVRAMAttention(head_chunks=8)` → `MiniMaxChunkFeedForward(chunks=2, seq_threshold=4096)` → `SelfLift 高清续采.high_res_model`
-- 原参考工作流的 `highres_tiling_mode=spatial` 在 TerryDirector 对应上述空间分块。参考工作流中 `highres_token_chunk=4096` 和 `highres_weight_cache_gb=4` **仅对 Global 系列模式生效，此示例为 spatial，所以没有添加这两个不生效的控件**。
-- 原参考工作流 `MiniMaxH3SparkAttentionSM86`、`VedaSparseAttention`、KJ Preview Override、H3 Speed Slider LoRA **均为旁路 mode=4**；其中其他高清模型链和 `dmad...full_critic` LoRA 为启用状态。④ 只迁移采样/分块/独立模型低显存参数，不自动应用不同基础模型的 LoRA。
+- 低清 `960×544`（约 0.52MP）；高清 `1920×1088`（约 2.09MP）；124 帧、24fps
+- `BasicScheduler(simple,8)` → `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)`
+- 低清过渡步 `transition_step=6`，剩余高清约 3 次 Euler
+- `CFG=1`；`upscaler_model=minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`
+- 高清空间分块 `highres_tiling=true`，`tiling_mode=manual`，`tiling_tiles=4`，`tiling_axis=auto`
+- 独立高清模型链：`ModelAttentionBackend(comfy kitchen attention)` → `MiniMaxLowVRAMAttention(8)` → `MiniMaxChunkFeedForward(2,4096)` → 高清续采节点 `high_res_model`
 
-④ 的模型仍沿用③的小型技术示例中使用的 H3 ref2va Pruned INT8 权重和 124 帧（约 5 秒），**没有自动换成原参考的 `minimax_h3_fl2va_bf16` 和 15 秒**。这可以让你先聚焦比较高清续采配置，而不把基础模型、LoRA、片长同时改变。④ 使用的 `H3SigmaRefiner`、`MiniMaxLowVRAMAttention`、`MiniMaxChunkFeedForward` 等外部节点应在你的 ComfyUI 环境中已安装。
+`highres_token_chunk` 和 `highres_weight_cache_gb` 是原工作流 Global 模式参数，**空间分块下不生效**，未引入无效 UI；参考中 Spark 和 Veda 等旁路节点也没有复制。④ 保留独立 ref2va INT8 / 5 秒技术场景，没有把原工作流的 fl2va BF16、15 秒、LoRA、素材和提示词全部替换进去。TerryDirector 自有空间分块还未证明与 selflift-Avatar 数值完全一致。
 
-**重要差异：** TerryDirector 目前是自研的 H3 空间分块（包含空间交叠/混合），不宣称与 SelfLift-Avatar 的实现逐像素一致。先以 5 秒的 0.5MP→2MP 进行显存、耗时、画质验收，稳定后再考虑迁移到 15 秒。如果旧检查点由不同 Sigma 日程/分辨率产生，不能拿它当作④参数的对应低清结果；应使用④蓝色按钮先生成一次。
+## 保存与兼容
 
-## 运行顺序
+磁盘检查点仍在 `output/TerryDirector/checkpoints/<uuid>/` 下，保存 `state.safetensors` 与 `manifest.json`。新版本能够读取兼容的旧检查点；模型、条件、分辨率和 Sigma 日程仍必须一致。切换到④ 不可复用由其他分辨率/Sigma 日程生成的低清检查点，需重新生成一次。
 
-1. 切换到 `feature/selflift-native-lowres-checkpoints`，重启 ComfyUI，导入工作流①。
-2. 将 **H3 模型、Qwen H3 文本编码器、视频 VAE、音频 VAE** 修改成你电脑上实际存在的文件；示例模型名来自公开 H3 工作流，不自动下载模型。准备好可运行的 MiniMax H3 ComfyUI 环境与可选的 KJNodes。
-3. 工作流①预设 **8 步总日程、6 步低清、Euler、Seed=42021、CFG=5、384×224 低清、768×448 目标、124 帧（约 5.2 秒）**。原生 `SamplerCustom` 的两个输出必须分别接入保存节点；目标分辨率的 `EmptyMiniMaxH3LatentAV` 只供检查点使用，**不要把它接给低清采样器**。
-4. 运行①，查看 KJ 实时预览及保存到 `output/video/TerryDirector_SelfLift_Lowres*.mp4` 的低清 `x0` 审片视频。检查点存于 `output/TerryDirector/checkpoints/<uuid>/`。本 MVP **不会自动审核、也没有“审片通过”按钮**；审片由人确认，合格时在第二份工作流主动选择检查点。
-5. 打开工作流②。选择 `TerryDirector 读取低清检查点` 的任务下拉项（显示镜头名 + ID），连接 `TerryDirector SelfLift 高清续采`。**若下拉仍显示“暂无检查点”，重启 ComfyUI 并重新添加读取节点，再选择刚保存的记录**；这一版尚没有动态视频任务浏览器。
-6. 确认工作流②的模型、提示词与引用资源和工作流①一致，再运行。它从存储的 SIGMAS 第 6 步开始，执行剩余 2 次 Euler 计算，随后用普通 H3 视频/音频 VAE 解码保存。
+**旧版高清节点 UI 必须更新连线。** 现在没有 `vae` 输入，也没有 `rho/w_min/w_max` 控件，且不允许 `nearest` 或 `none`；旧版画布请重新导入本目录已更新的 JSON，或手动重新添加高清续采节点并连接 checkpoint / model / positive / negative / sampler / 可选 high_res_model。
 
-## 模型与分辨率注意事项
+**最终视频输出 VAE 解码**与此次移除的**中途重复 VAE 解码/回编码**不是一回事，`VAEDecode` 和 `VAEDecodeAudio` 等最终输出节点全部保留。
 
-- 示例使用 `MiniMaxH3ReferenceToVideo`（ref2va）与同一段英文提示词，**没有强制连接参考图**，主要用于检查分阶段机制；人物一致性、视频质量是否适合正式制作还需真机验收。如果使用参考图/视频/音频，必须在高清工作流重新提供相同的对应条件，并检查参考尺寸策略；现有检查点并不保存 CONDITIONING 张量、模型权重或素材文件。
-- ComfyUI 原生 `SplitSigmas` 的第一个输出名叫 `high_sigmas`，但源码实际值是 `sigmas[:step+1]`，所以**工作流①将它作为低清前 6 步的 Sigmas**；完整 8 步的 Sigmas 另接保存节点。不要误用第二个输出。
-- KJ `Model Preview Override` 预设动态预览 12 帧、12 FPS、Tiny VAE=`none`；若已安装兼容的 `taeh3.safetensors`，可在 KJ 节点里切换，以改善预览效果。KJ 节点只参与实时预览，并不负责生成持久审片视频。
-- **当前工作流②、③默认使用快速验证档**：`rho=0`、`upscaler_model=nearest`。该模式只放大 Latent，不做视频 VAE 解码/重新编码，目的是先确认保存、读取、剩余 Euler 高清采样和视频输出正常；**nearest 并不等于 SelfLift-Avatar 的正式高画质方案，不能用来评估最终成片质量**。
-- 要测试较慢的 **SelfLift-zero 像素锚修正**，手动改为 `rho=0.6`、`upscaler_model=none`。它会执行：低清 x0 → VAE 解码 → 像素放大 → 高清 VAE 回编码，然后才进入剩余 Euler 步数。此过程对 H3 视频 VAE 显存、主内存和时长更敏感。新增日志会分别打印开始/结束 VAE 解码、高清回编码与进入 Euler 阶段的时间。
-- 要测试 **外部 H3 Latent Upscaler**，改为 `rho=0` 并在 `upscaler_model` 中选择已安装的模型文件。该路线省去 SelfLift-zero 的完整 VAE 像素锚往返，但效果仍需要实测对比。
-- 示例中的相同 Seed、CFG、Prompt、模型、目标分辨率以及参考条件都是**手动保持一致**。现阶段没有完整模型或提示词指纹校验，使用错误条件可能仍然运行但产生与预期不一致的结果。
-- 这里的“可导入”表示 JSON 按官方最新 ComfyUI 节点 ID、输入槽和连接结构构建并完成静态检查；**尚未在你的 RTX 3090 上完成 GPU 验收**。如本地安装的扩展接口变化，请以真实错误为准。
+以上是静态迁移与验收要求；GPU 性能和最终画质仍需本机 ComfyUI 验证。
 
-## 当前范围
-
-这两个工作流刻意没有接入 TerryDirector 时间线循环、任务卡浮窗、多选批量二采或后台状态卡；它们是第一阶段的技术闭环验收样例。
-
-详细设计与检查点约束参见 [SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md](../docs/SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md)。
-
-## VAE 长时间停留排查
-
-若日志出现 `继续高清：checkpoint=... 已读取` 和重复的视频 VAE 加载、十分钟都没有高清采样进度，先正常中断当前任务。检查高清节点是否意外仍设置 `rho=0.6 / upscaler_model=none`（老示例的原参数）。无需重新运行低清；升级代码后可保留之前绿色按钮中的同一检查点，先将高清节点改成 `rho=0 / upscaler_model=nearest`，点击绿色按钮验证高清续采。如果 nearest 能正常进入 Euler，而 SelfLift-zero 仍很慢，问题在 VAE 像素锚处理链路而非检查点读取。日志会标示具体卡在 VAE 解码还是回编码。
+详细架构：[SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md](../docs/SELFLIFT_SPLIT_NATIVE_SAMPLER_MVP.md)。
