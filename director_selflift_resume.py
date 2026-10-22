@@ -18,7 +18,7 @@ from .director_selflift_math import validate_options
 def resume_highres(*, checkpoint, model, positive, negative, sampler,
                    upscaler_model,
                    highres_tiling=False, tiling_mode="auto", tiling_tiles=2,
-                   tiling_axis="auto", high_res_model=None,
+                   tiling_axis="auto",
                    _backend=None, _lifter=None):
     from .director_selflift_checkpoint import load_checkpoint
     if isinstance(checkpoint, dict):
@@ -43,11 +43,9 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
                            or tiling_tiles not in {2, 4, 6, 8}):
         raise ValueError("SelfLift: 高清空间分块参数无效")
     backend = _backend or ComfyBackend()
-    # The reference SelfLift-Avatar workflow supplies a separate high-res
-    # model branch. Keep original model for saved latent-format/flow semantics,
-    # but use the selected high model for actual remaining Euler evaluations.
-    high_model = high_res_model if high_res_model is not None else model
-    backend.validate(model, high_model, sampler)
+    # One selected MODEL drives format, flow and Euler. The workflow itself
+    # chooses between the original H3 model and a separately optimized branch.
+    backend.validate(model, model, sampler)
     backend.interrupt()
     source = [s.to(backend.device) for s in saved["source"]]
     low_clean = [s.to(backend.device) for s in saved["clean"]]
@@ -101,13 +99,13 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
             "[TerryDirector SelfLift split] 高清 H3 空间分块：mode=%s tiles=%d axis=%s",
             tiling_mode, tiling_tiles, tiling_axis,
         )
-        high_model = backend.tiled_model(
-            high_model, [tuple(s.shape) for s in source],
+        model = backend.tiled_model(
+            model, [tuple(s.shape) for s in source],
             tiling_mode, tiling_tiles, tiling_axis)
-    high_model = backend.mask_model(high_model, source, masks)
+    model = backend.mask_model(model, source, masks)
     sigmas = saved["sigmas"].to(backend.device)
     total_steps = sigmas.numel() - 1
-    preview = backend.preview(high_model, total_steps)
+    preview = backend.preview(model, total_steps)
     high_calls = 0
 
     def callback(step, clean, state, total):
@@ -123,7 +121,7 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
         total_steps - k, perf_counter() - started,
     )
     sample_at = perf_counter()
-    output = backend.sample(high_model, zero_noise, positive, negative, cfg,
+    output = backend.sample(model, zero_noise, positive, negative, cfg,
                             sampler, sigmas[k:], resume, callback, seed)
     logging.info(
         "[TerryDirector SelfLift split] 高清 Euler 采样完成 %.1fs",
