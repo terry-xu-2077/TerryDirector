@@ -133,7 +133,14 @@ class CheckpointTests(unittest.TestCase):
             dtype = torch.float32
             def __init__(self):
                 self.sample_calls = []
-            def validate(self, model, high_model, sampler): pass
+                self.sample_models = []
+                self.validation_models = []
+                self.tiling_calls = []
+            def validate(self, model, high_model, sampler):
+                self.validation_models.append((model, high_model))
+            def tiled_model(self, model, shapes, mode, tiles, axis):
+                self.tiling_calls.append((model, shapes, mode, tiles, axis))
+                return model
             def interrupt(self): pass
             def noise(self, latent, seed, batch_index): return torch.zeros_like(latent)
             def pack(self, streams): return Nested(*streams)
@@ -142,6 +149,7 @@ class CheckpointTests(unittest.TestCase):
             def preview(self, model, steps): return None
             def sample(self, model, noise, positive, negative, cfg, sampler, sigmas,
                        latent, callback, seed):
+                self.sample_models.append(model)
                 self.sample_calls.append(sigmas.cpu().tolist())
                 for step in range(len(sigmas) - 1):
                     callback(step, None, None, len(sigmas) - 1)
@@ -178,6 +186,72 @@ class CheckpointTests(unittest.TestCase):
         quick_streams = quick["samples"].unbind()
         self.assertTrue(torch.equal(quick_streams[1], av[1]))
         self.assertEqual(tuple(quick_streams[0].shape), tuple(av[0].shape))
+
+    def test_reference_highres_uses_dedicated_model_and_manual_spatial_4_tiles(self):
+        # The reference workflow has independent low/high model branches.
+        # The existing fake backend suffices to check their routing without
+        # loading GPU weights, and keeps the same disk checkpoint.
+        resume = importlib.import_module(PKG + ".director_selflift_resume")
+        cid = self.module.save_checkpoint(**self.inputs())
+
+        class Format:
+            def process_in(self, x): return x
+            def process_out(self, x): return x
+
+        class Flow:
+            def noise_scaling(self, sigma, noise, clean): return sigma * noise + (1 - sigma) * clean
+            def inverse_noise_scaling(self, sigma, x): return x / (1 - sigma)
+
+        class Model:
+            def __init__(self):
+                self.flow = Flow()
+                self.fmt = Format()
+            def get_model_object(self, name):
+                return self.fmt if name == "latent_format" else self.flow
+
+        class Backend:
+            device = torch.device("cpu")
+            dtype = torch.float32
+            def __init__(self):
+                self.validated = None
+                self.tiling = None
+                self.sampled_model = None
+                self.used_sigmas = None
+            def validate(self, model, high_model, sampler):
+                self.validated = (model, high_model)
+            def interrupt(self): pass
+            def noise(self, latent, seed, batch_index): return torch.zeros_like(latent)
+            def pack(self, streams): return Nested(*streams)
+            def split(self, value): return list(value.unbind())
+            def tiled_model(self, model, shapes, mode, tiles, axis):
+                self.tiling = (model, shapes, mode, tiles, axis)
+                return model
+            def mask_model(self, model, source, masks): return model
+            def preview(self, model, steps): return None
+            def sample(self, model, noise, positive, negative, cfg, sampler,
+                       sigmas, latent, callback, seed):
+                self.sampled_model = model
+                self.used_sigmas = sigmas.tolist()
+                for step in range(len(sigmas) - 1):
+                    callback(step, None, None, len(sigmas) - 1)
+                return latent
+
+        low_model, high_model = Model(), Model()
+        backend = Backend()
+        result = resume.resume_highres(
+            checkpoint={"checkpoint_id": cid}, model=low_model,
+            high_res_model=high_model, positive=[], negative=[], vae=None,
+            sampler=None, rho=0.0, w_min=0.5, w_max=1.0,
+            upscaler_model="nearest", highres_tiling=True,
+            tiling_mode="manual", tiling_tiles=4, tiling_axis="auto",
+            _backend=backend)
+        self.assertEqual(backend.validated, (low_model, high_model))
+        self.assertIs(backend.tiling[0], high_model)
+        self.assertEqual(backend.tiling[2:], ("manual", 4, "auto"))
+        self.assertIs(backend.sampled_model, high_model)
+        self.assertEqual(len(backend.used_sigmas), 3)  # k=2 of 4
+        self.assertEqual(tuple(result["samples"].unbind()[0].shape),
+                         (1, 4, 3, 4, 8))
 
     def test_checkpoint_is_immutable_version(self):
         cid1 = self.module.save_checkpoint(**self.inputs())
