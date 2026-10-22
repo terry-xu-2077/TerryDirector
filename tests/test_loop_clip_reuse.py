@@ -95,13 +95,19 @@ class TestPhysicalClips(unittest.TestCase):
             "MOV_HQ": "MOV · ProRes 422 HQ",
             "plan_fingerprint": lambda *args: "unit-test-fingerprint",
             "find_resume_checkpoint": lambda *args: None,
+            "allocate_run": lambda *args, **kwargs: {
+                "run_signature": "new-run",
+                "manifest": "/fake/timeline_segments_00001.json",
+                "directory": "/fake",
+                "stem": "timeline_segments_00001",
+            },
             "get_loop_adapter": lambda _: adapter,
             "normalize_config": lambda config: {
                 "document": self.core.normalize_document(config["document"]),
             },
             "prepare_document_for_queue": lambda document, _llama, _id: copy.deepcopy(document),
             "compile_timeline": self.compiler.compile_timeline,
-            "find_saved_clip": lambda _loop, clip_id, required_frames=None: (
+            "find_saved_clip": lambda _profile, clip_id, required_frames=None: (
                 {"path": "/fake/prior.mov"}
                 if prior_available and clip_id == "A" else None
             ),
@@ -190,11 +196,15 @@ class TestSavedMovieDiscovery(unittest.TestCase):
             for key in [self.module_name, package.__name__]
         ])
 
-    def save(self, run, clip_id="A", frames=240, movie_name="001.mov", path_override=None):
-        root = self.root / "TerryDirector" / "renders" / "loop-42" / run
+        self.profile = {
+            "subfolder": "video/test", "filename": "timeline",
+        }
+
+    def save(self, run, clip_id="A", frames=240, movie_name=None, path_override=None):
+        root = self.root / "video" / "test"
         root.mkdir(parents=True, exist_ok=True)
-        movie = root / "clips" / movie_name
-        movie.parent.mkdir(exist_ok=True)
+        stem = f"timeline_segments_{int(run):05d}"
+        movie = root / (movie_name or f"{stem}_001_A.mov")
         movie.write_bytes(b"test-mov")
         data = {
             "clips": [{
@@ -202,27 +212,27 @@ class TestSavedMovieDiscovery(unittest.TestCase):
                 "fps": 24, "path": path_override or str(movie),
             }],
         }
-        (root / "timeline.json").write_text(json.dumps(data), "utf-8")
+        (root / f"{stem}.json").write_text(json.dumps(data), "utf-8")
         return movie
 
     def test_finds_most_recent_compatible_clip(self):
-        older = self.save("old")
-        latest = self.save("new", frames=300)
+        older = self.save(1)
+        latest = self.save(2, frames=300)
         self.assertEqual(
-            self.reuse.find_saved_clip("42", "A", 300)["path"],
+            self.reuse.find_saved_clip(self.profile, "A", 300)["path"],
             str(latest.resolve()),
         )
         self.assertEqual(
-            self.reuse.find_saved_clip("42", "A", 240)["path"],
+            self.reuse.find_saved_clip(self.profile, "A", 240)["path"],
             str(older.resolve()),
         )
-        self.assertIsNone(self.reuse.find_saved_clip("42", "C", 240))
+        self.assertIsNone(self.reuse.find_saved_clip(self.profile, "C", 240))
 
     def test_does_not_follow_manifest_outside_output_root(self):
         outside = self.root / "outside.mov"
         outside.write_bytes(b"data")
-        self.save("malicious", path_override=str(outside))
-        self.assertIsNone(self.reuse.find_saved_clip("42", "A", 240))
+        self.save(3, path_override=str(outside))
+        self.assertIsNone(self.reuse.find_saved_clip(self.profile, "A", 240))
 
 
 if __name__ == "__main__":

@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 
@@ -118,13 +117,14 @@ def _contained(path, parent):
         return False
 
 
-def find_saved_clip(loop_id, clip_id, required_frames=None):
-    """Find latest committed movie from any run, never arbitrary user paths."""
-    key = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"loop-{loop_id}")[:56]
-    root = (Path(folder_paths.get_output_directory()) / "TerryDirector" / "renders" / key).resolve()
+def find_saved_clip(output_profile, clip_id, required_frames=None):
+    """Find a prior numbered clip in the current user-selected save folder."""
+    from .director_loop_storage import manifest_glob, profile_directory
+
+    root = profile_directory(output_profile)
     if not root.is_dir():
         return None
-    manifests = sorted(root.glob("*/timeline.json"),
+    manifests = sorted(root.glob(manifest_glob(output_profile)),
                        key=lambda p: p.stat().st_mtime_ns, reverse=True)
     for path in manifests:
         try:
@@ -137,7 +137,9 @@ def find_saved_clip(loop_id, clip_id, required_frames=None):
                 if required_frames is not None and int(entry.get("frames") or 0) != int(required_frames):
                     continue
                 movie = Path(str(entry["path"])).resolve()
-                if not _contained(movie, root) or movie.suffix.lower() not in (".mov", ".mp4"):
+                if (movie.parent != root
+                        or not movie.name.startswith(path.stem + "_")
+                        or movie.suffix.lower() not in (".mov", ".mp4")):
                     continue
                 if not movie.is_file() or not movie.stat().st_size:
                     continue
