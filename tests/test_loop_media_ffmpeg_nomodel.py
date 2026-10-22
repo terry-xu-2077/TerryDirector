@@ -48,9 +48,13 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="td_real_mov_") as temp:
             root = Path(temp)
-            clipdir = root / "clips"
-            clipdir.mkdir()
-            sources = [clipdir / f"{i:03d}_source.mov" for i in (1, 2, 3)]
+            clipdir = root
+            manifest = root / "timeline_segments_00001.json"
+            manifest.write_text(json.dumps({
+                "status": "in_progress", "clips": [],
+                "run_signature": "media-ci",
+            }), "utf-8")
+            sources = [clipdir / f"timeline_segments_00001_{i:03d}_source.mov" for i in (1, 2, 3)]
             for i, path in enumerate(sources):
                 run(
                     "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24:duration=1",
@@ -78,16 +82,19 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
                  "trim_head_frames": 0, "gap_before_frames": 0,
                  "width": 320, "height": 180, "channels": 1,
                  "fps": 24, "run_signature": "media-ci",
+                 "manifest_path": str(manifest),
                  "segment_format": media.MOV_HQ},
                 {"index": 1, "path": str(sources[1]), "frames": 24,
                  "trim_head_frames": 7, "gap_before_frames": 0,
                  "width": 320, "height": 180, "channels": 1,
                  "fps": 24, "run_signature": "media-ci",
+                 "manifest_path": str(manifest),
                  "segment_format": media.MOV_HQ},
                 {"index": 2, "path": str(sources[2]), "frames": 24,
                  "trim_head_frames": 0, "gap_before_frames": 6,
                  "width": 320, "height": 180, "channels": 1,
                  "fps": 24, "run_signature": "media-ci",
+                 "manifest_path": str(manifest),
                  "segment_format": media.MOV_HQ},
             ]
 
@@ -117,15 +124,20 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
 
             # Rebuilding Final from previous runs must not touch the original
             # movie and must preserve exact ProRes/PCM frame/sample counts.
-            reassembled_root = root / "new_take"
-            (reassembled_root / "clips").mkdir(parents=True)
-            replacement = reassembled_root / "clips" / "002_new.mov"
+            reassembled_root = root
+            rerun_manifest = root / "timeline_segments_00002.json"
+            rerun_manifest.write_text(json.dumps({
+                "status": "in_progress", "clips": [],
+                "run_signature": "new_take",
+            }), "utf-8")
+            replacement = root / "timeline_segments_00002_002_new.mov"
             shutil.copy2(sources[1], replacement)
             mixed = [dict(part) for part in clips]
             mixed[1]["path"] = str(replacement)
             mixed[1]["run_signature"] = "new_take"
             mixed_final = media.merge_loop_clips(
                 mixed, merge_final=True, output_root=reassembled_root,
+                output_manifest=rerun_manifest,
             )
             self.assertEqual(int(stream(mixed_final, "v:0")["nb_frames"]), expected_frames)
             self.assertEqual(int(stream(mixed_final, "a:0")["duration_ts"]),
@@ -147,9 +159,13 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="td_real_mp4_") as temp:
             root = Path(temp)
-            folder = root / "clips"
-            folder.mkdir()
-            originals = [folder / f"{i:03d}.mp4" for i in (1, 2)]
+            folder = root
+            manifest = root / "timeline_segments_00001.json"
+            manifest.write_text(json.dumps({
+                "status": "in_progress", "clips": [],
+                "run_signature": "media-mp4",
+            }), "utf-8")
+            originals = [folder / f"timeline_segments_00001_{i:03d}.mp4" for i in (1, 2)]
             for i, path in enumerate(originals):
                 subprocess.run([
                     ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
@@ -176,6 +192,7 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
             template = {
                 "frames": 24, "width": 320, "height": 180, "channels": 1,
                 "fps": 24, "run_signature": "media-mp4",
+                "manifest_path": str(manifest),
                 "segment_format": media.MP4_H264,
             }
             clips = [

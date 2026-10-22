@@ -125,8 +125,12 @@ async def terrydirector_rerun_check(request: web.Request) -> web.Response:
         from .director_core import normalize_document
         from .director_compile import compile_timeline
         from .director_loop_reuse import find_saved_clip, safe_input_video, video_info
+        from .director_loop_storage import output_profile_from_prefix
 
         doc = normalize_document(payload.get("document"))
+        output_profile = output_profile_from_prefix(
+            str(payload.get("filename_prefix") or "video/TerryDirector/timeline")
+        )
         plan = compile_timeline(doc)
         segments = plan["segments"]
         index = next((i for i, item in enumerate(segments)
@@ -155,7 +159,8 @@ async def terrydirector_rerun_check(request: web.Request) -> web.Response:
             source_type = "entity"
         else:
             saved = find_saved_clip(
-                loop_id, previous["id"], required_frames=previous["output_frames"],
+                output_profile, previous["id"],
+                required_frames=previous["output_frames"],
             )
             if saved is None:
                 raise FileNotFoundError(
@@ -172,6 +177,107 @@ async def terrydirector_rerun_check(request: web.Request) -> web.Response:
         })
     except (ValueError, KeyError, TypeError, RuntimeError, FileNotFoundError, OSError) as exc:
         return web.json_response({"ok": False, "error": str(exc)}, status=400)
+
+
+def _loop_region(prompt: dict, loop_id: str) -> tuple[str, set[str]]:
+    """Recover the native loop region from an unvalidated API prompt."""
+    outgoing: dict[str, set[str]] = {}
+    incoming: dict[str, set[str]] = {}
+    for target, node in prompt.items():
+        for value in (node.get("inputs") or {}).values():
+            if not isinstance(value, (list, tuple)) or len(value) != 2:
+                continue
+            source = str(value[0])
+            outgoing.setdefault(source, set()).add(str(target))
+            incoming.setdefault(str(target), set()).add(source)
+
+    descendants = set()
+    pending = list(outgoing.get(loop_id, ()))
+    while pending:
+        node_id = pending.pop()
+        if node_id in descendants:
+            continue
+        descendants.add(node_id)
+        pending.extend(outgoing.get(node_id, ()))
+    ends = sorted(
+        node_id for node_id in descendants
+        if (prompt.get(node_id) or {}).get("class_type") == "TerryDirectorLoopEnd"
+    )
+    if len(ends) != 1:
+        raise ValueError("循环开始必须连接恰好一个循环结束节点")
+    end_id = ends[0]
+
+    ancestors = set()
+    pending = list(incoming.get(end_id, ()))
+    while pending:
+        node_id = pending.pop()
+        if node_id in ancestors:
+            continue
+        ancestors.add(node_id)
+        pending.extend(incoming.get(node_id, ()))
+    return end_id, (descendants & ancestors) - {loop_id, end_id}
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/loop-resume-status")
+async def terrydirector_loop_resume_status(request: web.Request) -> web.Response:
+    """Read-only exact-match check used by the loop node's circled marker."""
+    try:
+        payload = await request.json()
+        prompt = payload.get("prompt") if isinstance(payload, dict) else None
+        loop_id = str(payload.get("loop_id") or "") if isinstance(payload, dict) else ""
+        if not isinstance(prompt, dict) or loop_id not in prompt:
+            raise ValueError("无法读取当前工作流")
+        loop = prompt[loop_id]
+        if loop.get("class_type") != "TerryDirectorLooper":
+            raise ValueError("目标节点不是 TerryDirector 循环开始")
+        inputs = loop.get("inputs") or {}
+        config_value = inputs.get("config_json")
+        seed = inputs.get("seed")
+        tail_prompt = inputs.get("tail_reference_prompt")
+        if (isinstance(config_value, (list, tuple))
+                or isinstance(seed, (list, tuple))
+                or isinstance(tail_prompt, (list, tuple))):
+            return web.json_response({"resumable": False, "reason": "dynamic_input"})
+
+        from types import SimpleNamespace
+        from comfy_execution.graph_utils import is_link
+        from .director_compile import DEFAULT_TAIL_REFERENCE_PROMPT, compile_timeline
+        from .director_core import normalize_config
+        from .director_loop_media import MOV_HQ
+        from .director_loop_resume import (
+            find_resume_checkpoint, plan_fingerprint, workflow_fingerprint,
+        )
+        from .director_loop_storage import resolve_output_profile
+
+        end_id, body = _loop_region(prompt, loop_id)
+        end_inputs = (prompt[end_id].get("inputs") or {})
+        segment_format = str(end_inputs.get("segment_format") or MOV_HQ)
+        output_profile = resolve_output_profile(prompt, end_id)
+        document = normalize_config(config_value)["document"]
+        plan = compile_timeline(
+            document, str(tail_prompt or DEFAULT_TAIL_REFERENCE_PROMPT),
+        )
+        dynprompt = SimpleNamespace(get_node=lambda node_id: prompt[str(node_id)])
+        workflow_hash = workflow_fingerprint(dynprompt, body, is_link)
+        fingerprint = plan_fingerprint(
+            document, seed, plan, workflow_hash, segment_format, output_profile,
+        )
+        checkpoint = find_resume_checkpoint(
+            output_profile, fingerprint, plan["segments"], segment_format,
+        )
+        if checkpoint is None:
+            return web.json_response({"resumable": False})
+        completed = len(checkpoint["completed"])
+        return web.json_response({
+            "resumable": True,
+            "completed": completed,
+            "total": len(plan["segments"]),
+            "manifest": Path(checkpoint["manifest"]).name,
+            "subfolder": output_profile.get("subfolder") or "",
+        }, headers={"Cache-Control": "no-store"})
+    except (ValueError, KeyError, TypeError, RuntimeError, OSError,
+            json.JSONDecodeError) as exc:
+        return web.json_response({"resumable": False, "error": str(exc)})
 
 
 @PromptServer.instance.routes.post("/terrydirector/api/upload")

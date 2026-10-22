@@ -218,6 +218,107 @@ function queueDirectorNode(node) {
   });
 }
 
+function downstreamSaveVideoNode(node) {
+  if (node?.comfyClass !== LOOP_NODE_CLASS) return null;
+  const graph = node.graph || app.graph;
+  let endId;
+  try { endId = loopExecutionTarget(node); } catch { return null; }
+  const start = graph?.getNodeById?.(Number(endId)) ||
+    graph?.getNodeById?.(endId) || graph?._nodes?.find(item => String(item.id) === endId);
+  if (!start) return null;
+  const queue = [start];
+  const visited = new Set([String(start.id)]);
+  while (queue.length) {
+    const cursor = queue.shift();
+    for (const output of cursor.outputs || []) {
+      for (const linkId of output.links || []) {
+        const link = graph?.links?.[linkId];
+        if (!link) continue;
+        const next = graph?.getNodeById?.(link.target_id) ||
+          graph?._nodes?.find(item => item.id === link.target_id);
+        if (!next || visited.has(String(next.id))) continue;
+        if (next.comfyClass === "SaveVideo") return next;
+        visited.add(String(next.id));
+        queue.push(next);
+      }
+    }
+  }
+  return null;
+}
+
+function downstreamSaveVideoPrefix(node) {
+  const save = downstreamSaveVideoNode(node);
+  return String(save?.widgets?.find(widget => widget.name === "filename_prefix")?.value ||
+    "video/TerryDirector/timeline");
+}
+
+async function refreshLoopResumeStatus(node) {
+  if (node?.comfyClass !== LOOP_NODE_CLASS || !node.__tdRoot) return;
+  if (node.__tdResumeProbing) return;
+  node.__tdResumeProbing = true;
+  const requestId = (node.__tdResumeRequestId || 0) + 1;
+  node.__tdResumeRequestId = requestId;
+  try {
+    const serialized = await app.graphToPrompt();
+    const prompt = serialized?.output || serialized?.prompt || serialized;
+    const response = await fetch("/terrydirector/api/loop-resume-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ loop_id: String(node.id), prompt }),
+    });
+    const status = await response.json().catch(() => ({ resumable: false }));
+    if (node.__tdResumeRequestId !== requestId) return;
+    const before = JSON.stringify(node.__tdResumeStatus || null);
+    node.__tdResumeStatus = status?.resumable ? status : null;
+    if (before !== JSON.stringify(node.__tdResumeStatus || null)) renderNode(node);
+  } catch {
+    if (node.__tdResumeRequestId !== requestId) return;
+    if (node.__tdResumeStatus) {
+      node.__tdResumeStatus = null;
+      renderNode(node);
+    }
+  } finally {
+    window.setTimeout(() => { node.__tdResumeProbing = false; }, 0);
+  }
+}
+
+function scheduleLoopResumeStatus(node, delay = 350) {
+  if (node?.comfyClass !== LOOP_NODE_CLASS) return;
+  if (node.__tdResumeProbing) return;
+  window.clearTimeout(node.__tdResumeRefreshTimer);
+  node.__tdResumeRefreshTimer = window.setTimeout(
+    () => void refreshLoopResumeStatus(node), delay
+  );
+}
+
+function scheduleAllLoopResumeStatus(delay = 350) {
+  for (const node of app.graph?._nodes || []) scheduleLoopResumeStatus(node, delay);
+}
+
+function bindSaveVideoResumeRefresh(node) {
+  if (node?.comfyClass !== "SaveVideo" || node.__tdResumePrefixBound) return;
+  const widget = node.widgets?.find(item => item.name === "filename_prefix");
+  if (!widget) return;
+  node.__tdResumePrefixValue = String(widget.value || "");
+  const original = widget.callback;
+  widget.callback = function(...args) {
+    const result = original?.apply(this, args);
+    const next = String(widget.value || args[0] || "");
+    if (next !== node.__tdResumePrefixValue) {
+      node.__tdResumePrefixValue = next;
+      scheduleAllLoopResumeStatus();
+    }
+    return result;
+  };
+  const previousConnection = node.onConnectionsChange;
+  node.onConnectionsChange = function(...args) {
+    const result = previousConnection?.apply(this, args);
+    scheduleAllLoopResumeStatus();
+    return result;
+  };
+  node.__tdResumePrefixBound = true;
+}
+
 function normalizeTransitionMode(value, fallback = "tail_reference") {
   return TRANSITION_MODES.has(value) ? value : fallback;
 }
@@ -1010,6 +1111,7 @@ function bindExecutionActivity() {
         if (node?.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
       }
     }
+    scheduleAllLoopResumeStatus(600);
   });
   api.addEventListener("execution_error", event => {
     const finishedPromptId = event.detail?.prompt_id;
@@ -1024,6 +1126,7 @@ function bindExecutionActivity() {
         if (node?.comfyClass === ADVANCED_NODE_CLASS) void restoreAdvancedState(node);
       }
     }
+    scheduleAllLoopResumeStatus(600);
   });
   api.addEventListener("execution_interrupted", event => {
     const finishedPromptId = event.detail?.prompt_id;
@@ -1041,6 +1144,7 @@ function bindExecutionActivity() {
         }
       }
     }
+    scheduleAllLoopResumeStatus(600);
   });
 }
 
@@ -1325,6 +1429,7 @@ function writeConfig(node, config, render = true) {
   widget.callback?.(widget.value);
   markChanged(node);
   if (render) renderNode(node);
+  scheduleLoopResumeStatus(node);
   queueMicrotask(refreshAllOutputMemoryInfo);
 }
 
@@ -1429,6 +1534,10 @@ function renderNode(node) {
   const usedAssetIds = authoredAssetIds(doc, activeClips);
   const usedAssets = doc.assets.filter(asset => usedAssetIds.has(asset.id)).length;
   const activity = ensureActivity(node);
+  const resume = node.comfyClass === LOOP_NODE_CLASS ? node.__tdResumeStatus : null;
+  const resumeTitle = resume
+    ? `发现可续跑任务：已完成 ${Number(resume.completed) || 0}/${Number(resume.total) || 0} 段`
+    : "";
   const totalSeconds = Number((total / FPS).toFixed((total / FPS) % 1 ? 2 : 0));
 
   root.innerHTML = `<div class="td-node-card td-node-card-director">
@@ -1443,6 +1552,7 @@ function renderNode(node) {
           导入资产：<b>${doc.assets.length}</b><em>（<b>${usedAssets}</b> 个被使用）</em>
         </span>
         <span class="td-node-spacer"></span>
+        ${resume ? `<span class="td-resume-available" title="${escapeHtml(resumeTitle)}" aria-label="${escapeHtml(resumeTitle)}">!</span>` : ""}
         <button class="td-mini-edit" data-action="edit">✦ 编辑</button>
       </div>
       <div class="td-mini-timeline" data-action="edit" title="原始片段编排预览（包含挂起片段）；总时长只计算有效片段">${timelineHtml(doc, activity)}</div>
@@ -2823,6 +2933,7 @@ function mountNode(node) {
     node.onConnectionsChange = function(...args) {
       const result = previous?.apply(this,args);
       queueMicrotask(()=>{if(this===activeNode)pushAiConfig(this);});
+      scheduleLoopResumeStatus(this);
       return result;
     };
     node.__tdAiLinkBound=true;
@@ -2889,6 +3000,7 @@ function mountNode(node) {
       for (const name of ["preview_enabled","preview_max_resolution","preview_jpeg_quality","preview_fps","preview_suppress_default","rerun_clip_id","rerun_seed","recovery_mode","preview_tiny_vae"]) hideBackingWidget(node.widgets?.find(w => w.name === name));
     }
     renderNode(node);
+    scheduleLoopResumeStatus(node);
     if (node.comfyClass === ADVANCED_NODE_CLASS) {
       void loadAdvancedCapabilities(node);
       void restoreAdvancedState(node);
@@ -2942,6 +3054,7 @@ function mountNode(node) {
     queueMicrotask(() => {
       hideBackingWidget(backing);
       renderNode(node);
+      scheduleLoopResumeStatus(node);
     });
   };
 
@@ -2970,6 +3083,7 @@ function mountNode(node) {
   }
 
   renderNode(node);
+  scheduleLoopResumeStatus(node);
   if (node.comfyClass === ADVANCED_NODE_CLASS) {
     const previousConnection = node.onConnectionsChange;
     if (!node.__tdAspectConnectionBound) {
@@ -3472,6 +3586,7 @@ function ensureEditorOverlay() {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               loop_id: String(node.id), clip_id: rerunClipId, document: next.document,
+              filename_prefix: downstreamSaveVideoPrefix(node),
             }),
           });
           const checked = await response.json().catch(() => ({}));
@@ -3629,6 +3744,8 @@ app.registerExtension({
     } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
                node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
+    } else if (node.comfyClass === "SaveVideo") {
+      queueMicrotask(() => bindSaveVideoResumeRefresh(node));
     }
   },
   loadedGraphNode(node) {
@@ -3642,6 +3759,8 @@ app.registerExtension({
     } else if (node.comfyClass === OUTPUT_NODE_CLASS ||
                node.comfyClass === LOOP_END_NODE_CLASS) {
       queueMicrotask(() => mountOutputNode(node));
+    } else if (node.comfyClass === "SaveVideo") {
+      queueMicrotask(() => bindSaveVideoResumeRefresh(node));
     }
   },
 });

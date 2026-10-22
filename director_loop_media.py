@@ -96,14 +96,9 @@ def _safe(text: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(text)).strip(" ._")[:56] or "clip"
 
 
-def _run_dir(cache_key: str, run_signature: str) -> Path:
-    root = (
-        Path(folder_paths.get_output_directory())
-        / "TerryDirector" / "renders"
-        / _safe(cache_key) / _safe(run_signature)
-    )
-    root.mkdir(parents=True, exist_ok=True)
-    return root
+def _recovery_path(manifest: Path) -> Path:
+    path = Path(manifest).resolve()
+    return path.with_name(f".{path.stem}_recovery.npz")
 
 
 def _atomic_json(path: Path, data: dict):
@@ -119,22 +114,22 @@ def _atomic_json(path: Path, data: dict):
         temporary.unlink(missing_ok=True)
 
 
-def _update_manifest(root: Path, descriptor: dict):
-    path = root / "timeline.json"
+def _update_manifest(path: Path, descriptor: dict):
+    path = path.resolve()
     if path.is_file():
         with open(path, "r", encoding="utf-8") as source:
             manifest = json.load(source)
     else:
-        manifest = {
-            "version": 2, "fps": FPS, "audio_sample_rate": AUDIO_RATE,
-            "status": "in_progress", "clips": [],
-        }
+        raise FileNotFoundError("循环任务清单不存在，拒绝保存到未分配的位置")
     current_fingerprint = descriptor.get("plan_fingerprint")
     existing_fingerprint = manifest.get("plan_fingerprint")
     if (existing_fingerprint and current_fingerprint != existing_fingerprint):
         raise ValueError("当前视频缓存与原任务参数签名不一致，拒绝混合保存")
     if current_fingerprint:
         manifest["plan_fingerprint"] = current_fingerprint
+    if (manifest.get("run_signature")
+            and str(manifest["run_signature"]) != str(descriptor.get("run_signature"))):
+        raise ValueError("当前视频清单与运行签名不一致，拒绝混合保存")
     clips = [part for part in manifest["clips"]
              if int(part["index"]) != int(descriptor["index"])]
     clips.append(descriptor)
@@ -254,11 +249,10 @@ def _write_clip(
         log.unlink(missing_ok=True)
 
 
-def _context_checkpoint(root: Path, images: torch.Tensor, waveform: torch.Tensor,
+def _context_checkpoint(manifest: Path, images: torch.Tensor, waveform: torch.Tensor,
                         sample_rate: int, index: int):
     """Only latest carry context is persisted, never the full IMAGE."""
-    path = root / ".recovery" / "next_context.npz"
-    path.parent.mkdir(parents=True, exist_ok=True)
+    path = _recovery_path(manifest)
     temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
     try:
         with open(temporary, "wb") as output:
@@ -299,12 +293,16 @@ def save_loop_segment(
     carry = {"waveform": context_audio, "sample_rate": sample_rate}
 
     ext, codec = _encoder(format_name)
-    root = _run_dir(loop["cache_key"], loop["run_signature"])
+    manifest = Path(str(loop["manifest_path"])).resolve()
+    root = Path(str(loop["output_directory"])).resolve()
+    if manifest.parent != root or manifest.stem != str(loop["run_stem"]):
+        raise ValueError("循环任务的输出清单与保存目录不一致")
+    root.mkdir(parents=True, exist_ok=True)
     clip_name = (
-        f"{int(loop.get('authored_index', loop['index'])) + 1:03d}_{_safe(segment['name'])}_"
-        f"{_safe(segment['id'])}.{ext}"
+        f"{loop['run_stem']}_{int(loop.get('authored_index', loop['index'])) + 1:03d}_"
+        f"{_safe(segment['name'])}.{ext}"
     )
-    output_path = root / "clips" / clip_name
+    output_path = root / clip_name
     _write_clip(images, audio, output_path=output_path, format_name=format_name, frames=frames)
     # The encoded clip intentionally keeps its overlapping head. Only the
     # final assembled movie applies the head trim.
@@ -332,11 +330,14 @@ def save_loop_segment(
         "segment_format": format_name, "video_codec": codec,
         "run_signature": str(loop["run_signature"]),
         "loop_id": str(loop["loop_id"]),
+        "manifest_path": str(manifest),
+        "run_stem": str(loop["run_stem"]),
+        "output_profile": dict(loop.get("output_profile") or {}),
     }
     _context_checkpoint(
-        root, context_images, context_audio, sample_rate, int(loop["index"])
+        manifest, context_images, context_audio, sample_rate, int(loop["index"])
     )
-    _update_manifest(root, descriptor)
+    _update_manifest(manifest, descriptor)
     print(
         f"[TerryDirector Loop][Clip] Saved {clip_name}: "
         f"frames={frames}, trim_in_final={descriptor['trim_head_frames']}, "
@@ -351,11 +352,11 @@ def complete_isolated_rerun(descriptors: list[dict], clip_id: str):
     """Commit a new take without touching any earlier full-length Final."""
     if not descriptors:
         raise ValueError("重跑没有生成任何片段")
-    root = Path(descriptors[0]["path"]).resolve().parent.parent
+    manifest = Path(str(descriptors[0]["manifest_path"])).resolve()
+    root = manifest.parent
     for item in descriptors:
         if str(item.get("segment_id")) != str(clip_id):
             raise ValueError("单片段重跑混入了其他已保存镜头")
-    manifest = root / "timeline.json"
     if not manifest.is_file():
         raise FileNotFoundError("本次重跑的视频文件记录缺失")
     with open(manifest, encoding="utf-8") as source:
@@ -364,7 +365,7 @@ def complete_isolated_rerun(descriptors: list[dict], clip_id: str):
     state["rerun_target"] = str(clip_id)
     state["final"] = None
     _atomic_json(manifest, state)
-    (root / ".recovery" / "next_context.npz").unlink(missing_ok=True)
+    _recovery_path(manifest).unlink(missing_ok=True)
     print(
         f"[TerryDirector Loop][Rerun] {clip_id}: "
         f"saved {descriptors[0]['path']} without overwriting Final",
@@ -384,7 +385,8 @@ def rebuild_final_from_saved_clips(
     """
     from .director_loop_reuse import find_saved_clip
 
-    root = Path(current["path"]).resolve().parent.parent
+    manifest_path = Path(str(current["manifest_path"])).resolve()
+    root = manifest_path.parent
     if not assembly_plan:
         return None, ["没有完整的原时间线编排信息"]
     selected = []
@@ -402,7 +404,8 @@ def rebuild_final_from_saved_clips(
             descriptor = dict(current)
         else:
             saved = find_saved_clip(
-                loop_id, part_id, required_frames=int(part["output_frames"]),
+                current.get("output_profile") or {}, part_id,
+                required_frames=int(part["output_frames"]),
             )
             if saved is None:
                 missing.append(str(part.get("name") or part_id))
@@ -434,7 +437,6 @@ def rebuild_final_from_saved_clips(
         previous_source = descriptor["path"]
         previous_was_entity = False
 
-    manifest_path = root / "timeline.json"
     state = json.loads(manifest_path.read_text("utf-8"))
     state["assembly_sources"] = [
         {"segment_id": part["segment_id"], "path": part["path"]}
@@ -454,6 +456,7 @@ def rebuild_final_from_saved_clips(
         # untouched. FFmpeg reuses source ProRes packets when possible.
         output = merge_loop_clips(
             selected, merge_final=True, output_root=root,
+            output_manifest=manifest_path,
         )
         state = json.loads(manifest_path.read_text("utf-8"))
         state["assembly_sources"] = [
@@ -587,20 +590,26 @@ def _concat_video(parts: list[tuple[Path, int, int]], destination: Path, format_
 
 
 def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
-                     output_root: str | Path | None = None) -> str | None:
+                     output_root: str | Path | None = None,
+                     output_manifest: str | Path | None = None) -> str | None:
     """Frame-accurate final file from persisted full clips, with exact PCM samples."""
     if not descriptors:
         raise ValueError("循环没有生成有效片段")
     ordered = sorted(descriptors, key=lambda part: int(part["index"]))
     format_name = ordered[0]["segment_format"]
     ext, codec = _encoder(format_name)
+    manifest = Path(str(
+        output_manifest or ordered[0].get("manifest_path") or ""
+    )).resolve()
     root = (Path(output_root).resolve() if output_root is not None
-            else Path(ordered[0]["path"]).resolve().parent.parent)
+            else manifest.parent)
+    if manifest.parent != root or not manifest.is_file():
+        raise ValueError("循环任务清单缺失或输出目录不一致")
     expected_run = str(ordered[0]["run_signature"])
     allow_versions = output_root is not None
-    # When remuxing multiple saved takes, every source must remain under the
-    # same loop-ID's owned render tree. Never accept arbitrary manifest paths.
-    safe_source_root = root.parent
+    # Every source is a flat, visible sibling of its numbered timeline JSON.
+    # A rebuild may combine prior numbered takes from the same output folder.
+    run_stem = manifest.stem
     if not all(
         (allow_versions or str(part.get("run_signature")) == expected_run)
         and str(part.get("segment_format")) == format_name
@@ -609,19 +618,14 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
         and int(part.get("height", 0)) == int(ordered[0]["height"])
         and int(part.get("channels", 0)) == int(ordered[0]["channels"])
         and Path(part["path"]).is_file()
-        and ((
-            Path(part["path"]).resolve().parent.parent == root
-        ) if not allow_versions else (
-            Path(part["path"]).resolve().is_relative_to(safe_source_root)
-            and Path(part["path"]).resolve().parent.name == "clips"
-        ))
+        and Path(part["path"]).resolve().parent == root
+        and (allow_versions or Path(part["path"]).name.startswith(run_stem + "_"))
         for part in ordered
     ):
         raise ValueError("循环片段编码参数、运行签名或输出路径不一致")
     if [int(item["index"]) for item in ordered] != list(range(len(ordered))):
         raise ValueError("循环片段缺失或顺序不连续")
     if not merge_final:
-        manifest = root / "timeline.json"
         if manifest.is_file():
             with open(manifest, encoding="utf-8") as source:
                 state = json.load(source)
@@ -635,7 +639,7 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
             _atomic_json(manifest, state)
         # No next segment is pending. Failure snapshots are useful only
         # while the run is incomplete.
-        (root / ".recovery" / "next_context.npz").unlink(missing_ok=True)
+        _recovery_path(manifest).unlink(missing_ok=True)
         return None
 
     channels = int(ordered[0]["channels"])
@@ -646,8 +650,8 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
     work.mkdir(exist_ok=True)
     pcm = work / "timeline_audio.pcm"
     video_only = work / ("timeline_video." + ext)
-    final = root / ("Final." + ext)
-    temporary = root / (".Final." + uuid.uuid4().hex + ".partial." + ext)
+    final = root / (manifest.stem + "_Final." + ext)
+    temporary = root / ("." + manifest.stem + "_Final." + uuid.uuid4().hex + ".partial." + ext)
     gap_files: dict[int, Path] = {}
     try:
         with open(pcm, "wb") as merged_audio:
@@ -711,7 +715,6 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
         _run(command + [str(temporary)], context="最终视频音画封装")
         _probe_video(str(temporary), expected_frames)
         os.replace(temporary, final)
-        manifest = root / "timeline.json"
         if manifest.exists():
             with open(manifest, encoding="utf-8") as source:
                 state = json.load(source)
@@ -719,7 +722,7 @@ def merge_loop_clips(descriptors: list[dict], *, merge_final: bool,
             state["final"] = str(final)
             state["final_frames"] = expected_frames
             _atomic_json(manifest, state)
-        (root / ".recovery" / "next_context.npz").unlink(missing_ok=True)
+        _recovery_path(manifest).unlink(missing_ok=True)
         print(
             f"[TerryDirector Loop][Final] {final}, frames={expected_frames}, "
             f"fps={FPS}, format={format_name}",

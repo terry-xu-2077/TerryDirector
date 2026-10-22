@@ -65,6 +65,17 @@ class TestLoopMedia(unittest.TestCase):
 
     def _segment(self, index, frames, trim_head, gap=0, fmt=None):
         fmt = fmt or self.media.MOV_HQ
+        number = 1 if fmt == self.media.MOV_HQ else 2
+        output = self.base / "video" / "test"
+        output.mkdir(parents=True, exist_ok=True)
+        stem = f"timeline_segments_{number:05d}"
+        manifest = output / f"{stem}.json"
+        if not manifest.exists():
+            manifest.write_text(json.dumps({
+                "version": 3, "status": "in_progress", "clips": [],
+                "run_signature": "movtest" if fmt == self.media.MOV_HQ else "mp4test",
+                "plan_fingerprint": "media-test", "segment_format": fmt,
+            }), "utf-8")
         h, w = 64, 96
         images = torch.linspace(0, 1, h * w * 3).reshape(1, h, w, 3)
         images = images.repeat(frames, 1, 1, 1)
@@ -82,9 +93,13 @@ class TestLoopMedia(unittest.TestCase):
             "_loop": {
                 "index": index, "context_frames": 12,
                 "seed": 1000 + index,
-                "cache_key": "loop-test",
                 "run_signature": "movtest" if fmt == self.media.MOV_HQ else "mp4test",
                 "loop_id": "test",
+                "manifest_path": str(manifest),
+                "output_directory": str(output),
+                "run_stem": stem,
+                "plan_fingerprint": "media-test",
+                "output_profile": {"subfolder": "video/test", "filename": "timeline"},
             },
         }
         item, carry_images, carry_audio = self.media.save_loop_segment(
@@ -129,7 +144,7 @@ class TestLoopMedia(unittest.TestCase):
         self.assertTrue(Path(second["path"]).is_file())
         self.assertEqual(self._count_frames(final), 24 + 5 + 36 - 12)
         self.assertEqual(self._pcm_sample_count(final), 53 * 2000)
-        manifest = json.loads((Path(final).parent / "timeline.json").read_text("utf-8"))
+        manifest = json.loads(Path(first["manifest_path"]).read_text("utf-8"))
         self.assertEqual(manifest["status"], "completed")
         self.assertEqual(manifest["final_frames"], 53)
         self.assertFalse(list(Path(final).parent.glob("**/*.pt")))

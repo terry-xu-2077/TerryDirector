@@ -76,7 +76,7 @@ Advanced 的执行中活动状态。AI Seed 是自动重新增强的唯一版本
 
 Advanced：每段存入无损 .pt 和可复用 LATENT 信息，支持断点恢复／片段重跑，最终一次性编码视频，避免中间 H.264 有损压缩。保存成功后清理生成时的分段画面缓存，保留必要的 checkpoint。
 
-独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache。LoopCache **先从未压缩的原始画面／声音提取下一段承接上下文**，再逐段编码完整的 MOV / ProRes 422 HQ（默认）或 MP4 / H.264。只去除 H3 对齐时补出的额外尾帧，保留本镜头的重叠开头以方便剪辑。LoopEnd 可选将已经保存的影片按时间线逐段裁掉新片段开头的重复区域并重组为 Final.mov / Final.mp4；ProRes 视频帧通过 FFmpeg 合并时优先流复制，PCM 音频在 48kHz 下按整数帧对应的采样数裁切。输出包含最终 VIDEO（关闭合并时为空）、Markdown 性能记录与镜头目录 STRING，不再生产完整 .pt 缓存。失败时已经保存的 MOV/MP4 和 `timeline.json` 仍存在，并保存最新承接上下文的 .npz；自动恢复尚未实施。
+独立循环器：每段由用户工作流自行完成采样与解码，循环结束只接收最终 IMAGE/AUDIO；当前片段元数据由 LoopFrame 直接注入隐藏 LoopCache。LoopCache **先从未压缩的原始画面／声音提取下一段承接上下文**，再逐段编码完整的 MOV / ProRes 422 HQ（默认）或 MP4 / H.264。保存位置从循环结束下游的 SaveVideo `filename_prefix` 推导，同一次运行的编号 JSON、分段和可选 Final 平铺在该目录；文件名使用可读前缀、五位运行序号、三位镜头序号和镜头名，随机任务 ID 只写入 JSON。LoopEnd 可选按时间线裁掉重叠开头并重组 `*_Final.mov` / `*_Final.mp4`。失败后通过相同工作流签名和保存前缀找到连续完成段，显式续跑时跳过这些段；普通提交始终分配新编号。
 
 **资源边界：** 不保存完整 .pt 节省磁盘空间及最后重复编码，但无法消除当前单段 VAE 解码的 IMAGE 内存峰值。输出目录需要 FFmpeg（或 imageio-ffmpeg），ProRes 422 HQ 是高质量有损中间编码，不是对原 Float32 IMAGE 的数学无损。最终 MP4 存在 GOP 时需重新编码视频才能做到精确帧级裁切。
 
