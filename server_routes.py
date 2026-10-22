@@ -67,6 +67,30 @@ async def terrydirector_static(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(path, headers={"Content-Type": content_type or "application/octet-stream"})
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/checkpoint-status")
+async def terrydirector_selflift_checkpoint_status(request: web.Request) -> web.Response:
+    """Existence check only: never deserialize a large SelfLift latent in HTTP."""
+    checkpoint_id = str(request.query.get("id") or "").strip()
+    if not checkpoint_id:
+        return web.json_response({"exists": False}, headers={"Cache-Control": "no-store"})
+    try:
+        from .director_selflift_checkpoint import read_manifest
+        # read_manifest strictly validates the 32-char hex ID before touching
+        # any user-controlled filesystem component.
+        manifest = read_manifest(checkpoint_id)
+        state_path = (Path(folder_paths.get_output_directory()) /
+                      "TerryDirector" / "checkpoints" / checkpoint_id /
+                      "state.safetensors")
+        exists = state_path.is_file()
+    except (FileNotFoundError, OSError, ValueError, KeyError, TypeError, json.JSONDecodeError):
+        exists = False
+        manifest = None
+    return web.json_response(
+        {"exists": exists, "name": manifest.get("name", "") if exists else ""},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/input-files")
 async def terrydirector_input_files(request: web.Request) -> web.Response:
     query = str(request.query.get("q") or "").strip().lower()
