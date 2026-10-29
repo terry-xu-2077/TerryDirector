@@ -179,7 +179,7 @@ function root() {
   return div;
 }
 function open() { root().style.display = "flex"; render(); void Promise.all([refresh(),loadTemplate()]); }
-function close() { state.creating = false; state.configuring = false; state.assetPicker = null; state.deleting = null; if (state.root) state.root.style.display = "none"; }
+function close() { closePreviewPromptMenu(); state.creating = false; state.configuring = false; state.assetPicker = null; state.deleting = null; if (state.root) state.root.style.display = "none"; }
 async function refresh() {
   try {
     const result = await request("/tasks");
