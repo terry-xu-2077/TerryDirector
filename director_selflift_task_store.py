@@ -217,7 +217,18 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
         # KJNodes encodes fragmented MP4 for its live websocket preview.
         # Normalize to a complete, fully-decoded/tested MP4 before exposing it.
         from .director_preview_mp4 import finalize_preview_mp4
-        path = finalize_preview_mp4(raw, folder, duration_seconds)
+        try:
+            path = finalize_preview_mp4(raw, folder, duration_seconds)
+        except ValueError:
+            # Do not lose the raw upstream KJ payload after an expensive run.
+            # Save only the first failing candidate (newest sampling step),
+            # and remove it if an earlier candidate turns out playable.
+            debug = folder / "sampling_preview_failed.bin"
+            if not debug.exists():
+                stage = folder / "sampling_preview_failed.partial"
+                stage.write_bytes(raw)
+                stage.replace(debug)
+            raise
     else:
         if mime == "image/webp" and not (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
             raise ValueError("无效 WebP")
@@ -227,6 +238,7 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
         stage = folder / ("sampling_preview.partial" + ext)
         stage.write_bytes(raw)
         stage.replace(path)
+    (folder / "sampling_preview_failed.bin").unlink(missing_ok=True)
     for old in folder.glob("sampling_preview.*"):
         if old != path and old.suffix in {".mp4", ".webp", ".jpg"}:
             old.unlink(missing_ok=True)
