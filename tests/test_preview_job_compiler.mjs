@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 const source = await readFile(new URL("../web/td_preview_job_compiler.js",import.meta.url),"utf8");
-const compiler = await import("data:text/javascript;base64,"+Buffer.from(source).toString("base64"));
+const parameterSource=await readFile(new URL("../web/td_preview_task_parameters.js",import.meta.url),"utf8");
+const parameterUrl="data:text/javascript;base64,"+Buffer.from(parameterSource).toString("base64");
+
+const compiler = await import("data:text/javascript;base64,"+Buffer.from(source.replace('"./td_preview_task_parameters.js"',JSON.stringify(parameterUrl))).toString("base64"));
 const {resolvePreviewSeedBounds,validatePreviewSeed,randomPreviewSeed,
   compilePreviewTargets,buildPreviewJob,applyPreviewInputs,RGTHREE_MAX_SEED} = compiler;
 const W={
