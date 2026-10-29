@@ -389,6 +389,8 @@ async function persistJob(job) {
 async function persistPreview(job) {
   const p = job?.preview;
   if (!job?.checkpointId || !p?.image || job.previewPending || job.uploadedStep >= (p.step || 1)) return;
+  // Persist the final animation, not every intermediate iteration.
+  if (job.busy && p.total && p.step < p.total) return;
   if (p.image.length > 48 * 1024 * 1024 * 4 / 3) return;
   job.previewPending = true;
   try {
@@ -402,7 +404,15 @@ async function persistPreview(job) {
     job.uploadedStep = p.step || 1;
     void refresh();
   } catch (e) { console.warn("[TerryDirector SelfLift preview]", e); }
-  finally { job.previewPending = false; }
+  finally {
+    job.previewPending = false;
+    if (job.preview && job.preview.step > job.uploadedStep) {
+      // The last KJ event may arrive while a previous upload is pending.
+      if (!job.busy || !job.preview.total || job.preview.step >= job.preview.total) {
+        queueMicrotask(() => void persistPreview(job));
+      }
+    }
+  }
 }
 function bindEvents() {
   api.addEventListener("execution_start", e => {
@@ -431,7 +441,8 @@ function bindEvents() {
       String(p.node_id) !== job.preview_node_id) return;
     if (!["video/mp4", "image/webp", "image/jpeg"].includes(p.mime)) return;
     if (p.image.length > 48 * 1024 * 1024 * 4 / 3) return;
-    job.preview = { image: p.image, mime: p.mime, step: Number(p.step) || 1 };
+    job.preview = { image: p.image, mime: p.mime, step: Number(p.step) || 1,
+      total: Number(p.total) || null };
     void persistPreview(job);
   });
   api.addEventListener("executed", e => {
