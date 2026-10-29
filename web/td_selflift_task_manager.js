@@ -393,15 +393,20 @@ function bindControls() {
           state.createDraft.previewType = control.value;
         }
       });
+    } else if (action === "config-name") {
+      control.addEventListener("input",()=> {
+        if(state.configDraft)state.configDraft.workflow_name=control.value;
+      });
     } else if (action === "config-field") {
       control.addEventListener("change", () => {
         if (!state.configDraft) return;
         const key = control.dataset.field;
         if (key === "prompt_binding" || key === "seed_binding") {
-          state.configDraft[key] = JSON.parse(control.value);
+          state.configDraft[key] = control.value ? JSON.parse(control.value) : null;
         } else {
           state.configDraft[key] = control.value;
         }
+        state.configError="";
       });
     } else if (action === "asset-search") {
       control.addEventListener("input", () => {
@@ -427,6 +432,30 @@ async function handleAction(action, data) {
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
     if (action === "config") return openConfig();
+    if (action === "new-config") return loadConfigDraft(null);
+    if (action === "select-config") return loadConfigDraft(data.id);
+    if (action === "default-config") {
+      await request("/templates/"+encodeURIComponent(state.configSelectedId)+"/default",{method:"POST"});
+      await loadTemplate();
+      return render();
+    }
+    if (action === "rename-config") {
+      const id=state.configSelectedId,name=state.configDraft?.workflow_name?.trim();
+      if(!id || !name)throw Error("请输入工作流名称");
+      await request("/templates/"+encodeURIComponent(id)+"/rename",{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name}),
+      });
+      await loadTemplate();
+      toast("工作流已改名");
+      return render();
+    }
+    if (action === "delete-config") {
+      const id=state.configSelectedId;
+      if(!id || !window.confirm("永久删除这份预演工作流配置？已生成的预演任务及检查点不会受影响。"))return;
+      await request("/templates/"+encodeURIComponent(id),{method:"DELETE"});
+      await loadTemplate();
+      return loadConfigDraft(state.defaultTemplateId);
+    }
     if (action === "random-seed") {
       if (!state.createDraft) return;
       const seed = randomPreviewSeed(state.createDraft);
@@ -462,7 +491,14 @@ async function handleAction(action, data) {
     if (action === "rerun") return queueFromCheckpoint(state.focused, "pause");
     if (action === "highres") return queueFromCheckpoint(state.focused, "continue");
     if (action === "batch") return batchHighres();
-  } catch (e) { toast(e.message, "error"); }
+  } catch (e) {
+    if(state.configuring) {
+      state.configError=String(e?.message||e);
+      state.configSaving=false;
+      render();
+    }
+    toast(e.message, "error");
+  }
 }
 
 async function loadTemplate() {
@@ -679,10 +715,13 @@ async function compileConfiguredWorkflow(cfg) {
   // register a workflow tab, or modify the live ComfyUI root graph.
   const active=app.rootGraph || app.graph;
   const installed=active.serialize();
-  const matching=JSON.stringify((installed.nodes||[]).map(n=>[n.id,n.type])) ===
-    JSON.stringify((cfg.workflow.nodes||[]).map(n=>[n.id,n.type]));
+  const fingerprint=graph=>JSON.stringify({
+    nodes:(graph.nodes||[]).map(n=>[n.id,n.type,n.widgets_values_named||n.widgets_values]),
+    links:graph.links||[],
+  });
+  const matching=fingerprint(installed)===fingerprint(cfg.workflow);
   let snapshot, runtimeGraph=active;
-  if(matching && cfg.workflow_name==="当前画布") {
+  if(matching) {
     snapshot=await app.graphToPrompt(active);
   } else {
     const Ctor=active?.constructor;
@@ -725,17 +764,33 @@ async function compileConfiguredWorkflow(cfg) {
 }
 async function saveConfig() {
   const cfg=state.configDraft;
+  if(state.configSaving)return;
   if(!cfg?.prompt_binding || !cfg?.seed_binding || !cfg?.pause_node_id)
-    throw Error("请选择工作流、提示词和种子输入节点");
-  const compiled=await compileConfiguredWorkflow(cfg);
-  await request("/template",{
-    method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(compiled),
-  });
-  state.template=compiled;
-  state.configuring=false;
+    throw Error("请选择暂停节点、H3 提示词源和种子输入");
+  const name=String(cfg.workflow_name||"").trim();
+  if(!name || name.length>100)throw Error("请输入 1～100 字的工作流名称");
+  state.configSaving=true;state.configError="";
   render();
-  toast("预演工作流已独立保存，后续提交不会修改当前画布");
+  try {
+    const compiled=await compileConfiguredWorkflow({...cfg,workflow_name:name});
+    if(state.configSelectedId)compiled.template_id=state.configSelectedId;
+    else delete compiled.template_id;
+    const saved=await request("/template",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(compiled),
+    });
+    state.configSelectedId=saved.id;
+    await loadTemplate();
+    await loadConfigDraft(saved.id);
+    toast("预演工作流已保存："+name);
+  } catch(error) {
+    state.configError=String(error?.message||error);
+    toast("保存失败："+state.configError,"error");
+    render();
+  } finally {
+    state.configSaving=false;
+    render();
+  }
 }
 
 function overridesLookup(overrides) {
@@ -1213,16 +1268,10 @@ app.registerExtension({
         type: "custom",
         render: el => {
           el.innerHTML = '<div style="padding:16px;color:#abb4c2;font:13px system-ui">' +
-            '<div style="display:flex;flex-direction:column;gap:9px">' +
             '<button class="tdm-btn primary" type="button" data-preview-open>打开预演台</button>' +
-            '<button class="tdm-btn" type="button" data-preview-config>配置工作流</button></div>' +
             '<p style="line-height:1.6">镜头预演、任务重跑与批量高清续采</p></div>';
           styles();
           el.querySelector('[data-preview-open]').onclick = open;
-          el.querySelector('[data-preview-config]').onclick = () => {
-            root().style.display = "flex";
-            void loadTemplate().then(() => openConfig());
-          };
           // Sidebar is only an entry point; work happens in the large overlay.
         },
       });
