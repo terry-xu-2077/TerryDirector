@@ -310,6 +310,10 @@ function bindControls() {
         if (state.assetPicker) state.assetPicker.search = control.value;
         renderAssetChoices();
       });
+    } else if (action === "source-change") {
+      control.addEventListener("change", e => {
+        void changeCreateSource({}, e.target.value).catch(err => toast(err.message, "error"));
+      });
     } else control.addEventListener("click", e => {
       e.preventDefault();
       e.stopPropagation();
@@ -325,10 +329,10 @@ async function handleAction(action, data) {
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
     if (action === "config") return openConfig();
+    if (action === "set-preview") { state.createDraft.previewType = data.kind; return render(); }
     if (action === "cancel-config") { state.configuring = false; return render(); }
     if (action === "save-config") return saveConfig();
     if (action === "use-canvas") return useCurrentWorkflow();
-    if (action === "source-change") return changeCreateSource(data, state.root.querySelector('[data-action="source-change"]')?.value);
     if (action === "open-assets") { state.assetPicker = { index: Number(data.index), search: "" }; return render(); }
     if (action === "close-assets") { state.assetPicker = null; return render(); }
     if (action === "choose-asset") return chooseAsset(data);
@@ -754,13 +758,18 @@ async function queueFromCheckpoint(id, mode) {
       const namePatch = overrides.find(x => String(x.node_id) === String(pause.id) && x.widget_name === "name");
       if (namePatch) namePatch.value = String(task.name) + " · 重跑";
     }
-    const queued = await queueManagedSelfLift(pause, mode, overrides, mode === "continue" ? id : "");
+    const previewType = task.metadata?.preview_type || "sampling";
+    const queued = await queueManagedSelfLift(pause, mode, overrides, mode === "continue" ? id : "", {
+      saveDecoded: mode === "pause" && previewType === "decoded",
+    });
     if (!queued.promptId) throw Error("未收到入队任务编号");
     if (mode === "pause") {
       state.jobs.set(queued.promptId, {
         mode, overrides, workflow: info.workflow, name: task.name + " · 重跑",
         workflow_name: task.metadata.workflow_name,
         pause_node_id: String(pause.id), preview_node_id: task.metadata.preview_node_id,
+        preview_type: previewType, prompt_binding: info.prompt_binding,
+        seed_binding: info.seed_binding,
         checkpointId: null, preview: null, uploadedStep: 0, busy: true,
       });
     }
@@ -793,6 +802,8 @@ async function persistJob(job) {
       body: JSON.stringify({
         workflow_name: job.workflow_name, overrides: job.overrides,
         pause_node_id: job.pause_node_id, preview_node_id: job.preview_node_id,
+        prompt_binding: job.prompt_binding, seed_binding: job.seed_binding,
+        preview_type: job.preview_type || "sampling",
         workflow: job.workflow,
       }),
     });
@@ -802,6 +813,7 @@ async function persistJob(job) {
 }
 async function persistPreview(job) {
   const p = job?.preview;
+  if (job?.preview_type === "decoded") return;
   if (!job?.checkpointId || !p?.image || job.previewPending || job.uploadedStep >= (p.step || 1)) return;
   // Persist the final animation, not every intermediate iteration.
   if (job.busy && p.total && p.step < p.total) return;
@@ -843,6 +855,7 @@ function bindEvents() {
           name: String(widget(pause, "name")?.value || "预演镜头"),
           workflow_name: state.templateName, pause_node_id: String(pause.id),
           preview_node_id: preview ? String(preview.id) : null,
+          preview_type: "sampling",
           checkpointId: null, preview: null, uploadedStep: 0, busy: true,
         });
       }
@@ -851,7 +864,7 @@ function bindEvents() {
   api.addEventListener("kj_preview_override", e => {
     const p = e.detail || {};
     const job = state.jobs.get(state.activePromptId);
-    if (!job || job.mode !== "pause" || !p.image || !p.mime ||
+    if (!job || job.mode !== "pause" || job.preview_type === "decoded" || !p.image || !p.mime ||
       String(p.node_id) !== job.preview_node_id) return;
     if (!["video/mp4", "image/webp", "image/jpeg"].includes(p.mime)) return;
     if (p.image.length > 48 * 1024 * 1024 * 4 / 3) return;
@@ -887,10 +900,16 @@ app.registerExtension({
         type: "custom",
         render: el => {
           el.innerHTML = '<div style="padding:16px;color:#abb4c2;font:13px system-ui">' +
-            '<button class="tdm-btn primary" type="button">打开预演台</button>' +
-            '<p style="line-height:1.6">镜头预演、双预览、重跑与批量高清续采</p></div>';
+            '<div style="display:flex;flex-direction:column;gap:9px">' +
+            '<button class="tdm-btn primary" type="button" data-preview-open>打开预演台</button>' +
+            '<button class="tdm-btn" type="button" data-preview-config>配置工作流</button></div>' +
+            '<p style="line-height:1.6">镜头预演、任务重跑与批量高清续采</p></div>';
           styles();
-          el.querySelector("button").onclick = open;
+          el.querySelector('[data-preview-open]').onclick = open;
+          el.querySelector('[data-preview-config]').onclick = () => {
+            root().style.display = "flex";
+            openConfig();
+          };
           // Sidebar is only an entry point; work happens in the large overlay.
         },
       });
