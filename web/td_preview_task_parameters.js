@@ -32,10 +32,22 @@ export function taskResolutionInfo(mp, ratioLabel="16:9"){
   };
   return {highMp:value,lowMp:value/4,high:dims(value),low:dims(value/4)};
 }
-export function taskAspectRatio(apiPrompt){
+export function taskAspectRatio(apiPrompt, workflow=null){
   const selector=Object.values(apiPrompt||{}).find(n=>n?.class_type==="TerryDirectorDualSamplingResolutionSelector");
   const ratio=selector?.inputs?.aspect_ratio;
-  return typeof ratio==="string" ? ratio : "16:9 (Widescreen)";
+  if(typeof ratio==="string")return ratio;
+  if(Array.isArray(ratio)){
+    const source=apiPrompt?.[String(ratio[0])]?.inputs || {};
+    for(const key of ["aspect_ratio","value","text","string"]){
+      if(typeof source[key]==="string" && /^\\s*\\d+(?:\\.\\d+)?\\s*:/.test(source[key]))
+        return source[key];
+    }
+  }
+  // The preview has to follow the actual selector, not assume 16:9 when a
+  // custom ratio arrives over another node (e.g. ComfyUI wireless bus).
+  const ui=(workflow?.nodes||[]).find(n=>n.type==="TerryDirectorDualSamplingResolutionSelector");
+  const value=ui?.widgets_values_named?.aspect_ratio || ui?.widgets_values?.[0];
+  return typeof value==="string" ? value : "16:9 (Widescreen)";
 }
 export function applyTaskVideoParameters(apiPrompt, settings={}){
   const seconds=Number(settings.duration_seconds??PREVIEW_DURATION_DEFAULT);
