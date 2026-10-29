@@ -212,6 +212,7 @@ async function handleAction(action, data) {
     if (action === "cancel-create") { state.creating = false; return render(); }
     if (action === "create") { state.creating = true; await loadInputFiles(); return render(); }
     if (action === "import-workflow") return importWorkflow();
+    if (action === "upload-image") return uploadImage(Number(data.patch));
     if (action === "submit") return submitCreate();
     if (action === "load") return loadSavedWorkflow(state.focused);
     if (action === "rerun") return queueFromCheckpoint(state.focused, "pause");
@@ -265,8 +266,9 @@ function createMarkup() {
     '<div class="tdm-section">图片输入</div>' +
     (state.inputs.filter(x => x.kind === "image").map((p,i) =>
       '<div class="tdm-field"><label>' + esc(p.node.title || p.node.type) + ' #' + p.node.id + '</label>' +
-      '<select data-patch="' + state.inputs.indexOf(p) + '">' + selection(
-        [p.value, ...files.filter(f => f !== p.value)], p.value) + '</select></div>').join("") ||
+      '<div class="tdm-actions"><select data-patch="' + state.inputs.indexOf(p) + '" style="flex:1">' + selection(
+        [p.value, ...files.filter(f => f !== p.value)], p.value) + '</select>' +
+      '<button class="tdm-btn" data-action="upload-image" data-patch="' + state.inputs.indexOf(p) + '">上传</button></div></div>').join("") ||
       '<div class="tdm-small">未发现 LoadImage 输入节点</div>') +
     '<div class="tdm-section">提示词输入</div>' +
     (state.inputs.filter(x => x.kind === "text").map(p =>
@@ -278,6 +280,33 @@ function createMarkup() {
     '<div class="tdm-form-actions"><button class="tdm-btn" data-action="cancel-create">取消</button>' +
     '<button class="tdm-btn primary" data-action="submit" ' +
     (!pauseNodes.length ? "disabled" : "") + '>加入低清生成队列</button></div></div></div>';
+}
+async function uploadImage(index) {
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/png,image/jpeg,image/webp,image/bmp,image/tiff";
+  fileInput.onchange = async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const response = await api.fetchApi("/terrydirector/api/upload", { method: "POST", body: form });
+      const data = await response.json();
+      if (!response.ok || !data.path || data.kind !== "image") {
+        throw Error(data.error || "图片上传失败");
+      }
+      const select = state.root?.querySelector('.tdm-dialog select[data-patch="' + index + '"]');
+      if (select) {
+        const option = document.createElement("option");
+        option.value = data.path; option.textContent = data.name;
+        select.append(option); select.value = data.path;
+      }
+      state.inputFiles.push(data);
+      toast("图片已导入 ComfyUI input：" + data.name);
+    } catch (e) { toast(e.message, "error"); }
+  };
+  fileInput.click();
 }
 async function importWorkflow() {
   const file = document.createElement("input");
