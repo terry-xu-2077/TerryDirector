@@ -178,7 +178,13 @@ async def terrydirector_selflift_task_workflow(request: web.Request) -> web.Resp
     return web.json_response({"workflow": workflow, "overrides": metadata.get("overrides", []),
                               "prompt_binding": metadata.get("prompt_binding"),
                               "seed_binding": metadata.get("seed_binding"),
-                              "h3_properties": metadata.get("h3_properties", {})})
+                              "h3_properties": metadata.get("h3_properties", {}),
+                              "api_prompt": metadata.get("api_prompt"),
+                              "pause_target": metadata.get("pause_target"),
+                              "highres_target": metadata.get("highres_target"),
+                              "decoded_target": metadata.get("decoded_target"),
+                              "seed_min": metadata.get("seed_min"),
+                              "seed_max": metadata.get("seed_max")})
 
 
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
