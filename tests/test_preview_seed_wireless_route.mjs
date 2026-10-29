@@ -3,8 +3,11 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 const script=await readFile(new URL("../web/td_preview_job_compiler.js",import.meta.url),"utf8");
+const parameterSource=await readFile(new URL("../web/td_preview_task_parameters.js",import.meta.url),"utf8");
+const parameterUrl="data:text/javascript;base64,"+Buffer.from(parameterSource).toString("base64");
+
 const {resolvePreviewSeedBounds}=await import("data:text/javascript;base64,"+
-  Buffer.from(script).toString("base64"));
+  Buffer.from(script.replace('"./td_preview_task_parameters.js"',JSON.stringify(parameterUrl))).toString("base64"));
 
 const labels=["宽度","高度","SEED","输出"];
 const lanes=labels.map((name,index)=>({id:"lane"+index,name}));
