@@ -1696,6 +1696,9 @@ async function runDraft(id,mode="pause") {
     };
     state.jobs.set(queued.promptId,job);
     await draftTransition(id,"ack",{prompt_id:queued.promptId});
+    if(mode==="continue")await saveLegacyLifecycle(draft.checkpoint_id,"high_pending",{
+      highres_prompt_id:queued.promptId,highres_video:null,
+    });
     await refresh();
     toast((mode==="pause"?"低清":"高清")+"任务已加入 ComfyUI 队列");
   } catch(error) {
@@ -1754,7 +1757,8 @@ async function queueFromCheckpoint(id,mode) {
       queued_stage:"high",highres_prompt_id:queued.promptId,
     });
     state.jobs.set(queued.promptId,{
-      mode:"continue",checkpointId:id,busy:true,
+      mode:"continue",checkpointId:id,highres_target:template.highres_target,
+      api_prompt:info.api_prompt,busy:true,
     });
     void refresh();
   }
@@ -1980,8 +1984,26 @@ function bindEvents() {
   });
   api.addEventListener("executed",e=>{
     const p=e.detail||{},info=p.output?.terrydirector_selflift_checkpoint?.[0];
+    const promptId=String(p.prompt_id||state.activePromptId||"");
+    const job=state.jobs.get(promptId);
+    if(job?.mode==="continue" && job.checkpointId &&
+       String(p.node)===String(job.highres_target)){
+      // Native SaveVideo returns {images:[{filename,subfolder,type}]},
+      // VHS_VideoCombine returns {gifs:[...]}. Both point to Comfy output.
+      const outputs=p.output||{};
+      const candidates=[...(outputs.images||[]),...(outputs.gifs||[]),...(outputs.videos||[])];
+      const video=candidates.find(x=>x?.type==="output" &&
+        /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(x.filename||""));
+      if(video)job.highresPersistPromise=request(
+        "/tasks/"+encodeURIComponent(job.checkpointId)+"/highres-video",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({node_id:job.highres_target,prompt_id:promptId,video}),
+        }).catch(error=>{
+          console.warn("[TerryDirector 预演台] 高清视频关联失败，将尝试任务历史恢复",error);
+        });
+      return;
+    }
     if(!info?.checkpoint_id||info.mode!=="paused")return;
-    const job=state.jobs.get(String(p.prompt_id||state.activePromptId));
     if(!job||job.mode!=="pause"||String(p.node)!==String(job.pause_node_id))return;
     job.checkpointId=String(info.checkpoint_id);
     job.persistPromise=persistJob(job);
@@ -2000,6 +2022,7 @@ function bindEvents() {
       void (async()=>{
         await Promise.allSettled([
           job.startPromise,job.persistPromise,job.checkpointPromise,
+          job.highresPersistPromise,
         ].filter(Boolean));
         if(job.draftId){
           const action=event==="execution_success"?"finish":"fail";
