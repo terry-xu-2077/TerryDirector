@@ -125,7 +125,7 @@ function styles() {
 .tdm-detail-pending{padding:18px;background:#11151b;border:1px dashed #414a57;border-radius:8px;
  color:#a4b1c1;line-height:1.7;min-height:140px}
 .tdm-right{min-width:0;min-height:0;display:flex;flex-direction:column;padding:16px;gap:12px}
-.tdm-tabs{display:flex;gap:5px}.tdm-tabs button{border:1px solid #414650;background:#252830;color:#9ba4b2;
+.tdm-tabs{display:flex;gap:5px;flex-wrap:wrap;align-items:center}.tdm-tabs button{border:1px solid #414650;background:#252830;color:#9ba4b2;
  border-radius:6px;padding:7px 10px;cursor:pointer}.tdm-tabs button.on{background:#344d6e;color:#f2f7ff;border-color:#527cac}
 .tdm-player{width:100%;aspect-ratio:16/9;background:#0b0d11;border-radius:8px;object-fit:contain;max-height:52vh}
 .tdm-live-media{position:relative;width:100%;min-width:0}
@@ -563,7 +563,7 @@ function thumb(task) {
     media.sampling?"sampling":media.decoded?"decoded":null;
   if(!kind)return '<div class="tdm-thumb"></div>';
   const file=media[kind],id=task.checkpoint_id || task.id,url=mediaUrl(id,kind);
-  return file.endsWith(".mp4")
+  return /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(file)
     ? '<video class="tdm-thumb" src="'+url+'#t=0.5" muted preload="metadata"></video>'
     : '<img class="tdm-thumb" src="'+url+'" alt="">';
 }
@@ -663,7 +663,7 @@ function details(task) {
             task.queued_stage?"已加入生成队列，等待开始执行":
             "尚未生成低清视频，请点击「开始预演」")+
         '</div>'
-      : file.endsWith(".mp4")
+      : /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(file)
         ? '<video class="tdm-player" data-saved-video data-media-key="'+
           esc("saved:"+cid+":"+kind+":"+file)+'" src="'+mediaUrl(cid,kind)+
           '" controls loop playsinline preload="auto"></video>'
@@ -696,7 +696,7 @@ function details(task) {
         '">高清成片</button>' : '')+
     '<button data-action="preview" data-kind="sampling" class="'+(kind==="sampling"?"on":"")+'">TAEH3 采样预览</button>'+
     '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button>'+
-    ((live?.preview?.mime==="video/mp4" || file?.endsWith(".mp4")) ?
+    ((live?.preview?.mime==="video/mp4" || /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(file||"")) ?
       '<button class="tdm-btn tdm-replay-control" data-action="toggle-preview-playback" '+
       'type="button">播放 / 暂停</button>' : '')+'</div>'+
     '<div data-live-preview-host data-task-id="'+esc(task.id)+'">'+preview+'</div>'+
