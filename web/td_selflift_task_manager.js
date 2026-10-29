@@ -575,7 +575,19 @@ function updateLivePreview(job) {
   if(wasPlaying)wasPlaying.pause();
   host.innerHTML=livePreviewMarkup(job);
   const player=host.querySelector("video[data-live-video]");
-  if(player)void player.play().catch(()=>{});
+  if(player){
+    const target=Number(job.duration_seconds);
+    if(Number.isFinite(target)&&target>=4&&target<=20){
+      const setRate=()=>{
+        if(Number.isFinite(player.duration)&&player.duration>0){
+          player.playbackRate=Math.max(0.25,Math.min(4,player.duration/target));
+        }
+      };
+      player.addEventListener("loadedmetadata",setRate,{once:true});
+      if(player.readyState>=1)setRate();
+    }
+    void player.play().catch(()=>{});
+  }
 }
 function details(task) {
   if(!task)return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
@@ -1754,8 +1766,11 @@ async function persistPreview(job) {
   const upload=(async()=>{
     const raw=atob(p.image);
     const bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));
+    const duration=Number(job.duration_seconds);
+    const query=Number.isInteger(duration) && duration>=4 && duration<=20
+      ? "?duration="+encodeURIComponent(duration) : "";
     const response=await api.fetchApi(
-      URL_BASE+"/tasks/"+encodeURIComponent(job.checkpointId)+"/sampling-preview",{
+      URL_BASE+"/tasks/"+encodeURIComponent(job.checkpointId)+"/sampling-preview"+query,{
         method:"POST",headers:{"Content-Type":p.mime},body:bytes,
       });
     if(!response.ok){
