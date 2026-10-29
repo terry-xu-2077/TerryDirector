@@ -16,48 +16,90 @@ _MAX_PREVIEW = 48 * 1024 * 1024
 _MAX_METADATA = 5 * 1024 * 1024
 
 
-_TEMPLATE_FILE = "preview_stage_template.json"
+_PREVIEW_STAGE_DIR = "preview_stage"
+_TEMPLATE_LIMIT = 15 * 1024 * 1024
+
+
+def _stage_dir() -> Path:
+    return Path(folder_paths.get_output_directory()) / "TerryDirector" / _PREVIEW_STAGE_DIR
 
 
 def load_preview_template() -> dict:
-    """Shared workflow/template configuration, separate from generated tasks."""
-    root = Path(folder_paths.get_output_directory()) / "TerryDirector"
-    path = root / _TEMPLATE_FILE
-    if not path.is_file():
+    """Load a compiled, isolated Preview Stage pipeline. Never access ComfyUI tabs."""
+    directory = _stage_dir()
+    config = directory / "config.json"
+    workflow = directory / "workflow.json"
+    compiled = directory / "api_prompt.json"
+    if not all(path.is_file() for path in (config, workflow, compiled)):
         return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("schema") != 1:
+    value = json.loads(config.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema") != 2:
         return {}
+    value["workflow"] = json.loads(workflow.read_text(encoding="utf-8"))
+    value["api_prompt"] = json.loads(compiled.read_text(encoding="utf-8"))
     return value
 
 
 def save_preview_template(value: dict) -> None:
-    if not isinstance(value, dict) or value.get("schema") != 1:
-        raise ValueError("预演工作流配置格式不正确")
+    """Validate first, then atomically persist the API, UI, and I/O bindings.
+
+    The API prompt is compiled once when the user configures the template;
+    task submission only substitutes its owned inputs and output targets.
+    """
+    if not isinstance(value, dict) or value.get("schema") != 2:
+        raise ValueError("预演工作流必须重新配置并编译为 API 版本")
     workflow = value.get("workflow")
+    api_prompt = value.get("api_prompt")
     if not isinstance(workflow, dict) or not isinstance(workflow.get("nodes"), list):
-        raise ValueError("需要 ComfyUI 完整工作流")
-    pause = value.get("pause_node_id")
-    if not any(str(n.get("id")) == str(pause) and
+        raise ValueError("工作流缺少画布 JSON")
+    if not isinstance(api_prompt, dict) or not api_prompt:
+        raise ValueError("未编译 API 工作流，请重新配置")
+    if not all(isinstance(node, dict) and isinstance(node.get("class_type"), str)
+               and isinstance(node.get("inputs"), dict) for node in api_prompt.values()):
+        raise ValueError("API 工作流节点数据不完整")
+    pause = str(value.get("pause_node_id"))
+    if not any(str(n.get("id")) == pause and
                n.get("type") == "TerryDirectorSelfLiftPauseResume"
                for n in workflow["nodes"] if isinstance(n, dict)):
-        raise ValueError("工作流中没有所选的暂停/继续节点")
-    prompt = value.get("prompt_binding")
-    seed = value.get("seed_binding")
-    for label, binding in (("提示词", prompt), ("种子", seed)):
-        if (not isinstance(binding, dict) or
-            not any(str(n.get("id")) == str(binding.get("node_id"))
-                    for n in workflow["nodes"] if isinstance(n, dict)) or
-            not isinstance(binding.get("widget_name"), str)):
-            raise ValueError(f"{label}输入节点未正确配置")
-    raw = json.dumps(value, ensure_ascii=False)
-    if len(raw.encode("utf-8")) > _MAX_METADATA:
-        raise ValueError("工作流配置大于 5 MB")
-    root = Path(folder_paths.get_output_directory()) / "TerryDirector"
-    root.mkdir(parents=True, exist_ok=True)
-    stage = root / (_TEMPLATE_FILE + ".partial")
-    stage.write_text(raw, encoding="utf-8")
-    stage.replace(root / _TEMPLATE_FILE)
+        raise ValueError("工作流未选择有效的暂停/继续节点")
+    if api_prompt.get(pause, {}).get("class_type") != "TerryDirectorSelfLiftPauseResume":
+        raise ValueError("可执行工作流缺少所选暂停节点")
+    for label, binding in (("提示词", value.get("prompt_binding")),
+                           ("种子", value.get("seed_binding"))):
+        if not isinstance(binding, dict):
+            raise ValueError(f"{label}尚未指定输入节点")
+        node_id = str(binding.get("node_id"))
+        widget = binding.get("widget_name")
+        if not isinstance(widget, str) or widget not in api_prompt.get(node_id, {}).get("inputs", {}):
+            raise ValueError(f"{label}输入无法映射到可执行工作流：{node_id}.{widget}")
+        if isinstance(api_prompt[node_id]["inputs"][widget], list):
+            raise ValueError(f"{label}绑定仍指向连线终点，请选择实际输入源节点")
+    for key in ("pause_target", "highres_target", "decoded_target"):
+        node_id = value.get(key)
+        if node_id is not None and str(node_id) not in api_prompt:
+            raise ValueError(f"输出目标不存在：{key}={node_id}")
+    if str(value.get("pause_target")) != pause:
+        raise ValueError("首阶段输出目标必须是暂停检查点")
+    if not value.get("highres_target"):
+        raise ValueError("工作流缺少高清保存终点")
+    if not isinstance(value.get("seed_min"), int) or not isinstance(value.get("seed_max"), int):
+        raise ValueError("种子输入范围未定义")
+    if value["seed_max"] < value["seed_min"]:
+        raise ValueError("种子输入范围无效")
+    raw = {
+        "config.json": json.dumps({k: v for k, v in value.items() if k not in ("workflow", "api_prompt")}, ensure_ascii=False),
+        "workflow.json": json.dumps(workflow, ensure_ascii=False),
+        "api_prompt.json": json.dumps(api_prompt, ensure_ascii=False),
+    }
+    if sum(len(x.encode("utf-8")) for x in raw.values()) > _TEMPLATE_LIMIT:
+        raise ValueError("预演台工作流配置超出 15 MB")
+    directory = _stage_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    # Replace every artifact separately via atomic rename, not through tabs.
+    for filename, content in raw.items():
+        stage = directory / (filename + ".partial")
+        stage.write_text(content, encoding="utf-8")
+        stage.replace(directory / filename)
 
 
 def checkpoint_dir(checkpoint_id: str) -> Path:
@@ -97,7 +139,8 @@ def list_tasks() -> list[dict]:
                 "pause_node_id": details.get("pause_node_id"),
                 "preview_node_id": details.get("preview_node_id"),
                 "preview_type": details.get("preview_type", "sampling"),
-                "has_workflow": isinstance(details.get("workflow"), dict),
+                "has_workflow": isinstance(details.get("workflow"), dict) and
+                                isinstance(details.get("api_prompt"), dict),
             },
         })
     return rows
@@ -106,7 +149,8 @@ def list_tasks() -> list[dict]:
 def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     folder = checkpoint_dir(checkpoint_id)
     allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow",
-               "prompt_binding", "seed_binding", "preview_type", "h3_properties"}
+               "prompt_binding", "seed_binding", "preview_type", "h3_properties", "api_prompt", "pause_target",
+               "highres_target", "decoded_target", "seed_min", "seed_max"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
