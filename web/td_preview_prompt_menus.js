@@ -84,11 +84,16 @@ export function h3Trigger(text, caret) {
   const lastLine = before.slice(before.lastIndexOf("\n") + 1);
   const match = lastLine.match(/([@＠/／\\＼])([^@＠/／\\＼\n]*)$/);
   if (!match) return null;
-  // Do not hijack URL paths, email addresses, or literal slash-separated words.
+  // The real H3 editor permits @ after Chinese prose without whitespace.
+  // Keep ordinary URLs / email text intact, but permit commands immediately
+  // after Chinese characters too (including IME-produced full-width triggers).
   const index = before.length - match[0].length;
   const prev = index ? before[index - 1] : "";
-  if (prev && !/[\s([{"'，：、]/u.test(prev)) return null;
-  const trigger = match[1], query = match[2].trim().toLowerCase();
+  const trigger = match[1];
+  if ((trigger === "/" || trigger === "／") &&
+      /[A-Za-z0-9.:/]/.test(prev)) return null;
+  if ((trigger === "@" || trigger === "＠") && /[A-Za-z0-9._-]/.test(prev)) return null;
+  const query = match[2].trim().toLowerCase();
   return {start: index, end: before.length, type: "＠@".includes(trigger) ? "asset" : "command",
     query};
 }
@@ -200,17 +205,39 @@ export function attachPreviewPromptMenus(textarea, {getAssets, onChange} = {}) {
       menu.append(row);
     });
   }
+  function caretRect() {
+    const rect = textarea.getBoundingClientRect();
+    const cs = window.getComputedStyle(textarea);
+    const mirror = document.createElement("div");
+    Object.assign(mirror.style, {
+      position:"fixed",left:"0",top:"0",visibility:"hidden",pointerEvents:"none",
+      boxSizing:"border-box",width:textarea.clientWidth+"px",
+      padding:cs.padding,border:"0",font:cs.font,lineHeight:cs.lineHeight,
+      letterSpacing:cs.letterSpacing,wordSpacing:cs.wordSpacing,
+      whiteSpace:"pre-wrap",overflowWrap:"break-word",tabSize:cs.tabSize,
+    });
+    mirror.textContent = textarea.value.slice(0,textarea.selectionStart);
+    const cursor = document.createElement("span");
+    cursor.textContent = "\u200b";
+    mirror.append(cursor);
+    document.body.append(mirror);
+    const pos = cursor.getBoundingClientRect();
+    const box = mirror.getBoundingClientRect();
+    mirror.remove();
+    const y = rect.top + pos.top - box.top - textarea.scrollTop;
+    const x = rect.left + pos.left - box.left - textarea.scrollLeft;
+    return {left:Math.max(rect.left,Math.min(rect.right-8,x)),
+      top:Math.max(rect.top,Math.min(rect.bottom-12,y)),
+      bottom:Math.max(rect.top+14,Math.min(rect.bottom,y+(parseFloat(cs.lineHeight)||19)))};
+  }
   function locate() {
     if (!menu) return;
-    const rect = textarea.getBoundingClientRect();
-    // Textarea has no DOM Range. Position near its typing area, inside the
-    // visible viewport (not behind the bottom edge of the floating dialog).
-    const width = Math.min(370,window.innerWidth-24);
-    const expectedHeight = Math.min(430,menu.offsetHeight||330);
-    const bottom = Math.min(window.innerHeight-12,rect.bottom);
-    const top = bottom + expectedHeight + 8 < window.innerHeight
-      ? bottom + 6 : Math.max(8,bottom-expectedHeight-8);
-    menu.style.left=Math.round(Math.min(window.innerWidth-width-8,rect.left+16))+"px";
+    const caret = caretRect();
+    const width=Math.min(370,window.innerWidth-24);
+    const height=Math.min(430,menu.offsetHeight||330);
+    const below=caret.bottom+height+8<window.innerHeight;
+    const top=below?caret.bottom+5:Math.max(8,caret.top-height-6);
+    menu.style.left=Math.round(Math.min(window.innerWidth-width-8,caret.left))+"px";
     menu.style.top=Math.round(top)+"px";
   }
   function update() {
@@ -243,18 +270,22 @@ export function attachPreviewPromptMenus(textarea, {getAssets, onChange} = {}) {
   const onCompositionEnd=()=>{composing=false;queueMicrotask(update);};
   const onCompositionStart=()=>{composing=true;close();};
   const onKeyUp=event=>{if (!["ArrowDown","ArrowUp","Enter","Tab","Escape"].includes(event.key))update();};
+  const stopCanvasKeys=event=>event.stopPropagation();
   textarea.addEventListener("keydown",keydown);
-  textarea.addEventListener("keydown",event=>event.stopPropagation());
+  textarea.addEventListener("keydown",stopCanvasKeys);
   textarea.addEventListener("keyup",onKeyUp);
   textarea.addEventListener("input",onInput);
+  textarea.addEventListener("scroll",locate,{passive:true});
   textarea.addEventListener("compositionstart",onCompositionStart);
   textarea.addEventListener("compositionend",onCompositionEnd);
   document.addEventListener("pointerdown",outside,true);
   function dispose() {
     if(disposed)return;disposed=true;close();
     textarea.removeEventListener("keydown",keydown);
+    textarea.removeEventListener("keydown",stopCanvasKeys);
     textarea.removeEventListener("keyup",onKeyUp);
     textarea.removeEventListener("input",onInput);
+    textarea.removeEventListener("scroll",locate);
     textarea.removeEventListener("compositionstart",onCompositionStart);
     textarea.removeEventListener("compositionend",onCompositionEnd);
     document.removeEventListener("pointerdown",outside,true);
