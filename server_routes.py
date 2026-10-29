@@ -91,6 +91,60 @@ async def terrydirector_selflift_checkpoint_status(request: web.Request) -> web.
     )
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks")
+async def terrydirector_selflift_tasks(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import list_tasks
+    return web.json_response({"tasks": list_tasks()}, headers={"Cache-Control": "no-store"})
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/media/{kind}")
+async def terrydirector_selflift_task_media(request: web.Request) -> web.StreamResponse:
+    from .director_selflift_task_store import media_path
+    try:
+        path = media_path(request.match_info["checkpoint_id"], request.match_info["kind"])
+    except (FileNotFoundError, ValueError, OSError):
+        raise web.HTTPNotFound()
+    return web.FileResponse(path, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/workflow")
+async def terrydirector_selflift_task_workflow(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import load_metadata
+    try:
+        metadata = load_metadata(request.match_info["checkpoint_id"])
+    except (FileNotFoundError, ValueError, OSError):
+        raise web.HTTPNotFound()
+    workflow = metadata.get("workflow")
+    if not isinstance(workflow, dict):
+        return web.json_response({"error": "该任务未保存工作流快照"}, status=404)
+    return web.json_response({"workflow": workflow, "overrides": metadata.get("overrides", [])})
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
+async def terrydirector_selflift_task_metadata(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import save_metadata
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("任务配置必须是 JSON 对象")
+        save_metadata(request.match_info["checkpoint_id"], data)
+    except (FileNotFoundError, OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True})
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/sampling-preview")
+async def terrydirector_selflift_sampling_preview(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import save_sampling_preview
+    mime = str(request.headers.get("Content-Type", "")).split(";")[0].strip()
+    try:
+        raw = await request.content.read(48 * 1024 * 1024 + 1)
+        filename = save_sampling_preview(request.match_info["checkpoint_id"], mime, raw)
+    except (FileNotFoundError, OSError, ValueError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "filename": filename})
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/input-files")
 async def terrydirector_input_files(request: web.Request) -> web.Response:
     query = str(request.query.get("q") or "").strip().lower()
