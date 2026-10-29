@@ -50,7 +50,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 
 ### 分阶段 SelfLift 示例工作流
 
-推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；先运行低清审片，确认后再续采高清。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
+推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
 
 ## 怎样连接
 
