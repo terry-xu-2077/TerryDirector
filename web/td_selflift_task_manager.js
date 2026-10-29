@@ -2,7 +2,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { queueManagedSelfLift } from "./td_selflift_pause_resume.js";
-import { attachPreviewPromptMenus, closePreviewPromptMenu } from "./td_preview_prompt_menus.js";
+import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
@@ -140,6 +140,15 @@ function styles() {
  color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:14px 15px;
  box-sizing:border-box;white-space:pre-wrap;overflow:auto;tab-size:4}
 .tdm-create .tdm-prompt-editor:focus{outline:none;border-color:#6394d1}
+.tdm-create .tdm-h3-rich-editor{white-space:pre-wrap;overflow-wrap:anywhere;cursor:text;outline:none}
+.tdm-create .tdm-h3-rich-editor:empty:before{content:attr(data-placeholder);color:#788391;pointer-events:none}
+.tdm-create .tdm-h3-rich-editor .terry-h3-chip{font-family:system-ui,sans-serif}
+.tdm-create .tdm-h3-rich-editor[data-mode="raw"]{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
+ white-space:pre-wrap;tab-size:2}
+.tdm-create .tdm-section-head{display:flex;justify-content:space-between;align-items:center;
+ border-bottom:1px solid #454b55;padding-bottom:8px;margin-bottom:10px}
+.tdm-create .tdm-section-head .tdm-section{margin:0;border:0;padding:0}
+.tdm-create .tdm-mode-btn{padding:5px 10px;font-size:11px}
 .tdm-prompt-hint{display:flex;gap:13px;color:#8c9aaa;font-size:11px;padding:8px 2px 10px;flex:none}
 .tdm-prompt-hint b{color:#b1cce9;font-weight:600}
 .tdm-create-bottom{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(260px,1.5fr);
@@ -179,7 +188,7 @@ function root() {
   return div;
 }
 function open() { root().style.display = "flex"; render(); void Promise.all([refresh(),loadTemplate()]); }
-function close() { closePreviewPromptMenu(); state.creating = false; state.configuring = false; state.assetPicker = null; state.deleting = null; if (state.root) state.root.style.display = "none"; }
+function close() { closePreviewRichEditor(); state.creating = false; state.configuring = false; state.assetPicker = null; state.deleting = null; if (state.root) state.root.style.display = "none"; }
 async function refresh() {
   try {
     const result = await request("/tasks");
@@ -226,7 +235,7 @@ function details(task) {
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
-  closePreviewPromptMenu();
+  closePreviewRichEditor();
   state.root.innerHTML = '<div class="tdm-shell"><header class="tdm-head">' +
     '<h2>TerryDirector · 预演台</h2><span class="tdm-tag">' + state.tasks.length + ' 个任务</span>' +
     '<div class="tdm-space"></div><button class="tdm-btn" data-action="config">配置工作流</button>' +
@@ -377,6 +386,10 @@ async function handleAction(action, data) {
     if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
     if (action === "config") return openConfig();
     if (action === "set-preview") { state.createDraft.previewType = data.kind; return render(); }
+    if (action === "toggle-prompt-mode") {
+      state.createDraft.editorMode = state.createDraft.editorMode === "raw" ? "visual" : "raw";
+      return render();
+    }
     if (action === "cancel-config") { state.configuring = false; return render(); }
     if (action === "save-config") return saveConfig();
     if (action === "use-canvas") return useCurrentWorkflow();
@@ -659,10 +672,12 @@ function createMarkup() {
     '</header>' +
     '<div class="tdm-create-content"><div class="tdm-create-columns">' +
     '<section class="tdm-create-left">' +
-    '<div class="tdm-section">提示词</div>' +
-    '<div class="tdm-prompt-wrap"><textarea spellcheck="false" class="tdm-prompt-editor" ' +
-    'data-action="draft-field" data-field="prompt" placeholder="编写镜头描述，@ 引用右侧资产，\\ 或 / 插入 H3 指令…">' +
-    esc(draft.prompt) + '</textarea></div>' +
+    '<div class="tdm-section-head"><div class="tdm-section">提示词</div>' +
+    '<button type="button" class="tdm-btn tdm-mode-btn" data-action="toggle-prompt-mode">' +
+    (draft.editorMode === "raw" ? "切换富文本" : "查看 H3 原文") +
+    '</button></div>' +
+    '<div class="tdm-prompt-wrap"><div contenteditable="true" spellcheck="false" ' +
+    'class="tdm-prompt-editor tdm-h3-rich-editor" data-placeholder="编写镜头描述，@ 引用右侧资产，\\ 或 / 插入 H3 指令…"></div></div>' +
     '<div class="tdm-prompt-hint"><span><b>@</b> 引用资产</span>' +
     '<span><b>\\ 或 /</b> H3 语法 / 运镜</span><span>↑↓ 选择 · Enter 插入</span></div>' +
     '<div class="tdm-create-bottom">' +
@@ -689,15 +704,12 @@ function createMarkup() {
     (state.assetPicker ? assetPickerMarkup() : "");
 }
 function installCreatePromptEditor() {
-  const textarea = state.root?.querySelector(".tdm-prompt-editor");
-  if (!textarea || !state.createDraft) return;
-  attachPreviewPromptMenus(textarea, {
-    getAssets: () => (state.createDraft?.assets || []).map((asset,i) => ({
-      path: asset.value,
-      index: i + 1,
-      name: asset.value?.split(/[\\/]/).pop() || "未设置",
-    })),
-    onChange: text => { if (state.createDraft) state.createDraft.prompt = text; },
+  const editor = state.root?.querySelector(".tdm-h3-rich-editor");
+  if (!editor || !state.createDraft) return;
+  attachPreviewRichEditor(editor,{
+    draft:state.createDraft,
+    mode:state.createDraft.editorMode === "raw" ? "raw" : "visual",
+    onChange:text=>{ if(state.createDraft)state.createDraft.prompt=text; },
   });
 }
 function assetPickerMarkup() {
