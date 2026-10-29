@@ -97,6 +97,7 @@ def list_tasks() -> list[dict]:
                 "pause_node_id": details.get("pause_node_id"),
                 "preview_node_id": details.get("preview_node_id"),
                 "preview_type": details.get("preview_type", "sampling"),
+                "has_workflow": isinstance(details.get("workflow"), dict),
             },
         })
     return rows
