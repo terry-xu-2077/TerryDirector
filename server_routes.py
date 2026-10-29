@@ -186,11 +186,11 @@ async def terrydirector_preview_draft_update(request: web.Request) -> web.Respon
 
 @PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts/{draft_id}/status")
 async def terrydirector_preview_draft_status(request: web.Request) -> web.Response:
-    from .director_preview_draft_store import set_draft_status
+    from .director_preview_draft_store import transition_draft
     try:
         payload = await request.json()
-        return web.json_response(set_draft_status(
-            request.match_info["draft_id"], payload["status"],
+        return web.json_response(transition_draft(
+            request.match_info["draft_id"], payload["action"],
             prompt_id=payload.get("prompt_id"),
             checkpoint_id=payload.get("checkpoint_id"),
             error=payload.get("error")))
