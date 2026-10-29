@@ -138,6 +138,7 @@ def list_tasks() -> list[dict]:
             draft["target_video_shape"] = item.get("target_video_shape")
             draft["transition_step"] = item.get("transition_step")
             draft["metadata"]["has_workflow"] = True
+            draft["metadata"]["preview_error"] = details.get("preview_error")
             continue
         rows.append({
             "id": cid, "kind": "checkpoint", "status": details.get("lifecycle_status", "low_complete"),
@@ -156,6 +157,7 @@ def list_tasks() -> list[dict]:
                 "pause_node_id": details.get("pause_node_id"),
                 "preview_node_id": details.get("preview_node_id"),
                 "preview_type": details.get("preview_type", "sampling"),
+                "preview_error": details.get("preview_error"),
                 "has_workflow": isinstance(details.get("workflow"), dict) and
                                 isinstance(details.get("api_prompt"), dict),
             },
@@ -171,7 +173,7 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
                "highres_target", "decoded_target", "seed_min", "seed_max", "draft_id",
                "duration_seconds", "highres_megapixels",
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
-               "high_started_at", "high_finished_at", "error"}
+               "high_started_at", "high_finished_at", "error", "preview_error"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
