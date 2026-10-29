@@ -22,13 +22,13 @@ assert.ok(html.includes("controls loop playsinline preload"));
 assert.ok(html.includes('data-action="toggle-preview-playback"'));
 
 // This test directly exercises the actual playback helper without a browser.
-let plays=0,pauses=0,shown="";
+let plays=0,pauses=0,lastLabel=null;
 const video={
   paused:true,error:null,
   async play(){plays++;this.paused=false;},
   pause(){pauses++;this.paused=true;},
 };
-const host={querySelector(){return null;},appendChild(node){shown=node.textContent;}};
+const host={querySelector(){return lastLabel;},appendChild(node){lastLabel=node;}};
 const state={root:{querySelector(selector){
   if(selector==="[data-live-preview-host] video")return video;
   if(selector==="[data-live-preview-host]")return host;
@@ -47,7 +47,7 @@ assert.equal(pauses,1);
 assert.equal(video.paused,true);
 video.play=async()=>{throw Error("MediaError: unsupported codec");};
 await assert.rejects(()=>helpers.togglePreviewPlayback(),/MediaError/);
-assert.match(shown,/MediaError/);
+assert.match(lastLabel.textContent,/MediaError/);
 
 const render=section("function render() {","function showDeleteConfirmation() {");
 assert.ok(render.includes("replacement.replaceWith(oldPlayer)"));
