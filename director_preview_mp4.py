@@ -61,7 +61,7 @@ def is_fragmented_mp4(data: bytes) -> bool:
     return b"moof" in set(_atoms(data))
 
 
-def _run(cmd: list[str], *, timeout: int = 90) -> None:
+def _run(cmd: list[str], *, timeout: int = 90) -> bytes:
     try:
         done = subprocess.run(
             cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -74,6 +74,7 @@ def _run(cmd: list[str], *, timeout: int = 90) -> None:
     if done.returncode:
         detail = done.stderr.decode("utf-8", errors="replace").strip()
         raise ValueError("FFmpeg 处理失败：" + detail[-_MAX_ERROR_CHARS:])
+    return done.stdout
 
 
 def _verify_video(path: Path, executable: str) -> None:
@@ -81,11 +82,13 @@ def _verify_video(path: Path, executable: str) -> None:
         raise ValueError("生成的视频文件为空或过短")
     # Decode *all* frames. Header-only checks can accept broken/truncated fMP4
     # containing a valid poster frame but no playable video.
-    _run([
+    frame_hashes = _run([
         executable, "-hide_banner", "-nostdin", "-loglevel", "error",
         "-xerror", "-i", str(path),
-        "-map", "0:v:0", "-an", "-f", "null", "-",
+        "-map", "0:v:0", "-an", "-f", "framemd5", "-",
     ])
+    if not any(row and not row.startswith(b"#") for row in frame_hashes.splitlines()):
+        raise ValueError("MP4 没有可解码的视频帧")
     raw = path.read_bytes()
     atoms = set(_atoms(raw))
     if b"ftyp" not in atoms or b"moov" not in atoms or b"mdat" not in atoms:
