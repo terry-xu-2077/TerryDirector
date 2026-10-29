@@ -7,8 +7,9 @@ const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
 const URL_BASE = "/terrydirector/api/selflift";
 const state = {
-  tasks: [], selected: new Set(), focused: null, preview: "decoded",
-  busy: false, root: null, creating: false, deleting: null, inputs: [], inputFiles: [],
+  tasks: [], selected: new Set(), focused: null, preview: "sampling",
+  busy: false, root: null, creating: false, configuring: false, deleting: null,
+  template: null, configDraft: null, createDraft: null, assetPicker: null, inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
 };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c =>
@@ -87,8 +88,8 @@ function styles() {
 .tdm-no-media{height:100%;display:grid;place-items:center;color:#78818f;text-align:center;padding:20px}
 .tdm-detail{font-size:12px;color:#a7afbb;line-height:1.9}.tdm-actions{display:flex;gap:8px;flex-wrap:wrap}
 .tdm-foot{padding:12px 20px;border-top:1px solid #30343b;display:flex;align-items:center;gap:12px}
-.tdm-dialog{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.64)}
-.tdm-form{width:min(670px,87vw);max-height:84vh;overflow:auto;background:#202329;border:1px solid #454b55;
+.tdm-dialog{position:fixed;inset:0;z-index:100030;display:grid;place-items:center;background:rgba(0,0,0,.76);padding:20px;box-sizing:border-box}
+.tdm-form{width:min(740px,92vw);max-height:calc(100vh - 48px);overflow:auto;overscroll-behavior:contain;background:#202329;border:1px solid #454b55;
  border-radius:12px;padding:22px;box-shadow:0 25px 90px #000c}
 .tdm-form h2{margin:0 0 16px;font-size:17px}.tdm-field{display:flex;flex-direction:column;gap:6px;margin:10px 0}
 .tdm-field label{font-size:12px;color:#aeb6c3}.tdm-field input,.tdm-field select,.tdm-field textarea{
@@ -96,6 +97,25 @@ function styles() {
  width:100%;box-sizing:border-box}.tdm-field textarea{min-height:90px;resize:vertical}
 .tdm-section{margin:18px 0 8px;padding:9px 0;border-bottom:1px solid #454b55;color:#a8c6ec;font-weight:650}
 .tdm-form-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:17px}
+.tdm-assets{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:8px}
+.tdm-asset{border:1px solid #434a54;background:#1b1e24;border-radius:7px;cursor:pointer;padding:5px;
+ text-align:left;color:#cdd5e0;min-width:0;position:relative}
+.tdm-asset:hover{border-color:#6399d5;background:#272d36}
+.tdm-asset img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:4px;background:#101319}
+.tdm-asset .tdm-noimg{display:grid;place-items:center;width:100%;aspect-ratio:4/3;background:#151920;border-radius:4px;color:#8c96a5}
+.tdm-asset label{display:block;margin:5px 2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;cursor:pointer}
+.tdm-asset .tdm-chip{position:absolute;top:9px;left:9px;background:#13161bc9;color:#cfe4ff;padding:2px 5px;border-radius:4px;font-size:10px}
+.tdm-asset-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:46vh;overflow:auto;padding:8px 0}
+.tdm-pillset{display:flex;gap:7px;margin-top:7px}
+.tdm-pillset button{flex:1;text-align:center;padding:12px 10px;border:1px solid #4c5360;border-radius:8px;
+ background:#242931;color:#b7bfcb;cursor:pointer}
+.tdm-pillset button.on{border-color:#5799ed;background:#263b58;color:#eef6ff}
+.tdm-form input[type=checkbox]{width:auto}
+.tdm-dialog h2{margin:0}
+.tdm-modal-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.tdm-modal-top .tdm-space{flex:1}
+.tdm-modal-sub{font-size:11px;color:#93a0b2;margin:8px 0}
+
 .tdm-blank{color:#87919e;padding:38px 18px;text-align:center}.tdm-select-note{font-size:11px;color:#87919e}
 @media(max-width:820px){.tdm-main{grid-template-columns:1fr}.tdm-right{border-top:1px solid #333}
  .tdm-shell{overflow:auto}.tdm-card{grid-template-columns:24px 105px 1fr}.tdm-thumb{width:105px;height:64px}}
@@ -117,8 +137,8 @@ function root() {
   state.root = div;
   return div;
 }
-function open() { root().style.display = "flex"; render(); void refresh(); }
-function close() { state.creating = false; state.deleting = null; if (state.root) state.root.style.display = "none"; }
+function open() { root().style.display = "flex"; render(); void Promise.all([refresh(),loadTemplate()]); }
+function close() { state.creating = false; state.configuring = false; state.assetPicker = null; state.deleting = null; if (state.root) state.root.style.display = "none"; }
 async function refresh() {
   try {
     const result = await request("/tasks");
@@ -140,7 +160,7 @@ function thumb(task) {
 }
 function details(task) {
   if (!task) return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
-  const kind = state.preview, file = task.media[kind];
+  const kind = task.media[state.preview] ? state.preview : (task.media.sampling ? "sampling" : "decoded"), file = task.media[kind];
   const media = !file ? '<div class="tdm-player tdm-no-media">暂无' +
     (kind === "decoded" ? "VAE 解码" : "TAEH3 采样") + '预览</div>'
     : file.endsWith(".mp4")
@@ -164,7 +184,8 @@ function render() {
   const task = selectedTask();
   state.root.innerHTML = '<div class="tdm-shell"><header class="tdm-head">' +
     '<h2>TerryDirector · 预演台</h2><span class="tdm-tag">' + state.tasks.length + ' 个任务</span>' +
-    '<div class="tdm-space"></div><button class="tdm-btn primary" data-action="create">＋ 创建预演任务</button>' +
+    '<div class="tdm-space"></div><button class="tdm-btn" data-action="config">配置工作流</button>' +
+    '<button class="tdm-btn primary" data-action="create">＋ 新建预演</button>' +
     '<button class="tdm-btn" data-action="refresh">刷新</button><button class="tdm-btn close" data-action="close">×</button></header>' +
     '<div class="tdm-main"><section class="tdm-left"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
@@ -189,6 +210,7 @@ function render() {
     (!state.selected.size || state.busy ? "disabled" : "") +
     '>批量高清续采 · ' + state.selected.size + '</button></footer></div>' +
     (state.creating ? createMarkup() : "") +
+    (state.configuring ? configMarkup() : "") +
     (state.deleting ? deleteMarkup() : "");
   bindControls();
 }
