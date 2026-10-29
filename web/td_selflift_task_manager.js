@@ -143,6 +143,8 @@ function styles() {
 .tdm-create .tdm-h3-rich-editor{white-space:pre-wrap;overflow-wrap:anywhere;cursor:text;outline:none}
 .tdm-create .tdm-h3-rich-editor:empty:before{content:attr(data-placeholder);color:#788391;pointer-events:none}
 .tdm-create .tdm-h3-rich-editor .terry-h3-chip{font-family:system-ui,sans-serif}
+/* Full TerryXu chip pickers are portaled to <body>: place above the modal. */
+.terry-h3-number-picker{z-index:2147483000!important}
 .tdm-create .tdm-h3-rich-editor[data-mode="raw"]{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;
  white-space:pre-wrap;tab-size:2}
 .tdm-create .tdm-section-head{display:flex;justify-content:space-between;align-items:center;
