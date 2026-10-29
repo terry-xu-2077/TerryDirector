@@ -1,3 +1,4 @@
+import { applyTaskVideoParameters } from "./td_preview_task_parameters.js";
 /**
  * Pure Preview Stage pipeline compiler.
  * A configured UI workflow and its ComfyUI API prompt are snapshots. Each
@@ -193,6 +194,8 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
   const pause=apiNode(api,template.pause_node_id);
   if(!pause || pause.class_type!==PAUSE_TYPE)throw Error("已配置的 SelfLift 节点丢失");
   applyPreviewInputs(api,overrides);
+  if(template.duration_seconds!=null && template.highres_megapixels!=null)
+    applyTaskVideoParameters(api,template);
   pause.inputs.mode=mode==="pause"?"暂停并保存":"继续高清";
   pause.inputs.checkpoint_id=mode==="pause"?"":checkpointId;
   const target = mode==="continue" ? template.highres_target : template.pause_target;
