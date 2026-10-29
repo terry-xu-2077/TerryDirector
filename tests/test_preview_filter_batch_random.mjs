@@ -20,7 +20,7 @@ const {randomPreviewSeed,validatePreviewSeed}=await import(
 const state={tasks:[],statusFilter:"all",selected:new Set(),busy:false,focused:null};
 const fns=new Function("state","randomPreviewSeed",
   section("const STATUS_NAMES=","const formatTime=")+
-  ";return {STATUS_NAMES,visibleTasks,selectedTaskRows,batchActionInfo,randomizeNewTaskSeed};")
+  ";return {STATUS_NAMES,STATUS_ICONS,STATUS_FILTER_OPTIONS,visibleTasks,selectedTaskRows,batchActionInfo,randomizeNewTaskSeed};")
  (state,randomPreviewSeed);
 
 const rows=[
@@ -41,6 +41,8 @@ for(const [machine,label] of Object.entries({
  high_running:"高清生成中",high_complete:"高清完成",
 })){
  assert.equal(fns.STATUS_NAMES[machine],label);
+ assert.ok(fns.STATUS_ICONS[machine],machine+" should have an icon");
+ assert.ok(fns.STATUS_FILTER_OPTIONS.some(x=>x.value===machine && x.icon===fns.STATUS_ICONS[machine]));
  state.statusFilter=machine;
  assert.deepEqual(fns.visibleTasks().map(x=>x.id),
    rows.filter(x=>x.status===machine).map(x=>x.id));
@@ -84,6 +86,9 @@ assert.ok(edit.includes("state.createDraft.seed=row.seed;"));
 assert.ok(!edit.includes("randomizeNewTaskSeed("));
 assert.ok(code.includes('new Set(visibleTasks().map(t => t.id))'));
 assert.ok(code.includes('data-action="status-filter"'));
+assert.ok(code.includes('esc(option.icon+\'  \'+option.label)'));
+assert.ok(code.includes('class="tdm-status-icon"'));
+assert.equal(new Set(Object.values(fns.STATUS_ICONS)).size,6);
 
 const jobs=[];
 let refreshes=0;
