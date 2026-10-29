@@ -431,9 +431,9 @@ async function handleAction(action, data) {
     if (action === "focus") { state.focused = data.id; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
-    if (action === "config") return openConfig();
-    if (action === "new-config") return loadConfigDraft(null);
-    if (action === "select-config") return loadConfigDraft(data.id);
+    if (action === "config") return await openConfig();
+    if (action === "new-config") return await loadConfigDraft(null);
+    if (action === "select-config") return await loadConfigDraft(data.id);
     if (action === "default-config") {
       await request("/templates/"+encodeURIComponent(state.configSelectedId)+"/default",{method:"POST"});
       await loadTemplate();
@@ -454,7 +454,7 @@ async function handleAction(action, data) {
       if(!id || !window.confirm("永久删除这份预演工作流配置？已生成的预演任务及检查点不会受影响。"))return;
       await request("/templates/"+encodeURIComponent(id),{method:"DELETE"});
       await loadTemplate();
-      return loadConfigDraft(state.defaultTemplateId);
+      return await loadConfigDraft(state.defaultTemplateId);
     }
     if (action === "random-seed") {
       if (!state.createDraft) return;
@@ -470,7 +470,7 @@ async function handleAction(action, data) {
       return render();
     }
     if (action === "cancel-config") { state.configuring = false; return render(); }
-    if (action === "save-config") return saveConfig();
+    if (action === "save-config") return await saveConfig();
     if (action === "use-canvas") return useCurrentWorkflow();
     if (action === "open-assets") { state.assetPicker = { index: Number(data.index), search: "" }; return render(); }
     if (action === "close-assets") { state.assetPicker = null; return render(); }
@@ -478,7 +478,7 @@ async function handleAction(action, data) {
     if (action === "cancel-delete") { state.deleting = null; return render(); }
     if (action === "delete") return showDeleteConfirmation();
     if (action === "confirm-delete") return deleteSelectedTasks();
-    if (action === "create") return openCreate();
+    if (action === "create") return await openCreate();
     if (action === "duplicate") {
       await loadInputFiles();
       state.creating = true;
@@ -486,11 +486,11 @@ async function handleAction(action, data) {
     }
     if (action === "import-workflow") return importWorkflow();
     if (action === "upload-image") return uploadImage(Number(data.patch));
-    if (action === "submit") return submitCreate();
+    if (action === "submit") return await submitCreate();
     if (action === "load") return loadSavedWorkflow(state.focused);
-    if (action === "rerun") return queueFromCheckpoint(state.focused, "pause");
-    if (action === "highres") return queueFromCheckpoint(state.focused, "continue");
-    if (action === "batch") return batchHighres();
+    if (action === "rerun") return await queueFromCheckpoint(state.focused, "pause");
+    if (action === "highres") return await queueFromCheckpoint(state.focused, "continue");
+    if (action === "batch") return await batchHighres();
   } catch (e) {
     if(state.configuring) {
       state.configError=String(e?.message||e);
