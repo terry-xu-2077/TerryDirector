@@ -1,10 +1,10 @@
 /** TerryDirector SelfLift pause/continue per-branch action.
  *
  * The big action belongs to this exact node, NOT the global ComfyUI Queue:
- * - Blue/start: target only this checkpoint boundary; run low-res then block
- *   any downstream high-res work. A successful saved checkpoint turns green.
- * - Lemon/play: target only one downstream video output of this branch; lazy
- *   low-res inputs stay untouched, and SelfLift resumes from the checkpoint.
+ * - Blue/start: target the checkpoint boundary and any connected low-res video
+ *   saver, without running high-res. A saved checkpoint turns green.
+ * - Lemon/play: target only one downstream high-res saver; lazy low-res inputs
+ *   stay untouched, and SelfLift resumes from the checkpoint.
  * Other parallel video branches are excluded by partialExecutionTargets.
  */
 import { app } from "/scripts/app.js";
@@ -38,7 +38,7 @@ function bindPartialPromptTracking() {
     try {
       const result = await original(number, data, {
         ...(options || {}),
-        partialExecutionTargets: [req.targetId],
+        partialExecutionTargets: req.targetIds || [req.targetId],
       });
       if (req.node.__tdSelfLiftRun === req.run) {
         if (result?.prompt_id) {
@@ -172,7 +172,8 @@ function refresh(node) {
     ico.innerHTML = blue ? ARROW_ICON
       : (busy && run?.mode === "continue" ? PLAY_ICON : PAUSED_ICON);
     label.textContent = busy
-      ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "低清生成中…" : "高清续采中…")
+      ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "低清生成中…" :
+        run.mode === "saving" ? "低清视频保存中…" : "高清续采中…")
       : (blue ? "生成低清" : "继续高清");
     status.textContent = run?.error || (ready
       ? (name ? name.slice(0, 18) + " · " : "") + "检查点 " + id.slice(0, 8) + " 已保存"
@@ -222,6 +223,57 @@ function findDownstreamOutput(node) {
   return candidates[0].item;
 }
 
+// Select only a low-res video saver reached from SamplerCustom's denoised x0
+// output. Do not cross the pause checkpoint into the high-res route.
+// Missing saver is fine: existing checkpoint-only graphs keep working.
+function findLowresOutput(node) {
+  const graph = node.graph || app.graph;
+  const cleanInput = node.inputs?.find(input => input.name === "low_clean");
+  const sourceLink = cleanInput?.link == null ? null : graph?.links?.[cleanInput.link];
+  if (!sourceLink) return null;
+  const sampler = graph?.getNodeById?.(sourceLink.origin_id) ||
+    graph?._nodes?.find(item => String(item.id) === String(sourceLink.origin_id));
+  const sourceOutput = sampler?.outputs?.[sourceLink.origin_slot];
+  if (!sourceOutput) return null;
+
+  const queue = [];
+  for (const linkId of sourceOutput.links || []) {
+    const link = graph?.links?.[linkId];
+    if (!link || String(link.origin_id) !== String(sampler.id) ||
+        Number(link.origin_slot) !== Number(sourceLink.origin_slot)) continue;
+    const next = graph?.getNodeById?.(link.target_id) ||
+      graph?._nodes?.find(item => String(item.id) === String(link.target_id));
+    if (next && next !== node) queue.push(next);
+  }
+
+  const visited = new Set([String(node.id)]);
+  const savers = [];
+  while (queue.length) {
+    const item = queue.shift();
+    if (!item || visited.has(String(item.id))) continue;
+    visited.add(String(item.id));
+    const type = item.comfyClass || item.type;
+    if (type === CLASS_NAME || type === "TerryDirectorSelfLiftHighres") continue;
+    if (OUTPUT_TYPES.has(type)) {
+      if (PRIMARY_OUTPUT_TYPES.has(type)) savers.push(item);
+      continue;
+    }
+    for (const output of item.outputs || []) {
+      for (const linkId of output.links || []) {
+        const link = graph?.links?.[linkId];
+        if (!link) continue;
+        const next = graph?.getNodeById?.(link.target_id) ||
+          graph?._nodes?.find(n => String(n.id) === String(link.target_id));
+        if (next && !visited.has(String(next.id))) queue.push(next);
+      }
+    }
+  }
+  if (savers.length > 1) {
+    throw new Error("低清 denoised_output 连到了多个视频保存节点，请只保留一个低清保存终点");
+  }
+  return savers[0] || null;
+}
+
 function showError(error) {
   const message = error?.message || String(error);
   console.error("[TerryDirector SelfLift]", error);
@@ -246,16 +298,20 @@ async function runBranch(node) {
     if (UUID_RE.test(checkpointId(node))) await checkCheckpoint(node);
     const ready = hasCheckpoint(node);
     const target = ready ? findDownstreamOutput(node) : node;
+    const lowresSaver = ready ? null : findLowresOutput(node);
+    const targetIds = [String(target.id)];
+    if (lowresSaver) targetIds.push(String(lowresSaver.id));
     run.mode = ready ? "continue" : "pause";
+    run.previewOutputId = lowresSaver ? String(lowresSaver.id) : null;
 
     // Set the serialized mode before ComfyUI builds the prompt.
     setWidget(node, "mode", ready ? "继续高清" : "暂停并保存");
-    request = { node, run, targetId: String(target.id) };
+    request = { node, run, targetId: targetIds[0], targetIds };
     pendingBranchSubmissions.push(request);
     refresh(node);
-    // This is the same partial-execution API TerryDirector Looper uses.
-    // The interceptor binds the returned prompt_id to this exact node.
-    await app.queuePrompt(0, 1, [request.targetId]);
+    // Execute checkpoint and low-res video saver together; continue never
+    // includes the low-res path.
+    await app.queuePrompt(0, 1, targetIds);
   } catch (error) {
     if (request) {
       const i = pendingBranchSubmissions.indexOf(request);
@@ -371,7 +427,12 @@ function bindExecutionResult() {
       mode: String(result.mode || ""),
     };
     if (node.__tdSelfLiftRun?.mode === "pause" && result.mode === "paused") {
-      node.__tdSelfLiftRun = null;
+      // The video saver can still be encoding after checkpoint write succeeds.
+      if (node.__tdSelfLiftRun.previewOutputId) {
+        node.__tdSelfLiftRun.mode = "saving";
+      } else {
+        node.__tdSelfLiftRun = null;
+      }
     }
     refresh(node);
   });
