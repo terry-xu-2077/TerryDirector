@@ -55,27 +55,63 @@ export function resolvePreviewSeedBounds(workflow,binding,apiPrompt={},nodeDefin
     seedFields.push({node_id:id(nodeId),class_type:type,input:name,range:schema || null});
   };
   constrainField(source.id,sourceType,binding.widget_name,runtimeNode);
-  // Source output may feed both the lowres sampler and the SelfLift
-  // checkpoint's own seed input. Intersect every linked consumer.
-  const links=workflow.links || [];
-  const pending=[id(source.id)],visited=new Set();
-  while(pending.length) {
-    const current=pending.shift();
-    if(visited.has(current))continue;
-    visited.add(current);
-    for(const link of links) {
-      if(id(link[1])!==current)continue;
+  // Follow explicit ComfyUI edges *and* well-defined virtual routing.
+  // TerryXu WirelessBus and Set/Get use matching channels rather than
+  // ordinary graph links, so a plain BFS over node IDs misses both consumers.
+  const links=workflow.links||[];
+  const list=[...nodes.values()];
+  const nodeChannel=n=>n.properties?.terry_wireless_bus_channel ||
+    n.widgets_values_named?.["名称"] || n.widgets_values_named?.["选择总线"] ||
+    (Array.isArray(n.widgets_values)?n.widgets_values[0]:null);
+  const setGetKey=n=>n.widgets_values_named?.Constant ||
+    (Array.isArray(n.widgets_values)?n.widgets_values[0]:null) ||
+    n.title?.replace(/^(Set|Get)_/,"");
+  const pending=[],visited=new Set();
+  const addOutputs=node=>{
+    (node?.outputs||[]).forEach((_,slot)=>pending.push({nodeId:id(node.id),slot}));
+  };
+  addOutputs(source);
+  while(pending.length){
+    const {nodeId,slot}=pending.shift();
+    const key=nodeId+":"+slot;
+    if(visited.has(key))continue;
+    visited.add(key);
+    for(const link of links){
+      if(id(link[1])!==nodeId || Number(link[2])!==slot)continue;
       const dest=nodes.get(id(link[3]));
       if(!dest)continue;
       const input=dest.inputs?.[link[4]];
       if(!input)continue;
       const type=String(apiPrompt[id(dest.id)]?.class_type || dest.type || "");
-      if(isSeedField(input.name)) {
+      if(isSeedField(input.name)){
         constrainField(dest.id,type,input.name,null);
-      } else if ((dest.outputs||[]).length && !/sampler|selflift/i.test(type)) {
-        // Permits a switch, bus or relay between Seed and actual sampler.
-        pending.push(id(dest.id));
+        continue;
       }
+      if(dest.type==="SetNode"){
+        const channel=setGetKey(dest);
+        if(channel){
+          for(const candidate of list){
+            if(candidate.type==="GetNode" && setGetKey(candidate)===channel)
+              addOutputs(candidate);
+          }
+        }
+        continue;
+      }
+      if(dest.type==="TerryXuWirelessBusPack"){
+        const busName=nodeChannel(dest);
+        const lane=dest.properties?.terry_wire_bus_lanes?.[link[4]];
+        for(const receiver of list){
+          if(receiver.type!=="TerryXuWirelessBusUnpack" || nodeChannel(receiver)!==busName)
+            continue;
+          const laneSlot=lane?.id
+            ? receiver.properties?.terry_wire_bus_lane_ids?.indexOf(lane.id)
+            : receiver.outputs?.findIndex(x=>x.name===input.name);
+          if(laneSlot>=0 && receiver.outputs?.[laneSlot])
+            pending.push({nodeId:id(receiver.id),slot:laneSlot});
+        }
+        continue;
+      }
+      if(!/sampler|selflift/i.test(type))addOutputs(dest);
     }
   }
   if(!seedFields.some(field=>/sampler/i.test(field.class_type))) {
