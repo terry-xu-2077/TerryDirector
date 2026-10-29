@@ -641,6 +641,21 @@ async function loadConfigDraft(templateId) {
     state.configDraft=structuredClone(result.template);
   }
   state.configError="";
+  // Old versions could persist ModelPreviewOverrideKJ.preview as a prompt
+  // source. Normalize only when the backward H3 trace is unambiguous.
+  const promptCandidates=traceH3PromptInputs(state.configDraft.workflow).fields;
+  const selected=state.configDraft.prompt_binding;
+  if(!promptCandidates.some(p=>bindingKey(p)===bindingKey(selected||{}))) {
+    if(promptCandidates.length===1) {
+      state.configDraft.prompt_binding={
+        node_id:promptCandidates[0].node_id,widget_name:promptCandidates[0].widget_name,
+      };
+      state.configError="旧配置的提示词映射无效，已沿 H3 连线找到正确的文本源，请重新保存配置。";
+    } else {
+      state.configDraft.prompt_binding=null;
+      state.configError="旧配置的提示词映射无效，无法唯一确定 H3 文本源，请先修正工作流连线。";
+    }
+  }
   render();
 }
 async function openConfig() {
@@ -672,6 +687,8 @@ function configMarkup() {
   function selectBinding(key,options) {
     const currentValue=bindingKey(cfg?.[key]||{});
     return '<select data-action="config-field" data-field="'+key+'">'+
+      (!options.some(p=>bindingKey(p)===currentValue)?
+        '<option value="" selected>请选择有效的上游输入</option>':'')+
       (options.length?'':'<option value="">未检测到可编辑输入</option>')+
       options.map(item=>'<option value="'+esc(bindingKey(item))+'" '+
         (currentValue===bindingKey(item)?'selected':'')+'>'+esc(item.label)+'</option>').join("")+
