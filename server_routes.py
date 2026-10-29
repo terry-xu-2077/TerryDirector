@@ -277,7 +277,7 @@ async def terrydirector_selflift_highres_video(request: web.Request) -> web.Resp
         if not node_id or node_id != str(meta.get("highres_target", "")):
             raise ValueError("高清输出节点与任务工作流不一致")
         expected_prompt = meta.get("highres_prompt_id")
-        if expected_prompt and prompt_id != expected_prompt:
+        if not isinstance(expected_prompt, str) or not expected_prompt or prompt_id != expected_prompt:
             raise ValueError("高清输出不属于当前任务")
         video = validated_video_result(payload.get("video"))
         if video is None:
