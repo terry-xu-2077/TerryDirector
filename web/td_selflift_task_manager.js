@@ -8,6 +8,9 @@ import {
 import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
 import { listPreviewInputCandidates } from "./td_preview_input_candidates.js";
 import {
+  rememberSamplingPreview,finalSamplingCandidates,previewFallbackWarning,
+} from "./td_preview_candidate_buffer.js";
+import {
   progressFromEvent,progressFromState,recordSamplerProgress,formatSamplingProgress,
 } from "./td_preview_sampling_progress.js";
 import {
@@ -670,7 +673,9 @@ function details(task) {
         : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
   const previewDiagnostic=kind==="sampling" && !file && task.metadata?.preview_error
     ? '<div class="tdm-warning">TAEH3 预览未保存：'+esc(task.metadata.preview_error)+'</div>'
-    : '';
+    : kind==="sampling" && file && task.metadata?.preview_warning
+      ? '<div class="tdm-warning">'+esc(task.metadata.preview_warning)+'</div>'
+      : '';
   const timing='<div class="tdm-timing"><div>任务创建：<strong>'+formatTime(task.created_at)+'</strong></div>'+
     '<div>低清生成：'+formatTime(task.low_started_at)+' → '+formatTime(task.low_finished_at)+
     '　用时 '+duration(task.low_started_at,task.low_finished_at)+'</div>'+
@@ -1837,42 +1842,71 @@ async function persistJob(job) {
   void refresh();
 }
 async function persistPreview(job) {
-  // One final upload per job; do not write every sampling iteration.
+  // Each KJ step is its own encoded clip. Try newest first; only a verified
+  // candidate ever reaches sampling_preview.mp4. A broken last H.264 packet
+  // must not prevent using a decodable earlier step.
   if(job?.previewPersistPromise)return job.previewPersistPromise;
-  if(job?.previewSaved || job?.preview_type==="decoded" ||
-     !job?.checkpointId || !job?.preview?.image)return false;
-  const p=job.preview;
-  if(p.image.length > 48*1024*1024*4/3){
-    job.previewSaveError="最后一步预览数据超过 48 MB 上传上限";
-    return false;
-  }
+  if(!job || job.previewSaved || job.preview_type==="decoded" ||
+     !job.checkpointId)return false;
+  const candidates=finalSamplingCandidates(job);
+  if(!candidates.length)return false;
   const upload=(async()=>{
-    const raw=atob(p.image);
-    const bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));
     const duration=Number(job.duration_seconds);
     const query=Number.isInteger(duration) && duration>=4 && duration<=20
       ? "?duration="+encodeURIComponent(duration) : "";
-    const response=await api.fetchApi(
-      URL_BASE+"/tasks/"+encodeURIComponent(job.checkpointId)+"/sampling-preview"+query,{
-        method:"POST",headers:{"Content-Type":p.mime},body:bytes,
-      });
-    if(!response.ok){
-      let reason="TAEH3 最终预览保存失败";
-      try{reason=(await response.json()).error||reason;}catch{/* non-JSON error */}
-      throw Error(reason);
+    const errors=[];
+    for(const p of candidates){
+      try{
+        if(p.image.length>48*1024*1024*4/3)
+          throw Error("本轮预览超过 48 MB 单文件上限");
+        const raw=atob(p.image);
+        const bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));
+        const response=await api.fetchApi(
+          URL_BASE+"/tasks/"+encodeURIComponent(job.checkpointId)+"/sampling-preview"+query,{
+            method:"POST",headers:{"Content-Type":p.mime},body:bytes,
+          });
+        if(!response.ok){
+          let reason="TAEH3 预览保存失败（HTTP "+response.status+"）";
+          try{reason=(await response.json()).error||reason;}catch{/* non-JSON error */}
+          throw Error(reason);
+        }
+        job.previewSaved=true;
+        job.uploadedStep=p.step;
+        job.previewSaveError=null;
+        job.previewSaveWarning=previewFallbackWarning(p,candidates);
+        if(job.previewSaveWarning)
+          console.warn("[TerryDirector 预演台]",job.previewSaveWarning);
+        await recordPreviewSaveResult(job,p,candidates[0].total||null);
+        return true;
+      }catch(error){
+        const reason=String(error?.message||error);
+        console.warn("[TerryDirector 预演台] TAEH3 候选视频解码/保存失败，步骤 "+
+          p.step+":",reason);
+        errors.push("第 "+p.step+" 步："+reason.slice(0,220));
+      }
     }
-    job.previewSaved=true;
-    job.uploadedStep=p.step||1;
-    return true;
+    job.previewSaveError="最近 "+candidates.length+" 轮 TAEH3 预览均无法解码或保存。"+
+      "可能是 KJNodes 的 H.264 数据损坏。"+
+      (errors.length?" "+errors[0]:"");
+    return false;
   })();
   job.previewPersistPromise=upload;
   try{return await upload;}
-  catch(error){
-    job.previewSaveError=String(error?.message||error);
-    console.error("[TerryDirector TAEH3 最终预览保存]",error);
-    return false;
-  }finally{
-    job.previewPersistPromise=null;
+  finally{job.previewPersistPromise=null;}
+}
+async function recordPreviewSaveResult(job,p,latestTotal) {
+  if(!job?.checkpointId)return;
+  try{
+    const url="/tasks/"+encodeURIComponent(job.checkpointId)+"/metadata";
+    const previous=await request(url).catch(()=>({}));
+    await request(url,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({...previous,preview_error:null,
+        preview_warning:job.previewSaveWarning||null,
+        preview_saved_step:p.step,preview_total_steps:latestTotal,
+      })});
+  }catch(error){
+    // The already-validated video exists even if ancillary metadata fails.
+    console.warn("[TerryDirector 预演台] 预览已保存，记录采样步数失败",error);
   }
 }
 async function saveLegacyLifecycle(checkpointId,status,extras={}) {
@@ -1974,7 +2008,8 @@ function bindEvents() {
     if(p.image.length>48*1024*1024*4/3)return;
     const step=Number(p.step)||1, previous=job.preview?.step||0;
     if(step<previous)return; // Ignore delayed/stale packets for this job.
-    job.preview={image:p.image,mime:p.mime,step,total:Number(p.total)||null};
+    if(!rememberSamplingPreview(job,{image:p.image,mime:p.mime,step,
+      total:Number(p.total)||null}))return;
     job.previewReceived=(job.previewReceived||0)+1;
     job.previewReceivedAt=Date.now();
     job.previewVersion=(job.previewVersion||0)+1;
