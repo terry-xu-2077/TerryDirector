@@ -40,7 +40,14 @@ export function listPreviewInputCandidates(workflow, kind) {
       const names=(node.inputs||[]).filter(input => input.widget && input.link == null)
         .map(input => input.widget.name || input.name);
       const i=names.indexOf(field);
-      return i>=0 && Array.isArray(node.widgets_values) ? node.widgets_values[i] : undefined;
+      if (i>=0 && Array.isArray(node.widgets_values)) return node.widgets_values[i];
+      // rgthree Seed serializes its seed as the first widget value and has
+      // no node.inputs slot for it in standard ComfyUI workflow exports.
+      if (kind === "seed" && field === "seed" &&
+          /^(?:SeedNode|Seed \(rgthree\))$/i.test(String(node.type)) &&
+          Array.isArray(node.widgets_values))
+        return node.widgets_values[0];
+      return undefined;
     };
     // One source entry per node: prefer its explicit prompt/seed widget.
     for (const field of fields) {
