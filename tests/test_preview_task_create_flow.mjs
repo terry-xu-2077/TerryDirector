@@ -20,21 +20,26 @@ const state={
    api_prompt:{"13":{class_type:"TerryDirectorSelfLiftPauseResume",inputs:{}}},
    prompt_binding:{node_id:63,widget_name:"prompt"},
    seed_binding:{node_id:77,widget_name:"seed"},
-   assets:[],previewType:"sampling",pause_node_id:13,preview_node_id:5,
+   assets:[],previewType:"sampling",duration_seconds:15,highres_megapixels:0.8,
+   pause_node_id:13,preview_node_id:5,
    pause_target:"13",highres_target:"22",decoded_target:null,
  },
 };
 const compiler=new Function("state","request","refresh","toast","validatePreviewSeed",
-  "structuredClone",create+";return {submitCreate};");
+  "structuredClone","taskVideoFrameCount","PREVIEW_RESOLUTION_OPTIONS",
+  create+";return {submitCreate};");
 const {submitCreate}=compiler(state,async (path,options)=>{
  calls.push({path,method:options?.method,body:JSON.parse(options?.body||"{}")});
  return {id:"draft_"+ "a".repeat(32),status:"low_pending"};
-},async()=>calls.push({refresh:true}),()=>{},v=>Number(v),structuredClone);
+},async()=>calls.push({refresh:true}),()=>{},v=>Number(v),structuredClone,
+ v=>Number(v)*24,[.4,.6,.8,1,1.2,1.5,2,3,4]);
 await submitCreate();
 assert.equal(calls[0].path,"/drafts");
 assert.equal(calls[0].method,"POST");
 assert.equal(calls[0].body.prompt,"Original shot");
 assert.equal(calls[0].body.seed,"12");
+assert.equal(calls[0].body.duration_seconds,15);
+assert.equal(calls[0].body.highres_megapixels,0.8);
 assert.equal(state.focused,"draft_"+ "a".repeat(32));
 assert.equal(state.creating,false);
 assert.ok(!create.slice(0,create.indexOf("async function runDraft(")).includes("submitPreviewJob("));
