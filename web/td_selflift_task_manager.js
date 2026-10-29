@@ -331,9 +331,12 @@ function render() {
       (state.selected.has(t.id) ? "checked" : "") + '>' + thumb(t) +
       '<div><h3>' + esc(t.name || "未命名镜头") + '</h3><div class="tdm-small">' +
       esc((t.created_at || "").replace("T", " ").slice(0, 16)) + '</div>' +
-      '<div class="tdm-small">' + (t.media.decoded ?  "● 解码预演 " : "○ 解码预演 ") +
-      (t.media.sampling ? "● TAEH3" : "○ TAEH3") + '</div></div></div>').join("")
-      : '<div class="tdm-blank">还没有预演任务，点击「创建预演任务」开始。</div>') +
+      '<div>'+statusMarkup(t)+'</div><div class="tdm-small">创建 '+formatTime(t.created_at)+'</div>'+
+      '<div class="tdm-small">'+(t.low_finished_at?'低清完成 '+formatTime(t.low_finished_at):
+        t.low_started_at?'低清开始 '+formatTime(t.low_started_at):'尚未生成')+'</div>'+
+      (t.high_finished_at?'<div class="tdm-small">高清完成 '+formatTime(t.high_finished_at)+'</div>':'')+
+      '</div></div>').join("")
+      : '<div class="tdm-blank">还没有预演任务，点击「新建预演」创建任务，之后手动开始生成。</div>') +
     '</div></section><section class="tdm-right">' + details(task) + '</section></div>' +
     '<footer class="tdm-foot">' +
     '<button class="tdm-btn danger" data-action="delete" ' +
@@ -366,8 +369,8 @@ function deleteMarkup() {
   return '<div class="tdm-dialog"><div class="tdm-form" role="alertdialog" ' +
     'aria-modal="true" aria-label="确认删除预演任务">' +
     '<h2>删除 ' + ids.length + ' 个预演任务？</h2>' +
-    '<div class="tdm-warning">将永久删除所选任务的检查点、Latent、工作流快照及两种预览。' +
-    '删除后无法恢复，也无法再用这些检查点续采高清。</div>' +
+    '<div class="tdm-warning">将永久删除所选任务的配置；已经生成的检查点、Latent 和预览也将被删除。' +
+    '运行中或已排队的任务不可删除。删除后无法恢复。</div>' +
     '<div class="tdm-delete-summary" style="margin-top:13px">' + names +
     (tasks.length > 4 ? ' 等 ' + tasks.length + ' 个任务' : '') + '</div>' +
     (many ? '<div class="tdm-field"><label>为避免大量误删，请输入「删除」</label>' +
@@ -473,7 +476,7 @@ async function handleAction(action, data) {
     if (action === "refresh") return refresh();
     if (action === "focus") { state.focused = data.id; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
-    if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
+    if (action === "cancel-create") { state.creating = false; state.editDraftId = null; state.assetPicker = null; return render(); }
     if (action === "config") return await openConfig();
     if (action === "new-config") return await loadConfigDraft(null);
     if (action === "select-config") return await loadConfigDraft(data.id);
@@ -530,6 +533,8 @@ async function handleAction(action, data) {
     if (action === "import-workflow") return importWorkflow();
     if (action === "upload-image") return uploadImage(Number(data.patch));
     if (action === "submit") return await submitCreate();
+    if (action === "run-draft") return await runDraft(state.focused);
+    if (action === "edit-draft") return await editDraft(state.focused);
     if (action === "load") return loadSavedWorkflow(state.focused);
     if (action === "rerun") return await queueFromCheckpoint(state.focused, "pause");
     if (action === "highres") return await queueFromCheckpoint(state.focused, "continue");
@@ -849,6 +854,7 @@ async function changeCreateSource(_data, source) {
 async function openCreate() {
   await loadInputFiles();
   state.createDraft = null;
+  state.editDraftId = null;
   state.creating = true; state.configuring = false;
   if (state.template) {
     state.createDraft = buildDraft(state.template);
@@ -949,7 +955,8 @@ function createMarkup() {
     '<footer class="tdm-create-foot"><span class="tdm-small">预演独立保存检查点，高清续采不会重跑首阶段。</span>' +
     '<span class="tdm-space"></span>' +
     '<button class="tdm-btn" data-action="cancel-create">取消</button>' +
-    '<button class="tdm-btn primary" data-action="submit">加入预演队列</button></footer>' +
+    '<button class="tdm-btn primary" data-action="submit">'+
+    (state.editDraftId?'保存修改':'创建任务')+'</button></footer>' +
     '</div></div>' +
     (state.assetPicker ? assetPickerMarkup() : "");
 }
