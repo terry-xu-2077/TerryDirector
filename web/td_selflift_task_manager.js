@@ -604,11 +604,16 @@ async function compileConfiguredWorkflow(cfg) {
   }
   const targets=compilePreviewTargets(cfg.workflow,apiPrompt,cfg.pause_node_id);
   const seedRuntime=runtimeGraph.getNodeById?.(Number(cfg.seed_binding.node_id));
-  const bounds=resolvePreviewSeedBounds(cfg.workflow,cfg.seed_binding,seedRuntime);
+  const defResponse=await api.fetchApi("/object_info");
+  if(!defResponse.ok)throw Error("无法读取采样器输入范围，请检查 ComfyUI 节点定义");
+  const nodeDefinitions=await defResponse.json();
+  const bounds=resolvePreviewSeedBounds(cfg.workflow,cfg.seed_binding,
+    apiPrompt,nodeDefinitions,seedRuntime);
   return {
     ...cfg,schema:2,workflow:structuredClone(cfg.workflow),
     api_prompt:apiPrompt, ...targets,
     seed_min:bounds.min,seed_max:bounds.max,
+    seed_consumers:bounds.consumers,
   };
 }
 async function saveConfig() {
