@@ -15,7 +15,7 @@ const state = {
   tasks: [], selected: new Set(), focused: null, preview: "sampling",
   busy: false, root: null, creating: false, configuring: false, deleting: null,
   template: null, templates: [], defaultTemplateId: null, configSelectedId: null,
-  configError: "", configSaving: false, configDraft: null, createDraft: null,
+  configError: "", configSaving: false, configDraft: null, createDraft: null, editDraftId: null,
   assetPicker: null, inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
 };
@@ -88,6 +88,15 @@ function styles() {
 .tdm-thumb{width:128px;height:78px;object-fit:cover;border-radius:5px;background:#101216;border:1px solid #353943}
 .tdm-card h3{margin:0 0 7px;font-size:13px;font-weight:650}.tdm-small{font-size:11px;color:#9299a5;line-height:1.6}
 .tdm-card input[type=checkbox]{accent-color:#5d9eff;width:15px;height:15px}
+.tdm-status{font-weight:600;font-size:11px;padding:3px 7px;border:1px solid #485363;border-radius:5px;
+ display:inline-flex;align-items:center;gap:4px;color:#b9c5d4;margin:2px 0 6px}
+.tdm-status.low_running,.tdm-status.high_running{color:#b6dbff;border-color:#356da4}
+.tdm-status.low_complete,.tdm-status.high_complete{color:#bde8c6;border-color:#467b50}
+.tdm-status.high_pending{color:#e6d1a6;border-color:#756246}
+.tdm-timing{font-size:11px;color:#a5b0be;line-height:1.8}
+.tdm-timing strong{color:#d6dce6;font-weight:500}
+.tdm-detail-pending{padding:18px;background:#11151b;border:1px dashed #414a57;border-radius:8px;
+ color:#a4b1c1;line-height:1.7;min-height:140px}
 .tdm-right{min-width:0;min-height:0;display:flex;flex-direction:column;padding:16px;gap:12px}
 .tdm-tabs{display:flex;gap:5px}.tdm-tabs button{border:1px solid #414650;background:#252830;color:#9ba4b2;
  border-radius:6px;padding:7px 10px;cursor:pointer}.tdm-tabs button.on{background:#344d6e;color:#f2f7ff;border-color:#527cac}
@@ -236,39 +245,72 @@ async function refresh() {
   } catch (e) { toast(e.message, "error"); }
 }
 function selectedTask() { return state.tasks.find(t => t.id === state.focused); }
+const STATUS_NAMES={
+  low_pending:"低清待生成",low_running:"低清生成中",low_complete:"低清完成",
+  high_pending:"高清待生成",high_running:"高清生成中",high_complete:"高清完成",
+};
+const formatTime=value => value ? esc(String(value).replace("T"," ").slice(0,19)) : "—";
+function duration(start,end) {
+  if(!start || !end)return "—";
+  const diff=Math.max(0,Math.round((Date.parse(end)-Date.parse(start))/1000));
+  if(!Number.isFinite(diff))return "—";
+  const h=Math.floor(diff/3600),m=Math.floor(diff%3600/60),sec=diff%60;
+  return (h ? h+"时" : "")+(m || h ? m+"分":"")+sec+"秒";
+}
+function statusMarkup(task) {
+  const status=task.status || "low_complete";
+  const queued=task.queued_stage && /pending$/.test(status);
+  return '<span class="tdm-status '+esc(status)+'">'+
+    esc(STATUS_NAMES[status] || STATUS_NAMES.low_pending)+(queued?" · 已排队":"")+'</span>';
+}
 function thumb(task) {
-  const kind = task.media.sampling ? "sampling" : task.media.decoded ? "decoded" : null;
-  if (!kind) return '<div class="tdm-thumb"></div>';
-  const file = task.media[kind];
-  const url = mediaUrl(task.id, kind);
+  const media=task.media||{},kind=media.sampling?"sampling":media.decoded?"decoded":null;
+  if(!kind)return '<div class="tdm-thumb"></div>';
+  const file=media[kind],id=task.checkpoint_id || task.id,url=mediaUrl(id,kind);
   return file.endsWith(".mp4")
-    ? '<video class="tdm-thumb" src="' + url + '#t=0.5" muted preload="metadata"></video>'
-    : '<img class="tdm-thumb" src="' + url + '" alt="">';
+    ? '<video class="tdm-thumb" src="'+url+'#t=0.5" muted preload="metadata"></video>'
+    : '<img class="tdm-thumb" src="'+url+'" alt="">';
 }
 function details(task) {
-  if (!task) return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
-  const kind = task.media[state.preview] ? state.preview : (task.media.sampling ? "sampling" : "decoded"), file = task.media[kind];
-  const media = !file ? '<div class="tdm-player tdm-no-media">暂无' +
-    (kind === "decoded" ? "VAE 解码" : "TAEH3 采样") + '预览</div>'
+  if(!task)return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
+  const media=task.media||{},kind=media[state.preview]?state.preview:(media.sampling?"sampling":"decoded");
+  const file=media[kind],cid=task.checkpoint_id || (task.kind==="checkpoint"?task.id:null);
+  const preview=!file || !cid
+    ? '<div class="tdm-player tdm-detail-pending">'+
+      (cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":"尚未生成低清视频，请手动点击「开始预演」")+
+      '</div>'
     : file.endsWith(".mp4")
-      ? '<video class="tdm-player" src="' + mediaUrl(task.id, kind) + '" controls loop playsinline></video>'
-      : '<img class="tdm-player" src="' + mediaUrl(task.id, kind) + '" alt="采样预览">';
-  const shape = task.low_video_shape || [], target = task.target_video_shape || [];
-  return '<h3 style="margin:0;font-size:15px">' + esc(task.name) + '</h3><div class="tdm-tabs">' +
-    '<button data-action="preview" data-kind="decoded" class="' + (kind === "decoded" ? "on" : "") + '">VAE 解码</button>' +
-    '<button data-action="preview" data-kind="sampling" class="' + (kind === "sampling" ? "on" : "") + '">TAEH3 采样预览</button></div>' +
-    media + '<div class="tdm-detail">检查点：' + esc(task.id.slice(0, 12)) +
-    '　Seed：' + esc(task.seed) + '　预演 Latent：' + esc(shape.slice(-2).reverse().join("×")) +
-    '　目标 Latent：' + esc(target.slice(-2).reverse().join("×")) +
-    '<div>工作流：' + esc(task.metadata?.workflow_name || "未记录") +
-    '　创建：' + esc((task.created_at || "").replace("T", " ").slice(0, 19)) + '</div></div>' +
-    '<div class="tdm-actions"><button class="tdm-btn" data-action="load">载入任务工作流</button>' +
-    '<button class="tdm-btn" data-action="duplicate" ' +
-    (!task.metadata?.has_workflow ? 'disabled title="旧任务缺少工作流快照"' : '') +
-    '>以此新建</button>' +
-    '<button class="tdm-btn" data-action="rerun">重跑预演</button>' +
-    '<button class="tdm-btn primary" data-action="highres">继续高清</button></div>';
+      ? '<video class="tdm-player" src="'+mediaUrl(cid,kind)+'" controls loop playsinline></video>'
+      : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
+  const timing='<div class="tdm-timing"><div>任务创建：<strong>'+formatTime(task.created_at)+'</strong></div>'+
+    '<div>低清生成：'+formatTime(task.low_started_at)+' → '+formatTime(task.low_finished_at)+
+    '　用时 '+duration(task.low_started_at,task.low_finished_at)+'</div>'+
+    '<div>高清生成：'+formatTime(task.high_started_at)+' → '+formatTime(task.high_finished_at)+
+    '　用时 '+duration(task.high_started_at,task.high_finished_at)+'</div></div>';
+  const pending=task.kind==="draft" && task.status==="low_pending" && !task.queued_stage;
+  const canHigh=task.status==="low_complete" && !!cid && !task.queued_stage;
+  const duplicate=task.kind==="draft" || task.metadata?.has_workflow;
+  let actions='';
+  if(pending)actions+='<button class="tdm-btn" data-action="edit-draft">编辑任务</button>'+
+    '<button class="tdm-btn primary" data-action="run-draft">开始预演</button>';
+  if(duplicate)actions+='<button class="tdm-btn" data-action="duplicate">以此新建</button>';
+  if(canHigh)actions+='<button class="tdm-btn primary" data-action="highres">继续高清</button>';
+  if(task.kind==="checkpoint" && task.status==="low_complete")
+    actions+='<button class="tdm-btn" data-action="load">载入任务工作流</button>';
+  if(task.status==="low_running" || task.status==="high_running")
+    actions+='<span class="tdm-small">生成中 · 可在 ComfyUI 队列查看进度</span>';
+  return '<h3 style="margin:0;font-size:15px">'+esc(task.name||"未命名任务")+'</h3>'+
+    statusMarkup(task)+
+    '<div class="tdm-tabs">'+
+    '<button data-action="preview" data-kind="sampling" class="'+(kind==="sampling"?"on":"")+'">TAEH3 采样预览</button>'+
+    '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button></div>'+
+    preview+'<div class="tdm-detail">Seed：'+esc(task.seed||"—")+
+    '　工作流：'+esc(task.metadata?.workflow_name||"未记录")+
+    (cid?'　检查点：'+esc(cid.slice(0,12)):'')+'</div>'+
+    timing+(task.error?'<div class="tdm-warning">'+esc(task.error)+'</div>':'')+
+    '<div class="tdm-actions">'+actions+'</div>';
 }
+
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
