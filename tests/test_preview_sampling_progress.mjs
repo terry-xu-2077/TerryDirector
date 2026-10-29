@@ -15,6 +15,9 @@ const sample=m.progressFromEvent({node:"11",value:1,max:3},low);
 assert.deepEqual(sample,{nodeId:"11",value:1,max:3});
 assert.deepEqual(m.progressFromEvent({node:"22",value:1,max:3},low),null);
 assert.deepEqual(m.progressFromEvent({node:"11",value:1,max:3},high),null);
+const manual={mode:"pause",workflow:{nodes:[{id:44,type:"SamplerCustom"}]}};
+assert.deepEqual(m.progressFromEvent({node:"44",value:1,max:3},manual),
+  {nodeId:"44",value:1,max:3});
 assert.deepEqual(m.progressFromEvent({node:"11",value:2,max:0},low),null);
 assert.deepEqual(m.progressFromEvent({node:"11",value:5,max:3},low),null);
 const first=m.recordSamplerProgress(low,sample,689330);
