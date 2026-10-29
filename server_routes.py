@@ -177,7 +177,8 @@ async def terrydirector_selflift_task_workflow(request: web.Request) -> web.Resp
         return web.json_response({"error": "该任务未保存工作流快照"}, status=404)
     return web.json_response({"workflow": workflow, "overrides": metadata.get("overrides", []),
                               "prompt_binding": metadata.get("prompt_binding"),
-                              "seed_binding": metadata.get("seed_binding")})
+                              "seed_binding": metadata.get("seed_binding"),
+                              "h3_properties": metadata.get("h3_properties", {})})
 
 
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
@@ -191,6 +192,7 @@ async def terrydirector_selflift_task_metadata_get(request: web.Request) -> web.
         "prompt_binding": meta.get("prompt_binding"),
         "seed_binding": meta.get("seed_binding"),
         "preview_type": meta.get("preview_type", "sampling"),
+        "h3_properties": meta.get("h3_properties", {}),
     }, headers={"Cache-Control": "no-store"})
 
 
