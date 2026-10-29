@@ -213,6 +213,7 @@ function render() {
     (state.configuring ? configMarkup() : "") +
     (state.deleting ? deleteMarkup() : "");
   bindControls();
+  renderAssetChoices();
 }
 function showDeleteConfirmation() {
   if (state.busy || !state.selected.size) return;
@@ -344,66 +345,295 @@ async function handleAction(action, data) {
     if (action === "batch") return batchHighres();
   } catch (e) { toast(e.message, "error"); }
 }
+
+async function loadTemplate() {
+  try {
+    const result = await request("/template");
+    state.template = result.template?.schema === 1 ? result.template : null;
+  } catch (e) { toast("读取工作流配置失败：" + e.message, "error"); }
+  render();
+}
 async function loadInputFiles() {
   try {
     const response = await api.fetchApi("/terrydirector/api/input-files");
     state.inputFiles = (await response.json()).files || [];
   } catch { state.inputFiles = []; }
 }
-function editableWidgets() {
+function nodeValue(node, name) {
+  if (!node) return undefined;
+  if (node.widgets_values_named && Object.hasOwn(node.widgets_values_named, name)) {
+    return node.widgets_values_named[name];
+  }
+  // Legacy workflows do not always serialize the named widget representation.
+  const names = (node.inputs || []).filter(x => x.widget && x.link == null)
+    .map(x => x.widget.name || x.name);
+  const idx = names.indexOf(name);
+  return idx < 0 ? undefined : node.widgets_values?.[idx];
+}
+function fieldsOf(workflow, type) {
   const rows = [];
-  for (const node of nodes()) {
-    const type = nodeType(node);
-    for (const w of node.widgets || []) {
-      if (w.type === "hidden") continue;
-      // A widget with a linked input socket is not the effective prompt value.
-      // Its upstream text/source node is edited instead, never a dead widget.
-      const socket = node.inputs?.find(x => x.name === w.name);
-      if (socket?.link != null) continue;
-      if ((type === "LoadImage" || type === "LoadImageMask") && w.name === "image") {
-        rows.push({ node, w, kind: "image", value: w.value });
-      } else if (/MiniMaxH3ReferenceToVideo|CLIPTextEncode|PrimitiveString|H3PromptEditor|TextEncode|Prompt/i.test(type) &&
-        /^(prompt|text|string|value|positive_prompt|negative_prompt)$/i.test(w.name) &&
-        typeof w.value === "string") {
-        rows.push({ node, w, kind: "text", value: w.value });
+  for (const node of workflow?.nodes || []) {
+    const linked = new Set((node.inputs || []).filter(x => x.link != null).map(x => x.name));
+    const named = node.widgets_values_named || {};
+    for (const [name, value] of Object.entries(named)) {
+      if (linked.has(name)) continue;
+      const kind = String(node.type || "");
+      const lower = name.toLowerCase();
+      if (type === "prompt" &&
+          typeof value === "string" && !/image|filename|model|path|format/i.test(lower) &&
+          (/prompt|text|string|value|conditioning/i.test(lower) ||
+          /text|prompt|encode/i.test(kind))) {
+        rows.push({ node_id: node.id, widget_name: name,
+          label: (node.title || kind) + " #" + node.id + " · " + name });
+      }
+      if (type === "seed" && (typeof value === "number" || /^seed$/i.test(name)) &&
+          /^(seed|noise_seed|value)$/i.test(lower) &&
+          (/seed|primitive|int|sampler/i.test(kind))) {
+        rows.push({ node_id: node.id, widget_name: name,
+          label: (node.title || kind) + " #" + node.id + " · " + name });
       }
     }
   }
   return rows;
 }
+function matchingAssets(workflow) {
+  return (workflow?.nodes || []).filter(node =>
+    /^(LoadImage|LoadImageMask)$/.test(node.type) &&
+    typeof nodeValue(node, "image") === "string").map(node => ({
+      node_id: node.id, widget_name: "image", value: nodeValue(node, "image"),
+    }));
+}
+const bindingKey = obj => JSON.stringify({ node_id: obj.node_id, widget_name: obj.widget_name });
+function bindingNode(graph, binding) {
+  return (graph?.nodes || []).find(n => String(n.id) === String(binding?.node_id));
+}
+function templateFromGraph(workflow, name) {
+  const prompts = fieldsOf(workflow, "prompt");
+  const seeds = fieldsOf(workflow, "seed");
+  const pause = (workflow.nodes || []).find(n => n.type === START_CLASS);
+  return {
+    schema: 1, workflow, workflow_name: name || "当前画布",
+    pause_node_id: pause?.id || null,
+    prompt_binding: prompts[0] ? {node_id: prompts[0].node_id, widget_name: prompts[0].widget_name} : null,
+    seed_binding: seeds.find(x => /SeedNode/.test(bindingNode(workflow, x)?.type || "")) ||
+      (seeds[0] ? {node_id: seeds[0].node_id, widget_name: seeds[0].widget_name} : null),
+    preview_node_id: (workflow.nodes || []).find(n => n.type === KJ_CLASS)?.id || null,
+  };
+}
+function openConfig() {
+  state.configDraft = structuredClone(state.template ||
+    templateFromGraph(app.graph.serialize(), "当前画布"));
+  state.configuring = true;
+  state.creating = false;
+  render();
+}
+function useCurrentWorkflow() {
+  state.configDraft = templateFromGraph(app.graph.serialize(), "当前画布");
+  render();
+}
+function configMarkup() {
+  const cfg = state.configDraft, graph = cfg?.workflow;
+  if (!cfg || !graph) return "";
+  const pauseNodes = (graph.nodes || []).filter(n => n.type === START_CLASS);
+  const prompts = fieldsOf(graph, "prompt");
+  const seeds = fieldsOf(graph, "seed");
+  function bindingSelect(key, options) {
+    const current = bindingKey(cfg[key] || {});
+    return '<select data-action="config-field" data-field="' + key + '">' +
+      options.map(item => '<option value="' + esc(bindingKey(item)) + '"' +
+      (bindingKey(item) === current ? ' selected' : '') + '>' +
+      esc(item.label) + '</option>').join("") + '</select>';
+  }
+  return '<div class="tdm-dialog"><div class="tdm-form" role="dialog" aria-modal="true">' +
+    '<div class="tdm-modal-top"><h2>配置预演工作流</h2><span class="tdm-space"></span>' +
+    '<button class="tdm-btn" data-action="cancel-config">×</button></div>' +
+    '<div class="tdm-modal-sub">仅首次配置或切换工作流时使用。新建预演无需操作节点映射。</div>' +
+    '<div class="tdm-field"><label>工作流模板</label><div class="tdm-actions">' +
+    '<input value="' + esc(cfg.workflow_name) + '" disabled style="flex:1">' +
+    '<button class="tdm-btn" data-action="use-canvas">使用当前画布</button>' +
+    '<button class="tdm-btn" data-action="import-workflow">导入 JSON</button></div></div>' +
+    '<div class="tdm-field"><label>暂停/继续节点</label><select data-action="config-field" data-field="pause_node_id">' +
+    pauseNodes.map(n => '<option value="' + esc(n.id) + '"' +
+      (String(n.id) === String(cfg.pause_node_id) ? ' selected' : '') + '>' +
+      esc((n.title || n.type) + " #" + n.id) + '</option>').join("") + '</select></div>' +
+    '<div class="tdm-field"><label>提示词输入节点（用户指定）</label>' +
+    bindingSelect("prompt_binding", prompts) + '</div>' +
+    '<div class="tdm-field"><label>种子输入节点（应同时控制采样器与检查点）</label>' +
+    bindingSelect("seed_binding", seeds) + '</div>' +
+    '<div class="tdm-small">参考资产自动读取工作流里的 LoadImage 节点，在新建任务中以网格编辑。</div>' +
+    '<div class="tdm-form-actions"><button class="tdm-btn" data-action="cancel-config">取消</button>' +
+    '<button class="tdm-btn primary" data-action="save-config" ' +
+    (!pauseNodes.length || !prompts.length || !seeds.length ? 'disabled' : '') +
+    '>保存工作流配置</button></div></div></div>';
+}
+async function saveConfig() {
+  const cfg = state.configDraft;
+  if (!cfg?.prompt_binding || !cfg?.seed_binding || !cfg?.pause_node_id) {
+    throw Error("请选择工作流、提示词和种子输入节点");
+  }
+  cfg.schema = 1;
+  await request("/template", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cfg),
+  });
+  state.template = structuredClone(cfg);
+  state.configuring = false;
+  render();
+  toast("预演工作流配置已保存");
+}
+function overridesLookup(overrides) {
+  return new Map((overrides || []).map(x => [String(x.node_id) + ":" + x.widget_name, x.value]));
+}
+function buildDraft(cfg, overrides = [], preferredName = "", previewType = "sampling") {
+  const values = overridesLookup(overrides);
+  function valueAt(binding) {
+    if (!binding) return "";
+    const key = String(binding.node_id) + ":" + binding.widget_name;
+    return values.has(key) ? values.get(key) :
+      nodeValue(bindingNode(cfg.workflow, binding), binding.widget_name);
+  }
+  const assets = matchingAssets(cfg.workflow).map(item => ({
+    ...item, value: values.get(String(item.node_id) + ":" + item.widget_name) ?? item.value,
+  }));
+  return {
+    workflow: structuredClone(cfg.workflow), workflow_name: cfg.workflow_name,
+    pause_node_id: cfg.pause_node_id, prompt_binding: cfg.prompt_binding,
+    seed_binding: cfg.seed_binding, preview_node_id: cfg.preview_node_id,
+    name: preferredName || "新预演镜头",
+    prompt: String(valueAt(cfg.prompt_binding) ?? ""),
+    seed: String(valueAt(cfg.seed_binding) ?? "8"),
+    previewType: previewType === "decoded" ? "decoded" : "sampling",
+    assets, source: "template",
+  };
+}
+async function changeCreateSource(_data, source) {
+  if (!source) return;
+  if (source === "template") {
+    if (!state.template) throw Error("请先在「配置工作流」中选择模板");
+    state.createDraft = buildDraft(state.template);
+    state.createDraft.source = source;
+  } else if (source.startsWith("task:")) {
+    const id = source.slice(5);
+    const task = state.tasks.find(t => t.id === id);
+    if (!task) throw Error("来源任务不存在");
+    const result = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
+    const configured = templateFromGraph(result.workflow,
+      task.metadata?.workflow_name || "从预演任务继承");
+    configured.pause_node_id = task.metadata.pause_node_id || configured.pause_node_id;
+    configured.preview_node_id = task.metadata.preview_node_id || configured.preview_node_id;
+    const meta = await request("/tasks/" + encodeURIComponent(id) + "/metadata");
+    configured.prompt_binding = meta.prompt_binding || configured.prompt_binding;
+    configured.seed_binding = meta.seed_binding || configured.seed_binding;
+    state.createDraft = buildDraft(configured, result.overrides || [],
+      (task.name || "预演镜头") + " · 新版", task.metadata?.preview_type || "sampling");
+    state.createDraft.source = source;
+  }
+  state.assetPicker = null;
+  render();
+}
+async function openCreate() {
+  await loadInputFiles();
+  state.creating = true; state.configuring = false;
+  if (state.template) {
+    state.createDraft = buildDraft(state.template);
+    state.createDraft.source = "template";
+  } else {
+    const source = state.tasks.find(x => x.metadata?.pause_node_id);
+    if (source) {
+      try { await changeCreateSource({}, "task:" + source.id); }
+      catch { state.createDraft = null; }
+    }
+    if (!state.createDraft) {
+      state.creating = false;
+      openConfig();
+      toast("先配置一次工作流，之后创建预演只需输入提示词、资产和种子");
+      return;
+    }
+  }
+  render();
+}
+function assetUrl(path) {
+  if (!path) return "";
+  return "/view?filename=" + encodeURIComponent(path) + "&type=input";
+}
+function assetCard(path, title, attrs, selected = false) {
+  const image = path ? '<img loading="lazy" src="' + esc(assetUrl(path)) + '" alt="">' :
+    '<span class="tdm-noimg">＋</span>';
+  return '<button type="button" class="tdm-asset' + (selected ? ' selected' : '') +
+    '" ' + attrs + '>' + image + '<label title="' + esc(path || "未选择") + '">' +
+    esc(title || path || "添加图片") + '</label></button>';
+}
 function createMarkup() {
-  state.inputs = editableWidgets();
-  const pauseNodes = getPauseNodes();
-  const selection = (options, value) => options.map(v =>
-    '<option value="' + esc(v) + '"' + (String(v) === String(value) ? " selected" : "") + '>' +
-    esc(v) + '</option>').join("");
-  const files = state.inputFiles.filter(f => f.kind === "image").map(f => f.path);
-  return '<div class="tdm-dialog"><div class="tdm-form"><h2>创建预演任务</h2>' +
-    '<div class="tdm-field"><label>使用的工作流</label><div class="tdm-actions">' +
-    '<input value="' + esc(state.templateName) + '" disabled style="flex:1">' +
-    '<button class="tdm-btn" data-action="import-workflow">导入工作流 JSON</button></div>' +
-    '<span class="tdm-small">在此浮窗配置并提交任务；不会点击工作流上的运行按钮。导入会先载入 ComfyUI 画布。</span></div>' +
-    '<div class="tdm-field"><label>暂停/继续节点</label><select id="tdm-pause">' +
-    pauseNodes.map(n => '<option value="' + esc(n.id) + '">' + esc(n.title || START_CLASS) + ' · ' + n.id + '</option>').join("") +
+  const draft = state.createDraft;
+  if (!draft) return "";
+  const sources = [
+    { id: "template", title: state.template ? "已配置工作流 · " + state.template.workflow_name : "未配置工作流" },
+    ...state.tasks.map(t => ({ id: "task:" + t.id, title: "继承 · " + (t.name || "预演") +
+      " · " + t.id.slice(0, 8) })),
+  ];
+  return '<div class="tdm-dialog"><div class="tdm-form" role="dialog" aria-modal="true">' +
+    '<div class="tdm-modal-top"><h2>新建预演</h2><span class="tdm-space"></span>' +
+    '<button class="tdm-btn" data-action="cancel-create">×</button></div>' +
+    '<div class="tdm-field"><label>基于</label><select data-action="source-change">' +
+    sources.map(s => '<option value="' + esc(s.id) + '"' +
+      (draft.source === s.id ? ' selected' : '') + '>' + esc(s.title) + '</option>').join("") +
     '</select></div>' +
-    '<div class="tdm-field"><label>任务名称</label><input id="tdm-name" value="新预演镜头" maxlength="120"></div>' +
-    '<div class="tdm-section">图片输入</div>' +
-    (state.inputs.filter(x => x.kind === "image").map((p,i) =>
-      '<div class="tdm-field"><label>' + esc(p.node.title || p.node.type) + ' #' + p.node.id + '</label>' +
-      '<div class="tdm-actions"><select data-patch="' + state.inputs.indexOf(p) + '" style="flex:1">' + selection(
-        [p.value, ...files.filter(f => f !== p.value)], p.value) + '</select>' +
-      '<button class="tdm-btn" data-action="upload-image" data-patch="' + state.inputs.indexOf(p) + '">上传</button></div></div>').join("") ||
-      '<div class="tdm-small">未发现 LoadImage 输入节点</div>') +
-    '<div class="tdm-section">提示词输入</div>' +
-    (state.inputs.filter(x => x.kind === "text").map(p =>
-      '<div class="tdm-field"><label>' + esc(p.node.title || p.node.type) + ' #' + p.node.id +
-      ' · ' + esc(p.w.name) + '</label><textarea data-patch="' + state.inputs.indexOf(p) +
-      '">' + esc(p.value) + '</textarea></div>').join("") ||
-      '<div class="tdm-small">当前工作流未发现可编辑的提示词控件，请检查提示词来源节点</div>') +
-    '<div class="tdm-small" style="margin-top:12px">TAEH3 动画预览：Model Preview Override 的 preview_frames 需大于 1；单帧模式会保存 JPEG。</div>' +
+    '<div class="tdm-field"><label>任务名称</label><input data-action="draft-field" data-field="name" maxlength="120" value="' +
+    esc(draft.name) + '"></div>' +
+    '<div class="tdm-section">提示词</div>' +
+    '<div class="tdm-field"><textarea rows="5" data-action="draft-field" data-field="prompt" placeholder="输入镜头提示词">' +
+    esc(draft.prompt) + '</textarea></div>' +
+    '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
+    '<div class="tdm-assets">' + draft.assets.map((a, i) =>
+      assetCard(a.value, "图片 " + (i + 1) + " · " + (a.value || "未设置"),
+      'data-action="open-assets" data-index="' + i + '"')).join("") + '</div>' +
+    (!draft.assets.length ? '<div class="tdm-small">当前工作流没有 LoadImage 图片节点</div>' : '') +
+    '<div class="tdm-section">种子</div>' +
+    '<div class="tdm-field"><input data-action="draft-field" data-field="seed" inputmode="numeric" value="' +
+    esc(draft.seed) + '"></div>' +
+    '<div class="tdm-section">预览视频</div>' +
+    '<div class="tdm-pillset">' +
+    '<button class="' + (draft.previewType === "sampling" ? "on" : "") +
+    '" data-action="set-preview" data-kind="sampling">TAEH3 采样预览 · 默认</button>' +
+    '<button class="' + (draft.previewType === "decoded" ? "on" : "") +
+    '" data-action="set-preview" data-kind="decoded">VAE 解码预览</button></div>' +
     '<div class="tdm-form-actions"><button class="tdm-btn" data-action="cancel-create">取消</button>' +
-    '<button class="tdm-btn primary" data-action="submit" ' +
-    (!pauseNodes.length ? "disabled" : "") + '>加入预演队列</button></div></div></div>';
+    '<button class="tdm-btn primary" data-action="submit">加入预演队列</button></div>' +
+    '</div></div>' +
+    (state.assetPicker ? assetPickerMarkup() : "");
+}
+function assetPickerMarkup() {
+  const picker = state.assetPicker;
+  if (!picker) return "";
+  return '<div class="tdm-dialog" style="z-index:100040"><div class="tdm-form" role="dialog" aria-modal="true">' +
+    '<div class="tdm-modal-top"><h2>选择参考资产</h2><span class="tdm-space"></span>' +
+    '<button class="tdm-btn" data-action="close-assets">×</button></div>' +
+    '<div class="tdm-actions"><input style="flex:1" data-action="asset-search" placeholder="按文件名搜索图片" value="' +
+    esc(picker.search) + '"><button class="tdm-btn" data-action="upload-image" data-index="' +
+    picker.index + '">上传图片</button></div>' +
+    '<div class="tdm-asset-picker"></div></div></div>';
+}
+function renderAssetChoices() {
+  if (!state.assetPicker) return;
+  const holder = state.root?.querySelector(".tdm-asset-picker");
+  if (!holder) return;
+  const matches = state.inputFiles.filter(f => f.kind === "image" &&
+    f.path.toLowerCase().includes(state.assetPicker.search.toLowerCase())).slice(0, 150);
+  holder.innerHTML = matches.map(f => assetCard(f.path, f.name,
+    'data-action="choose-asset" data-path="' + esc(f.path) + '"')).join("") ||
+    '<div class="tdm-small">没有匹配的图片</div>';
+  holder.querySelectorAll('[data-action="choose-asset"]').forEach(button =>
+    button.addEventListener("click", e => {
+      e.preventDefault(); e.stopPropagation();
+      chooseAsset(button.dataset);
+    }));
+}
+function chooseAsset(data) {
+  const index = state.assetPicker?.index;
+  if (index == null || !state.createDraft?.assets[index]) return;
+  state.createDraft.assets[index].value = data.path;
+  state.assetPicker = null;
+  render();
 }
 async function uploadImage(index) {
   const fileInput = document.createElement("input");
@@ -415,19 +645,20 @@ async function uploadImage(index) {
     try {
       const form = new FormData();
       form.append("file", file, file.name);
-      const response = await api.fetchApi("/terrydirector/api/upload", { method: "POST", body: form });
+      const response = await api.fetchApi("/terrydirector/api/upload", {
+        method: "POST", body: form,
+      });
       const data = await response.json();
       if (!response.ok || !data.path || data.kind !== "image") {
         throw Error(data.error || "图片上传失败");
       }
-      const select = state.root?.querySelector('.tdm-dialog select[data-patch="' + index + '"]');
-      if (select) {
-        const option = document.createElement("option");
-        option.value = data.path; option.textContent = data.name;
-        select.append(option); select.value = data.path;
-      }
       state.inputFiles.push(data);
-      toast("图片已导入 ComfyUI input：" + data.name);
+      if (state.createDraft?.assets[index]) {
+        state.createDraft.assets[index].value = data.path;
+      }
+      state.assetPicker = null;
+      render();
+      toast("图片已导入：" + data.name);
     } catch (e) { toast(e.message, "error"); }
   };
   fileInput.click();
@@ -440,38 +671,57 @@ async function importWorkflow() {
       const chosen = file.files?.[0];
       if (!chosen) return;
       const data = JSON.parse(await chosen.text());
-      if (!Array.isArray(data.nodes)) throw Error("请选择 ComfyUI 画布工作流 JSON");
-      if (!window.confirm("载入模板会替换当前 ComfyUI 画布，继续吗？")) return;
-      await app.loadGraphData(data);
-      state.templateName = chosen.name;
+      if (!Array.isArray(data.nodes)) throw Error("请选择 ComfyUI 完整工作流 JSON");
+      state.configDraft = templateFromGraph(data, chosen.name);
       render();
     } catch (e) { toast(e.message, "error"); }
   };
   file.click();
 }
 async function submitCreate() {
-  const dialog = state.root.querySelector(".tdm-dialog");
-  const id = dialog.querySelector("#tdm-pause")?.value;
-  const node = app.graph?.getNodeById?.(Number(id));
-  if (!node) throw Error("请先载入包含暂停/继续节点的 SelfLift 工作流");
-  const name = dialog.querySelector("#tdm-name")?.value.trim() || "未命名预演镜头";
-  const overrides = state.inputs.map((p, i) => ({
-    node_id: p.node.id, widget_name: p.w.name,
-    value: dialog.querySelector('[data-patch="' + i + '"]')?.value ?? p.value,
-  }));
-  overrides.push({ node_id: node.id, widget_name: "name", value: name });
-  const snapshot = app.graph.serialize();
-  const previewNode = previewForPause(node);
-  const result = await queueManagedSelfLift(node, "pause", overrides);
-  if (!result.promptId) throw Error("任务已提交，但未收到 prompt_id；请检查 ComfyUI 队列");
-  state.jobs.set(result.promptId, {
-    mode: "pause", overrides, workflow: snapshot, name,
-    workflow_name: state.templateName,
-    pause_node_id: String(node.id), preview_node_id: previewNode ? String(previewNode.id) : null,
-    checkpointId: null, preview: null, uploadedStep: 0, busy: true,
-  });
-  state.creating = false; render();
-  toast("预演任务已入队：" + name);
+  const draft = state.createDraft;
+  if (!draft?.workflow || !draft.prompt_binding || !draft.seed_binding) {
+    throw Error("请先在「配置工作流」中指定提示词与种子节点");
+  }
+  const trimmed = draft.seed.trim();
+  const numericSeed = Number(trimmed);
+  if (!/^[0-9]+$/.test(trimmed) || !Number.isSafeInteger(numericSeed) || numericSeed < 0) {
+    throw Error("种子必须为非负安全整数；超出 2^53 的种子请在工作流内设置");
+  }
+  const name = draft.name.trim() || "未命名预演镜头";
+  const overrides = [
+    {node_id: draft.prompt_binding.node_id, widget_name: draft.prompt_binding.widget_name, value: draft.prompt},
+    {node_id: draft.seed_binding.node_id, widget_name: draft.seed_binding.widget_name, value: numericSeed},
+    ...draft.assets.map(a => ({node_id: a.node_id, widget_name: a.widget_name, value: a.value})),
+    {node_id: draft.pause_node_id, widget_name: "name", value: name},
+  ];
+  const original = app.graph.serialize();
+  try {
+    await app.loadGraphData(draft.workflow);
+    const pause = app.graph?.getNodeById?.(Number(draft.pause_node_id));
+    if (nodeType(pause) !== START_CLASS) throw Error("找不到已配置的暂停/继续节点");
+    const preview = previewForPause(pause);
+    if (draft.previewType === "sampling" && !preview) {
+      throw Error("工作流没有连接 Model Preview Override，无法保存 TAEH3 预览");
+    }
+    const queued = await queueManagedSelfLift(pause, "pause", overrides, "", {
+      saveDecoded: draft.previewType === "decoded",
+    });
+    if (!queued.promptId) throw Error("预演提交未返回任务编号");
+    state.jobs.set(queued.promptId, {
+      mode: "pause", overrides, workflow: structuredClone(draft.workflow), name,
+      workflow_name: draft.workflow_name, pause_node_id: String(pause.id),
+      preview_node_id: preview ? String(preview.id) : null,
+      prompt_binding: draft.prompt_binding, seed_binding: draft.seed_binding,
+      preview_type: draft.previewType,
+      checkpointId: null, preview: null, uploadedStep: 0, busy: true,
+    });
+    state.creating = false; state.assetPicker = null;
+    render();
+    toast("预演任务已入队：" + name);
+  } finally {
+    await app.loadGraphData(original);
+  }
 }
 async function loadSavedWorkflow(id) {
   if (!id) throw Error("未选择任务");
