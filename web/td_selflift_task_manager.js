@@ -537,7 +537,7 @@ async function handleAction(action, data) {
       return await changeCreateSource({}, "task:"+state.focused);
     }
     if (action === "import-workflow") return importWorkflow();
-    if (action === "upload-image") return uploadImage(Number(data.patch));
+    if (action === "upload-image") return uploadImage(Number(data.index));
     if (action === "submit") return await submitCreate();
     if (action === "run-draft") return await runDraft(state.focused);
     if (action === "edit-draft") return await editDraft(state.focused);
@@ -831,6 +831,7 @@ function buildDraft(cfg, overrides = [], preferredName = "", previewType = "samp
 }
 async function changeCreateSource(_data, source) {
   if (!source) return;
+  state.editDraftId=null;
   if (source === "template") {
     if (!state.template) throw Error("请先在「配置工作流」中选择模板");
     state.createDraft = buildDraft(state.template);
@@ -933,7 +934,8 @@ function createMarkup() {
     '<header class="tdm-create-head">' +
     '<button class="tdm-btn close tdm-create-close" data-action="cancel-create" aria-label="关闭">×</button>' +
     '<div class="tdm-create-meta">' +
-    '<div class="tdm-field"><label class="tdm-name-label" for="tdm-new-task-name">新建任务名称</label>' +
+    '<div class="tdm-field"><label class="tdm-name-label" for="tdm-new-task-name">'+
+    (state.editDraftId?"编辑任务名称":"新建任务名称")+'</label>' +
     '<input id="tdm-new-task-name" data-action="draft-field" data-field="name" ' +
     'maxlength="120" value="' + esc(draft.name) + '"></div>' +
     '<div class="tdm-field"><label>基于</label><select data-action="source-change">' +
@@ -1124,7 +1126,7 @@ async function editDraft(id) {
   state.createDraft.prompt=row.prompt;
   state.createDraft.seed=row.seed;
   state.createDraft.assets=structuredClone(row.assets||[]);
-  state.createDraft.source="draft:"+id;
+  state.createDraft.source="task:"+id;
   state.editDraftId=id;
   state.creating=true;
   render();
