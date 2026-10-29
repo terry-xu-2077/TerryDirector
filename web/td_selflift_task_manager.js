@@ -14,7 +14,7 @@ const URL_BASE = "/terrydirector/api/selflift";
 // Same mark URL as the TerryDirector timeline node and timeline editor.
 const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
 const state = {
-  tasks: [], selected: new Set(), focused: null, preview: "sampling",
+  tasks: [], selected: new Set(), focused: null, preview: "sampling", statusFilter: "all",
   busy: false, root: null, creating: false, configuring: false, deleting: null,
   template: null, templates: [], defaultTemplateId: null, configSelectedId: null,
   configError: "", configSaving: false, configDraft: null, createDraft: null, editDraftId: null,
@@ -85,6 +85,10 @@ function styles() {
 .tdm-main{min-height:0;flex:1;display:grid;grid-template-columns:minmax(410px,1fr) minmax(335px,44%)}
 .tdm-left{min-height:0;overflow:auto;border-right:1px solid #30343b}
 .tdm-toolbar{position:sticky;top:0;background:#191b20;z-index:2;padding:12px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #282b32}
+.tdm-status-filter{background:#252930;color:#d8e0eb;border:1px solid #404753;border-radius:6px;
+ padding:6px 10px;min-width:160px;max-width:190px;font:12px system-ui;cursor:pointer}
+.tdm-status-filter:focus-visible{outline:2px solid #6594d7;outline-offset:1px}
+@media(max-width:600px){.tdm-status-filter{min-width:120px;max-width:155px}}
 .tdm-list{padding:8px 12px}.tdm-card{display:grid;grid-template-columns:25px 128px 1fr;gap:10px;
  border:1px solid transparent;border-radius:8px;padding:9px;cursor:pointer;align-items:center}
 .tdm-card:hover{background:#22262d}.tdm-card.active{border-color:#4b76b2;background:#222d3e}
@@ -285,8 +289,10 @@ async function refresh() {
     const result = await request("/tasks");
     state.tasks = result.tasks || [];
     renderSidebarTaskList();
-    state.selected = new Set([...state.selected].filter(id => state.tasks.some(t => t.id === id)));
-    if (!state.tasks.some(t => t.id === state.focused)) state.focused = state.tasks[0]?.id || null;
+    const visible=visibleTasks();
+    const ids=new Set(visible.map(t=>t.id));
+    state.selected = new Set([...state.selected].filter(id => ids.has(id)));
+    if (!ids.has(state.focused)) state.focused = visible[0]?.id || null;
     render();
   } catch (e) { toast(e.message, "error"); }
 }
@@ -396,6 +402,50 @@ const STATUS_NAMES={
   low_pending:"低清待生成",low_running:"低清生成中",low_complete:"低清完成",
   high_pending:"高清待生成",high_running:"高清生成中",high_complete:"高清完成",
 };
+const STATUS_FILTER_OPTIONS=[
+  {value:"all",label:"全部状态"},
+  ...Object.entries(STATUS_NAMES).map(([value,label])=>({value,label})),
+];
+function visibleTasks() {
+  return state.statusFilter==="all" ? state.tasks :
+    state.tasks.filter(t=>(t.status || "low_complete")===state.statusFilter);
+}
+function selectedTaskRows() {
+  return state.tasks.filter(t=>state.selected.has(t.id));
+}
+function batchActionInfo() {
+  const tasks=selectedTaskRows(),count=tasks.length;
+  if(!count)return {label:"批量操作 · 0",disabled:true,action:null};
+  const statuses=new Set(tasks.map(t=>t.status || "low_complete"));
+  if(statuses.size!==1)
+    return {label:"状态不一致 · "+count,disabled:true,action:null};
+  const status=tasks[0].status || "low_complete";
+  const label=(name,disabled=true,action=null)=>({
+    label:name+" · "+count,disabled:disabled||state.busy,action,
+  });
+  if(status==="low_pending")
+    return tasks.some(t=>t.kind!=="draft" || t.queued_stage)
+      ? label("低清已排队")
+      : label("批量开始预演",false,"low");
+  if(status==="low_complete")
+    return tasks.some(t=>t.queued_stage ||
+      !(t.checkpoint_id || t.kind==="checkpoint"))
+      ? label("高清不可续采")
+      : label("批量高清续采",false,"high");
+  if(status==="high_pending")return label(
+    tasks.some(t=>t.queued_stage)?"高清已排队":"高清待生成");
+  if(status==="low_running")return label("低清生成中");
+  if(status==="high_running")return label("高清生成中");
+  if(status==="high_complete")return label("高清已完成");
+  return label("批量操作");
+}
+function randomizeNewTaskSeed(draft) {
+  // One seed is used by the source and downstream sampler. Its saved
+  // bounds were computed from their intersection when configuring workflow.
+  if(draft)draft.seed=randomPreviewSeed(draft);
+  return draft;
+}
+
 const formatTime=value => {
   if(!value)return "—";
   const date=new Date(value);
@@ -582,6 +632,8 @@ async function togglePreviewPlayback() {
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
+  const visible=visibleTasks(),visibleIds=new Set(visible.map(t=>t.id));
+  const batch=batchActionInfo();
   // Keep the same media element across regular task/status refreshes.
   // Reconstructing the whole dialog used to reset playback while the user
   // was clicking the controls (especially around task completion).
@@ -597,10 +649,14 @@ function render() {
     '<button class="tdm-btn" data-action="refresh">刷新</button><button class="tdm-btn close" data-action="close">×</button></header>' +
     '<div class="tdm-main"><section class="tdm-left"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
-    (state.tasks.length && state.selected.size === state.tasks.length ? "checked" : "") +
-    '> 全选</label><span class="tdm-space"></span><span class="tdm-small">已选 ' + state.selected.size + '</span></div>' +
+    (visible.length && visible.every(t=>state.selected.has(t.id)) ? "checked" : "") +
+    '> 全选</label>'+
+    '<select class="tdm-status-filter" data-action="status-filter" aria-label="按任务状态筛选">'+
+    STATUS_FILTER_OPTIONS.map(option=>'<option value="'+option.value+'"'+
+      (option.value===state.statusFilter?' selected':'')+'>'+esc(option.label)+'</option>').join("")+
+    '</select><span class="tdm-space"></span><span class="tdm-small">已选 ' + state.selected.size + '</span></div>' +
     '<div class="tdm-list">' +
-    (state.tasks.length ? state.tasks.map(t => '<div class="tdm-card ' + (t.id === state.focused ? "active" : "") +
+    (visible.length ? visible.map(t => '<div class="tdm-card ' + (t.id === state.focused ? "active" : "") +
       '" data-action="focus" data-id="' + esc(t.id) + '">' +
       '<input type="checkbox" data-action="select" data-id="' + esc(t.id) + '" ' +
       (state.selected.has(t.id) ? "checked" : "") + '>' + thumb(t) +
@@ -611,17 +667,18 @@ function render() {
         t.low_started_at?'低清开始 '+formatTime(t.low_started_at):'尚未生成')+'</div>'+
       (t.high_finished_at?'<div class="tdm-small">高清完成 '+formatTime(t.high_finished_at)+'</div>':'')+
       '</div></div>').join("")
-      : '<div class="tdm-blank">还没有预演任务，点击「新建预演」创建任务，之后手动开始生成。</div>') +
+      : '<div class="tdm-blank">'+
+      (state.tasks.length?'当前状态下没有预演任务，可更改上方筛选条件。':
+        '还没有预演任务，点击「新建预演」创建任务，之后手动开始生成。')+
+      '</div>') +
     '</div></section><section class="tdm-right">' + details(task) + '</section></div>' +
     '<footer class="tdm-foot">' +
     '<button class="tdm-btn danger" data-action="delete" ' +
     (!state.selected.size || state.busy ? "disabled" : "") +
     '>删除所选 · ' + state.selected.size + '</button>' +
     '<span class="tdm-space"></span><button class="tdm-btn primary" data-action="batch" ' +
-    (!state.selected.size || state.busy ||
-     [...state.selected].some(id=>state.tasks.find(t=>t.id===id)?.status!=="low_complete")
-      ? "disabled" : "") +
-    '>批量高清续采 · ' + state.selected.size + '</button></footer></div>' +
+    (batch.disabled ? "disabled" : "") +
+    '>'+esc(batch.label)+'</button></footer></div>' +
     (state.creating ? createMarkup() : "") +
     (state.configuring ? configMarkup() : "") +
     (state.deleting ? deleteMarkup() : "");
@@ -715,9 +772,18 @@ function bindControls() {
       control.addEventListener("change", e => {
         e.stopPropagation();
         if (action === "select-all") state.selected = e.target.checked ?
-          new Set(state.tasks.map(t => t.id)) : new Set();
+          new Set(visibleTasks().map(t => t.id)) : new Set();
         else if (e.target.checked) state.selected.add(control.dataset.id);
         else state.selected.delete(control.dataset.id);
+        render();
+      });
+    } else if (action === "status-filter") {
+      control.addEventListener("change",()=>{
+        const next=control.value;
+        state.statusFilter=STATUS_FILTER_OPTIONS.some(x=>x.value===next)?next:"all";
+        const visible=visibleTasks(),ids=new Set(visible.map(t=>t.id));
+        state.selected=new Set([...state.selected].filter(id=>ids.has(id)));
+        if(!ids.has(state.focused))state.focused=visible[0]?.id||null;
         render();
       });
     } else if (action === "draft-field") {
@@ -836,7 +902,7 @@ async function handleAction(action, data) {
       if(task?.kind==="draft")return await runDraft(task.id,"continue");
       return await queueFromCheckpoint(state.focused,"continue");
     }
-    if (action === "batch") return await batchHighres();
+    if (action === "batch") return await batchSelected();
   } catch (e) {
     if(state.configuring) {
       state.configError=String(e?.message||e);
@@ -1122,7 +1188,7 @@ async function changeCreateSource(_data, source) {
   state.editDraftId=null;
   if (source === "template") {
     if (!state.template) throw Error("请先在「配置工作流」中选择模板");
-    state.createDraft = buildDraft(state.template);
+    state.createDraft = randomizeNewTaskSeed(buildDraft(state.template));
     state.createDraft.source = source;
   } else if (source.startsWith("task:")) {
     const id = source.slice(5);
@@ -1131,7 +1197,7 @@ async function changeCreateSource(_data, source) {
       const cfg={...prior,h3_properties:prior.h3_properties};
       state.createDraft=buildDraft(cfg,[],(prior.name||"预演镜头")+" · 新版",prior.previewType);
       state.createDraft.prompt=prior.prompt;
-      state.createDraft.seed=prior.seed;
+      randomizeNewTaskSeed(state.createDraft);
       state.createDraft.assets=structuredClone(prior.assets||[]);
       state.createDraft.source=source;
       state.editDraftId=null;state.assetPicker=null;
@@ -1157,6 +1223,7 @@ async function changeCreateSource(_data, source) {
     configured.h3_properties = meta.h3_properties || {};
     state.createDraft = buildDraft(configured, result.overrides || [],
       (task.name || "预演镜头") + " · 新版", task.metadata?.preview_type || "sampling");
+    randomizeNewTaskSeed(state.createDraft);
     state.createDraft.source = source;
   }
   state.assetPicker = null;
@@ -1168,7 +1235,7 @@ async function openCreate() {
   state.editDraftId = null;
   state.creating = true; state.configuring = false;
   if (state.template) {
-    state.createDraft = buildDraft(state.template);
+    state.createDraft = randomizeNewTaskSeed(buildDraft(state.template));
     state.createDraft.source = "template";
   } else {
     const source = state.tasks.find(x => x.metadata?.has_workflow);
@@ -1396,6 +1463,7 @@ async function submitCreate() {
     headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),
   });
   state.editDraftId=null;state.creating=false;state.assetPicker=null;
+  state.statusFilter="all";
   state.focused=saved.id;
   await refresh();
   toast(editId?"任务修改已保存":"任务已创建，点击「开始预演」后才会生成","success");
@@ -1538,24 +1606,39 @@ async function queueFromCheckpoint(id,mode) {
   toast((mode==="continue"?"高清续采":"预演重跑")+"已入队："+task.name);
 }
 
-async function batchHighres() {
-  const ids = [...state.selected];
-  if (!ids.length) return;
-  state.busy = true; render();
-  let queued = 0, failures = [];
+async function batchSelected() {
+  const batch=batchActionInfo();
+  if(batch.disabled || !batch.action)return;
+  const ids=selectedTaskRows().map(task=>task.id);
+  if(!ids.length)return;
+  state.busy=true;render();
+  let queued=0;
+  const failures=[];
   try {
-    for (const id of ids) {
-      try {
+    for(const id of ids){
+      try{
         const task=state.tasks.find(t=>t.id===id);
-        if(task?.status!=="low_complete")throw Error("任务未处于低清完成状态");
-        if(task.kind==="draft")await runDraft(id,"continue");
-        else await queueFromCheckpoint(id,"continue");
+        if(batch.action==="low"){
+          if(task?.status!=="low_pending" || task.kind!=="draft" || task.queued_stage)
+            throw Error("任务已不处于低清待生成状态");
+          await runDraft(id,"pause");
+        }else{
+          if(task?.status!=="low_complete" || task.queued_stage)
+            throw Error("任务已不处于低清完成状态");
+          if(task.kind==="draft")await runDraft(id,"continue");
+          else await queueFromCheckpoint(id,"continue");
+        }
         queued++;
-      } catch(e){failures.push(e.message);}
+      }catch(error){failures.push(error?.message||String(error));}
     }
-  } finally { state.busy = false; render(); }
-  if (failures.length) toast("成功入队 " + queued + " 个；失败 " + failures.length + " 个：" + failures[0], "error");
-  else toast("已排队 " + queued + " 个高清任务，按队列顺序逐一执行");
+  }finally {
+    state.busy=false;
+    await refresh();
+  }
+  const kind=batch.action==="low"?"预演":"高清";
+  if(failures.length)
+    toast(kind+"已入队 "+queued+" 个；失败 "+failures.length+" 个："+failures[0],"error");
+  else toast("已排队 "+queued+" 个"+kind+"任务，按 ComfyUI 队列顺序执行");
 }
 async function persistJob(job) {
   if (!job?.checkpointId || job.metadataSaved) return;
