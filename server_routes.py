@@ -175,7 +175,23 @@ async def terrydirector_selflift_task_workflow(request: web.Request) -> web.Resp
     workflow = metadata.get("workflow")
     if not isinstance(workflow, dict):
         return web.json_response({"error": "该任务未保存工作流快照"}, status=404)
-    return web.json_response({"workflow": workflow, "overrides": metadata.get("overrides", [])})
+    return web.json_response({"workflow": workflow, "overrides": metadata.get("overrides", []),
+                              "prompt_binding": metadata.get("prompt_binding"),
+                              "seed_binding": metadata.get("seed_binding")})
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
+async def terrydirector_selflift_task_metadata_get(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import load_metadata
+    try:
+        meta = load_metadata(request.match_info["checkpoint_id"])
+    except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+        return web.json_response({"error": "原任务未保存配置快照，无法继承"}, status=404)
+    return web.json_response({
+        "prompt_binding": meta.get("prompt_binding"),
+        "seed_binding": meta.get("seed_binding"),
+        "preview_type": meta.get("preview_type", "sampling"),
+    }, headers={"Cache-Control": "no-store"})
 
 
 @PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
