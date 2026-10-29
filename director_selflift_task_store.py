@@ -142,6 +142,9 @@ def list_tasks() -> list[dict]:
             draft["transition_step"] = item.get("transition_step")
             draft["metadata"]["has_workflow"] = True
             draft["metadata"]["preview_error"] = details.get("preview_error")
+            draft["metadata"]["preview_warning"] = details.get("preview_warning")
+            draft["metadata"]["preview_saved_step"] = details.get("preview_saved_step")
+            draft["metadata"]["preview_total_steps"] = details.get("preview_total_steps")
             draft["metadata"]["highres_video"] = highres
             draft["metadata"]["highres_prompt_id"] = details.get("highres_prompt_id")
             continue
@@ -164,6 +167,9 @@ def list_tasks() -> list[dict]:
                 "preview_node_id": details.get("preview_node_id"),
                 "preview_type": details.get("preview_type", "sampling"),
                 "preview_error": details.get("preview_error"),
+                "preview_warning": details.get("preview_warning"),
+                "preview_saved_step": details.get("preview_saved_step"),
+                "preview_total_steps": details.get("preview_total_steps"),
                 "highres_video": highres,
                 "highres_prompt_id": details.get("highres_prompt_id"),
                 "has_workflow": isinstance(details.get("workflow"), dict) and
@@ -182,6 +188,7 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
                "duration_seconds", "highres_megapixels",
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
                "high_started_at", "high_finished_at", "error", "preview_error",
+               "preview_warning", "preview_saved_step", "preview_total_steps",
                "highres_video", "highres_prompt_id"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
