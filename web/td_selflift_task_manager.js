@@ -1348,6 +1348,7 @@ function assetCard(path, title, attrs, selected = false) {
 function createMarkup() {
   const draft = state.createDraft;
   if (!draft) return "";
+  const ratio=taskAspectRatio(draft.api_prompt);
   const sources = [
     { id: "template", title: state.template ? "已配置工作流 · " + state.template.workflow_name : "未配置工作流" },
     ...state.tasks.filter(t => t.metadata?.has_workflow).map(t => ({
@@ -1393,10 +1394,13 @@ function createMarkup() {
       esc(draft.duration_seconds)+' 秒</output></div></div>'+
     '<div class="tdm-field tdm-inline-field"><label for="tdm-task-resolution">高清分辨率</label>'+
     '<select id="tdm-task-resolution" data-action="task-resolution">'+
-    PREVIEW_RESOLUTION_OPTIONS.map(mp=>
-      '<option value="'+mp+'"'+(mp===Number(draft.highres_megapixels)?' selected':'')+'>'+
-      esc(mp.toFixed(2)+' MP 高清 · '+(mp/4).toFixed(2)+' MP 低清')+'</option>'
-    ).join("")+'</select></div>'+
+    PREVIEW_RESOLUTION_OPTIONS.map(mp=>{
+      const info=taskResolutionInfo(mp,ratio);
+      return '<option value="'+mp+'"'+(mp===Number(draft.highres_megapixels)?' selected':'')+'>'+
+        esc(mp.toFixed(2)+' MP 高清 ('+info.high.width+'×'+info.high.height+
+          ') · '+info.lowMp.toFixed(2)+' MP 低清 ('+info.low.width+'×'+info.low.height+')')+
+        '</option>';
+    }).join("")+'</select></div>'+
     '<div class="tdm-field tdm-inline-field"><label>预览视频</label>' +
     '<div class="tdm-inline-control tdm-preview-radios" role="radiogroup" aria-label="预览视频">' +
     '<label class="tdm-preview-radio"><input type="radio" name="tdm-preview-type" ' +
