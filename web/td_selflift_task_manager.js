@@ -468,29 +468,77 @@ function nodeValue(node, name) {
   const idx = names.indexOf(name);
   return idx < 0 ? undefined : node.widgets_values?.[idx];
 }
-function fieldsOf(workflow, type) {
-  const rows = [];
-  for (const node of workflow?.nodes || []) {
-    const linked = new Set((node.inputs || []).filter(x => x.link != null).map(x => x.name));
-    const named = node.widgets_values_named || {};
-    for (const [name, value] of Object.entries(named)) {
-      if (linked.has(name)) continue;
-      const kind = String(node.type || "");
-      const lower = name.toLowerCase();
-      const inputType = node.inputs?.find(x => x.name === name)?.type;
-      // Custom text/prompt editors do not necessarily use "prompt" as their
-      // node class name. The explicit selection belongs in Configuration.
-      if (type === "prompt" && typeof value === "string" &&
-          inputType !== "COMBO" &&
-          !/image|file|model|path|format|mode|preset|sampler|scheduler|vae|upscaler|tiling|device|backend|dtype|quality|codec|prefix|folder|expression|formula|control|suffix|filename|resolution|ratio|type|time|name|seed/i.test(lower)) {
-        rows.push({ node_id: node.id, widget_name: name,
-          label: (node.title || kind) + " #" + node.id + " · " + name });
+/** Trace H3.prompt wiring upstream to an editable STRING origin.
+ * Never scan unrelated STRING widgets (e.g. ModelPreviewOverrideKJ.preview).
+ */
+function traceH3PromptInputs(workflow) {
+  const nodes = new Map((workflow?.nodes || []).map(n => [String(n.id),n]));
+  const links = new Map((workflow?.links || []).map(l => [String(l[0]),l]));
+  const results = [], failures = [];
+  const isH3 = n => /(?:MiniMaxH3|QwenH3|H3Prompt|H3Reference)/i.test(String(n.type));
+  for (const h3 of nodes.values()) {
+    if (!isH3(h3)) continue;
+    const ports=(h3.inputs || []).filter(i=>i.name === "prompt" || i.name === "text_prompt");
+    for (const port of ports) {
+      const discovered = new Map();
+      function visit(node,slot,depth,seen) {
+        if(!node || depth>12 || seen.has(String(node.id)))return;
+        seen.add(String(node.id));
+        const named=node.widgets_values_named || {};
+        // An H3 prompt port without a wire is itself the editable input.
+        const localPort=(node.inputs || []).find(i=>i.name===slot);
+        const possible=[slot,"prompt","text","string","value"].filter(Boolean);
+        for(const name of possible) {
+          const input=(node.inputs||[]).find(x=>x.name===name);
+          if(input?.link != null)continue;
+          if(typeof named[name]!=="string")continue;
+          if(/^(preview|filename|path|model|title)$/i.test(name))continue;
+          discovered.set(String(node.id)+":"+name,{
+            node_id:node.id,widget_name:name,
+            label:(node.title||node.type)+" #"+node.id+" · "+name,
+          });
+          // Source node reached, do not inspect unrelated text fields.
+          return;
+        }
+        // Continue only through explicit STRING inputs, never through MODEL,
+        // image or other unrelated branches.
+        const sourceInputs=(node.inputs||[]).filter(i=>i.link != null && i.type==="STRING");
+        if(sourceInputs.length !== 1) {
+          if(sourceInputs.length>1)failures.push("提示词通过多个 STRING 输入汇合："+(node.title||node.type));
+          return;
+        }
+        const edge=links.get(String(sourceInputs[0].link));
+        if(edge)visit(nodes.get(String(edge[1])),null,depth+1,seen);
       }
-      if (type === "seed" && (typeof value === "number" || /^seed$/i.test(name)) &&
-          /^(seed|noise_seed|value)$/i.test(lower) &&
-          (/seed|int/i.test(kind))) {
-        rows.push({ node_id: node.id, widget_name: name,
-          label: (node.title || kind) + " #" + node.id + " · " + name });
+      if(port.link==null) {
+        if(typeof h3.widgets_values_named?.[port.name] === "string"){
+          discovered.set(String(h3.id)+":"+port.name,{
+            node_id:h3.id,widget_name:port.name,
+            label:(h3.title||h3.type)+" #"+h3.id+" · "+port.name,
+          });
+        } else failures.push("H3 节点 #"+h3.id+" 没有可编辑的 "+port.name+" 文本输入");
+      } else {
+        const edge=links.get(String(port.link));
+        if(edge) visit(nodes.get(String(edge[1])),null,0,new Set());
+        else failures.push("H3 节点 #"+h3.id+" 提示词连线已失效");
+      }
+      if(discovered.size !== 1)failures.push("H3 节点 #"+h3.id+" 的提示词上游不唯一或不可编辑");
+      else for(const item of discovered.values())results.push(item);
+    }
+  }
+  return {fields:[...new Map(results.map(x=>[bindingKey(x),x])).values()],failures};
+}
+function fieldsOf(workflow,type) {
+  if(type==="prompt")return traceH3PromptInputs(workflow).fields;
+  const rows=[];
+  for(const node of workflow?.nodes || []) {
+    const linked=new Set((node.inputs||[]).filter(x=>x.link!=null).map(x=>x.name));
+    for(const [name,value] of Object.entries(node.widgets_values_named||{})) {
+      if(linked.has(name))continue;
+      if((typeof value==="number" || name==="seed") &&
+         /^(seed|noise_seed)$/i.test(name) && /seed/i.test(String(node.type))) {
+        rows.push({node_id:node.id,widget_name:name,
+          label:(node.title||node.type)+" #"+node.id+" · "+name});
       }
     }
   }
