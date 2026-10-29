@@ -216,7 +216,12 @@ async def terrydirector_preview_draft_batch_delete(request: web.Request) -> web.
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks")
 async def terrydirector_selflift_tasks(request: web.Request) -> web.Response:
     from .director_selflift_task_store import list_tasks
-    return web.json_response({"tasks": list_tasks()}, headers={"Cache-Control": "no-store"})
+    from .director_preview_highres import recover_highres_videos
+    tasks = list_tasks()
+    # Recover older already-completed highres outputs from their exact
+    # prompt history. No guessing filenames and no large video copies.
+    recover_highres_videos(tasks, getattr(PromptServer.instance, "prompt_queue", None))
+    return web.json_response({"tasks": tasks}, headers={"Cache-Control": "no-store"})
 
 
 @PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/batch-delete")
