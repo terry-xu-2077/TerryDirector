@@ -85,6 +85,12 @@ def _validate_content(data: dict) -> None:
         raise ValueError("种子范围不正确") from None
     if str(seed) != str(data["seed"]).strip() or seed < minimum or seed > maximum or seed < 0:
         raise ValueError(f"种子必须在 {minimum}～{maximum} 范围内")
+    duration = data.get("duration_seconds", 15)
+    if type(duration) not in (int, float) or not float(duration).is_integer() or not 4 <= duration <= 20:
+        raise ValueError("视频时长须为 4–20 秒之间的整数")
+    mp = data.get("highres_megapixels", 0.8)
+    if type(mp) not in (int, float) or float(mp) not in (0.4,0.6,0.8,1.0,1.2,1.5,2.0,3.0,4.0):
+        raise ValueError("高清分辨率必须是预演台提供的 MP 档位")
 
 
 def save_draft(data: dict, draft_id: str | None = None) -> dict:
