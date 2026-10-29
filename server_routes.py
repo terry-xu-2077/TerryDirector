@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import mimetypes
 import shutil
@@ -257,9 +258,17 @@ async def terrydirector_selflift_batch_delete(request: web.Request) -> web.Respo
 async def terrydirector_selflift_task_media(request: web.Request) -> web.StreamResponse:
     from .director_selflift_task_store import media_path
     try:
-        path = media_path(request.match_info["checkpoint_id"], request.match_info["kind"])
-    except (FileNotFoundError, ValueError, OSError):
+        kind = request.match_info["kind"]
+        path = media_path(request.match_info["checkpoint_id"], kind)
+        if kind == "sampling" and path.suffix == ".mp4":
+            # One-time, transparent repair for existing fragmented previews.
+            # Keep costly FFmpeg processing off aiohttp's event loop.
+            from .director_preview_mp4 import repair_legacy_preview_mp4
+            await asyncio.to_thread(repair_legacy_preview_mp4, path)
+    except (FileNotFoundError, OSError):
         raise web.HTTPNotFound()
+    except ValueError as exc:
+        raise web.HTTPUnprocessableEntity(text=str(exc))
     return web.FileResponse(path, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
@@ -316,7 +325,11 @@ async def terrydirector_selflift_sampling_preview(request: web.Request) -> web.R
     mime = str(request.headers.get("Content-Type", "")).split(";")[0].strip()
     try:
         raw = await request.content.read(48 * 1024 * 1024 + 1)
-        filename = save_sampling_preview(request.match_info["checkpoint_id"], mime, raw)
+        # FFmpeg muxing/validation can take seconds; do not hold up ComfyUI
+        # websocket/queue handling or other pending Preview Stage tasks.
+        filename = await asyncio.to_thread(
+            save_sampling_preview, request.match_info["checkpoint_id"], mime, raw,
+        )
     except (FileNotFoundError, OSError, ValueError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
     return web.json_response({"ok": True, "filename": filename})
