@@ -13,8 +13,8 @@ import { api } from "/scripts/api.js";
 const CLASS_NAME = "TerryDirectorSelfLiftPauseResume";
 const TITLE = "TerryDirector SelfLift 暂停/继续";
 const UUID_RE = /^[0-9a-f]{32}$/;
-const PRIMARY_OUTPUT_TYPES = new Set(["SaveVideo", "VHS_VideoCombine"]);
-const OUTPUT_TYPES = new Set(["SaveVideo", "VHS_VideoCombine", "SaveImage",
+const PRIMARY_OUTPUT_TYPES = new Set(["SaveVideo", "VHS_VideoCombine", "TerryDirectorLowresReviewSave"]);
+const OUTPUT_TYPES = new Set(["SaveVideo", "VHS_VideoCombine", "TerryDirectorLowresReviewSave", "SaveImage",
   "SaveAnimatedWEBP", "SaveAnimatedPNG", "SaveAudio"]);
 const MIN_WIDTH = 350;
 const STYLE_ID = "td-selflift-action-style";
