@@ -385,28 +385,31 @@ function deleteMarkup() {
 }
 
 async function deleteSelectedTasks() {
-  const ids = state.deleting?.ids;
-  if (!ids?.length || state.busy) return;
-  state.busy = true;
-  render();
+  const ids=state.deleting?.ids;
+  if(!ids?.length || state.busy)return;
+  state.busy=true;render();
   try {
-    const result = await request("/tasks/batch-delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ checkpoint_ids: ids }),
+    const selected=state.tasks.filter(t=>ids.includes(t.id));
+    if(selected.some(t=>t.queued_stage || ["low_running","high_running","high_pending"].includes(t.status)))
+      throw Error("运行中或排队中的任务不能删除");
+    const draftIds=selected.filter(t=>t.kind==="draft").map(t=>t.id);
+    const checkpointIds=[...new Set(selected.map(t=>t.checkpoint_id ||
+      (t.kind==="checkpoint"?t.id:null)).filter(Boolean))];
+    if(checkpointIds.length)await request("/tasks/batch-delete",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({checkpoint_ids:checkpointIds}),
     });
-    const deleted = new Set(result.deleted || []);
-    for (const id of deleted) state.selected.delete(id);
-    state.deleting = null;
-    if (deleted.has(state.focused)) state.focused = null;
-    toast("已永久删除 " + deleted.size + " 个预演任务", "success");
+    if(draftIds.length)await request("/drafts/batch-delete",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({draft_ids:draftIds}),
+    });
+    state.selected.clear();state.deleting=null;
+    if(ids.includes(state.focused))state.focused=null;
+    toast("已删除 "+selected.length+" 个预演任务","success");
     await refresh();
-  } catch (error) {
-    toast("删除失败：" + error.message, "error");
-  } finally {
-    state.busy = false;
-    render();
-  }
+  }catch(error){
+    toast("删除失败："+error.message,"error");
+  }finally{state.busy=false;render();}
 }
 
 function bindControls() {
@@ -1209,8 +1212,26 @@ async function queueFromCheckpoint(id,mode) {
     else overrides.push({node_id:template.pause_node_id,widget_name:"name",value:name});
   }
   const previewType=task.metadata?.preview_type || "sampling";
-  const queued=await submitPreviewJob(template,overrides,mode,
-    mode==="continue"?id:"",previewType);
+  if(mode==="continue" && task.status!=="low_complete")
+    throw Error("只有低清完成的任务可以续采高清");
+  if(mode==="continue")
+    await saveLegacyLifecycle(id,"high_pending",{queued_stage:"high"});
+  let queued;
+  try{
+    queued=await submitPreviewJob(template,overrides,mode,
+      mode==="continue"?id:"",previewType);
+  }catch(error){
+    if(mode==="continue")await saveLegacyLifecycle(id,"low_complete",{
+      queued_stage:null,error:String(error.message||error),
+    }).catch(()=>{});
+    throw error;
+  }
+  if(mode==="continue") {
+    state.jobs.set(queued.promptId,{
+      mode:"continue",checkpointId:id,busy:true,
+    });
+    void refresh();
+  }
   if(mode==="pause") {
     state.jobs.set(queued.promptId,{
       mode,overrides,workflow:info.workflow,api_prompt:info.api_prompt,name,
