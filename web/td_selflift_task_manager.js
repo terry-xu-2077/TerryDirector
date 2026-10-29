@@ -608,6 +608,9 @@ function details(task) {
           esc("saved:"+cid+":"+kind+":"+file)+'" src="'+mediaUrl(cid,kind)+
           '" controls loop playsinline preload="auto"></video>'
         : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
+  const previewDiagnostic=kind==="sampling" && !file && task.metadata?.preview_error
+    ? '<div class="tdm-warning">TAEH3 预览未保存：'+esc(task.metadata.preview_error)+'</div>'
+    : '';
   const timing='<div class="tdm-timing"><div>任务创建：<strong>'+formatTime(task.created_at)+'</strong></div>'+
     '<div>低清生成：'+formatTime(task.low_started_at)+' → '+formatTime(task.low_finished_at)+
     '　用时 '+duration(task.low_started_at,task.low_finished_at)+'</div>'+
@@ -634,6 +637,7 @@ function details(task) {
       '<button class="tdm-btn tdm-replay-control" data-action="toggle-preview-playback" '+
       'type="button">播放 / 暂停</button>' : '')+'</div>'+
     '<div data-live-preview-host data-task-id="'+esc(task.id)+'">'+preview+'</div>'+
+    previewDiagnostic+
     '<div class="tdm-detail">Seed：'+esc(task.seed||"—")+
     '　工作流：'+esc(task.metadata?.workflow_name||"未记录")+
     (cid?'　检查点：'+esc(cid.slice(0,12)):'')+'</div>'+
