@@ -91,53 +91,100 @@ def save_draft(data: dict, draft_id: str | None = None) -> dict:
     _validate_content(data)
     with _LOCK:
         if draft_id:
-            existing = get_draft(draft_id)
-            if existing.get("status") not in ("pending", "failed"):
-                raise ValueError("任务已提交运行，不能修改；请从该任务新建")
-            created_at = existing["created_at"]
+            old = get_draft(draft_id)
+            if old.get("status") != "low_pending" or old.get("queued_stage"):
+                raise ValueError("任务已经提交运行，不允许修改")
+            created = old["created_at"]
         else:
             draft_id = "draft_" + uuid.uuid4().hex
-            created_at = datetime.now(timezone.utc).isoformat()
-        # Never let clients overwrite lifecycle fields.
-        clean = {k: v for k, v in data.items() if k not in (
-            "id", "status", "prompt_id", "checkpoint_id", "created_at", "updated_at", "error")}
-        payload = {
-            **clean, "id": draft_id, "status": "pending",
-            "created_at": created_at,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
-        _write(draft_id, payload)
-        return {"id": draft_id, "status": "pending"}
+            created = _now()
+        excluded = {"id", "status", "prompt_id", "checkpoint_id", "created_at",
+                    "updated_at", "error", "queued_stage", "low_started_at",
+                    "low_finished_at", "high_started_at", "high_finished_at"}
+        value = {k: v for k, v in data.items() if k not in excluded}
+        value.update({
+            "id": draft_id, "status": "low_pending", "queued_stage": None,
+            "created_at": created, "updated_at": _now(),
+            "checkpoint_id": None, "prompt_id": None,
+            "low_started_at": None, "low_finished_at": None,
+            "high_started_at": None, "high_finished_at": None,
+        })
+        _write(draft_id, value)
+        return {"id": draft_id, "status": "low_pending"}
 
 
-def set_draft_status(draft_id: str, status: str, *,
+def transition_draft(draft_id: str, action: str, *,
                      prompt_id: str | None = None, checkpoint_id: str | None = None,
                      error: str | None = None) -> dict:
-    if status not in _STATUSES - {"pending"}:
-        raise ValueError("不支持的任务状态")
+    """Six UI states and queue lock are persisted separately with server times."""
     with _LOCK:
         value = get_draft(draft_id)
-        previous = value["status"]
-        if status == "submitting" and previous not in ("pending", "failed"):
-            raise ValueError("任务已经提交，不能重复入队")
-        if status == "queued" and previous != "submitting":
-            raise ValueError("任务没有获得运行许可")
-        if status == "completed" and previous not in ("queued", "submitting"):
-            raise ValueError("任务尚未入队")
-        if status == "failed" and previous not in ("queued", "submitting"):
-            raise ValueError("任务并未运行")
-        value["status"] = status
-        if prompt_id is not None:
-            value["prompt_id"] = str(prompt_id)
-        if checkpoint_id is not None:
-            value["checkpoint_id"] = str(checkpoint_id)
-        if error is not None:
-            value["error"] = str(error)[:2000]
-        if status == "submitting":
+        old = value.get("status", "low_pending")
+        stage = value.get("queued_stage")
+        if action == "claim_low":
+            if old != "low_pending" or stage:
+                raise ValueError("只有低清待生成任务可开始预演")
+            value["queued_stage"] = "low"
+            value["prompt_id"] = None
             value.pop("error", None)
-        value["updated_at"] = datetime.now(timezone.utc).isoformat()
+        elif action == "claim_high":
+            if old != "low_complete" or stage or not value.get("checkpoint_id"):
+                raise ValueError("必须先完成低清并保存检查点")
+            value["status"] = "high_pending"
+            value["queued_stage"] = "high"
+            value["prompt_id"] = None
+            value.pop("error", None)
+        elif action == "ack":
+            if not prompt_id:
+                raise ValueError("缺少 ComfyUI 队列编号")
+            if not stage:
+                if value.get("prompt_id") == str(prompt_id):
+                    return {"id": draft_id, "status": old, "queued_stage": None}
+                raise ValueError("任务未申请运行")
+            if value.get("prompt_id") not in (None, str(prompt_id)):
+                raise ValueError("队列编号冲突")
+            value["prompt_id"] = str(prompt_id)
+        elif action == "start":
+            if stage not in _STAGE:
+                raise ValueError("当前任务不在生成队列")
+            if prompt_id and value.get("prompt_id") not in (None, str(prompt_id)):
+                raise ValueError("执行编号不匹配")
+            value["status"] = _STAGE[stage][1]
+            if prompt_id:
+                value["prompt_id"] = str(prompt_id)
+            field = stage + "_started_at"
+            if not value.get(field):
+                value[field] = _now()
+        elif action == "checkpoint":
+            if stage != "low" or not isinstance(checkpoint_id, str) or not re.fullmatch(r"[0-9a-f]{32}", checkpoint_id):
+                raise ValueError("无效的低清检查点")
+            value["checkpoint_id"] = checkpoint_id
+        elif action == "finish":
+            if stage not in _STAGE:
+                raise ValueError("任务不在生成阶段")
+            if stage == "low" and not value.get("checkpoint_id"):
+                raise ValueError("低清检查点未保存，不能标记完成")
+            stamp = _now()
+            value["status"] = _STAGE[stage][2]
+            value[stage + "_finished_at"] = stamp
+            if not value.get(stage + "_started_at"):
+                value[stage + "_started_at"] = stamp
+            value["queued_stage"] = None
+            value.pop("error", None)
+        elif action == "fail":
+            if stage not in _STAGE:
+                raise ValueError("当前任务没有排队或运行记录")
+            value["status"] = "low_pending" if stage == "low" else "low_complete"
+            value["queued_stage"] = None
+            value["prompt_id"] = None
+            value["error"] = str(error or "生成失败或中断")[:2000]
+        else:
+            raise ValueError("无效的任务状态操作")
+        value["updated_at"] = _now()
         _write(draft_id, value)
-        return {"id": draft_id, "status": status}
+        return {"id": draft_id, "status": value["status"],
+                "queued_stage": value.get("queued_stage"),
+                "checkpoint_id": value.get("checkpoint_id")}
 
 
 def delete_drafts(ids: list[str]) -> list[str]:
@@ -145,9 +192,9 @@ def delete_drafts(ids: list[str]) -> list[str]:
         raise ValueError("请选择 1～500 个不同任务")
     with _LOCK:
         for draft_id in ids:
-            draft = get_draft(draft_id)
-            if draft["status"] not in ("pending", "failed"):
-                raise ValueError("已提交运行的任务不能删除，请先完成或取消运行")
+            item = get_draft(draft_id)
+            if item.get("queued_stage") or item.get("status") in ("low_running", "high_running", "high_pending"):
+                raise ValueError("运行或排队中的任务不能删除")
         for draft_id in ids:
             _path(draft_id).unlink()
     return ids
