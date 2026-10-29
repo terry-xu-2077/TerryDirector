@@ -18,13 +18,13 @@ mp4 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(mp4)
 
 
-def _generate_fragment(path: Path):
+def _generate_fragment(path: Path, duration: int = 2):
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise unittest.SkipTest("FFmpeg not installed")
     command = [
         ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=8:duration=2",
+        "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=12:duration=" + str(duration),
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "8",
         "-movflags", "frag_keyframe+empty_moov+default_base_moof",
         "-f", "mp4", str(path),
@@ -53,6 +53,27 @@ class PreviewMP4NormalizationTests(unittest.TestCase):
         self.assertIn(b"moov", set(mp4._atoms(saved.read_bytes())))
         self.assertIn(b"mdat", set(mp4._atoms(saved.read_bytes())))
         mp4._verify_video(saved, mp4._ffmpeg())
+
+    def test_sampling_frames_retimed_to_fifteen_seconds(self):
+        source = self.folder / "short_kj.mp4"
+        _generate_fragment(source, duration=8)
+        original_duration = mp4._video_duration(source, mp4._ffmpeg())
+        self.assertAlmostEqual(original_duration, 8.0, delta=0.3)
+        result = mp4.finalize_preview_mp4(
+            source.read_bytes(), self.folder, target_seconds=15
+        )
+        duration = mp4._video_duration(result, mp4._ffmpeg())
+        self.assertAlmostEqual(duration, 15.0, delta=0.7)
+        self.assertFalse(mp4.is_fragmented_mp4(result.read_bytes()))
+        mp4._verify_video(result, mp4._ffmpeg())
+
+    def test_invalid_target_duration_preserves_original_file(self):
+        path = self.folder / "sampling_preview.mp4"
+        _generate_fragment(path)
+        original = path.read_bytes()
+        with self.assertRaises(ValueError):
+            mp4.finalize_preview_mp4(original, self.folder, target_seconds=30)
+        self.assertEqual(path.read_bytes(), original)
 
     def test_repair_old_fragmented_file_without_rerun(self):
         target = self.folder / "sampling_preview.mp4"
