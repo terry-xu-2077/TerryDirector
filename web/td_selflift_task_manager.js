@@ -545,7 +545,8 @@ function details(task) {
 
 function bindPreviewPlaybackErrors() {
   const player=state.root?.querySelector('[data-live-preview-host] video');
-  if(!player)return;
+  if(!player || player.dataset.previewErrorBound==="1")return;
+  player.dataset.previewErrorBound="1";
   player.addEventListener("error",()=>{
     const detail=player.error?.message || "视频格式可能与当前浏览器不兼容";
     showPreviewPlaybackError("无法播放预览："+detail);
