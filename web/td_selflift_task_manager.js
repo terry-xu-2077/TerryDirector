@@ -11,6 +11,8 @@ import { listPreviewInputCandidates } from "./td_preview_input_candidates.js";
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
 const URL_BASE = "/terrydirector/api/selflift";
+// Same mark URL as the TerryDirector timeline node and timeline editor.
+const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
 const state = {
   tasks: [], selected: new Set(), focused: null, preview: "sampling",
   busy: false, root: null, creating: false, configuring: false, deleting: null,
@@ -18,6 +20,7 @@ const state = {
   configError: "", configSaving: false, configDraft: null, createDraft: null, editDraftId: null,
   assetPicker: null, inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
+  sidebarRoot: null, sidebarPoll: null, sidebarFetching: false,
 };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -207,6 +210,42 @@ function styles() {
 .tdm-create-foot{display:flex;align-items:center;gap:12px;padding:12px 22px 14px;
  border-top:1px solid #353a43;flex:none}
 .tdm-create-foot .tdm-small{max-width:65%}
+
+/* ComfyUI sidebar: a read-only overview, not a second task editor. */
+.tdm-sidebar{box-sizing:border-box;display:flex;flex-direction:column;min-height:100%;
+ padding:18px 15px 12px;gap:0;color:#dce3ef;font:13px system-ui,sans-serif}
+.tdm-sidebar-brand{display:flex;align-items:center;gap:11px;padding:3px 1px 17px;
+ border-bottom:1px solid #343840;margin-bottom:15px;min-width:0}
+.tdm-sidebar-mark{width:35px;height:35px;object-fit:contain;flex:0 0 35px}
+.tdm-sidebar-identity{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tdm-sidebar-identity strong{font-size:16px;letter-spacing:.1px;color:#f2f3f8;
+ overflow-wrap:anywhere}
+.tdm-sidebar-identity span{font-size:11px;color:#8c98a9}
+.tdm-sidebar-open{width:100%;min-height:38px;font-weight:600}
+.tdm-sidebar-description{font-size:11px;line-height:1.6;color:#96a2b2;
+ padding:10px 1px 17px}
+.tdm-sidebar-overview{min-height:0;flex:1;border-top:1px solid #343840;
+ padding-top:14px;display:flex;flex-direction:column}
+.tdm-sidebar-overview-head{display:flex;gap:8px;align-items:baseline;
+ margin:0 1px 10px;color:#d6dfe9;font-size:12px;font-weight:650}
+.tdm-sidebar-count{font-size:11px;color:#8996a6;font-weight:400}
+.tdm-sidebar-list{display:flex;flex-direction:column;gap:0;min-height:0;
+ overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#404957 transparent}
+.tdm-sidebar-entry{padding:11px 4px 12px;border-bottom:1px solid #2d3139;
+ cursor:default;user-select:text}
+.tdm-sidebar-entry-title{display:flex;align-items:flex-start;gap:7px;min-width:0}
+.tdm-sidebar-entry-name{font-size:12px;color:#e0e6ee;line-height:1.4;font-weight:600;
+ flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tdm-sidebar-entry-status{font-size:10px;color:#afb8c7;font-weight:500;
+ white-space:nowrap;flex:none}
+.tdm-sidebar-entry-status.low_running,.tdm-sidebar-entry-status.high_running{color:#99c9ff}
+.tdm-sidebar-entry-status.low_complete,.tdm-sidebar-entry-status.high_complete{color:#a8dcb0}
+.tdm-sidebar-entry-status.high_pending{color:#e0c49b}
+.tdm-sidebar-entry-meta{font-size:10px;line-height:1.7;color:#929ead;
+ display:flex;flex-direction:column;gap:0;margin-top:3px}
+.tdm-sidebar-empty{padding:28px 8px;color:#838e9e;font-size:12px;
+ text-align:center;line-height:1.8}
+
 @media(max-width:850px){.tdm-form.tdm-create{height:94vh}
  .tdm-create-content{overflow:auto}.tdm-create-columns{grid-template-columns:1fr;gap:22px;height:auto}
  .tdm-create .tdm-prompt-editor{height:40vh;min-height:260px;flex:none}
@@ -239,12 +278,114 @@ async function refresh() {
   try {
     const result = await request("/tasks");
     state.tasks = result.tasks || [];
+    renderSidebarTaskList();
     state.selected = new Set([...state.selected].filter(id => state.tasks.some(t => t.id === id)));
     if (!state.tasks.some(t => t.id === state.focused)) state.focused = state.tasks[0]?.id || null;
     render();
   } catch (e) { toast(e.message, "error"); }
 }
 function selectedTask() { return state.tasks.find(t => t.id === state.focused); }
+
+function sidebarDate(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "—";
+  return parsed.toLocaleString("zh-CN", {
+    month: "2-digit", day: "2-digit", hour: "2-digit",
+    minute: "2-digit", hour12: false,
+  });
+}
+function sidebarLastStage(task) {
+  if (task.high_finished_at) return "高清完成 " + sidebarDate(task.high_finished_at);
+  if (task.high_started_at) return "高清开始 " + sidebarDate(task.high_started_at);
+  if (task.low_finished_at) return "低清完成 " + sidebarDate(task.low_finished_at);
+  if (task.low_started_at) return "低清开始 " + sidebarDate(task.low_started_at);
+  if (task.queued_stage) return "已加入 ComfyUI 队列";
+  return "尚未生成";
+}
+function sidebarTaskMarkup(task) {
+  // This is deliberately plain text: no links, editing, selection or queue actions.
+  const status = Object.prototype.hasOwnProperty.call(STATUS_NAMES,task.status)
+    ? task.status : "low_pending";
+  const name = String(task.name || "未命名预演任务");
+  return '<div class="tdm-sidebar-entry">' +
+    '<div class="tdm-sidebar-entry-title"><strong class="tdm-sidebar-entry-name" title="' +
+    esc(name) + '">' + esc(name) + '</strong>' +
+    '<span class="tdm-sidebar-entry-status ' + status + '">' +
+    esc(STATUS_NAMES[status]) + (task.queued_stage ? " · 排队" : "") + '</span></div>' +
+    '<div class="tdm-sidebar-entry-meta"><span>创建 ' +
+    esc(sidebarDate(task.created_at)) + '</span><span>' +
+    esc(sidebarLastStage(task)) + '</span></div></div>';
+}
+function renderSidebarTaskList() {
+  const host = state.sidebarRoot;
+  if (!host) return;
+  const list = host.querySelector('[data-preview-sidebar-list]');
+  const count = host.querySelector('[data-preview-sidebar-count]');
+  if (!list || !count) return;
+  count.textContent = state.tasks.length + " 个任务";
+  list.innerHTML = state.tasks.length
+    ? state.tasks.map(sidebarTaskMarkup).join("")
+    : '<div class="tdm-sidebar-empty">暂无预演任务<br>请先在预演台创建任务</div>';
+}
+async function refreshSidebarTasks() {
+  const host = state.sidebarRoot;
+  if (!host || state.sidebarFetching) return;
+  state.sidebarFetching = true;
+  try {
+    const result = await request("/tasks");
+    if (state.sidebarRoot !== host) return;
+    state.tasks = Array.isArray(result.tasks) ? result.tasks : [];
+    renderSidebarTaskList();
+  } catch (error) {
+    if (state.sidebarRoot === host && !state.tasks.length) {
+      const list = host.querySelector('[data-preview-sidebar-list]');
+      if (list) list.textContent = "暂时无法读取任务列表";
+    }
+    console.warn("[TerryDirector 预演台侧边栏]", error);
+  } finally {
+    state.sidebarFetching = false;
+  }
+}
+function mountPreviewSidebar(el) {
+  styles();
+  if (state.sidebarPoll != null) {
+    clearInterval(state.sidebarPoll);
+    state.sidebarPoll = null;
+  }
+  state.sidebarRoot = el;
+  el.innerHTML =
+    '<div class="tdm-sidebar">' +
+      '<header class="tdm-sidebar-brand">' +
+        '<img class="tdm-sidebar-mark" src="' + BRAND_MARK_URL +
+          '" alt="" aria-hidden="true">' +
+        '<div class="tdm-sidebar-identity"><strong>TerryDirector</strong>' +
+          '<span>导演节点包</span></div></header>' +
+      '<button class="tdm-btn primary tdm-sidebar-open" type="button" ' +
+        'data-preview-open>打开预演台</button>' +
+      '<div class="tdm-sidebar-description">镜头预演、任务重跑与批量高清续采</div>' +
+      '<section class="tdm-sidebar-overview" aria-label="只读预演任务列表">' +
+        '<div class="tdm-sidebar-overview-head">任务列表' +
+          '<span class="tdm-sidebar-count" data-preview-sidebar-count></span></div>' +
+        '<div class="tdm-sidebar-list" data-preview-sidebar-list></div>' +
+      '</section></div>';
+  el.querySelector('[data-preview-open]').addEventListener("click", open);
+  renderSidebarTaskList();
+  void refreshSidebarTasks();
+  // Sidebar tabs may remain mounted while hidden. Refresh only when visible.
+  const poll = setInterval(() => {
+    if (!el.isConnected) {
+      clearInterval(poll);
+      if (state.sidebarPoll === poll) state.sidebarPoll = null;
+      if (state.sidebarRoot === el) state.sidebarRoot = null;
+      return;
+    }
+    if (el.getClientRects().length && document.visibilityState !== "hidden")
+      void refreshSidebarTasks();
+  }, 12000);
+  state.sidebarPoll = poll;
+}
+
 const STATUS_NAMES={
   low_pending:"低清待生成",low_running:"低清生成中",low_complete:"低清完成",
   high_pending:"高清待生成",high_running:"高清生成中",high_complete:"高清完成",
@@ -1457,14 +1598,7 @@ app.registerExtension({
         id: "terrydirector-selflift-tasks", icon: "pi pi-video",
         title: "预演台", tooltip: "TerryDirector 预演台",
         type: "custom",
-        render: el => {
-          el.innerHTML = '<div style="padding:16px;color:#abb4c2;font:13px system-ui">' +
-            '<button class="tdm-btn primary" type="button" data-preview-open>打开预演台</button>' +
-            '<p style="line-height:1.6">镜头预演、任务重跑与批量高清续采</p></div>';
-          styles();
-          el.querySelector('[data-preview-open]').onclick = open;
-          // Sidebar is only an entry point; work happens in the large overlay.
-        },
+        render: el => mountPreviewSidebar(el),
       });
     }
   },
