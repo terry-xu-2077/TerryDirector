@@ -18,6 +18,27 @@ const nodes = () => app.graph?._nodes || [];
 const widget = (n, name) => n?.widgets?.find(w => w.name === name);
 const getPauseNodes = () => nodes().filter(n => nodeType(n) === START_CLASS);
 const getPreviewNodes = () => nodes().filter(n => nodeType(n) === KJ_CLASS);
+function previewForPause(pause) {
+  const links = app.graph?.links || {};
+  const clean = pause?.inputs?.find(x => x.name === "low_clean");
+  const samplerLink = clean?.link == null ? null : links[clean.link];
+  const sampler = samplerLink && app.graph?.getNodeById?.(samplerLink.origin_id);
+  const visited = new Set();
+  function find(node, depth = 0) {
+    if (!node || depth > 8 || visited.has(String(node.id))) return null;
+    visited.add(String(node.id));
+    if (nodeType(node) === KJ_CLASS) return node;
+    for (const input of node.inputs || []) {
+      if (!/model/i.test(input.name) || input.link == null) continue;
+      const link = links[input.link];
+      const origin = link && app.graph?.getNodeById?.(link.origin_id);
+      const found = find(origin, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  return find(sampler) || (getPreviewNodes().length === 1 ? getPreviewNodes()[0] : null);
+}
 const mediaUrl = (id, kind) => URL_BASE + "/tasks/" + encodeURIComponent(id) + "/media/" + kind;
 function toast(message, severity = "info") {
   if (app.extensionManager?.toast?.add) app.extensionManager.toast.add({
@@ -87,6 +108,7 @@ function root() {
   div.addEventListener("click", e => { if (e.target === div) close(); });
   div.addEventListener("pointerdown", e => e.stopPropagation());
   div.addEventListener("wheel", e => e.stopPropagation(), { passive: true });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && state.root?.style.display !== "none") close(); });
   document.body.append(div);
   state.root = div;
   return div;
@@ -125,8 +147,8 @@ function details(task) {
     '<button data-action="preview" data-kind="decoded" class="' + (kind === "decoded" ? "on" : "") + '">低清解码</button>' +
     '<button data-action="preview" data-kind="sampling" class="' + (kind === "sampling" ? "on" : "") + '">TAEH3 采样预览</button></div>' +
     media + '<div class="tdm-detail">检查点：' + esc(task.id.slice(0, 12)) +
-    '　Seed：' + esc(task.seed) + '　低清：' + esc(shape.slice(-2).reverse().join("×")) +
-    '　目标：' + esc(target.slice(-2).reverse().join("×")) +
+    '　Seed：' + esc(task.seed) + '　低清 Latent：' + esc(shape.slice(-2).reverse().join("×")) +
+    '　目标 Latent：' + esc(target.slice(-2).reverse().join("×")) +
     '<div>工作流：' + esc(task.metadata?.workflow_name || "未记录") +
     '　创建：' + esc((task.created_at || "").replace("T", " ").slice(0, 19)) + '</div></div>' +
     '<div class="tdm-actions"><button class="tdm-btn" data-action="load">载入任务工作流</button>' +
@@ -209,6 +231,10 @@ function editableWidgets() {
     const type = nodeType(node);
     for (const w of node.widgets || []) {
       if (w.type === "hidden") continue;
+      // A widget with a linked input socket is not the effective prompt value.
+      // Its upstream text/source node is edited instead, never a dead widget.
+      const socket = node.inputs?.find(x => x.name === w.name);
+      if (socket?.link != null) continue;
       if ((type === "LoadImage" || type === "LoadImageMask") && w.name === "image") {
         rows.push({ node, w, kind: "image", value: w.value });
       } else if (/MiniMaxH3ReferenceToVideo|CLIPTextEncode|PrimitiveString|H3PromptEditor|TextEncode|Prompt/i.test(type) &&
@@ -282,7 +308,7 @@ async function submitCreate() {
   }));
   overrides.push({ node_id: node.id, widget_name: "name", value: name });
   const snapshot = app.graph.serialize();
-  const previewNode = getPreviewNodes()[0];
+  const previewNode = previewForPause(node);
   const result = await queueManagedSelfLift(node, "pause", overrides);
   if (!result.promptId) throw Error("任务已提交，但未收到 prompt_id；请检查 ComfyUI 队列");
   state.jobs.set(result.promptId, {
@@ -307,7 +333,10 @@ async function queueFromCheckpoint(id, mode) {
   if (!task) throw Error("请选择任务");
   const info = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
   const pause = app.graph?.getNodeById?.(Number(task.metadata.pause_node_id));
-  if (nodeType(pause) !== START_CLASS) {
+  const expectedNodes = new Map((info.workflow?.nodes || []).map(n => [String(n.id), n.type]));
+  const incompatible = [...expectedNodes].some(([nodeId, type]) =>
+    nodeType(app.graph?.getNodeById?.(Number(nodeId))) !== type);
+  if (incompatible || nodeType(pause) !== START_CLASS) {
     throw Error("当前画布不是该任务的工作流，请先点击「载入任务工作流」");
   }
   const overrides = [...(info.overrides || [])];
@@ -378,6 +407,22 @@ async function persistPreview(job) {
 function bindEvents() {
   api.addEventListener("execution_start", e => {
     state.activePromptId = e.detail?.prompt_id ? String(e.detail.prompt_id) : null;
+    // Also archive KJ previews when the user clicks the original blue node
+    // button instead of submitting through the task manager.
+    if (state.activePromptId && !state.jobs.has(state.activePromptId)) {
+      const pauseNodes = getPauseNodes().filter(n =>
+        widget(n, "mode")?.value === "暂停并保存");
+      if (pauseNodes.length === 1) {
+        const pause = pauseNodes[0], preview = previewForPause(pause);
+        state.jobs.set(state.activePromptId, {
+          mode: "pause", overrides: [], workflow: app.graph.serialize(),
+          name: String(widget(pause, "name")?.value || "低清镜头"),
+          workflow_name: state.templateName, pause_node_id: String(pause.id),
+          preview_node_id: preview ? String(preview.id) : null,
+          checkpointId: null, preview: null, uploadedStep: 0, busy: true,
+        });
+      }
+    }
   });
   api.addEventListener("kj_preview_override", e => {
     const p = e.detail || {};
