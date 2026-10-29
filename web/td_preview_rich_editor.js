@@ -68,10 +68,26 @@ export function attachPreviewRichEditor(editor,{draft,onChange,mode="visual"}={}
     event.preventDefault();event.stopPropagation();
     const raw=event.clipboardData?.getData("text/plain")||"";
     if(!raw)return;
-    const inserted=insertH3RichTextAtSelection(editor,raw,
-      mode==="raw" ? {onChange:sync} : options);
-    if(!inserted) {
-      // Avoid HTML paste and keep plain text if selection is outside editor.
+    if(mode==="raw") {
+      // Raw view must remain raw: never turn pasted H3 tags into chips.
+      if(!document.execCommand?.("insertText",false,raw)) {
+        const selection=window.getSelection?.();
+        const range=selection?.rangeCount ? selection.getRangeAt(0) : null;
+        if(range && editor.contains(range.commonAncestorContainer)) {
+          range.deleteContents();
+          const fragment=document.createDocumentFragment();
+          raw.split("\n").forEach((line,i)=>{
+            if(i)fragment.append(document.createElement("br"));
+            fragment.append(document.createTextNode(line));
+          });
+          const marker=document.createTextNode("\u200b");
+          fragment.append(marker);
+          range.insertNode(fragment);
+          range.setStartAfter(marker);range.collapse(true);
+          selection.removeAllRanges();selection.addRange(range);
+        }
+      }
+    } else if(!insertH3RichTextAtSelection(editor,raw,options)) {
       editor.focus({preventScroll:true});
       document.execCommand?.("insertText",false,raw);
     }
