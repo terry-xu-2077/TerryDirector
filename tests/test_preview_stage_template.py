@@ -43,7 +43,7 @@ class PreviewStageTemplateTests(unittest.TestCase):
 
     def template(self):
         return {
-            "schema": 1,
+            "schema": 2,
             "workflow_name": "首阶段工作流",
             "workflow": {"nodes": [
                 {"id": 13, "type": "TerryDirectorSelfLiftPauseResume"},
@@ -53,6 +53,19 @@ class PreviewStageTemplateTests(unittest.TestCase):
             "pause_node_id": 13,
             "prompt_binding": {"node_id": 6, "widget_name": "prompt"},
             "seed_binding": {"node_id": 33, "widget_name": "seed"},
+            "api_prompt": {
+                "13": {"class_type": "TerryDirectorSelfLiftPauseResume",
+                       "inputs": {"mode": "暂停并保存", "checkpoint_id": "", "name": "demo"}},
+                "6": {"class_type": "MiniMaxH3ReferenceToVideo",
+                      "inputs": {"prompt": "example"}},
+                "33": {"class_type": "SeedNode", "inputs": {"seed": 8}},
+                "22": {"class_type": "SaveVideo", "inputs": {"video": ["13", 0]}},
+            },
+            "pause_target": "13",
+            "highres_target": "22",
+            "decoded_target": None,
+            "seed_min": 0,
+            "seed_max": 1125899906842624,
         }
 
     def test_empty_then_roundtrip(self):
@@ -60,8 +73,10 @@ class PreviewStageTemplateTests(unittest.TestCase):
         template = self.template()
         self.store.save_preview_template(template)
         self.assertEqual(self.store.load_preview_template(), template)
-        path = Path(self.temp.name) / "TerryDirector" / "preview_stage_template.json"
-        self.assertTrue(path.is_file())
+        root = Path(self.temp.name) / "TerryDirector" / "preview_stage"
+        self.assertTrue((root / "config.json").is_file())
+        self.assertTrue((root / "workflow.json").is_file())
+        self.assertTrue((root / "api_prompt.json").is_file())
 
     def test_bad_pause_or_mapping_rejected_without_clobbering(self):
         valid = self.template()
@@ -70,7 +85,9 @@ class PreviewStageTemplateTests(unittest.TestCase):
             {"pause_node_id": 1234},
             {"prompt_binding": {"node_id": 555, "widget_name": "prompt"}},
             {"seed_binding": None},
-            {"schema": 2},
+            {"highres_target": "999"},
+            {"seed_max": -1},
+            {"schema": 1},
         ):
             with self.subTest(patch=patch), self.assertRaises(ValueError):
                 self.store.save_preview_template({**valid, **patch})
@@ -78,7 +95,7 @@ class PreviewStageTemplateTests(unittest.TestCase):
 
     def test_size_limit(self):
         item = self.template()
-        item["workflow_name"] = "A" * (6 * 1024 * 1024)
+        item["workflow_name"] = "A" * (16 * 1024 * 1024)
         with self.assertRaises(ValueError):
             self.store.save_preview_template(item)
 
