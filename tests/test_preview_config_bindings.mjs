@@ -9,9 +9,12 @@ const section=(start,end)=>{
   assert.ok(p>=0 && q>p, start+" not found");
   return source.slice(p,q);
 };
-const bindingKey=value=>JSON.stringify({node_id:value.node_id,widget_name:value.widget_name});
-const helpers=new Function("bindingKey",
-  section("function traceH3PromptInputs","function matchingAssets")+";return {traceH3PromptInputs,fieldsOf};")(bindingKey);
+const promptModule=await readFile(new URL("../web/td_preview_prompt_trace.js",import.meta.url),"utf8");
+const {traceH3PromptInputs}=await import("data:text/javascript;base64,"+
+  Buffer.from(promptModule).toString("base64"));
+const helpers={traceH3PromptInputs,
+  fieldsOf:new Function("traceH3PromptInputs",
+    section("function fieldsOf(workflow,type)","function matchingAssets")+";return fieldsOf;")(traceH3PromptInputs)};
 const graph={
  nodes:[
   {id:5,type:"ModelPreviewOverrideKJ",widgets_values_named:{preview:""},
