@@ -107,6 +107,8 @@ function styles() {
 .tdm-live-media{position:relative;width:100%;min-width:0}
 .tdm-live-caption{font-size:11px;color:#9ccaff;margin:4px 2px 0;line-height:1.6}
 .tdm-live-media video{display:block}
+.tdm-playback-message{font-size:11px;color:#e4b0a5;margin:6px 2px 0}
+.tdm-replay-control{font-size:11px;padding:5px 10px;margin-left:auto}
 .tdm-no-media{height:100%;display:grid;place-items:center;color:#78818f;text-align:center;padding:20px}
 .tdm-detail{font-size:12px;color:#a7afbb;line-height:1.9}.tdm-actions{display:flex;gap:8px;flex-wrap:wrap}
 .tdm-foot{padding:12px 20px;border-top:1px solid #30343b;display:flex;align-items:center;gap:12px}
@@ -468,8 +470,8 @@ function livePreviewMarkup(job) {
   if(!url)return '<div class="tdm-player tdm-detail-pending">暂时无法解码本轮预览</div>';
   const p=job.preview;
   const content=p.mime==="video/mp4"
-    ? '<video class="tdm-player" data-live-video src="'+esc(url)+
-      '" controls autoplay muted loop playsinline preload="auto"></video>'
+    ? '<video class="tdm-player" data-live-video data-media-key="'+esc("live:"+url)+
+      '" src="'+esc(url)+'" controls autoplay muted loop playsinline preload="auto"></video>'
     : '<img class="tdm-player" src="'+esc(url)+'" alt="TAEH3 实时采样预览">';
   const step=Number(p.step)||1,total=Number(p.total)||0;
   return '<div class="tdm-live-media">'+content+
@@ -504,7 +506,9 @@ function details(task) {
           "尚未生成低清视频，请点击「开始预演」")+
         '</div>'
       : file.endsWith(".mp4")
-        ? '<video class="tdm-player" src="'+mediaUrl(cid,kind)+'" controls loop playsinline></video>'
+        ? '<video class="tdm-player" data-saved-video data-media-key="'+
+          esc("saved:"+cid+":"+kind+":"+file)+'" src="'+mediaUrl(cid,kind)+
+          '" controls loop playsinline preload="auto"></video>'
         : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
   const timing='<div class="tdm-timing"><div>任务创建：<strong>'+formatTime(task.created_at)+'</strong></div>'+
     '<div>低清生成：'+formatTime(task.low_started_at)+' → '+formatTime(task.low_finished_at)+
@@ -527,7 +531,10 @@ function details(task) {
     statusMarkup(task)+
     '<div class="tdm-tabs">'+
     '<button data-action="preview" data-kind="sampling" class="'+(kind==="sampling"?"on":"")+'">TAEH3 采样预览</button>'+
-    '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button></div>'+
+    '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button>'+
+    ((live?.preview?.mime==="video/mp4" || file?.endsWith(".mp4")) ?
+      '<button class="tdm-btn tdm-replay-control" data-action="toggle-preview-playback" '+
+      'type="button">播放 / 暂停</button>' : '')+'</div>'+
     '<div data-live-preview-host data-task-id="'+esc(task.id)+'">'+preview+'</div>'+
     '<div class="tdm-detail">Seed：'+esc(task.seed||"—")+
     '　工作流：'+esc(task.metadata?.workflow_name||"未记录")+
@@ -536,9 +543,51 @@ function details(task) {
     '<div class="tdm-actions">'+actions+'</div>';
 }
 
+function bindPreviewPlaybackErrors() {
+  const player=state.root?.querySelector('[data-live-preview-host] video');
+  if(!player)return;
+  player.addEventListener("error",()=>{
+    const detail=player.error?.message || "视频格式可能与当前浏览器不兼容";
+    showPreviewPlaybackError("无法播放预览："+detail);
+  });
+}
+function showPreviewPlaybackError(message) {
+  const host=state.root?.querySelector('[data-live-preview-host]');
+  if(!host)return;
+  let label=host.querySelector(".tdm-playback-message");
+  if(!label){
+    label=document.createElement("div");
+    label.className="tdm-playback-message";
+    label.setAttribute("role","status");
+    host.appendChild(label);
+  }
+  label.textContent=message;
+}
+async function togglePreviewPlayback() {
+  const player=state.root?.querySelector('[data-live-preview-host] video');
+  if(!player)throw Error("当前没有可以播放的视频");
+  if(!player.paused){
+    player.pause();
+    return;
+  }
+  try {
+    // Explicit user gesture is useful when Chromium blocks earlier autoplay.
+    await player.play();
+  }catch(error){
+    showPreviewPlaybackError("播放失败："+(error?.message || error));
+    throw Error("视频无法播放："+(error?.message || error));
+  }
+}
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
+  // Keep the same media element across regular task/status refreshes.
+  // Reconstructing the whole dialog used to reset playback while the user
+  // was clicking the controls (especially around task completion).
+  const oldPlayer=state.root.querySelector('[data-live-preview-host] video[data-media-key]');
+  const oldKey=oldPlayer?.dataset.mediaKey;
+  const oldTime=oldPlayer?.currentTime;
+  const oldPlaying=oldPlayer && !oldPlayer.paused && !oldPlayer.ended;
   closePreviewRichEditor();
   state.root.innerHTML = '<div class="tdm-shell"><header class="tdm-head">' +
     '<h2>TerryDirector · 预演台</h2><span class="tdm-tag">' + state.tasks.length + ' 个任务</span>' +
@@ -575,7 +624,19 @@ function render() {
     (state.creating ? createMarkup() : "") +
     (state.configuring ? configMarkup() : "") +
     (state.deleting ? deleteMarkup() : "");
+  if(oldPlayer && oldKey){
+    const replacement=state.root.querySelector('[data-live-preview-host] video[data-media-key]');
+    if(replacement?.dataset.mediaKey===oldKey){
+      replacement.replaceWith(oldPlayer);
+      if(Number.isFinite(oldTime) && Math.abs(oldPlayer.currentTime-oldTime)>0.3){
+        try{oldPlayer.currentTime=oldTime;}catch{/* media not seekable yet */}
+      }
+      if(oldPlaying && oldPlayer.paused)
+        void oldPlayer.play().catch(()=>{});
+    }
+  }
   bindControls();
+  bindPreviewPlaybackErrors();
   wireImageFallback(state.root.querySelector(".tdm-assets"));
   renderAssetChoices();
   installCreatePromptEditor();
@@ -706,6 +767,7 @@ async function handleAction(action, data) {
     if (action === "refresh") return refresh();
     if (action === "focus") { state.focused = data.id; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
+    if (action === "toggle-preview-playback") return await togglePreviewPlayback();
     if (action === "cancel-create") { state.creating = false; state.editDraftId = null; state.assetPicker = null; return render(); }
     if (action === "config") return await openConfig();
     if (action === "new-config") return await loadConfigDraft(null);
@@ -1669,12 +1731,12 @@ function bindEvents() {
         // After execution finishes, persist only the latest preview. The
         // save is independent of later queued jobs and their live previews.
         await persistPreview(job);
-        await refresh();
+        // Remove the in-memory source BEFORE reloading task metadata, so
+        // refresh() renders the saved MP4 once instead of briefly mounting
+        // a Blob URL and revoking it during the following render.
         state.jobs.delete(promptId);
         releasePreviewBlobUrls(job);
-        // Redraw once to switch the completed task from live memory to its
-        // stored checkpoint video (or to the error placeholder).
-        render();
+        await refresh();
       })();
     });
   }
