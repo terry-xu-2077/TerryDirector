@@ -176,7 +176,9 @@ function details(task) {
     '<div>工作流：' + esc(task.metadata?.workflow_name || "未记录") +
     '　创建：' + esc((task.created_at || "").replace("T", " ").slice(0, 19)) + '</div></div>' +
     '<div class="tdm-actions"><button class="tdm-btn" data-action="load">载入任务工作流</button>' +
-    '<button class="tdm-btn" data-action="duplicate">以此新建</button>' +
+    '<button class="tdm-btn" data-action="duplicate" ' +
+    (!task.metadata?.has_workflow ? 'disabled title="旧任务缺少工作流快照"' : '') +
+    '>以此新建</button>' +
     '<button class="tdm-btn" data-action="rerun">重跑预演</button>' +
     '<button class="tdm-btn primary" data-action="highres">继续高清</button></div>';
 }
@@ -717,6 +719,13 @@ async function submitCreate() {
     const preview = previewForPause(pause);
     if (draft.previewType === "sampling" && !preview) {
       throw Error("工作流没有连接 Model Preview Override，无法保存 TAEH3 预览");
+    }
+    if (draft.previewType === "sampling") {
+      const frameSocket = preview.inputs?.find(x => x.name === "preview_frames");
+      const frames = Number(widget(preview, "preview_frames")?.value);
+      if (frameSocket?.link == null && Number.isFinite(frames) && frames <= 1) {
+        throw Error("TAEH3 视频预览需要 KJ 的 preview_frames 大于 1；请在配置工作流中调整原工作流");
+      }
     }
     const queued = await queueManagedSelfLift(pause, "pause", overrides, "", {
       saveDecoded: draft.previewType === "decoded",
