@@ -537,7 +537,11 @@ async function handleAction(action, data) {
     if (action === "edit-draft") return await editDraft(state.focused);
     if (action === "load") return loadSavedWorkflow(state.focused);
     if (action === "rerun") return await queueFromCheckpoint(state.focused, "pause");
-    if (action === "highres") return await queueFromCheckpoint(state.focused, "continue");
+    if (action === "highres") {
+      const task=selectedTask();
+      if(task?.kind==="draft")return await runDraft(task.id,"continue");
+      return await queueFromCheckpoint(state.focused,"continue");
+    }
     if (action === "batch") return await batchHighres();
   } catch (e) {
     if(state.configuring) {
@@ -1058,40 +1062,107 @@ async function submitPreviewJob(template,overrides,mode,checkpointId,previewType
   if(!result?.prompt_id)throw Error("ComfyUI 未返回任务编号，任务可能未成功入队");
   return {promptId:String(result.prompt_id),targetIds:payload.targets};
 }
-async function submitCreate() {
-  const draft=state.createDraft;
+function draftSnapshot(draft) {
   if(!draft?.workflow || !draft.api_prompt || !draft.prompt_binding || !draft.seed_binding)
     throw Error("工作流尚未编译，请在「配置工作流」重新保存");
-  const numericSeed=validatePreviewSeed(draft.seed,draft);
-  const name=draft.name.trim() || "未命名预演镜头";
-  const overrides=[
-    {node_id:draft.prompt_binding.node_id,widget_name:draft.prompt_binding.widget_name,value:draft.prompt},
-    {node_id:draft.seed_binding.node_id,widget_name:draft.seed_binding.widget_name,value:numericSeed},
-    ...draft.assets.map(a=>({node_id:a.node_id,widget_name:a.widget_name,value:a.value})),
-    {node_id:draft.pause_node_id,widget_name:"name",value:name},
-  ];
-  const compiled={
-    schema:2,workflow:draft.workflow,api_prompt:draft.api_prompt,
-    pause_node_id:draft.pause_node_id,pause_target:draft.pause_target,
-    highres_target:draft.highres_target,decoded_target:draft.decoded_target,
-    seed_min:draft.seed_min,seed_max:draft.seed_max,
-  };
-  const queued=await submitPreviewJob(compiled,overrides,"pause","",draft.previewType);
-  state.jobs.set(queued.promptId,{
-    mode:"pause",overrides,workflow:structuredClone(draft.workflow),
-    api_prompt:structuredClone(draft.api_prompt),name,
-    workflow_name:draft.workflow_name,pause_node_id:String(draft.pause_node_id),
+  const seed=validatePreviewSeed(draft.seed,draft);
+  return {
+    name:String(draft.name||"").trim() || "未命名预演镜头",
+    prompt:String(draft.prompt||""),seed:String(seed),
+    assets:structuredClone(draft.assets||[]),previewType:draft.previewType,
+    workflow_name:draft.workflow_name,
+    workflow:structuredClone(draft.workflow),api_prompt:structuredClone(draft.api_prompt),
+    prompt_binding:draft.prompt_binding,seed_binding:draft.seed_binding,
+    pause_node_id:draft.pause_node_id,preview_node_id:draft.preview_node_id,
     pause_target:draft.pause_target,highres_target:draft.highres_target,
     decoded_target:draft.decoded_target,seed_min:draft.seed_min,seed_max:draft.seed_max,
-    preview_node_id:draft.preview_node_id == null ? null:String(draft.preview_node_id),
-    prompt_binding:draft.prompt_binding,seed_binding:draft.seed_binding,
-    h3_properties:structuredClone(draft.h3Properties || {}),
-    preview_type:draft.previewType,checkpointId:null,
-    preview:null,uploadedStep:0,busy:true,
+    h3_properties:structuredClone(draft.h3Properties||{}),
+  };
+}
+async function submitCreate() {
+  // Deliberately no ComfyUI queue operation here. This is a durable draft.
+  const payload=draftSnapshot(state.createDraft);
+  const editId=state.editDraftId;
+  const saved=await request(editId?"/drafts/"+encodeURIComponent(editId):"/drafts",{
+    method:editId?"PUT":"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),
   });
-  state.creating=false;state.assetPicker=null;
+  state.editDraftId=null;state.creating=false;state.assetPicker=null;
+  state.focused=saved.id;
+  await refresh();
+  toast(editId?"任务修改已保存":"任务已创建，点击「开始预演」后才会生成","success");
+}
+async function editDraft(id) {
+  if(!id?.startsWith("draft_"))throw Error("只能编辑未运行的预演任务");
+  const row=await request("/drafts/"+encodeURIComponent(id));
+  if(row.status!=="low_pending" || row.queued_stage)
+    throw Error("任务已经进入运行阶段，无法修改");
+  await loadInputFiles();
+  const config={
+    ...row,workflow:row.workflow,api_prompt:row.api_prompt,
+    h3_properties:row.h3_properties,
+  };
+  state.createDraft=buildDraft(config,[],row.name,row.previewType);
+  state.createDraft.prompt=row.prompt;
+  state.createDraft.seed=row.seed;
+  state.createDraft.assets=structuredClone(row.assets||[]);
+  state.createDraft.source="draft:"+id;
+  state.editDraftId=id;
+  state.creating=true;
   render();
-  toast("预演任务已入队：" + name);
+}
+async function draftTransition(id,action,fields={}) {
+  return request("/drafts/"+encodeURIComponent(id)+"/status",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({action,...fields}),
+  });
+}
+function draftOverrides(draft) {
+  const seed=validatePreviewSeed(draft.seed,draft);
+  return [
+    {node_id:draft.prompt_binding.node_id,widget_name:draft.prompt_binding.widget_name,value:draft.prompt},
+    {node_id:draft.seed_binding.node_id,widget_name:draft.seed_binding.widget_name,value:seed},
+    ...(draft.assets||[]).map(a=>({node_id:a.node_id,widget_name:a.widget_name,value:a.value})),
+    {node_id:draft.pause_node_id,widget_name:"name",value:draft.name},
+  ];
+}
+async function runDraft(id,mode="pause") {
+  if(!id?.startsWith("draft_"))throw Error("请选择已创建的预演任务");
+  const draft=await request("/drafts/"+encodeURIComponent(id));
+  if(mode==="continue" && !draft.checkpoint_id)throw Error("低清完成后才能执行高清");
+  const operation=mode==="pause"?"claim_low":"claim_high";
+  await draftTransition(id,operation);
+  try {
+    const template={
+      schema:2,workflow:draft.workflow,api_prompt:draft.api_prompt,
+      pause_node_id:draft.pause_node_id,pause_target:draft.pause_target,
+      highres_target:draft.highres_target,decoded_target:draft.decoded_target,
+      seed_min:draft.seed_min,seed_max:draft.seed_max,
+    };
+    const overrides=draftOverrides(draft);
+    const queued=await submitPreviewJob(template,overrides,mode,
+      mode==="continue"?draft.checkpoint_id:"",draft.previewType);
+    const job={
+      draftId:id,mode,overrides,
+      workflow:draft.workflow,api_prompt:draft.api_prompt,name:draft.name,
+      workflow_name:draft.workflow_name,pause_node_id:String(draft.pause_node_id),
+      pause_target:draft.pause_target,highres_target:draft.highres_target,
+      decoded_target:draft.decoded_target,seed_min:draft.seed_min,seed_max:draft.seed_max,
+      preview_node_id:draft.preview_node_id==null?null:String(draft.preview_node_id),
+      prompt_binding:draft.prompt_binding,seed_binding:draft.seed_binding,
+      h3_properties:draft.h3_properties||{},preview_type:draft.previewType,
+      checkpointId:mode==="continue"?draft.checkpoint_id:null,
+      preview:null,uploadedStep:0,busy:true,
+    };
+    state.jobs.set(queued.promptId,job);
+    await draftTransition(id,"ack",{prompt_id:queued.promptId});
+    await refresh();
+    toast((mode==="pause"?"低清":"高清")+"任务已加入 ComfyUI 队列");
+  } catch(error) {
+    await draftTransition(id,"fail",{error:String(error?.message||error)}).catch(()=>{});
+    await refresh();
+    throw error;
+  }
 }
 
 async function loadSavedWorkflow(id) {
