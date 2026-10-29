@@ -8,7 +8,7 @@ const KJ_CLASS = "ModelPreviewOverrideKJ";
 const URL_BASE = "/terrydirector/api/selflift";
 const state = {
   tasks: [], selected: new Set(), focused: null, preview: "decoded",
-  busy: false, root: null, creating: false, inputs: [], inputFiles: [],
+  busy: false, root: null, creating: false, deleting: null, inputs: [], inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
 };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c =>
@@ -42,7 +42,7 @@ function previewForPause(pause) {
 const mediaUrl = (id, kind) => URL_BASE + "/tasks/" + encodeURIComponent(id) + "/media/" + kind;
 function toast(message, severity = "info") {
   if (app.extensionManager?.toast?.add) app.extensionManager.toast.add({
-    severity, summary: "TerryDirector · 低清任务", detail: message, life: 5500,
+    severity, summary: "TerryDirector · 预演台", detail: message, life: 5500,
   });
   else if (severity === "error") window.alert(message);
 }
@@ -67,6 +67,10 @@ function styles() {
  padding:8px 12px;cursor:pointer;white-space:nowrap}.tdm-btn:hover{background:#414752}
 .tdm-btn.primary{background:#2e70d3;border-color:#377ddf;color:white}.tdm-btn.primary:hover{background:#4385e8}
 .tdm-btn:disabled{opacity:.4;cursor:default}.tdm-btn.close{font-size:21px;padding:2px 9px;border:0;background:transparent}
+.tdm-btn.danger{color:#e6b6b5;border-color:#6b4345;background:#362629}
+.tdm-btn.danger:not(:disabled):hover{background:#502b30;border-color:#b26168}
+.tdm-warning{border:1px solid #754b50;border-radius:8px;background:#36272b;padding:11px 13px;color:#efc2c2;font-size:12px;line-height:1.7}
+.tdm-delete-summary{max-height:110px;overflow:auto;padding:10px 12px;border:1px solid #3f454f;border-radius:6px;color:#aab3c0;font-size:12px}
 .tdm-main{min-height:0;flex:1;display:grid;grid-template-columns:minmax(410px,1fr) minmax(335px,44%)}
 .tdm-left{min-height:0;overflow:auto;border-right:1px solid #30343b}
 .tdm-toolbar{position:sticky;top:0;background:#191b20;z-index:2;padding:12px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #282b32}
@@ -114,7 +118,7 @@ function root() {
   return div;
 }
 function open() { root().style.display = "flex"; render(); void refresh(); }
-function close() { state.creating = false; if (state.root) state.root.style.display = "none"; }
+function close() { state.creating = false; state.deleting = null; if (state.root) state.root.style.display = "none"; }
 async function refresh() {
   try {
     const result = await request("/tasks");
@@ -135,32 +139,32 @@ function thumb(task) {
     : '<img class="tdm-thumb" src="' + url + '" alt="">';
 }
 function details(task) {
-  if (!task) return '<div class="tdm-no-media">选择左侧低清任务查看预览</div>';
+  if (!task) return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
   const kind = state.preview, file = task.media[kind];
   const media = !file ? '<div class="tdm-player tdm-no-media">暂无' +
-    (kind === "decoded" ? "低清 VAE 解码" : "TAEH3 采样") + '预览</div>'
+    (kind === "decoded" ? "VAE 解码" : "TAEH3 采样") + '预览</div>'
     : file.endsWith(".mp4")
       ? '<video class="tdm-player" src="' + mediaUrl(task.id, kind) + '" controls loop playsinline></video>'
       : '<img class="tdm-player" src="' + mediaUrl(task.id, kind) + '" alt="采样预览">';
   const shape = task.low_video_shape || [], target = task.target_video_shape || [];
   return '<h3 style="margin:0;font-size:15px">' + esc(task.name) + '</h3><div class="tdm-tabs">' +
-    '<button data-action="preview" data-kind="decoded" class="' + (kind === "decoded" ? "on" : "") + '">低清解码</button>' +
+    '<button data-action="preview" data-kind="decoded" class="' + (kind === "decoded" ? "on" : "") + '">VAE 解码</button>' +
     '<button data-action="preview" data-kind="sampling" class="' + (kind === "sampling" ? "on" : "") + '">TAEH3 采样预览</button></div>' +
     media + '<div class="tdm-detail">检查点：' + esc(task.id.slice(0, 12)) +
-    '　Seed：' + esc(task.seed) + '　低清 Latent：' + esc(shape.slice(-2).reverse().join("×")) +
+    '　Seed：' + esc(task.seed) + '　预演 Latent：' + esc(shape.slice(-2).reverse().join("×")) +
     '　目标 Latent：' + esc(target.slice(-2).reverse().join("×")) +
     '<div>工作流：' + esc(task.metadata?.workflow_name || "未记录") +
     '　创建：' + esc((task.created_at || "").replace("T", " ").slice(0, 19)) + '</div></div>' +
     '<div class="tdm-actions"><button class="tdm-btn" data-action="load">载入任务工作流</button>' +
-    '<button class="tdm-btn" data-action="rerun">重跑低清</button>' +
+    '<button class="tdm-btn" data-action="rerun">重跑预演</button>' +
     '<button class="tdm-btn primary" data-action="highres">继续高清</button></div>';
 }
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
   state.root.innerHTML = '<div class="tdm-shell"><header class="tdm-head">' +
-    '<h2>TerryDirector · 低清任务</h2><span class="tdm-tag">' + state.tasks.length + ' 个检查点</span>' +
-    '<div class="tdm-space"></div><button class="tdm-btn primary" data-action="create">＋ 创建低清任务</button>' +
+    '<h2>TerryDirector · 预演台</h2><span class="tdm-tag">' + state.tasks.length + ' 个任务</span>' +
+    '<div class="tdm-space"></div><button class="tdm-btn primary" data-action="create">＋ 创建预演任务</button>' +
     '<button class="tdm-btn" data-action="refresh">刷新</button><button class="tdm-btn close" data-action="close">×</button></header>' +
     '<div class="tdm-main"><section class="tdm-left"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
@@ -173,22 +177,85 @@ function render() {
       (state.selected.has(t.id) ? "checked" : "") + '>' + thumb(t) +
       '<div><h3>' + esc(t.name || "未命名镜头") + '</h3><div class="tdm-small">' +
       esc((t.created_at || "").replace("T", " ").slice(0, 16)) + '</div>' +
-      '<div class="tdm-small">' + (t.media.decoded ? "● 低清视频 " : "○ 低清视频 ") +
+      '<div class="tdm-small">' + (t.media.decoded ?  "● 解码预演 " : "○ 解码预演 ") +
       (t.media.sampling ? "● TAEH3" : "○ TAEH3") + '</div></div></div>').join("")
-      : '<div class="tdm-blank">尚无低清检查点。点击「创建低清任务」开始。</div>') +
+      : '<div class="tdm-blank">还没有预演任务，点击「创建预演任务」开始。</div>') +
     '</div></section><section class="tdm-right">' + details(task) + '</section></div>' +
-    '<footer class="tdm-foot"><span class="tdm-small">批量高清会使用各任务的检查点与原始输入配置</span>' +
+    '<footer class="tdm-foot">' +
+    '<button class="tdm-btn danger" data-action="delete" ' +
+    (!state.selected.size || state.busy ? "disabled" : "") +
+    '>删除所选 · ' + state.selected.size + '</button>' +
     '<span class="tdm-space"></span><button class="tdm-btn primary" data-action="batch" ' +
     (!state.selected.size || state.busy ? "disabled" : "") +
-    '>批量高清 · ' + state.selected.size + '</button></footer></div>' +
-    (state.creating ? createMarkup() : "");
+    '>批量高清续采 · ' + state.selected.size + '</button></footer></div>' +
+    (state.creating ? createMarkup() : "") +
+    (state.deleting ? deleteMarkup() : "");
   bindControls();
 }
+function showDeleteConfirmation() {
+  if (state.busy || !state.selected.size) return;
+  const tasks = state.tasks.filter(task => state.selected.has(task.id));
+  if (!tasks.length) return;
+  state.deleting = { ids: tasks.map(task => task.id), tasks };
+  render();
+}
+
+function deleteMarkup() {
+  const { ids, tasks } = state.deleting;
+  const many = ids.length >= 10;
+  const names = tasks.slice(0, 4).map(task =>
+    esc(task.name || "未命名预演") + " · " + esc(task.id.slice(0, 8))).join("、");
+  return '<div class="tdm-dialog"><div class="tdm-form" role="alertdialog" ' +
+    'aria-modal="true" aria-label="确认删除预演任务">' +
+    '<h2>删除 ' + ids.length + ' 个预演任务？</h2>' +
+    '<div class="tdm-warning">将永久删除所选任务的检查点、Latent、工作流快照及两种预览。' +
+    '删除后无法恢复，也无法再用这些检查点续采高清。</div>' +
+    '<div class="tdm-delete-summary" style="margin-top:13px">' + names +
+    (tasks.length > 4 ? ' 等 ' + tasks.length + ' 个任务' : '') + '</div>' +
+    (many ? '<div class="tdm-field"><label>为避免大量误删，请输入「删除」</label>' +
+      '<input data-action="delete-ack" placeholder="输入 删除" autocomplete="off"></div>' : '') +
+    '<div class="tdm-form-actions">' +
+    '<button class="tdm-btn" data-action="cancel-delete">取消</button>' +
+    '<button class="tdm-btn danger" data-action="confirm-delete" ' +
+    (many || state.busy ? 'disabled' : '') + '>永久删除 ' + ids.length + ' 个任务</button>' +
+    '</div></div></div>';
+}
+
+async function deleteSelectedTasks() {
+  const ids = state.deleting?.ids;
+  if (!ids?.length || state.busy) return;
+  state.busy = true;
+  render();
+  try {
+    const result = await request("/tasks/batch-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ checkpoint_ids: ids }),
+    });
+    const deleted = new Set(result.deleted || []);
+    for (const id of deleted) state.selected.delete(id);
+    state.deleting = null;
+    if (deleted.has(state.focused)) state.focused = null;
+    toast("已永久删除 " + deleted.size + " 个预演任务", "success");
+    await refresh();
+  } catch (error) {
+    toast("删除失败：" + error.message, "error");
+  } finally {
+    state.busy = false;
+    render();
+  }
+}
+
 function bindControls() {
   const el = state.root;
   el.querySelectorAll("[data-action]").forEach(control => {
     const action = control.dataset.action;
-    if (action === "select" || action === "select-all") {
+    if (action === "delete-ack") {
+      control.addEventListener("input", () => {
+        const confirm = el.querySelector('[data-action="confirm-delete"]');
+        if (confirm) confirm.disabled = control.value.trim() !== "删除";
+      });
+    } else if (action === "select" || action === "select-all") {
       control.addEventListener("change", e => {
         if (action === "select-all") state.selected = e.target.checked ?
           new Set(state.tasks.map(t => t.id)) : new Set();
@@ -210,6 +277,9 @@ async function handleAction(action, data) {
     if (action === "focus") { state.focused = data.id; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "cancel-create") { state.creating = false; return render(); }
+    if (action === "cancel-delete") { state.deleting = null; return render(); }
+    if (action === "delete") return showDeleteConfirmation();
+    if (action === "confirm-delete") return deleteSelectedTasks();
     if (action === "create") { state.creating = true; await loadInputFiles(); return render(); }
     if (action === "import-workflow") return importWorkflow();
     if (action === "upload-image") return uploadImage(Number(data.patch));
@@ -254,7 +324,7 @@ function createMarkup() {
     '<option value="' + esc(v) + '"' + (String(v) === String(value) ? " selected" : "") + '>' +
     esc(v) + '</option>').join("");
   const files = state.inputFiles.filter(f => f.kind === "image").map(f => f.path);
-  return '<div class="tdm-dialog"><div class="tdm-form"><h2>创建低清任务</h2>' +
+  return '<div class="tdm-dialog"><div class="tdm-form"><h2>创建预演任务</h2>' +
     '<div class="tdm-field"><label>使用的工作流</label><div class="tdm-actions">' +
     '<input value="' + esc(state.templateName) + '" disabled style="flex:1">' +
     '<button class="tdm-btn" data-action="import-workflow">导入工作流 JSON</button></div>' +
@@ -262,7 +332,7 @@ function createMarkup() {
     '<div class="tdm-field"><label>暂停/继续节点</label><select id="tdm-pause">' +
     pauseNodes.map(n => '<option value="' + esc(n.id) + '">' + esc(n.title || START_CLASS) + ' · ' + n.id + '</option>').join("") +
     '</select></div>' +
-    '<div class="tdm-field"><label>任务名称</label><input id="tdm-name" value="新低清镜头" maxlength="120"></div>' +
+    '<div class="tdm-field"><label>任务名称</label><input id="tdm-name" value="新预演镜头" maxlength="120"></div>' +
     '<div class="tdm-section">图片输入</div>' +
     (state.inputs.filter(x => x.kind === "image").map((p,i) =>
       '<div class="tdm-field"><label>' + esc(p.node.title || p.node.type) + ' #' + p.node.id + '</label>' +
@@ -279,7 +349,7 @@ function createMarkup() {
     '<div class="tdm-small" style="margin-top:12px">TAEH3 动画预览：Model Preview Override 的 preview_frames 需大于 1；单帧模式会保存 JPEG。</div>' +
     '<div class="tdm-form-actions"><button class="tdm-btn" data-action="cancel-create">取消</button>' +
     '<button class="tdm-btn primary" data-action="submit" ' +
-    (!pauseNodes.length ? "disabled" : "") + '>加入低清生成队列</button></div></div></div>';
+    (!pauseNodes.length ? "disabled" : "") + '>加入预演队列</button></div></div></div>';
 }
 async function uploadImage(index) {
   const fileInput = document.createElement("input");
@@ -330,7 +400,7 @@ async function submitCreate() {
   const id = dialog.querySelector("#tdm-pause")?.value;
   const node = app.graph?.getNodeById?.(Number(id));
   if (!node) throw Error("请先载入包含暂停/继续节点的 SelfLift 工作流");
-  const name = dialog.querySelector("#tdm-name")?.value.trim() || "未命名低清镜头";
+  const name = dialog.querySelector("#tdm-name")?.value.trim() || "未命名预演镜头";
   const overrides = state.inputs.map((p, i) => ({
     node_id: p.node.id, widget_name: p.w.name,
     value: dialog.querySelector('[data-patch="' + i + '"]')?.value ?? p.value,
@@ -347,7 +417,7 @@ async function submitCreate() {
     checkpointId: null, preview: null, uploadedStep: 0, busy: true,
   });
   state.creating = false; render();
-  toast("低清任务已入队：" + name);
+  toast("预演任务已入队：" + name);
 }
 async function loadSavedWorkflow(id) {
   if (!id) throw Error("未选择任务");
@@ -390,7 +460,7 @@ async function queueFromCheckpoint(id, mode) {
         checkpointId: null, preview: null, uploadedStep: 0, busy: true,
       });
     }
-    toast((mode === "continue" ? "高清续采" : "低清重跑") + "已入队：" + task.name);
+    toast((mode === "continue" ? "高清续采" : "预演重跑") + "已入队：" + task.name);
   } finally {
     await app.loadGraphData(savedCanvas);
   }
@@ -466,7 +536,7 @@ function bindEvents() {
         const pause = pauseNodes[0], preview = previewForPause(pause);
         state.jobs.set(state.activePromptId, {
           mode: "pause", overrides: [], workflow: app.graph.serialize(),
-          name: String(widget(pause, "name")?.value || "低清镜头"),
+          name: String(widget(pause, "name")?.value || "预演镜头"),
           workflow_name: state.templateName, pause_node_id: String(pause.id),
           preview_node_id: preview ? String(preview.id) : null,
           checkpointId: null, preview: null, uploadedStep: 0, busy: true,
@@ -509,12 +579,12 @@ app.registerExtension({
     if (app.extensionManager?.registerSidebarTab) {
       app.extensionManager.registerSidebarTab({
         id: "terrydirector-selflift-tasks", icon: "pi pi-video",
-        title: "低清任务", tooltip: "TerryDirector 低清任务管理器",
+        title: "预演台", tooltip: "TerryDirector 预演台",
         type: "custom",
         render: el => {
           el.innerHTML = '<div style="padding:16px;color:#abb4c2;font:13px system-ui">' +
-            '<button class="tdm-btn primary" type="button">打开低清任务管理器</button>' +
-            '<p style="line-height:1.6">低清审片、TAEH3 预览、重跑与批量高清续采</p></div>';
+            '<button class="tdm-btn primary" type="button">打开预演台</button>' +
+            '<p style="line-height:1.6">镜头预演、双预览、重跑与批量高清续采</p></div>';
           styles();
           el.querySelector("button").onclick = open;
           // Sidebar is only an entry point; work happens in the large overlay.
