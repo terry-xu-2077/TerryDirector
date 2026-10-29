@@ -1,7 +1,10 @@
 /** TerryDirector SelfLift task manager — plain DOM, no React, no sampler fork. */
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
-import { queueManagedSelfLift } from "./td_selflift_pause_resume.js";
+import {
+  compilePreviewTargets, resolvePreviewSeedBounds, buildPreviewJob,
+  validatePreviewSeed, randomPreviewSeed,
+} from "./td_preview_job_compiler.js";
 import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
@@ -405,7 +408,7 @@ async function handleAction(action, data) {
     if (action === "config") return openConfig();
     if (action === "random-seed") {
       if (!state.createDraft) return;
-      const seed = randomPreviewSeed();
+      const seed = randomPreviewSeed(state.createDraft);
       state.createDraft.seed = seed;
       const input = state.root?.querySelector("#tdm-new-task-seed");
       if (input) input.value = seed;
@@ -563,21 +566,66 @@ function configMarkup() {
     (!pauseNodes.length || !prompts.length || !seeds.length ? 'disabled' : '') +
     '>保存工作流配置</button></div></div></div>';
 }
-async function saveConfig() {
-  const cfg = state.configDraft;
-  if (!cfg?.prompt_binding || !cfg?.seed_binding || !cfg?.pause_node_id) {
-    throw Error("请选择工作流、提示词和种子输入节点");
+async function compileConfiguredWorkflow(cfg) {
+  // Existing on-screen workflow: read-only compilation. Imported JSON:
+  // construct an isolated LiteGraph instance; never invoke loadGraphData(),
+  // register a workflow tab, or modify the live ComfyUI root graph.
+  const active=app.rootGraph || app.graph;
+  const installed=active.serialize();
+  const matching=JSON.stringify((installed.nodes||[]).map(n=>[n.id,n.type])) ===
+    JSON.stringify((cfg.workflow.nodes||[]).map(n=>[n.id,n.type]));
+  let snapshot, runtimeGraph=active;
+  if(matching && cfg.workflow_name==="当前画布") {
+    snapshot=await app.graphToPrompt(active);
+  } else {
+    const Ctor=active?.constructor;
+    if(typeof Ctor!=="function")throw Error("无法创建独立工作流编译图，请从当前画布配置");
+    const isolated=new Ctor();
+    try {
+      await isolated.configure(structuredClone(cfg.workflow));
+      snapshot=await app.graphToPrompt(isolated);
+      runtimeGraph=isolated;
+    } catch(e) {
+      throw Error("无法独立编译导入的工作流：" + (e?.message || String(e)));
+    }
   }
-  cfg.schema = 1;
-  await request("/template", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(cfg),
-  });
-  state.template = structuredClone(cfg);
-  state.configuring = false;
-  render();
-  toast("预演工作流配置已保存");
+  if(!snapshot?.output || !snapshot?.workflow)throw Error("ComfyUI 未生成可执行的 API 工作流");
+  const apiPrompt=structuredClone(snapshot.output);
+  const bindings=["prompt_binding","seed_binding"];
+  for(const key of bindings) {
+    const binding=cfg[key];
+    if(!binding || !Object.prototype.hasOwnProperty.call(
+      apiPrompt[String(binding.node_id)]?.inputs || {},binding.widget_name)) {
+      throw Error("无法映射到实际输入源：" + key + "。请在配置窗口重新选择节点");
+    }
+    if(Array.isArray(apiPrompt[String(binding.node_id)].inputs[binding.widget_name])) {
+      throw Error("选中的 " + key + " 是下游连线输入，请选择原始输入节点");
+    }
+  }
+  const targets=compilePreviewTargets(cfg.workflow,apiPrompt,cfg.pause_node_id);
+  const seedRuntime=runtimeGraph.getNodeById?.(Number(cfg.seed_binding.node_id));
+  const bounds=resolvePreviewSeedBounds(cfg.workflow,cfg.seed_binding,seedRuntime);
+  return {
+    ...cfg,schema:2,workflow:structuredClone(cfg.workflow),
+    api_prompt:apiPrompt, ...targets,
+    seed_min:bounds.min,seed_max:bounds.max,
+  };
 }
+async function saveConfig() {
+  const cfg=state.configDraft;
+  if(!cfg?.prompt_binding || !cfg?.seed_binding || !cfg?.pause_node_id)
+    throw Error("请选择工作流、提示词和种子输入节点");
+  const compiled=await compileConfiguredWorkflow(cfg);
+  await request("/template",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(compiled),
+  });
+  state.template=compiled;
+  state.configuring=false;
+  render();
+  toast("预演工作流已独立保存，后续提交不会修改当前画布");
+}
+
 function overridesLookup(overrides) {
   return new Map((overrides || []).map(x => [String(x.node_id) + ":" + x.widget_name, x.value]));
 }
@@ -596,6 +644,9 @@ function buildDraft(cfg, overrides = [], preferredName = "", previewType = "samp
     workflow: structuredClone(cfg.workflow), workflow_name: cfg.workflow_name,
     pause_node_id: cfg.pause_node_id, prompt_binding: cfg.prompt_binding,
     seed_binding: cfg.seed_binding, preview_node_id: cfg.preview_node_id,
+    api_prompt: cfg.api_prompt ? structuredClone(cfg.api_prompt) : null,
+    pause_target: cfg.pause_target, highres_target: cfg.highres_target,
+    decoded_target: cfg.decoded_target, seed_min:cfg.seed_min,seed_max:cfg.seed_max,
     h3Properties: structuredClone(cfg.h3_properties || {}),
     name: preferredName || "新预演镜头",
     prompt: String(valueAt(cfg.prompt_binding) ?? ""),
@@ -617,6 +668,12 @@ async function changeCreateSource(_data, source) {
     const result = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
     const configured = templateFromGraph(result.workflow,
       task.metadata?.workflow_name || "从预演任务继承");
+    if(!result.api_prompt)throw Error("这条任务没有独立可执行快照，请重新配置工作流");
+    Object.assign(configured,{
+      schema:2,api_prompt:result.api_prompt,
+      pause_target:result.pause_target,highres_target:result.highres_target,
+      decoded_target:result.decoded_target,seed_min:result.seed_min,seed_max:result.seed_max,
+    });
     configured.pause_node_id = task.metadata.pause_node_id || configured.pause_node_id;
     configured.preview_node_id = task.metadata.preview_node_id || configured.preview_node_id;
     const meta = await request("/tasks/" + encodeURIComponent(id) + "/metadata");
@@ -675,16 +732,6 @@ function assetCard(path, title, attrs, selected = false) {
   return '<button type="button" class="tdm-asset' + (selected ? ' selected' : '') +
     '" ' + attrs + '>' + image + '<label title="' + esc(path || "未选择") + '">' +
     esc(title || path || "添加图片") + '</label></button>';
-}
-// Non-negative 53-bit seed (fits existing ComfyUI JSON and validation).
-// Write directly to the field so the H3 rich editor/caret is not recreated.
-function randomPreviewSeed() {
-  const numbers = new Uint32Array(2);
-  if (globalThis.crypto?.getRandomValues) {
-    globalThis.crypto.getRandomValues(numbers);
-    return String((numbers[0] & 0x1fffff) * 0x100000000 + numbers[1]);
-  }
-  return String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
 }
 function createMarkup() {
   const draft = state.createDraft;
