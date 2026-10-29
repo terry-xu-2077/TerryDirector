@@ -883,59 +883,51 @@ async function importWorkflow() {
   };
   file.click();
 }
-async function submitCreate() {
-  const draft = state.createDraft;
-  if (!draft?.workflow || !draft.prompt_binding || !draft.seed_binding) {
-    throw Error("请先在「配置工作流」中指定提示词与种子节点");
-  }
-  const trimmed = draft.seed.trim();
-  const numericSeed = Number(trimmed);
-  if (!/^[0-9]+$/.test(trimmed) || !Number.isSafeInteger(numericSeed) || numericSeed < 0) {
-    throw Error("种子必须为非负安全整数；超出 2^53 的种子请在工作流内设置");
-  }
-  const name = draft.name.trim() || "未命名预演镜头";
-  const overrides = [
-    {node_id: draft.prompt_binding.node_id, widget_name: draft.prompt_binding.widget_name, value: draft.prompt},
-    {node_id: draft.seed_binding.node_id, widget_name: draft.seed_binding.widget_name, value: numericSeed},
-    ...draft.assets.map(a => ({node_id: a.node_id, widget_name: a.widget_name, value: a.value})),
-    {node_id: draft.pause_node_id, widget_name: "name", value: name},
-  ];
-  const original = app.graph.serialize();
-  try {
-    await app.loadGraphData(draft.workflow);
-    const pause = app.graph?.getNodeById?.(Number(draft.pause_node_id));
-    if (nodeType(pause) !== START_CLASS) throw Error("找不到已配置的暂停/继续节点");
-    const preview = previewForPause(pause);
-    if (draft.previewType === "sampling" && !preview) {
-      throw Error("工作流没有连接 Model Preview Override，无法保存 TAEH3 预览");
-    }
-    if (draft.previewType === "sampling") {
-      const frameSocket = preview.inputs?.find(x => x.name === "preview_frames");
-      const frames = Number(widget(preview, "preview_frames")?.value);
-      if (frameSocket?.link == null && Number.isFinite(frames) && frames <= 1) {
-        throw Error("TAEH3 视频预览需要 KJ 的 preview_frames 大于 1；请在配置工作流中调整原工作流");
-      }
-    }
-    const queued = await queueManagedSelfLift(pause, "pause", overrides, "", {
-      saveDecoded: draft.previewType === "decoded",
-    });
-    if (!queued.promptId) throw Error("预演提交未返回任务编号");
-    state.jobs.set(queued.promptId, {
-      mode: "pause", overrides, workflow: structuredClone(draft.workflow), name,
-      workflow_name: draft.workflow_name, pause_node_id: String(pause.id),
-      preview_node_id: preview ? String(preview.id) : null,
-      prompt_binding: draft.prompt_binding, seed_binding: draft.seed_binding,
-      h3_properties: structuredClone(draft.h3Properties || {}),
-      preview_type: draft.previewType,
-      checkpointId: null, preview: null, uploadedStep: 0, busy: true,
-    });
-    state.creating = false; state.assetPicker = null;
-    render();
-    toast("预演任务已入队：" + name);
-  } finally {
-    await app.loadGraphData(original);
-  }
+// Submit a fully compiled API prompt directly, with no on-canvas mutations.
+async function submitPreviewJob(template,overrides,mode,checkpointId,previewType) {
+  const payload=buildPreviewJob(template,overrides,mode,checkpointId,previewType);
+  const result=await api.queuePrompt(0,{
+    output:payload.output,workflow:payload.workflow,
+  },{partialExecutionTargets:payload.targets});
+  if(!result?.prompt_id)throw Error("ComfyUI 未返回任务编号，任务可能未成功入队");
+  return {promptId:String(result.prompt_id),targetIds:payload.targets};
 }
+async function submitCreate() {
+  const draft=state.createDraft;
+  if(!draft?.workflow || !draft.api_prompt || !draft.prompt_binding || !draft.seed_binding)
+    throw Error("工作流尚未编译，请在「配置工作流」重新保存");
+  const numericSeed=validatePreviewSeed(draft.seed,draft);
+  const name=draft.name.trim() || "未命名预演镜头";
+  const overrides=[
+    {node_id:draft.prompt_binding.node_id,widget_name:draft.prompt_binding.widget_name,value:draft.prompt},
+    {node_id:draft.seed_binding.node_id,widget_name:draft.seed_binding.widget_name,value:numericSeed},
+    ...draft.assets.map(a=>({node_id:a.node_id,widget_name:a.widget_name,value:a.value})),
+    {node_id:draft.pause_node_id,widget_name:"name",value:name},
+  ];
+  const compiled={
+    schema:2,workflow:draft.workflow,api_prompt:draft.api_prompt,
+    pause_node_id:draft.pause_node_id,pause_target:draft.pause_target,
+    highres_target:draft.highres_target,decoded_target:draft.decoded_target,
+    seed_min:draft.seed_min,seed_max:draft.seed_max,
+  };
+  const queued=await submitPreviewJob(compiled,overrides,"pause","",draft.previewType);
+  state.jobs.set(queued.promptId,{
+    mode:"pause",overrides,workflow:structuredClone(draft.workflow),
+    api_prompt:structuredClone(draft.api_prompt),name,
+    workflow_name:draft.workflow_name,pause_node_id:String(draft.pause_node_id),
+    pause_target:draft.pause_target,highres_target:draft.highres_target,
+    decoded_target:draft.decoded_target,seed_min:draft.seed_min,seed_max:draft.seed_max,
+    preview_node_id:draft.preview_node_id == null ? null:String(draft.preview_node_id),
+    prompt_binding:draft.prompt_binding,seed_binding:draft.seed_binding,
+    h3_properties:structuredClone(draft.h3Properties || {}),
+    preview_type:draft.previewType,checkpointId:null,
+    preview:null,uploadedStep:0,busy:true,
+  });
+  state.creating=false;state.assetPicker=null;
+  render();
+  toast("预演任务已入队：" + name);
+}
+
 async function loadSavedWorkflow(id) {
   if (!id) throw Error("未选择任务");
   const info = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
@@ -944,48 +936,43 @@ async function loadSavedWorkflow(id) {
   state.templateName = selectedTask()?.metadata?.workflow_name || "已恢复任务工作流";
   toast("任务工作流已载入，图片和提示词覆盖值会在提交任务时自动恢复");
 }
-async function queueFromCheckpoint(id, mode) {
-  const task = state.tasks.find(t => t.id === id);
-  if (!task) throw Error("请选择任务");
-  const info = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
-  if (!Array.isArray(info.workflow?.nodes) || !app.loadGraphData) {
-    throw Error("该任务缺少可恢复的 ComfyUI 工作流");
+async function queueFromCheckpoint(id,mode) {
+  const task=state.tasks.find(t=>t.id===id);
+  if(!task)throw Error("请选择任务");
+  const info=await request("/tasks/"+encodeURIComponent(id)+"/workflow");
+  if(!info.api_prompt || !Array.isArray(info.workflow?.nodes))
+    throw Error("该任务没有独立执行快照，请重新配置预演工作流后创建新任务");
+  const overrides=structuredClone(info.overrides || []);
+  const template={
+    schema:2,workflow:info.workflow,api_prompt:info.api_prompt,
+    pause_node_id:task.metadata.pause_node_id,
+    pause_target:info.pause_target,highres_target:info.highres_target,
+    decoded_target:info.decoded_target,seed_min:info.seed_min,seed_max:info.seed_max,
+  };
+  const name=mode==="pause" ? task.name+" · 重跑":task.name;
+  if(mode==="pause") {
+    const patch=overrides.find(x=>
+      String(x.node_id)===String(template.pause_node_id) && x.widget_name==="name");
+    if(patch)patch.value=name;
+    else overrides.push({node_id:template.pause_node_id,widget_name:"name",value:name});
   }
-  // Every checkpoint retains its own model/conditioning/resolution settings.
-  // Temporarily load that snapshot, serialize a prompt, and restore the user's
-  // original canvas immediately. This supports batch jobs with different
-  // source workflows rather than silently reusing the wrong conditioning.
-  const savedCanvas = app.graph.serialize();
-  try {
-    await app.loadGraphData(info.workflow);
-    const pause = app.graph?.getNodeById?.(Number(task.metadata.pause_node_id));
-    if (nodeType(pause) !== START_CLASS) {
-      throw Error("此任务的工作流缺少原暂停节点，请重新创建预演");
-    }
-    const overrides = [...(info.overrides || [])];
-    if (mode === "pause") {
-      const namePatch = overrides.find(x => String(x.node_id) === String(pause.id) && x.widget_name === "name");
-      if (namePatch) namePatch.value = String(task.name) + " · 重跑";
-    }
-    const previewType = task.metadata?.preview_type || "sampling";
-    const queued = await queueManagedSelfLift(pause, mode, overrides, mode === "continue" ? id : "", {
-      saveDecoded: mode === "pause" && previewType === "decoded",
+  const previewType=task.metadata?.preview_type || "sampling";
+  const queued=await submitPreviewJob(template,overrides,mode,
+    mode==="continue"?id:"",previewType);
+  if(mode==="pause") {
+    state.jobs.set(queued.promptId,{
+      mode,overrides,workflow:info.workflow,api_prompt:info.api_prompt,name,
+      workflow_name:task.metadata.workflow_name,
+      pause_node_id:String(template.pause_node_id),
+      pause_target:template.pause_target,highres_target:template.highres_target,
+      decoded_target:template.decoded_target,seed_min:template.seed_min,seed_max:template.seed_max,
+      preview_node_id:task.metadata.preview_node_id,
+      preview_type:previewType,prompt_binding:info.prompt_binding,
+      seed_binding:info.seed_binding,h3_properties:info.h3_properties||{},
+      checkpointId:null,preview:null,uploadedStep:0,busy:true,
     });
-    if (!queued.promptId) throw Error("未收到入队任务编号");
-    if (mode === "pause") {
-      state.jobs.set(queued.promptId, {
-        mode, overrides, workflow: info.workflow, name: task.name + " · 重跑",
-        workflow_name: task.metadata.workflow_name,
-        pause_node_id: String(pause.id), preview_node_id: task.metadata.preview_node_id,
-        preview_type: previewType, prompt_binding: info.prompt_binding,
-        seed_binding: info.seed_binding, h3_properties: info.h3_properties || {},
-        checkpointId: null, preview: null, uploadedStep: 0, busy: true,
-      });
-    }
-    toast((mode === "continue" ? "高清续采" : "预演重跑") + "已入队：" + task.name);
-  } finally {
-    await app.loadGraphData(savedCanvas);
   }
+  toast((mode==="continue"?"高清续采":"预演重跑")+"已入队："+task.name);
 }
 
 async function batchHighres() {
@@ -1014,7 +1001,9 @@ async function persistJob(job) {
         prompt_binding: job.prompt_binding, seed_binding: job.seed_binding,
         h3_properties: job.h3_properties || {},
         preview_type: job.preview_type || "sampling",
-        workflow: job.workflow,
+        workflow: job.workflow,api_prompt:job.api_prompt,
+        pause_target:job.pause_target,highres_target:job.highres_target,
+        decoded_target:job.decoded_target,seed_min:job.seed_min,seed_max:job.seed_max,
       }),
     });
   } catch (e) { job.metadataSaved = false; toast("检查点已保存，但任务配置存档失败：" + e.message, "error"); }
