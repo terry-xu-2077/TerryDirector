@@ -31,9 +31,20 @@ export function listPreviewInputCandidates(workflow, kind) {
     if (!compatible) continue;
 
     const named = node.widgets_values_named || {};
+    // Standard ComfyUI exports can contain widgets_values without the named
+    // extension. Resolve only widgets explicitly declared on node.inputs.
+    const readField = field => {
+      if (Object.prototype.hasOwnProperty.call(named,field)) return named[field];
+      if (node.widgets_values && !Array.isArray(node.widgets_values))
+        return node.widgets_values[field];
+      const names=(node.inputs||[]).filter(input => input.widget && input.link == null)
+        .map(input => input.widget.name || input.name);
+      const i=names.indexOf(field);
+      return i>=0 && Array.isArray(node.widgets_values) ? node.widgets_values[i] : undefined;
+    };
     // One source entry per node: prefer its explicit prompt/seed widget.
     for (const field of fields) {
-      const value = named[field];
+      const value = readField(field);
       const expected = kind === "prompt" ? "string" : "number";
       if (typeof value !== expected) continue;
       const port = (node.inputs || []).find(input => input.name === field);
