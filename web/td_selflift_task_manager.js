@@ -706,10 +706,13 @@ function createMarkup() {
 function installCreatePromptEditor() {
   const editor = state.root?.querySelector(".tdm-h3-rich-editor");
   if (!editor || !state.createDraft) return;
+  // Capture this specific draft: releasing a previous editor must not copy
+  // its old prompt into a newly selected source task's draft.
+  const draft=state.createDraft;
   attachPreviewRichEditor(editor,{
-    draft:state.createDraft,
-    mode:state.createDraft.editorMode === "raw" ? "raw" : "visual",
-    onChange:text=>{ if(state.createDraft)state.createDraft.prompt=text; },
+    draft,
+    mode:draft.editorMode === "raw" ? "raw" : "visual",
+    onChange:text=>{ draft.prompt=text; },
   });
 }
 function assetPickerMarkup() {
