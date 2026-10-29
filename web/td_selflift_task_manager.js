@@ -1512,38 +1512,42 @@ async function persistJob(job) {
       }),
     });
   } catch (e) { job.metadataSaved = false; toast("检查点已保存，但任务配置存档失败：" + e.message, "error"); }
-  await persistPreview(job);
+  // The checkpoint can be written before the final sampling preview arrives.
+  // Saving the media here would capture a stale iteration. Finalize only in
+  // execution_success/error/interrupted for this specific prompt.
   void refresh();
 }
 async function persistPreview(job) {
-  const p = job?.preview;
-  if (job?.preview_type === "decoded") return;
-  if (!job?.checkpointId || !p?.image || job.previewPending || job.uploadedStep >= (p.step || 1)) return;
-  // Persist the final animation, not every intermediate iteration.
-  if (job.busy && p.total && p.step < p.total) return;
-  if (p.image.length > 48 * 1024 * 1024 * 4 / 3) return;
-  job.previewPending = true;
-  try {
-    const raw = atob(p.image);
-    const bytes = Uint8Array.from(raw, ch => ch.charCodeAt(0));
-    const response = await api.fetchApi(
-      URL_BASE + "/tasks/" + job.checkpointId + "/sampling-preview", {
-        method: "POST", headers: { "Content-Type": p.mime }, body: bytes,
+  // One final upload per job; do not write every sampling iteration.
+  if(job?.previewPersistPromise)return job.previewPersistPromise;
+  if(job?.previewSaved || job?.preview_type==="decoded" ||
+     !job?.checkpointId || !job?.preview?.image)return false;
+  const p=job.preview;
+  if(p.image.length > 48*1024*1024*4/3)return false;
+  const upload=(async()=>{
+    const raw=atob(p.image);
+    const bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));
+    const response=await api.fetchApi(
+      URL_BASE+"/tasks/"+encodeURIComponent(job.checkpointId)+"/sampling-preview",{
+        method:"POST",headers:{"Content-Type":p.mime},body:bytes,
       });
-    if (!response.ok) throw Error((await response.json()).error || "采样预览存档失败");
-    job.uploadedStep = p.step || 1;
-    void refresh();
-  } catch (e) { console.warn("[TerryDirector SelfLift preview]", e); }
-  finally {
-    job.previewPending = false;
-    // Only enqueue a newer frame after a successful upload. Never spin on a
-    // failed HTTP request (which could otherwise cause an infinite microtask loop).
-    if (job.uploadedStep >= (p.step || 1) &&
-        job.preview && job.preview.step > job.uploadedStep) {
-      if (!job.busy || !job.preview.total || job.preview.step >= job.preview.total) {
-        queueMicrotask(() => void persistPreview(job));
-      }
+    if(!response.ok){
+      let reason="TAEH3 最终预览保存失败";
+      try{reason=(await response.json()).error||reason;}catch{/* non-JSON error */}
+      throw Error(reason);
     }
+    job.previewSaved=true;
+    job.uploadedStep=p.step||1;
+    return true;
+  })();
+  job.previewPersistPromise=upload;
+  try{return await upload;}
+  catch(error){
+    console.warn("[TerryDirector TAEH3 最终预览保存]",error);
+    toast("最终采样预览未能保存："+error.message,"error");
+    return false;
+  }finally{
+    job.previewPersistPromise=null;
   }
 }
 async function saveLegacyLifecycle(checkpointId,status,extras={}) {
@@ -1597,14 +1601,23 @@ function bindEvents() {
     }
   });
   api.addEventListener("kj_preview_override",e=>{
-    const p=e.detail||{},job=state.jobs.get(state.activePromptId);
-    if(!job||job.mode!=="pause"||job.preview_type==="decoded"||!p.image||!p.mime||
-       String(p.node_id)!==job.preview_node_id)return;
+    const p=e.detail||{};
+    // Prefer the event's prompt identity; for KJ versions without it, only
+    // the currently executing ComfyUI prompt can receive the preview.
+    const promptId=String(p.prompt_id||state.activePromptId||"");
+    const job=state.jobs.get(promptId);
+    if(!job || !job.busy || job.mode!=="pause" ||
+       job.preview_type==="decoded" || !p.image || !p.mime ||
+       String(p.node_id)!==String(job.preview_node_id))return;
     if(!["video/mp4","image/webp","image/jpeg"].includes(p.mime))return;
     if(p.image.length>48*1024*1024*4/3)return;
-    job.preview={image:p.image,mime:p.mime,step:Number(p.step)||1,
-      total:Number(p.total)||null};
-    void persistPreview(job);
+    const step=Number(p.step)||1, previous=job.preview?.step||0;
+    if(step<previous)return; // Ignore delayed/stale packets for this job.
+    job.preview={image:p.image,mime:p.mime,step,total:Number(p.total)||null};
+    job.previewVersion=(job.previewVersion||0)+1;
+    // Update the selected task's player only: no network request, no disk
+    // writes, no full-window re-render, no interference with queued tasks.
+    updateLivePreview(job);
   });
   api.addEventListener("executed",e=>{
     const p=e.detail||{},info=p.output?.terrydirector_selflift_checkpoint?.[0];
@@ -1653,9 +1666,15 @@ function bindEvents() {
                 {error:"高清执行中断或失败"});
           }catch(error){toast(error.message,"error");}
         }
+        // After execution finishes, persist only the latest preview. The
+        // save is independent of later queued jobs and their live previews.
         await persistPreview(job);
         await refresh();
         state.jobs.delete(promptId);
+        releasePreviewBlobUrls(job);
+        // Redraw once to switch the completed task from live memory to its
+        // stored checkpoint video (or to the error placeholder).
+        render();
       })();
     });
   }
