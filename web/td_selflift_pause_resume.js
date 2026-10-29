@@ -156,7 +156,7 @@ function refresh(node) {
   const run = node.__tdSelfLiftRun;
   const blue = !ready;
 
-  node.title = TITLE + (ready ? " · 待高清 " + id.slice(0, 8) : " · 待低清");
+  node.title = TITLE + (ready ? " · 待高清 " + id.slice(0, 8) : " · 待预演");
   const root = node.__tdSelfLiftRoot;
   if (root) {
     root.classList.toggle("is-blue", blue);
@@ -173,12 +173,12 @@ function refresh(node) {
     ico.innerHTML = blue ? ARROW_ICON
       : (busy && run?.mode === "continue" ? PLAY_ICON : PAUSED_ICON);
     label.textContent = busy
-      ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "低清生成中…" :
-        run.mode === "saving" ? "低清视频保存中…" : "高清续采中…")
-      : (blue ? "生成低清" : "继续高清");
+      ? (run.mode === "checking" ? "检查中…" : run.mode === "pause" ? "预演生成中…" :
+        run.mode === "saving" ? "预演视频保存中…" : "高清续采中…")
+      : (blue ? "生成预演" : "继续高清");
     status.textContent = run?.error || (ready
       ? (name ? name.slice(0, 18) + " · " : "") + "检查点 " + id.slice(0, 8) + " 已保存"
-      : (missing ? "原检查点文件不存在，请重新生成低清" : "尚无低清检查点"));
+      : (missing ? "原检查点文件不存在，请重新生成预演" : "尚无预演检查点"));
     reset.hidden = !ready || busy;
   }
   node.setDirtyCanvas?.(true, true);
@@ -270,7 +270,7 @@ function findLowresOutput(node) {
     }
   }
   if (savers.length > 1) {
-    throw new Error("低清 denoised_output 连到了多个视频保存节点，请只保留一个低清保存终点");
+    throw new Error("低清 denoised_output 连到了多个视频保存节点，请只保留一个预演保存终点");
   }
   return savers[0] || null;
 }
@@ -424,9 +424,9 @@ function attach(node) {
     root.className = "td-selflift-action is-blue";
     root.innerHTML = '<button class="td-selflift-main" type="button">' +
       '<span class="td-selflift-icon">' + ARROW_ICON + '</span>' +
-      '<span class="td-selflift-action-label">生成低清</span></button>' +
-      '<div class="td-selflift-info"><span class="td-selflift-status">尚无低清检查点</span>' +
-      '<button class="td-selflift-reset" type="button" hidden>重新生成低清</button></div>';
+      '<span class="td-selflift-action-label">生成预演</span></button>' +
+      '<div class="td-selflift-info"><span class="td-selflift-status">尚无预演检查点</span>' +
+      '<button class="td-selflift-reset" type="button" hidden>重新生成预演</button></div>';
     root.addEventListener("pointerdown", e => e.stopPropagation());
     root.addEventListener("wheel", e => e.stopPropagation(), { passive: true });
     root.querySelector(".td-selflift-main").addEventListener("click", e => {
