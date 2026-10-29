@@ -1,8 +1,8 @@
 {
   "id": "54de5d70-17de-4eef-9abc-e792e34bf3f0",
   "revision": 0,
-  "last_node_id": 40,
-  "last_link_id": 58,
+  "last_node_id": 39,
+  "last_link_id": 59,
   "nodes": [
     {
       "id": 1,
@@ -1020,7 +1020,9 @@
           "localized_name": "检查点 ID",
           "name": "检查点 ID",
           "type": "STRING",
-          "links": null
+          "links": [
+            59
+          ]
         }
       ],
       "properties": {
@@ -1819,7 +1821,7 @@
         "cnr_id": "comfy-core"
       },
       "widgets_values": [
-        "# SelfLift · 默认推荐：低清审片 → 高清续采\n\n目标：低清约 0.2 MP（608×352），高清约 0.8 MP（1216×672），124 帧。\n\n1. 首次点击 TerryDirectorSelfLiftPauseResume 节点中的主按钮「生成低清」，运行低清采样、保存检查点，并自动运行从 denoised_output 接出的低清解码与 SaveVideo 支路。\n2. 低清审片视频另存为 TerryDirector_SelfLift_PauseResume_lowres，检查画面与音频。确认镜头、表演和构图符合预期后，再点击变为柠檬绿色的「继续高清」按钮。\n3. 如果不满意，点击节点右下方的「重新生成低清」按钮，重新生成低清结果；旧检查点不会被当作本次续采依据。\n4. 同一个 SeedNode 同时供给低清原生采样和高清检查点；同一个时长公式同时供给低清条件和高清原始 Latent。\n5. 继续高清前不要更换提示词、参考图或影响检查点兼容性的参数。\n\n模型权重与 H3 Sigma Refiner 必须在本机可用。工作流节点保留默认名称；说明集中放在本便笺中。\n\n分辨率：只需修改唯一的「高清百万像素」输入；低清目标 MP 自动等于高清 MP / 4，不必再接独立的低清 MP 公式。"
+        "# SelfLift · 默认推荐：低清审片 → 高清续采\n\n目标：低清约 0.2 MP（608×352），高清约 0.8 MP（1216×672），124 帧。\n\n1. 首次点击 TerryDirectorSelfLiftPauseResume 节点中的主按钮「生成低清」，运行低清采样、保存检查点，并自动运行从 denoised_output 接出的低清解码与 TerryDirector 保存低清审片视频支路。\n2. 低清审片视频保存到检查点文件夹的 review.mp4，检查画面与音频。确认镜头、表演和构图符合预期后，再点击变为柠檬绿色的「继续高清」按钮。\n3. 如果不满意，点击节点右下方的「重新生成低清」按钮，重新生成低清结果；旧检查点不会被当作本次续采依据。\n4. 同一个 SeedNode 同时供给低清原生采样和高清检查点；同一个时长公式同时供给低清条件和高清原始 Latent。\n5. 继续高清前不要更换提示词、参考图或影响检查点兼容性的参数。\n\n模型权重与 H3 Sigma Refiner 必须在本机可用。工作流节点保留默认名称；说明集中放在本便笺中。\n\n分辨率：只需修改唯一的「高清百万像素」输入；低清目标 MP 自动等于高清 MP / 4，不必再接独立的低清 MP 公式。"
       ]
     },
     {
@@ -1998,19 +2000,24 @@
     },
     {
       "id": 39,
-      "type": "CreateVideo",
+      "type": "TerryDirectorLowresReviewSave",
       "pos": [
-        2570,
-        1220
+        2840,
+        1170
       ],
       "size": [
-        315,
-        220
+        360,
+        160
       ],
       "flags": {},
       "order": 30,
       "mode": 0,
       "inputs": [
+        {
+          "name": "checkpoint_id",
+          "type": "STRING",
+          "link": 59
+        },
         {
           "name": "images",
           "type": "IMAGE",
@@ -2024,62 +2031,16 @@
       ],
       "outputs": [
         {
-          "name": "VIDEO",
-          "type": "VIDEO",
-          "links": [
-            58
-          ]
+          "name": "path",
+          "type": "STRING",
+          "links": null
         }
       ],
       "properties": {
         "Node name for S&R": "CreateVideo",
         "cnr_id": "comfy-core"
       },
-      "widgets_values": [
-        24,
-        "auto",
-        "sRGB",
-        "none"
-      ]
-    },
-    {
-      "id": 40,
-      "type": "SaveVideo",
-      "pos": [
-        2970,
-        1230
-      ],
-      "size": [
-        315,
-        220
-      ],
-      "flags": {},
-      "order": 31,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "video",
-          "type": "VIDEO",
-          "link": 58
-        }
-      ],
-      "outputs": [
-        {
-          "name": "video",
-          "type": "VIDEO",
-          "links": null
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "SaveVideo",
-        "cnr_id": "comfy-core"
-      },
-      "widgets_values": [
-        "video/TerryDirector_SelfLift_PauseResume_lowres",
-        "auto",
-        "auto",
-        "auto"
-      ]
+      "widgets_values": []
     }
   ],
   "links": [
@@ -2456,7 +2417,7 @@
       37,
       0,
       39,
-      0,
+      1,
       "IMAGE"
     ],
     [
@@ -2464,16 +2425,16 @@
       38,
       0,
       39,
-      1,
+      2,
       "AUDIO"
     ],
     [
-      58,
+      59,
+      13,
+      1,
       39,
       0,
-      40,
-      0,
-      "VIDEO"
+      "STRING"
     ]
   ],
   "groups": [
