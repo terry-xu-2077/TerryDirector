@@ -278,12 +278,36 @@ function bindControls() {
         if (confirm) confirm.disabled = control.value.trim() !== "删除";
       });
     } else if (action === "select" || action === "select-all") {
+      // Never bubble checkbox clicks to the selectable task row.
+      control.addEventListener("click", e => e.stopPropagation());
+      control.addEventListener("pointerdown", e => e.stopPropagation());
       control.addEventListener("change", e => {
+        e.stopPropagation();
         if (action === "select-all") state.selected = e.target.checked ?
           new Set(state.tasks.map(t => t.id)) : new Set();
         else if (e.target.checked) state.selected.add(control.dataset.id);
         else state.selected.delete(control.dataset.id);
         render();
+      });
+    } else if (action === "draft-field") {
+      control.addEventListener("input", () => {
+        if (!state.createDraft) return;
+        state.createDraft[control.dataset.field] = control.value;
+      });
+    } else if (action === "config-field") {
+      control.addEventListener("change", () => {
+        if (!state.configDraft) return;
+        const key = control.dataset.field;
+        if (key === "prompt_binding" || key === "seed_binding") {
+          state.configDraft[key] = JSON.parse(control.value);
+        } else {
+          state.configDraft[key] = control.value;
+        }
+      });
+    } else if (action === "asset-search") {
+      control.addEventListener("input", () => {
+        if (state.assetPicker) state.assetPicker.search = control.value;
+        renderAssetChoices();
       });
     } else control.addEventListener("click", e => {
       e.preventDefault();
@@ -298,11 +322,19 @@ async function handleAction(action, data) {
     if (action === "refresh") return refresh();
     if (action === "focus") { state.focused = data.id; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
-    if (action === "cancel-create") { state.creating = false; return render(); }
+    if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
+    if (action === "config") return openConfig();
+    if (action === "cancel-config") { state.configuring = false; return render(); }
+    if (action === "save-config") return saveConfig();
+    if (action === "use-canvas") return useCurrentWorkflow();
+    if (action === "source-change") return changeCreateSource(data, state.root.querySelector('[data-action="source-change"]')?.value);
+    if (action === "open-assets") { state.assetPicker = { index: Number(data.index), search: "" }; return render(); }
+    if (action === "close-assets") { state.assetPicker = null; return render(); }
+    if (action === "choose-asset") return chooseAsset(data);
     if (action === "cancel-delete") { state.deleting = null; return render(); }
     if (action === "delete") return showDeleteConfirmation();
     if (action === "confirm-delete") return deleteSelectedTasks();
-    if (action === "create") { state.creating = true; await loadInputFiles(); return render(); }
+    if (action === "create") return openCreate();
     if (action === "import-workflow") return importWorkflow();
     if (action === "upload-image") return uploadImage(Number(data.patch));
     if (action === "submit") return submitCreate();
