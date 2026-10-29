@@ -86,7 +86,7 @@ function styles() {
 .tdm-left{min-height:0;overflow:auto;border-right:1px solid #30343b}
 .tdm-toolbar{position:sticky;top:0;background:#191b20;z-index:2;padding:12px 14px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #282b32}
 .tdm-status-filter{background:#252930;color:#d8e0eb;border:1px solid #404753;border-radius:6px;
- padding:6px 10px;min-width:160px;max-width:190px;font:12px system-ui;cursor:pointer}
+ padding:6px 10px;min-width:160px;max-width:190px;font:12px "Segoe UI Symbol",system-ui;cursor:pointer}
 .tdm-status-filter:focus-visible{outline:2px solid #6594d7;outline-offset:1px}
 @media(max-width:600px){.tdm-status-filter{min-width:120px;max-width:155px}}
 .tdm-list{padding:8px 12px}.tdm-card{display:grid;grid-template-columns:25px 128px 1fr;gap:10px;
@@ -100,6 +100,13 @@ function styles() {
 .tdm-status.low_running,.tdm-status.high_running{color:#b6dbff;border-color:#356da4}
 .tdm-status.low_complete,.tdm-status.high_complete{color:#bde8c6;border-color:#467b50}
 .tdm-status.high_pending{color:#e6d1a6;border-color:#756246}
+.tdm-status-icon{font:700 13px/1 "Segoe UI Symbol",system-ui,sans-serif;
+ display:inline-flex;align-items:center;justify-content:center;min-width:14px;flex:none;
+ color:#9daabe}
+.tdm-status.low_running .tdm-status-icon,.tdm-status.high_running .tdm-status-icon{color:#86bfff}
+.tdm-status.low_complete .tdm-status-icon,.tdm-status.high_complete .tdm-status-icon{color:#a9dfb2}
+.tdm-status.high_pending .tdm-status-icon{color:#e6c792}
+.tdm-sidebar-entry-status .tdm-status-icon{font-size:11px;min-width:11px;margin-right:3px;vertical-align:-1px}
 .tdm-timing{font-size:11px;color:#a5b0be;line-height:1.8}
 .tdm-timing strong{color:#d6dce6;font-weight:500}
 .tdm-detail-pending{padding:18px;background:#11151b;border:1px dashed #414a57;border-radius:8px;
@@ -324,6 +331,7 @@ function sidebarTaskMarkup(task) {
     '<div class="tdm-sidebar-entry-title"><strong class="tdm-sidebar-entry-name" title="' +
     esc(name) + '">' + esc(name) + '</strong>' +
     '<span class="tdm-sidebar-entry-status ' + status + '">' +
+    '<span class="tdm-status-icon" aria-hidden="true">'+esc(STATUS_ICONS[status])+'</span>'+
     esc(STATUS_NAMES[status]) + (task.queued_stage ? " · 排队" : "") + '</span></div>' +
     '<div class="tdm-sidebar-entry-meta"><span>创建 ' +
     esc(sidebarDate(task.created_at)) + '</span><span>' +
@@ -402,9 +410,17 @@ const STATUS_NAMES={
   low_pending:"低清待生成",low_running:"低清生成中",low_complete:"低清完成",
   high_pending:"高清待生成",high_running:"高清生成中",high_complete:"高清完成",
 };
+// Circles represent low-res; diamonds represent high-res.
+ // Outline = waiting, centered mark = generating, solid = completed.
+const STATUS_ICONS={
+  low_pending:"○",low_running:"◉",low_complete:"●",
+  high_pending:"◇",high_running:"◈",high_complete:"◆",
+};
 const STATUS_FILTER_OPTIONS=[
-  {value:"all",label:"全部状态"},
-  ...Object.entries(STATUS_NAMES).map(([value,label])=>({value,label})),
+  {value:"all",label:"全部状态",icon:"≡"},
+  ...Object.entries(STATUS_NAMES).map(([value,label])=>({
+    value,label,icon:STATUS_ICONS[value],
+  })),
 ];
 function visibleTasks() {
   return state.statusFilter==="all" ? state.tasks :
@@ -467,6 +483,8 @@ function statusMarkup(task) {
   const status=task.status || "low_complete";
   const queued=task.queued_stage && /pending$/.test(status);
   return '<span class="tdm-status '+esc(status)+'">'+
+    '<span class="tdm-status-icon" aria-hidden="true">'+
+      esc(STATUS_ICONS[status] || STATUS_ICONS.low_pending)+'</span>'+
     esc(STATUS_NAMES[status] || STATUS_NAMES.low_pending)+(queued?" · 已排队":"")+'</span>';
 }
 function thumb(task) {
@@ -653,7 +671,8 @@ function render() {
     '> 全选</label>'+
     '<select class="tdm-status-filter" data-action="status-filter" aria-label="按任务状态筛选">'+
     STATUS_FILTER_OPTIONS.map(option=>'<option value="'+option.value+'"'+
-      (option.value===state.statusFilter?' selected':'')+'>'+esc(option.label)+'</option>').join("")+
+      (option.value===state.statusFilter?' selected':'')+'>'+
+      esc(option.icon+'  '+option.label)+'</option>').join("")+
     '</select><span class="tdm-space"></span><span class="tdm-small">已选 ' + state.selected.size + '</span></div>' +
     '<div class="tdm-list">' +
     (visible.length ? visible.map(t => '<div class="tdm-card ' + (t.id === state.focused ? "active" : "") +
