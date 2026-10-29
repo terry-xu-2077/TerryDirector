@@ -1340,9 +1340,13 @@ function bindEvents() {
     const job=state.jobs.get(state.activePromptId);
     if(job){
       job.busy=true;
-      if(job.draftId)
-        void draftTransition(job.draftId,"start",{prompt_id:state.activePromptId})
-          .then(refresh).catch(err=>toast("开始状态记录失败："+err.message,"error"));
+      if(job.draftId) {
+        job.startPromise=draftTransition(job.draftId,"start",{
+          prompt_id:state.activePromptId,
+        });
+        void job.startPromise.then(refresh).catch(err=>
+          toast("开始状态记录失败："+err.message,"error"));
+      }
       else if(job.mode==="continue")
         void saveLegacyLifecycle(job.checkpointId,"high_running",{high_started_at:new Date().toISOString()})
           .then(refresh).catch(err=>toast(err.message,"error"));
@@ -1394,7 +1398,9 @@ function bindEvents() {
       if(!job)return;
       job.busy=false;
       void (async()=>{
-        await Promise.allSettled([job.persistPromise,job.checkpointPromise].filter(Boolean));
+        await Promise.allSettled([
+          job.startPromise,job.persistPromise,job.checkpointPromise,
+        ].filter(Boolean));
         if(job.draftId){
           const action=event==="execution_success"?"finish":"fail";
           const details=action==="fail"?{error:event==="execution_interrupted"?
