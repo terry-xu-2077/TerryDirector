@@ -1,7 +1,6 @@
 """Disk-backed SelfLift review task inventory. Never reads tensors for the UI."""
 from __future__ import annotations
 
-import base64
 import json
 import re
 from pathlib import Path
@@ -85,7 +84,7 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes) -> str:
         raise ValueError("无效 MP4")
     if mime == "image/webp" and not (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
         raise ValueError("无效 WebP")
-    if mime == "image/jpeg" and not raw.startswith(b"\\xff\\xd8\\xff"):
+    if mime == "image/jpeg" and not raw.startswith(bytes((0xff, 0xd8, 0xff))):
         raise ValueError("无效 JPEG")
     for old in folder.glob("sampling_preview.*"):
         if old.suffix in {".mp4", ".webp", ".jpg"}:
