@@ -7,6 +7,11 @@ import {
 } from "./td_preview_job_compiler.js";
 import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
 import { listPreviewInputCandidates } from "./td_preview_input_candidates.js";
+import {
+  PREVIEW_DURATION_MIN,PREVIEW_DURATION_MAX,PREVIEW_DURATION_DEFAULT,
+  PREVIEW_RESOLUTION_OPTIONS,PREVIEW_RESOLUTION_DEFAULT,
+  taskVideoFrameCount,taskResolutionInfo,taskAspectRatio,
+} from "./td_preview_task_parameters.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
@@ -179,6 +184,18 @@ function styles() {
 .tdm-create-meta{display:grid;grid-template-columns:minmax(220px,.9fr) minmax(320px,1.35fr);
  gap:16px;align-items:end}
 .tdm-create-meta .tdm-field{margin:0}
+.tdm-create .tdm-inline-field{display:flex;flex-direction:row;align-items:center;gap:12px;margin:0;min-width:0}
+.tdm-create .tdm-inline-field>label:first-child{flex:0 0 88px;min-width:0;white-space:nowrap;color:#b0bac9;font-size:12px}
+.tdm-create-meta .tdm-inline-field>label:first-child{flex-basis:94px}
+.tdm-create .tdm-inline-field>.tdm-inline-control{flex:1;min-width:0}
+.tdm-create .tdm-inline-field>input,.tdm-create .tdm-inline-field>select{flex:1;min-width:0;width:auto}
+.tdm-create .tdm-slider-control{display:flex;align-items:center;gap:12px}
+.tdm-create .tdm-slider-control input[type=range]{flex:1;min-width:45px;width:100%;padding:0;
+ height:22px;background:transparent;accent-color:#68a3ff;cursor:pointer;border:0}
+.tdm-create .tdm-slider-value{min-width:42px;text-align:right;font-variant-numeric:tabular-nums;color:#e1e9f6;font-size:12px;font-weight:600}
+.tdm-create .tdm-inline-field select{max-width:100%}
+@media(max-width:630px){.tdm-create .tdm-inline-field>label:first-child{flex-basis:66px}
+ .tdm-create-meta{grid-template-columns:1fr!important}}
 .tdm-create-meta .tdm-name-label{font-size:14px;font-weight:700;color:#e5ebf5}
 .tdm-create-content{flex:1;min-height:0;overflow:hidden;padding:16px 22px}
 .tdm-create-columns{display:grid;grid-template-columns:minmax(440px,1.4fr) minmax(300px,1fr);
@@ -207,8 +224,9 @@ function styles() {
 .tdm-create .tdm-mode-btn{padding:5px 10px;font-size:11px}
 .tdm-prompt-hint{display:flex;gap:13px;color:#8c9aaa;font-size:11px;padding:8px 2px 10px;flex:none}
 .tdm-prompt-hint b{color:#b1cce9;font-weight:600}
-.tdm-create-bottom{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(260px,1.5fr);
- gap:14px;align-items:end;flex:none;padding-top:8px}
+.tdm-create-bottom{display:flex;flex-direction:column;gap:9px;align-items:stretch;flex:none;
+ padding-top:10px;border-top:1px solid #303744}
+.tdm-create-bottom .tdm-inline-field{min-height:34px}
 .tdm-seed-row{display:flex;gap:6px;align-items:stretch}
 .tdm-seed-row input{flex:1;min-width:0}
 .tdm-seed-random{flex:none;min-width:40px;padding:6px 10px;font-size:18px;line-height:1.15;
@@ -1199,6 +1217,8 @@ function buildDraft(cfg, overrides = [], preferredName = "", previewType = "samp
     prompt: String(valueAt(cfg.prompt_binding) ?? ""),
     seed: String(valueAt(cfg.seed_binding) ?? "8"),
     previewType: previewType === "decoded" ? "decoded" : "sampling",
+    duration_seconds: Number(cfg.duration_seconds ?? PREVIEW_DURATION_DEFAULT),
+    highres_megapixels: Number(cfg.highres_megapixels ?? PREVIEW_RESOLUTION_DEFAULT),
     assets, source: "template",
   };
 }
@@ -1216,6 +1236,8 @@ async function changeCreateSource(_data, source) {
       const cfg={...prior,h3_properties:prior.h3_properties};
       state.createDraft=buildDraft(cfg,[],(prior.name||"预演镜头")+" · 新版",prior.previewType);
       state.createDraft.prompt=prior.prompt;
+      state.createDraft.duration_seconds=Number(prior.duration_seconds ?? PREVIEW_DURATION_DEFAULT);
+      state.createDraft.highres_megapixels=Number(prior.highres_megapixels ?? PREVIEW_RESOLUTION_DEFAULT);
       randomizeNewTaskSeed(state.createDraft);
       state.createDraft.assets=structuredClone(prior.assets||[]);
       state.createDraft.source=source;
@@ -1240,6 +1262,8 @@ async function changeCreateSource(_data, source) {
     configured.prompt_binding = meta.prompt_binding || configured.prompt_binding;
     configured.seed_binding = meta.seed_binding || configured.seed_binding;
     configured.h3_properties = meta.h3_properties || {};
+    configured.duration_seconds=meta.duration_seconds ?? PREVIEW_DURATION_DEFAULT;
+    configured.highres_megapixels=meta.highres_megapixels ?? PREVIEW_RESOLUTION_DEFAULT;
     state.createDraft = buildDraft(configured, result.overrides || [],
       (task.name || "预演镜头") + " · 新版", task.metadata?.preview_type || "sampling");
     randomizeNewTaskSeed(state.createDraft);
@@ -1464,6 +1488,8 @@ function draftSnapshot(draft) {
     name:String(draft.name||"").trim() || "未命名预演镜头",
     prompt:String(draft.prompt||""),seed:String(seed),
     assets:structuredClone(draft.assets||[]),previewType:draft.previewType,
+    duration_seconds:Number(draft.duration_seconds),
+    highres_megapixels:Number(draft.highres_megapixels),
     workflow_name:draft.workflow_name,
     workflow:structuredClone(draft.workflow),api_prompt:structuredClone(draft.api_prompt),
     prompt_binding:draft.prompt_binding,seed_binding:draft.seed_binding,
@@ -1500,6 +1526,8 @@ async function editDraft(id) {
   state.createDraft=buildDraft(config,[],row.name,row.previewType);
   state.createDraft.prompt=row.prompt;
   state.createDraft.seed=row.seed;
+  state.createDraft.duration_seconds=Number(row.duration_seconds ?? PREVIEW_DURATION_DEFAULT);
+  state.createDraft.highres_megapixels=Number(row.highres_megapixels ?? PREVIEW_RESOLUTION_DEFAULT);
   state.createDraft.assets=structuredClone(row.assets||[]);
   state.createDraft.source="task:"+id;
   state.editDraftId=id;
@@ -1533,6 +1561,8 @@ async function runDraft(id,mode="pause") {
       pause_node_id:draft.pause_node_id,pause_target:draft.pause_target,
       highres_target:draft.highres_target,decoded_target:draft.decoded_target,
       seed_min:draft.seed_min,seed_max:draft.seed_max,
+      duration_seconds:draft.duration_seconds,
+      highres_megapixels:draft.highres_megapixels,
     };
     const overrides=draftOverrides(draft);
     const queued=await submitPreviewJob(template,overrides,mode,
@@ -1546,6 +1576,7 @@ async function runDraft(id,mode="pause") {
       preview_node_id:draft.preview_node_id==null?null:String(draft.preview_node_id),
       prompt_binding:draft.prompt_binding,seed_binding:draft.seed_binding,
       h3_properties:draft.h3_properties||{},preview_type:draft.previewType,
+      duration_seconds:draft.duration_seconds,highres_megapixels:draft.highres_megapixels,
       checkpointId:mode==="continue"?draft.checkpoint_id:null,
       preview:null,uploadedStep:0,busy:true,
     };
@@ -1674,6 +1705,7 @@ async function persistJob(job) {
         workflow: job.workflow,api_prompt:job.api_prompt,draft_id:job.draftId||null,
         pause_target:job.pause_target,highres_target:job.highres_target,
         decoded_target:job.decoded_target,seed_min:job.seed_min,seed_max:job.seed_max,
+        duration_seconds:job.duration_seconds,highres_megapixels:job.highres_megapixels,
       }),
     });
   } catch (e) { job.metadataSaved = false; toast("检查点已保存，但任务配置存档失败：" + e.message, "error"); }
