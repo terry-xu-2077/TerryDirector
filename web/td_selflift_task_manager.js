@@ -8,6 +8,9 @@ import {
 import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
 import { listPreviewInputCandidates } from "./td_preview_input_candidates.js";
 import {
+  progressFromEvent,progressFromState,recordSamplerProgress,formatSamplingProgress,
+} from "./td_preview_sampling_progress.js";
+import {
   PREVIEW_DURATION_MIN,PREVIEW_DURATION_MAX,PREVIEW_DURATION_DEFAULT,
   PREVIEW_RESOLUTION_OPTIONS,PREVIEW_RESOLUTION_DEFAULT,
   taskVideoFrameCount,taskResolutionInfo,taskAspectRatio,
@@ -105,6 +108,11 @@ function styles() {
 .tdm-status.low_running,.tdm-status.high_running{color:#b6dbff;border-color:#356da4}
 .tdm-status.low_complete,.tdm-status.high_complete{color:#bde8c6;border-color:#467b50}
 .tdm-status.high_pending{color:#e6d1a6;border-color:#756246}
+.tdm-card-status-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0}
+.tdm-card-progress{font-family:Consolas,"Cascadia Mono","DejaVu Sans Mono",monospace;
+ font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;max-width:100%;
+ color:#a8c6f4;line-height:1.5;overflow:hidden;text-overflow:ellipsis}
+.tdm-card-progress:empty{display:none}
 .tdm-status-icon{font:700 13px/1 "Segoe UI Symbol",system-ui,sans-serif;
  display:inline-flex;align-items:center;justify-content:center;min-width:14px;flex:none;
  color:#9daabe}
@@ -505,6 +513,51 @@ function statusMarkup(task) {
       esc(STATUS_ICONS[status] || STATUS_ICONS.low_pending)+'</span>'+
     esc(STATUS_NAMES[status] || STATUS_NAMES.low_pending)+(queued?" · 已排队":"")+'</span>';
 }
+function runningJobForTask(task) {
+  if(!task)return null;
+  for(const job of state.jobs.values()){
+    if(!job.busy || !job.samplingProgress)continue;
+    if((job.draftId && job.draftId===task.id) ||
+       (job.checkpointId && (job.checkpointId===task.id ||
+          job.checkpointId===task.checkpoint_id)))return job;
+  }
+  return null;
+}
+function taskProgressText(task) {
+  const job=runningJobForTask(task);
+  return job ? formatSamplingProgress(job.samplingProgress) : "";
+}
+function progressMarkup(task) {
+  const text=taskProgressText(task);
+  return '<span class="tdm-card-progress" data-progress-task-id="'+esc(task.id)+
+    '" title="'+esc(text)+'">'+esc(text)+'</span>';
+}
+function updateTaskProgress(job) {
+  if(!job?.samplingProgress)return;
+  const ids=[job.draftId,job.checkpointId].filter(Boolean);
+  if(!ids.length)return;
+  const text=formatSamplingProgress(job.samplingProgress);
+  for(const id of ids){
+    const targets=state.root?.querySelectorAll('[data-progress-task-id]') || [];
+    for(const target of targets){
+      if(target.dataset.progressTaskId!==String(id))continue;
+      target.textContent=text;
+      target.title=text;
+    }
+  }
+}
+function handleSamplerProgress(event,fromState=false) {
+  const detail=event.detail||{};
+  // Never take progress from another prompt in the queue.
+  const promptId=String(detail.prompt_id || state.activePromptId || "");
+  if(!promptId || (state.activePromptId && promptId!==state.activePromptId))return;
+  const job=state.jobs.get(promptId);
+  if(!job || !job.busy || job.finalizing)return;
+  const progress=fromState
+    ? progressFromState(detail,job) : progressFromEvent(detail,job);
+  if(!progress)return;
+  if(recordSamplerProgress(job,progress))updateTaskProgress(job);
+}
 function thumb(task) {
   const media=task.media||{},kind=media.sampling?"sampling":media.decoded?"decoded":null;
   if(!kind)return '<div class="tdm-thumb"></div>';
@@ -715,7 +768,8 @@ function render() {
       (state.selected.has(t.id) ? "checked" : "") + '>' + thumb(t) +
       '<div><h3>' + esc(t.name || "未命名镜头") + '</h3><div class="tdm-small">' +
       esc((t.created_at || "").replace("T", " ").slice(0, 16)) + '</div>' +
-      '<div>'+statusMarkup(t)+'</div><div class="tdm-small">创建 '+formatTime(t.created_at)+'</div>'+
+      '<div class="tdm-card-status-row">'+statusMarkup(t)+progressMarkup(t)+'</div>'+
+      '<div class="tdm-small">创建 '+formatTime(t.created_at)+'</div>'+
       '<div class="tdm-small">'+(t.low_finished_at?'低清完成 '+formatTime(t.low_finished_at):
         t.low_started_at?'低清开始 '+formatTime(t.low_started_at):'尚未生成')+'</div>'+
       (t.high_finished_at?'<div class="tdm-small">高清完成 '+formatTime(t.high_finished_at)+'</div>':'')+
@@ -1848,6 +1902,9 @@ function bindEvents() {
     const job=state.jobs.get(state.activePromptId);
     if(job){
       job.busy=true;
+      job.progressStartedAt=Date.now();
+      job.samplingProgress=null;
+      job.progressNode=null;
       if(job.draftId) {
         job.startPromise=draftTransition(job.draftId,"start",{
           prompt_id:state.activePromptId,
@@ -1868,6 +1925,7 @@ function bindEvents() {
         const pause=pauseNodes[0],preview=previewForPause(pause);
         state.jobs.set(state.activePromptId,{
           mode:"pause",overrides:[],workflow:app.graph.serialize(),
+          progressStartedAt:Date.now(),api_prompt:null,
           name:String(widget(pause,"name")?.value||"预演镜头"),
           workflow_name:state.templateName,pause_node_id:String(pause.id),
           preview_node_id:preview?String(preview.id):null,
@@ -1877,6 +1935,11 @@ function bindEvents() {
       }
     }
   });
+  // Native ComfyUI progress is emitted for each actual sampler step.
+  // Neither event contains tqdm's formatted text; we reconstruct the same
+  // concise format, with elapsed/ETA derived from the prompt's clock.
+  api.addEventListener("progress",e=>handleSamplerProgress(e));
+  api.addEventListener("progress_state",e=>handleSamplerProgress(e,true));
   api.addEventListener("kj_preview_override",e=>{
     const p=e.detail||{};
     // Prefer the event's prompt identity; for KJ versions without it, only
