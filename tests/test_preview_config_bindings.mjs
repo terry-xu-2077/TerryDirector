@@ -44,6 +44,9 @@ const plain={nodes:[{id:101,type:"TextSource",
  inputs:[{name:"text",type:"STRING",widget:{name:"text"},link:null}],
  outputs:[{name:"STRING",type:"STRING,TEXT"}],widgets_values:["hello"]}]};
 assert.deepEqual(listPreviewInputCandidates(plain,"prompt").map(x=>x.node_id),[101]);
+const rawRgthree={nodes:[{id:77,type:"Seed (rgthree)",
+  outputs:[{name:"SEED",type:"INT"}],widgets_values:[12345,"",null,"okay"]}]};
+assert.deepEqual(listPreviewInputCandidates(rawRgthree,"seed").map(x=>x.node_id),[77]);
 
 assert.ok(source.includes('data-action="new-config"'));
 assert.ok(source.includes('data-action="select-config"'));
