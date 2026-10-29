@@ -1348,7 +1348,7 @@ function assetCard(path, title, attrs, selected = false) {
 function createMarkup() {
   const draft = state.createDraft;
   if (!draft) return "";
-  const ratio=taskAspectRatio(draft.api_prompt);
+  const ratio=taskAspectRatio(draft.api_prompt,draft.workflow);
   const sources = [
     { id: "template", title: state.template ? "已配置工作流 · " + state.template.workflow_name : "未配置工作流" },
     ...state.tasks.filter(t => t.metadata?.has_workflow).map(t => ({
