@@ -1258,7 +1258,7 @@ async function persistJob(job) {
         prompt_binding: job.prompt_binding, seed_binding: job.seed_binding,
         h3_properties: job.h3_properties || {},
         preview_type: job.preview_type || "sampling",
-        workflow: job.workflow,api_prompt:job.api_prompt,
+        workflow: job.workflow,api_prompt:job.api_prompt,draft_id:job.draftId||null,
         pause_target:job.pause_target,highres_target:job.highres_target,
         decoded_target:job.decoded_target,seed_min:job.seed_min,seed_max:job.seed_max,
       }),
@@ -1298,55 +1298,115 @@ async function persistPreview(job) {
     }
   }
 }
+async function saveLegacyLifecycle(checkpointId,status,extras={}) {
+  if(!checkpointId)return;
+  let previous={};
+  try {
+    previous=await request("/tasks/"+encodeURIComponent(checkpointId)+"/metadata");
+  } catch {/* Older checkpoints have no task.json yet. */}
+  const value={...previous,
+    workflow_name:previous.workflow_name||state.templateName,
+    lifecycle_status:status,...extras,
+  };
+  await request("/tasks/"+encodeURIComponent(checkpointId)+"/metadata",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(value),
+  });
+}
 function bindEvents() {
-  api.addEventListener("execution_start", e => {
-    state.activePromptId = e.detail?.prompt_id ? String(e.detail.prompt_id) : null;
-    // Also archive KJ previews when the user clicks the original blue node
-    // button instead of submitting through the task manager.
-    if (state.activePromptId && !state.jobs.has(state.activePromptId)) {
-      const pauseNodes = getPauseNodes().filter(n =>
-        widget(n, "mode")?.value === "暂停并保存");
-      if (pauseNodes.length === 1) {
-        const pause = pauseNodes[0], preview = previewForPause(pause);
-        state.jobs.set(state.activePromptId, {
-          mode: "pause", overrides: [], workflow: app.graph.serialize(),
-          name: String(widget(pause, "name")?.value || "预演镜头"),
-          workflow_name: state.templateName, pause_node_id: String(pause.id),
-          preview_node_id: preview ? String(preview.id) : null,
-          preview_type: "sampling",
-          checkpointId: null, preview: null, uploadedStep: 0, busy: true,
+  api.addEventListener("execution_start",e=>{
+    state.activePromptId=e.detail?.prompt_id?String(e.detail.prompt_id):null;
+    const job=state.jobs.get(state.activePromptId);
+    if(job){
+      job.busy=true;
+      if(job.draftId)
+        void draftTransition(job.draftId,"start",{prompt_id:state.activePromptId})
+          .then(refresh).catch(err=>toast("开始状态记录失败："+err.message,"error"));
+      else if(job.mode==="continue")
+        void saveLegacyLifecycle(job.checkpointId,"high_running",{high_started_at:new Date().toISOString()})
+          .then(refresh).catch(err=>toast(err.message,"error"));
+      return;
+    }
+    // Preserve original ComfyUI manual-node workflows without creating
+    // a Preview Stage task draft on their behalf.
+    if(state.activePromptId){
+      const pauseNodes=getPauseNodes().filter(n=>widget(n,"mode")?.value==="暂停并保存");
+      if(pauseNodes.length===1){
+        const pause=pauseNodes[0],preview=previewForPause(pause);
+        state.jobs.set(state.activePromptId,{
+          mode:"pause",overrides:[],workflow:app.graph.serialize(),
+          name:String(widget(pause,"name")?.value||"预演镜头"),
+          workflow_name:state.templateName,pause_node_id:String(pause.id),
+          preview_node_id:preview?String(preview.id):null,
+          preview_type:"sampling",checkpointId:null,preview:null,
+          uploadedStep:0,busy:true,
         });
       }
     }
   });
-  api.addEventListener("kj_preview_override", e => {
-    const p = e.detail || {};
-    const job = state.jobs.get(state.activePromptId);
-    if (!job || job.mode !== "pause" || job.preview_type === "decoded" || !p.image || !p.mime ||
-      String(p.node_id) !== job.preview_node_id) return;
-    if (!["video/mp4", "image/webp", "image/jpeg"].includes(p.mime)) return;
-    if (p.image.length > 48 * 1024 * 1024 * 4 / 3) return;
-    job.preview = { image: p.image, mime: p.mime, step: Number(p.step) || 1,
-      total: Number(p.total) || null };
+  api.addEventListener("kj_preview_override",e=>{
+    const p=e.detail||{},job=state.jobs.get(state.activePromptId);
+    if(!job||job.mode!=="pause"||job.preview_type==="decoded"||!p.image||!p.mime||
+       String(p.node_id)!==job.preview_node_id)return;
+    if(!["video/mp4","image/webp","image/jpeg"].includes(p.mime))return;
+    if(p.image.length>48*1024*1024*4/3)return;
+    job.preview={image:p.image,mime:p.mime,step:Number(p.step)||1,
+      total:Number(p.total)||null};
     void persistPreview(job);
   });
-  api.addEventListener("executed", e => {
-    const p = e.detail || {};
-    const info = p.output?.terrydirector_selflift_checkpoint?.[0];
-    if (!info?.checkpoint_id || info.mode !== "paused") return;
-    const job = state.jobs.get(String(p.prompt_id || state.activePromptId));
-    if (!job || job.mode !== "pause" ||
-      String(p.node) !== String(job.pause_node_id)) return;
-    job.checkpointId = String(info.checkpoint_id);
-    void persistJob(job);
+  api.addEventListener("executed",e=>{
+    const p=e.detail||{},info=p.output?.terrydirector_selflift_checkpoint?.[0];
+    if(!info?.checkpoint_id||info.mode!=="paused")return;
+    const job=state.jobs.get(String(p.prompt_id||state.activePromptId));
+    if(!job||job.mode!=="pause"||String(p.node)!==String(job.pause_node_id))return;
+    job.checkpointId=String(info.checkpoint_id);
+    job.persistPromise=persistJob(job);
+    if(job.draftId)
+      job.checkpointPromise=draftTransition(job.draftId,"checkpoint",{
+        checkpoint_id:job.checkpointId,
+      }).catch(error=>toast("检查点状态存档失败："+error.message,"error"));
   });
-  for (const event of ["execution_success", "execution_error", "execution_interrupted"]) {
-    api.addEventListener(event, e => {
-      const job = state.jobs.get(String(e.detail?.prompt_id || ""));
-      if (job) { job.busy = false; void persistPreview(job); void refresh(); }
+  for(const event of ["execution_success","execution_error","execution_interrupted"]){
+    api.addEventListener(event,e=>{
+      const promptId=String(e.detail?.prompt_id||"");
+      const job=state.jobs.get(promptId);
+      if(!job)return;
+      job.busy=false;
+      void (async()=>{
+        await Promise.allSettled([job.persistPromise,job.checkpointPromise].filter(Boolean));
+        if(job.draftId){
+          const action=event==="execution_success"?"finish":"fail";
+          const details=action==="fail"?{error:event==="execution_interrupted"?
+            "生成已中断":String(e.detail?.exception_message||"生成失败")}:{};
+          try{
+            await draftTransition(job.draftId,action,details);
+          }catch(error){
+            // A successful low-stage execution without a checkpoint must
+            // never be reported as a completed task.
+            if(action==="finish"){
+              await draftTransition(job.draftId,"fail",{
+                error:"执行结束但未找到有效低清检查点："+error.message,
+              }).catch(()=>{});
+            }
+            toast("更新任务状态失败："+error.message,"error");
+          }
+        }else if(job.mode==="continue"&&job.checkpointId){
+          try{
+            await saveLegacyLifecycle(job.checkpointId,
+              event==="execution_success"?"high_complete":"low_complete",
+              event==="execution_success"?
+                {high_finished_at:new Date().toISOString()}:
+                {error:"高清执行中断或失败"});
+          }catch(error){toast(error.message,"error");}
+        }
+        await persistPreview(job);
+        await refresh();
+        state.jobs.delete(promptId);
+      })();
     });
   }
 }
+
 app.registerExtension({
   name: "TerryDirector.SelfLiftTaskManager",
   async setup() {
