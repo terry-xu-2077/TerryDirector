@@ -326,6 +326,59 @@ async function runBranch(node) {
   }
 }
 
+/**
+ * Task-manager queue path. Serialize one job with temporary widget overrides,
+ * then restore the editor exactly as it was. The existing partial-target guard
+ * remains responsible for third-party queue wrappers that drop targets.
+ */
+export async function queueManagedSelfLift(node, mode, overrides = [], checkpointId = "") {
+  if (node?.comfyClass !== CLASS_NAME) throw new Error("工作流未配置 SelfLift 暂停/继续节点");
+  if (!["pause", "continue"].includes(mode)) throw new Error("无效任务模式");
+  const target = mode === "continue" ? findDownstreamOutput(node) : node;
+  const saver = mode === "pause" ? findLowresOutput(node) : null;
+  const ids = [String(target.id), ...(saver ? [String(saver.id)] : [])];
+  const modified = [];
+  const apply = (item, value) => {
+    modified.push([item, item.value]);
+    item.value = value;
+    item.callback?.(value);
+  };
+  let request;
+  try {
+    const modeWidget = widget(node, "mode");
+    if (!modeWidget) throw new Error("暂停节点缺少 mode 控件");
+    apply(modeWidget, mode === "continue" ? "继续高清" : "暂停并保存");
+    const idWidget = widget(node, "checkpoint_id");
+    if (mode === "continue" && !UUID_RE.test(checkpointId == null ? "" : String(checkpointId))) {
+      throw new Error("所选高清任务检查点 ID 无效");
+    }
+    if (idWidget) apply(idWidget, mode === "continue" ? checkpointId : "");
+    for (const patch of overrides) {
+      const source = app.graph?.getNodeById?.(Number(patch.node_id));
+      const sourceWidget = source?.widgets?.find(w => w.name === patch.widget_name);
+      if (!sourceWidget) throw new Error("工作流输入已变化，请重新配置：" + patch.node_id + "." + patch.widget_name);
+      apply(sourceWidget, patch.value);
+    }
+    request = {
+      node, run: { busy: false }, targetId: ids[0], targetIds: ids,
+    };
+    pendingBranchSubmissions.push(request);
+    const result = await app.queuePrompt(0, 1, ids);
+    return { promptId: String(result?.prompt_id || ""), targetIds: ids };
+  } catch (error) {
+    if (request) {
+      const index = pendingBranchSubmissions.indexOf(request);
+      if (index >= 0) pendingBranchSubmissions.splice(index, 1);
+    }
+    throw error;
+  } finally {
+    for (const [item, value] of modified.reverse()) {
+      item.value = value;
+      item.callback?.(value);
+    }
+  }
+}
+
 function resetForLowres(node) {
   if (node.__tdSelfLiftRun?.busy) return;
   setWidget(node, "checkpoint_id", "");
