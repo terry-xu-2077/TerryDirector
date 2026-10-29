@@ -83,10 +83,8 @@ export function resolvePreviewSeedBounds(workflow,binding,apiPrompt={},nodeDefin
       const input=dest.inputs?.[link[4]];
       if(!input)continue;
       const type=String(apiPrompt[id(dest.id)]?.class_type || dest.type || "");
-      if(isSeedField(input.name)){
-        constrainField(dest.id,type,input.name,null);
-        continue;
-      }
+      // Wireless bus lanes can be named "SEED" but are not sampler seed
+      // consumers. Resolve virtual routing before enforcing numeric limits.
       if(dest.type==="SetNode"){
         const channel=setGetKey(dest);
         if(channel){
@@ -109,6 +107,10 @@ export function resolvePreviewSeedBounds(workflow,binding,apiPrompt={},nodeDefin
           if(laneSlot>=0 && receiver.outputs?.[laneSlot])
             pending.push({nodeId:id(receiver.id),slot:laneSlot});
         }
+        continue;
+      }
+      if(isSeedField(input.name) && /sampler|selflift|seednode/i.test(type)) {
+        constrainField(dest.id,type,input.name,null);
         continue;
       }
       if(!/sampler|selflift/i.test(type))addOutputs(dest);
