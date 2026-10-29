@@ -30,10 +30,10 @@ class TerryDirectorLowresReviewSave(io.ComfyNode):
 
     @classmethod
     def execute(cls, checkpoint_id, images, audio):
-        from .director_loop_media import _write_clip, MP4
+        from .director_loop_media import _write_clip, MP4_H264
         folder = checkpoint_dir(str(checkpoint_id).strip())
         path = folder / "review.mp4"
-        _write_clip(images, audio, output_path=path, format_name=MP4, frames=len(images))
+        _write_clip(images, audio, output_path=path, format_name=MP4_H264, frames=len(images))
         return io.NodeOutput(str(path))
 
     @classmethod
