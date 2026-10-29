@@ -548,6 +548,7 @@ async function changeCreateSource(_data, source) {
 }
 async function openCreate() {
   await loadInputFiles();
+  state.createDraft = null;
   state.creating = true; state.configuring = false;
   if (state.template) {
     state.createDraft = buildDraft(state.template);
