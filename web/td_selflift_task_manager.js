@@ -176,6 +176,7 @@ function details(task) {
     '<div>工作流：' + esc(task.metadata?.workflow_name || "未记录") +
     '　创建：' + esc((task.created_at || "").replace("T", " ").slice(0, 19)) + '</div></div>' +
     '<div class="tdm-actions"><button class="tdm-btn" data-action="load">载入任务工作流</button>' +
+    '<button class="tdm-btn" data-action="duplicate">以此新建</button>' +
     '<button class="tdm-btn" data-action="rerun">重跑预演</button>' +
     '<button class="tdm-btn primary" data-action="highres">继续高清</button></div>';
 }
@@ -340,6 +341,11 @@ async function handleAction(action, data) {
     if (action === "delete") return showDeleteConfirmation();
     if (action === "confirm-delete") return deleteSelectedTasks();
     if (action === "create") return openCreate();
+    if (action === "duplicate") {
+      await loadInputFiles();
+      state.creating = true;
+      return changeCreateSource({}, "task:" + state.focused);
+    }
     if (action === "import-workflow") return importWorkflow();
     if (action === "upload-image") return uploadImage(Number(data.patch));
     if (action === "submit") return submitCreate();
@@ -912,7 +918,7 @@ app.registerExtension({
           el.querySelector('[data-preview-open]').onclick = open;
           el.querySelector('[data-preview-config]').onclick = () => {
             root().style.display = "flex";
-            openConfig();
+            void loadTemplate().then(() => openConfig());
           };
           // Sidebar is only an entry point; work happens in the large overlay.
         },
