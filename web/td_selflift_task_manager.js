@@ -249,7 +249,16 @@ const STATUS_NAMES={
   low_pending:"低清待生成",low_running:"低清生成中",low_complete:"低清完成",
   high_pending:"高清待生成",high_running:"高清生成中",high_complete:"高清完成",
 };
-const formatTime=value => value ? esc(String(value).replace("T"," ").slice(0,19)) : "—";
+const formatTime=value => {
+  if(!value)return "—";
+  const date=new Date(value);
+  return Number.isFinite(date.getTime())
+    ? esc(date.toLocaleString("zh-CN",{
+        year:"numeric",month:"2-digit",day:"2-digit",
+        hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false,
+      }))
+    : esc(String(value).replace("T"," ").slice(0,19));
+};
 function duration(start,end) {
   if(!start || !end)return "—";
   const diff=Math.max(0,Math.round((Date.parse(end)-Date.parse(start))/1000));
