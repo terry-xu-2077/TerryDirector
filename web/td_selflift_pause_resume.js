@@ -332,11 +332,11 @@ async function runBranch(node) {
  * then restore the editor exactly as it was. The existing partial-target guard
  * remains responsible for third-party queue wrappers that drop targets.
  */
-export async function queueManagedSelfLift(node, mode, overrides = [], checkpointId = "") {
+export async function queueManagedSelfLift(node, mode, overrides = [], checkpointId = "", options = {}) {
   if (node?.comfyClass !== CLASS_NAME) throw new Error("工作流未配置 SelfLift 暂停/继续节点");
   if (!["pause", "continue"].includes(mode)) throw new Error("无效任务模式");
   const target = mode === "continue" ? findDownstreamOutput(node) : node;
-  const saver = mode === "pause" ? findLowresOutput(node) : null;
+  const saver = mode === "pause" && options.saveDecoded === true ? findLowresOutput(node) : null;
   const ids = [String(target.id), ...(saver ? [String(saver.id)] : [])];
   const modified = [];
   const apply = (item, value) => {
