@@ -192,16 +192,22 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes) -> str:
     ext = _PREVIEW_EXT.get(mime)
     if ext is None or not raw or len(raw) > _MAX_PREVIEW:
         raise ValueError("不支持的预览媒体或文件过大（最大 48 MB）")
-    if mime == "video/mp4" and not (len(raw) >= 12 and raw[4:8] == b"ftyp"):
-        raise ValueError("无效 MP4")
-    if mime == "image/webp" and not (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
-        raise ValueError("无效 WebP")
-    if mime == "image/jpeg" and not raw.startswith(bytes((0xff, 0xd8, 0xff))):
-        raise ValueError("无效 JPEG")
-    path = folder / ("sampling_preview" + ext)
-    stage = folder / ("sampling_preview.partial" + ext)
-    stage.write_bytes(raw)
-    stage.replace(path)
+    if mime == "video/mp4":
+        if len(raw) < 12 or raw[4:8] != b"ftyp":
+            raise ValueError("采样预览不是 MP4 文件")
+        # KJNodes encodes fragmented MP4 for its live websocket preview.
+        # Normalize to a complete, fully-decoded/tested MP4 before exposing it.
+        from .director_preview_mp4 import finalize_preview_mp4
+        path = finalize_preview_mp4(raw, folder)
+    else:
+        if mime == "image/webp" and not (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
+            raise ValueError("无效 WebP")
+        if mime == "image/jpeg" and not raw.startswith(bytes((0xff, 0xd8, 0xff))):
+            raise ValueError("无效 JPEG")
+        path = folder / ("sampling_preview" + ext)
+        stage = folder / ("sampling_preview.partial" + ext)
+        stage.write_bytes(raw)
+        stage.replace(path)
     for old in folder.glob("sampling_preview.*"):
         if old != path and old.suffix in {".mp4", ".webp", ".jpg"}:
             old.unlink(missing_ok=True)
