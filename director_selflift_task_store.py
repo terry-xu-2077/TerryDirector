@@ -115,7 +115,8 @@ def checkpoint_dir(checkpoint_id: str) -> Path:
 
 
 def list_tasks() -> list[dict]:
-    rows = []
+    from .director_preview_draft_store import list_drafts
+    rows = list_drafts()
     for item in list_checkpoints():
         cid = item["checkpoint_id"]
         folder = checkpoint_dir(cid)
@@ -130,7 +131,8 @@ def list_tasks() -> list[dict]:
                               if (folder / f"sampling_preview{ext}").is_file()), None),
         }
         rows.append({
-            "id": cid, "name": item.get("name", ""), "created_at": item.get("created_at"),
+            "id": cid, "kind": "checkpoint", "status": "completed",
+            "name": item.get("name", ""), "created_at": item.get("created_at"),
             "seed": item.get("seed", ""), "transition_step": item.get("transition_step"),
             "low_video_shape": item.get("low_video_shape"), "target_video_shape": item.get("target_video_shape"),
             "media": media, "metadata": {
@@ -143,6 +145,7 @@ def list_tasks() -> list[dict]:
                                 isinstance(details.get("api_prompt"), dict),
             },
         })
+    rows.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
     return rows
 
 
@@ -150,7 +153,7 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     folder = checkpoint_dir(checkpoint_id)
     allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow",
                "prompt_binding", "seed_binding", "preview_type", "h3_properties", "api_prompt", "pause_target",
-               "highres_target", "decoded_target", "seed_min", "seed_max"}
+               "highres_target", "decoded_target", "seed_min", "seed_max", "draft_id"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
