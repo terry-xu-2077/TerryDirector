@@ -42,7 +42,7 @@ assert.ok(!html.includes("/media/highres"));
 const handler=script.slice(script.indexOf('  api.addEventListener("executed"'),
  script.indexOf('  for(const event of ["execution_success"'));
 assert.ok(handler.includes('String(p.node)===String(job.highres_target)'));
-assert.ok(handler.includes("outputs.images"));
+assert.ok(handler.includes('["images","gifs","videos"].flatMap'));
 assert.ok(handler.includes("job.highresPersistPromise=request("));
 assert.ok(script.includes("job.highresPersistPromise,"));
 assert.ok(script.includes("state.preview=\"auto\""));
