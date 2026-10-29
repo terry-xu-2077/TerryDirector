@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import folder_paths
@@ -109,3 +110,71 @@ def media_path(checkpoint_id: str, kind: str) -> Path:
     if path is None or not path.is_file():
         raise FileNotFoundError("此任务尚无对应预览")
     return path
+
+
+def checkpoint_ids_in_queue(queue_items: list, selected_ids: set[str], *,
+                            running: bool = False) -> set[str]:
+    """Find selected checkpoints referenced by ComfyUI queued/running prompts.
+
+    A running first-stage job may have just written an ID that is not yet in its
+    input prompt. Represent that with the sentinel '*': do not delete during
+    an active checkpoint-writing job.
+    """
+    occupied = set()
+    for item in queue_items:
+        prompt = item[2] if isinstance(item, (tuple, list)) and len(item) > 2 else None
+        if not isinstance(prompt, dict):
+            continue
+        for node in prompt.values():
+            if not isinstance(node, dict):
+                continue
+            kind = node.get("class_type")
+            inputs = node.get("inputs", {})
+            if not isinstance(inputs, dict):
+                continue
+            if running and kind in ("TerryDirectorSelfLiftPauseResume",
+                                    "TerryDirectorSaveLowresCheckpoint"):
+                mode = inputs.get("mode")
+                if mode == "暂停并保存" or kind == "TerryDirectorSaveLowresCheckpoint":
+                    occupied.add("*")
+            if kind == "TerryDirectorSelfLiftPauseResume":
+                checkpoint_id = inputs.get("checkpoint_id")
+                if isinstance(checkpoint_id, str) and checkpoint_id in selected_ids:
+                    occupied.add(checkpoint_id)
+            elif kind == "TerryDirectorReadLowresCheckpoint":
+                task_name = str(inputs.get("task") or "")
+                for cid in selected_ids:
+                    if cid[:8] in task_name:
+                        occupied.add(cid)
+    return occupied
+
+
+def delete_checkpoints(checkpoint_ids: list[str]) -> list[str]:
+    """Permanently delete validated checkpoint-owned directories only.
+
+    Verify the complete batch before removing anything. Never follow symlinks
+    or accept filesystem paths from the client.
+    """
+    if not isinstance(checkpoint_ids, list) or not 1 <= len(checkpoint_ids) <= 500:
+        raise ValueError("请选择 1–500 个预演任务进行删除")
+    if len(set(checkpoint_ids)) != len(checkpoint_ids):
+        raise ValueError("删除任务包含重复检查点 ID")
+    base = (Path(folder_paths.get_output_directory()) /
+            "TerryDirector" / "checkpoints").resolve()
+    verified = []
+    for checkpoint_id in checkpoint_ids:
+        if not isinstance(checkpoint_id, str) or not _ID.fullmatch(checkpoint_id):
+            raise ValueError("非法检查点 ID")
+        folder = base / checkpoint_id
+        if folder.is_symlink() or not folder.is_dir() or folder.resolve().parent != base:
+            raise ValueError(f"无效的预演任务目录：{checkpoint_id[:8]}")
+        checkpoint_dir(checkpoint_id)
+        # A task owns files inside its folder; never delete external targets.
+        if any(item.is_symlink() for item in folder.rglob("*")):
+            raise ValueError(f"预演任务含符号链接，拒绝删除：{checkpoint_id[:8]}")
+        verified.append(folder)
+    deleted = []
+    for checkpoint_id, folder in zip(checkpoint_ids, verified):
+        shutil.rmtree(folder)
+        deleted.append(checkpoint_id)
+    return deleted
