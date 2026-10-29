@@ -6,7 +6,7 @@ import {
   validatePreviewSeed, randomPreviewSeed,
 } from "./td_preview_job_compiler.js";
 import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
-import { traceH3PromptInputs } from "./td_preview_prompt_trace.js";
+import { listPreviewInputCandidates } from "./td_preview_input_candidates.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
@@ -533,20 +533,7 @@ function nodeValue(node, name) {
  * Never scan unrelated STRING widgets (e.g. ModelPreviewOverrideKJ.preview).
  */
 function fieldsOf(workflow,type) {
-  if(type==="prompt")return traceH3PromptInputs(workflow).fields;
-  const rows=[];
-  for(const node of workflow?.nodes || []) {
-    const linked=new Set((node.inputs||[]).filter(x=>x.link!=null).map(x=>x.name));
-    for(const [name,value] of Object.entries(node.widgets_values_named||{})) {
-      if(linked.has(name))continue;
-      if((typeof value==="number" || name==="seed") &&
-         /^(seed|noise_seed)$/i.test(name) && /seed/i.test(String(node.type))) {
-        rows.push({node_id:node.id,widget_name:name,
-          label:(node.title||node.type)+" #"+node.id+" · "+name});
-      }
-    }
-  }
-  return rows;
+  return listPreviewInputCandidates(workflow,type);
 }
 function matchingAssets(workflow) {
   return (workflow?.nodes || []).filter(node =>
@@ -566,9 +553,12 @@ function templateFromGraph(workflow, name) {
   return {
     schema: 1, workflow, workflow_name: name || "当前画布", source_name:name || "当前画布",
     pause_node_id: pause?.id || null,
-    prompt_binding: prompts[0] ? {node_id: prompts[0].node_id, widget_name: prompts[0].widget_name} : null,
-    seed_binding: seeds.find(x => /SeedNode/.test(bindingNode(workflow, x)?.type || "")) ||
-      (seeds[0] ? {node_id: seeds[0].node_id, widget_name: seeds[0].widget_name} : null),
+    // Select automatically only when there is exactly one typed source.
+    // Multiple STRING/INT output providers must be chosen by the user.
+    prompt_binding: prompts.length === 1
+      ? {node_id:prompts[0].node_id,widget_name:prompts[0].widget_name} : null,
+    seed_binding: seeds.length === 1
+      ? {node_id:seeds[0].node_id,widget_name:seeds[0].widget_name} : null,
     preview_node_id: (workflow.nodes || []).find(n => n.type === KJ_CLASS)?.id || null,
   };
 }
@@ -583,20 +573,18 @@ async function loadConfigDraft(templateId) {
     state.configDraft=structuredClone(result.template);
   }
   state.configError="";
-  // Old versions could persist ModelPreviewOverrideKJ.preview as a prompt
-  // source. Normalize only when the backward H3 trace is unambiguous.
-  const promptCandidates=traceH3PromptInputs(state.configDraft.workflow).fields;
+  // Validate any existing binding against explicitly typed output providers.
+  // Do not trace branches or infer which alternative source is active.
+  const promptCandidates=fieldsOf(state.configDraft.workflow,"prompt");
   const selected=state.configDraft.prompt_binding;
   if(!promptCandidates.some(p=>bindingKey(p)===bindingKey(selected||{}))) {
-    if(promptCandidates.length===1) {
-      state.configDraft.prompt_binding={
-        node_id:promptCandidates[0].node_id,widget_name:promptCandidates[0].widget_name,
-      };
-      state.configError="旧配置的提示词映射无效，已沿 H3 连线找到正确的文本源，请重新保存配置。";
-    } else {
-      state.configDraft.prompt_binding=null;
-      state.configError="旧配置的提示词映射无效，无法唯一确定 H3 文本源，请先修正工作流连线。";
-    }
+    state.configDraft.prompt_binding=promptCandidates.length===1
+      ? {node_id:promptCandidates[0].node_id,
+         widget_name:promptCandidates[0].widget_name}
+      : null;
+    if(templateId)state.configError=promptCandidates.length===1
+      ? "原提示词映射不符合 STRING 输出类型，已找到唯一可用节点，请重新保存。"
+      : "原提示词映射不符合 STRING 输出类型，请在下拉菜单手动选择文本节点。";
   }
   render();
 }
@@ -616,8 +604,7 @@ function useCurrentWorkflow() {
 function configMarkup() {
   const cfg=state.configDraft,graph=cfg?.workflow;
   const pauseNodes=(graph?.nodes||[]).filter(n=>n.type===START_CLASS);
-  const promptInfo=traceH3PromptInputs(graph);
-  const prompts=promptInfo.fields;
+  const prompts=fieldsOf(graph,"prompt");
   const seeds=fieldsOf(graph,"seed");
   const selected=state.configSelectedId;
   const current=state.templates.find(t=>t.id===selected);
@@ -656,10 +643,11 @@ function configMarkup() {
     '<div class="tdm-field"><label>暂停/继续节点</label><select data-action="config-field" data-field="pause_node_id">'+
     pauseNodes.map(n=>'<option value="'+esc(n.id)+'" '+(String(n.id)===String(cfg?.pause_node_id)?'selected':'')+'>'+
       esc((n.title||n.type)+' #'+n.id)+'</option>').join("")+'</select></div>'+
-    '<div class="tdm-field"><label>提示词输入（从 H3.prompt 连线反向追踪）</label>'+
+    '<div class="tdm-field"><label>提示词输入（STRING 输出节点）</label>'+
     selectBinding("prompt_binding",prompts)+'</div>'+
-    (promptInfo.failures.length?'<div class="tdm-small">'+esc(promptInfo.failures.join("；"))+'</div>':'')+
-    '<div class="tdm-field"><label>种子输入（覆盖采样器与检查点）</label>'+
+    (prompts.length>1?'<div class="tdm-small">检测到 '+prompts.length+
+      ' 个 STRING 文本源，请选择本次预演需要接管的节点。</div>':'')+
+    '<div class="tdm-field"><label>种子输入（INT 输出节点）</label>'+
     selectBinding("seed_binding",seeds)+'</div>'+
     '<div class="tdm-small">参考资产将使用工作流内的 LoadImage 节点，在新建预演时编辑。</div>'+
     (state.configError?'<div class="tdm-config-error">'+esc(state.configError)+'</div>':'')+
