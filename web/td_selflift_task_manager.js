@@ -443,7 +443,7 @@ async function queueFromCheckpoint(id, mode) {
     await app.loadGraphData(info.workflow);
     const pause = app.graph?.getNodeById?.(Number(task.metadata.pause_node_id));
     if (nodeType(pause) !== START_CLASS) {
-      throw Error("此任务的工作流缺少原暂停节点，请重新生成低清");
+      throw Error("此任务的工作流缺少原暂停节点，请重新创建预演");
     }
     const overrides = [...(info.overrides || [])];
     if (mode === "pause") {
