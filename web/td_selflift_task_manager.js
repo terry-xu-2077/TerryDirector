@@ -392,7 +392,7 @@ function fieldsOf(workflow, type) {
       }
       if (type === "seed" && (typeof value === "number" || /^seed$/i.test(name)) &&
           /^(seed|noise_seed|value)$/i.test(lower) &&
-          (/seed|primitive|int|sampler/i.test(kind))) {
+          (/seed|int/i.test(kind))) {
         rows.push({ node_id: node.id, widget_name: name,
           label: (node.title || kind) + " #" + node.id + " · " + name });
       }
@@ -542,7 +542,7 @@ async function openCreate() {
     state.createDraft = buildDraft(state.template);
     state.createDraft.source = "template";
   } else {
-    const source = state.tasks.find(x => x.metadata?.pause_node_id);
+    const source = state.tasks.find(x => x.metadata?.has_workflow);
     if (source) {
       try { await changeCreateSource({}, "task:" + source.id); }
       catch { state.createDraft = null; }
@@ -572,7 +572,7 @@ function createMarkup() {
   if (!draft) return "";
   const sources = [
     { id: "template", title: state.template ? "已配置工作流 · " + state.template.workflow_name : "未配置工作流" },
-    ...state.tasks.map(t => ({ id: "task:" + t.id, title: "继承 · " + (t.name || "预演") +
+    ...state.tasks.filter(t => t.metadata?.has_workflow).map(t => ({ id: "task:" + t.id, title: "继承 · " + (t.name || "预演") +
       " · " + t.id.slice(0, 8) })),
   ];
   return '<div class="tdm-dialog"><div class="tdm-form" role="dialog" aria-modal="true">' +
@@ -582,6 +582,7 @@ function createMarkup() {
     sources.map(s => '<option value="' + esc(s.id) + '"' +
       (draft.source === s.id ? ' selected' : '') + '>' + esc(s.title) + '</option>').join("") +
     '</select></div>' +
+    '<div class="tdm-modal-sub">从已有预演创建可继承提示词、资产、种子和预览类型；旧检查点如果没有快照则不能完整继承。</div>' +
     '<div class="tdm-field"><label>任务名称</label><input data-action="draft-field" data-field="name" maxlength="120" value="' +
     esc(draft.name) + '"></div>' +
     '<div class="tdm-section">提示词</div>' +
