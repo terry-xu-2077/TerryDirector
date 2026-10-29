@@ -126,10 +126,13 @@ def list_tasks() -> list[dict]:
             details = json.loads((folder / "task.json").read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, ValueError, TypeError):
             pass
+        from .director_preview_highres import validated_video_result
+        highres = validated_video_result(details.get("highres_video"))
         media = {
             "decoded": "review.mp4" if (folder / "review.mp4").is_file() else None,
             "sampling": next((f"sampling_preview{ext}" for ext in (".mp4", ".webp", ".jpg")
                               if (folder / f"sampling_preview{ext}").is_file()), None),
+            "highres": highres["filename"] if highres else None,
         }
         if cid in by_checkpoint:
             draft = by_checkpoint[cid]
@@ -139,6 +142,8 @@ def list_tasks() -> list[dict]:
             draft["transition_step"] = item.get("transition_step")
             draft["metadata"]["has_workflow"] = True
             draft["metadata"]["preview_error"] = details.get("preview_error")
+            draft["metadata"]["highres_video"] = highres
+            draft["metadata"]["highres_prompt_id"] = details.get("highres_prompt_id")
             continue
         rows.append({
             "id": cid, "kind": "checkpoint", "status": details.get("lifecycle_status", "low_complete"),
@@ -149,6 +154,7 @@ def list_tasks() -> list[dict]:
             "high_finished_at": details.get("high_finished_at"),
             "queued_stage": details.get("queued_stage"),
             "error": details.get("error"), "checkpoint_id": cid,
+            "prompt_id": details.get("highres_prompt_id"),
             "seed": item.get("seed", ""), "transition_step": item.get("transition_step"),
             "low_video_shape": item.get("low_video_shape"), "target_video_shape": item.get("target_video_shape"),
             "media": media, "metadata": {
@@ -158,6 +164,8 @@ def list_tasks() -> list[dict]:
                 "preview_node_id": details.get("preview_node_id"),
                 "preview_type": details.get("preview_type", "sampling"),
                 "preview_error": details.get("preview_error"),
+                "highres_video": highres,
+                "highres_prompt_id": details.get("highres_prompt_id"),
                 "has_workflow": isinstance(details.get("workflow"), dict) and
                                 isinstance(details.get("api_prompt"), dict),
             },
@@ -173,7 +181,8 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
                "highres_target", "decoded_target", "seed_min", "seed_max", "draft_id",
                "duration_seconds", "highres_megapixels",
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
-               "high_started_at", "high_finished_at", "error", "preview_error"}
+               "high_started_at", "high_finished_at", "error", "preview_error",
+               "highres_video", "highres_prompt_id"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
@@ -219,6 +228,10 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
 
 def media_path(checkpoint_id: str, kind: str) -> Path:
     folder = checkpoint_dir(checkpoint_id)
+    if kind == "highres":
+        from .director_preview_highres import highres_video_path
+        metadata = load_metadata(checkpoint_id)
+        return highres_video_path(metadata.get("highres_video"))
     if kind == "decoded":
         path = folder / "review.mp4"
     elif kind == "sampling":
