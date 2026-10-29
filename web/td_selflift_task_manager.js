@@ -104,6 +104,9 @@ function styles() {
 .tdm-tabs{display:flex;gap:5px}.tdm-tabs button{border:1px solid #414650;background:#252830;color:#9ba4b2;
  border-radius:6px;padding:7px 10px;cursor:pointer}.tdm-tabs button.on{background:#344d6e;color:#f2f7ff;border-color:#527cac}
 .tdm-player{width:100%;aspect-ratio:16/9;background:#0b0d11;border-radius:8px;object-fit:contain;max-height:52vh}
+.tdm-live-media{position:relative;width:100%;min-width:0}
+.tdm-live-caption{font-size:11px;color:#9ccaff;margin:4px 2px 0;line-height:1.6}
+.tdm-live-media video{display:block}
 .tdm-no-media{height:100%;display:grid;place-items:center;color:#78818f;text-align:center;padding:20px}
 .tdm-detail{font-size:12px;color:#a7afbb;line-height:1.9}.tdm-actions{display:flex;gap:8px;flex-wrap:wrap}
 .tdm-foot{padding:12px 20px;border-top:1px solid #30343b;display:flex;align-items:center;gap:12px}
@@ -422,20 +425,87 @@ function thumb(task) {
     ? '<video class="tdm-thumb" src="'+url+'#t=0.5" muted preload="metadata"></video>'
     : '<img class="tdm-thumb" src="'+url+'" alt="">';
 }
+/** Live TAEH3 media is attached to a single queued prompt, never globally. */
+function previewJobMatchesTask(job,task) {
+  if(!job || !task || job.mode!=="pause" || job.preview_type==="decoded")return false;
+  return !!((job.draftId && job.draftId===task.id) ||
+    (job.checkpointId &&
+     (job.checkpointId===task.id || job.checkpointId===task.checkpoint_id)));
+}
+function livePreviewJobForTask(task) {
+  for(const job of state.jobs.values())
+    if(job.preview && previewJobMatchesTask(job,task))return job;
+  return null;
+}
+function previewBlobUrl(job) {
+  if(!job?.preview?.image)return null;
+  if(job.liveUrl && job.liveUrlVersion===job.previewVersion)return job.liveUrl;
+  try {
+    const binary=atob(job.preview.image);
+    const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
+    const next=URL.createObjectURL(new Blob([bytes],{type:job.preview.mime}));
+    // Keep the preceding URL alive until the replacement source has been
+    // installed; an active video may still be loading it.
+    if(job.livePriorUrl) URL.revokeObjectURL(job.livePriorUrl);
+    job.livePriorUrl=job.liveUrl||null;
+    job.liveUrl=next;
+    job.liveUrlVersion=job.previewVersion;
+    return next;
+  }catch(error){
+    console.warn("[TerryDirector 预演台实时预览]",error);
+    return null;
+  }
+}
+function releasePreviewBlobUrls(job) {
+  if(!job)return;
+  for(const key of ["liveUrl","livePriorUrl"]){
+    if(job[key])URL.revokeObjectURL(job[key]);
+    job[key]=null;
+  }
+}
+function livePreviewMarkup(job) {
+  const url=previewBlobUrl(job);
+  if(!url)return '<div class="tdm-player tdm-detail-pending">暂时无法解码本轮预览</div>';
+  const p=job.preview;
+  const content=p.mime==="video/mp4"
+    ? '<video class="tdm-player" data-live-video src="'+esc(url)+
+      '" controls autoplay muted loop playsinline preload="auto"></video>'
+    : '<img class="tdm-player" src="'+esc(url)+'" alt="TAEH3 实时采样预览">';
+  const step=Number(p.step)||1,total=Number(p.total)||0;
+  return '<div class="tdm-live-media">'+content+
+    '<div class="tdm-live-caption">TAEH3 实时采样 · 第 '+step+
+    (total?" / "+total:"")+' 步 · 仅内存预览，结束后保存</div></div>';
+}
+function updateLivePreview(job) {
+  if(!state.root || state.root.style.display==="none" || state.preview!=="sampling")return;
+  // Do not replace a prompt editor, config dialog or an unrelated task.
+  const task=selectedTask();
+  if(!previewJobMatchesTask(job,task))return;
+  const host=state.root.querySelector("[data-live-preview-host]");
+  if(!host || host.dataset.taskId!==String(task.id))return;
+  const wasPlaying=host.querySelector("video[data-live-video]");
+  if(wasPlaying)wasPlaying.pause();
+  host.innerHTML=livePreviewMarkup(job);
+  const player=host.querySelector("video[data-live-video]");
+  if(player)void player.play().catch(()=>{});
+}
 function details(task) {
   if(!task)return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
-  const media=task.media||{},kind=media[state.preview]?state.preview:(media.sampling?"sampling":media.decoded?"decoded":"sampling");
+  const media=task.media||{},kind=state.preview;
   const file=media[kind],cid=task.checkpoint_id || (task.kind==="checkpoint"?task.id:null);
-  const preview=!file || !cid
-    ? '<div class="tdm-player tdm-detail-pending">'+
-      (cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":
-        task.status==="low_running"?"正在生成低清，完成后可查看预览":
-        task.queued_stage?"已加入生成队列，等待开始执行":
-        "尚未生成低清视频，请点击「开始预演」")+
-      '</div>'
-    : file.endsWith(".mp4")
-      ? '<video class="tdm-player" src="'+mediaUrl(cid,kind)+'" controls loop playsinline></video>'
-      : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
+  const live=kind==="sampling" ? livePreviewJobForTask(task) : null;
+  const preview=live
+    ? livePreviewMarkup(live)
+    : !file || !cid
+      ? '<div class="tdm-player tdm-detail-pending">'+
+        (cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":
+          task.status==="low_running"?"正在生成低清，等待首轮 TAEH3 预览":
+          task.queued_stage?"已加入生成队列，等待开始执行":
+          "尚未生成低清视频，请点击「开始预演」")+
+        '</div>'
+      : file.endsWith(".mp4")
+        ? '<video class="tdm-player" src="'+mediaUrl(cid,kind)+'" controls loop playsinline></video>'
+        : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
   const timing='<div class="tdm-timing"><div>任务创建：<strong>'+formatTime(task.created_at)+'</strong></div>'+
     '<div>低清生成：'+formatTime(task.low_started_at)+' → '+formatTime(task.low_finished_at)+
     '　用时 '+duration(task.low_started_at,task.low_finished_at)+'</div>'+
@@ -458,7 +528,8 @@ function details(task) {
     '<div class="tdm-tabs">'+
     '<button data-action="preview" data-kind="sampling" class="'+(kind==="sampling"?"on":"")+'">TAEH3 采样预览</button>'+
     '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button></div>'+
-    preview+'<div class="tdm-detail">Seed：'+esc(task.seed||"—")+
+    '<div data-live-preview-host data-task-id="'+esc(task.id)+'">'+preview+'</div>'+
+    '<div class="tdm-detail">Seed：'+esc(task.seed||"—")+
     '　工作流：'+esc(task.metadata?.workflow_name||"未记录")+
     (cid?'　检查点：'+esc(cid.slice(0,12)):'')+'</div>'+
     timing+(task.error?'<div class="tdm-warning">'+esc(task.error)+'</div>':'')+
