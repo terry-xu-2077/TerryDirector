@@ -1766,7 +1766,10 @@ async function persistPreview(job) {
   if(job?.previewSaved || job?.preview_type==="decoded" ||
      !job?.checkpointId || !job?.preview?.image)return false;
   const p=job.preview;
-  if(p.image.length > 48*1024*1024*4/3)return false;
+  if(p.image.length > 48*1024*1024*4/3){
+    job.previewSaveError="最后一步预览数据超过 48 MB 上传上限";
+    return false;
+  }
   const upload=(async()=>{
     const raw=atob(p.image);
     const bytes=Uint8Array.from(raw,char=>char.charCodeAt(0));
@@ -1789,8 +1792,8 @@ async function persistPreview(job) {
   job.previewPersistPromise=upload;
   try{return await upload;}
   catch(error){
-    console.warn("[TerryDirector TAEH3 最终预览保存]",error);
-    toast("最终采样预览未能保存："+error.message,"error");
+    job.previewSaveError=String(error?.message||error);
+    console.error("[TerryDirector TAEH3 最终预览保存]",error);
     return false;
   }finally{
     job.previewPersistPromise=null;
@@ -1810,6 +1813,30 @@ async function saveLegacyLifecycle(checkpointId,status,extras={}) {
     method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(value),
   });
+}
+async function waitForFinalTAEH3(job,promptId) {
+  // KJNodes encodes animated video in a bounded worker, so the final
+  // kj_preview_override can arrive slightly after execution_success.
+  // This promise does not block ComfyUI's queue or the next running task.
+  if(job.mode!=="pause" || job.preview_type==="decoded")return;
+  const deadline=Date.now()+3500;
+  while(Date.now()<deadline){
+    if(job.preview?.total && job.preview.step>=job.preview.total)break;
+    if(state.activePromptId && state.activePromptId!==promptId)break;
+    await new Promise(resolve=>setTimeout(resolve,200));
+  }
+}
+async function savePreviewDiagnostic(job,error) {
+  if(!job?.checkpointId)return;
+  const reason=String(error?.message||error).slice(0,1200);
+  console.error("[TerryDirector 预演台] 检查点",job.checkpointId,"采样预览保存失败：",reason);
+  toast("低清检查点已保存，但 TAEH3 预览缺失："+reason,"error");
+  try {
+    const url="/tasks/"+encodeURIComponent(job.checkpointId)+"/metadata";
+    const previous=await request(url).catch(()=>({}));
+    await request(url,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({...previous,preview_error:reason})});
+  }catch(e){console.warn("[TerryDirector 预演台] 无法存档预览诊断",e);}
 }
 function bindEvents() {
   api.addEventListener("execution_start",e=>{
@@ -1852,7 +1879,7 @@ function bindEvents() {
     // the currently executing ComfyUI prompt can receive the preview.
     const promptId=String(p.prompt_id||state.activePromptId||"");
     const job=state.jobs.get(promptId);
-    if(!job || !job.busy || job.mode!=="pause" ||
+    if(!job || (!job.busy&&!job.finalizing) || job.mode!=="pause" ||
        job.preview_type==="decoded" || !p.image || !p.mime ||
        String(p.node_id)!==String(job.preview_node_id))return;
     if(!["video/mp4","image/webp","image/jpeg"].includes(p.mime))return;
@@ -1860,6 +1887,8 @@ function bindEvents() {
     const step=Number(p.step)||1, previous=job.preview?.step||0;
     if(step<previous)return; // Ignore delayed/stale packets for this job.
     job.preview={image:p.image,mime:p.mime,step,total:Number(p.total)||null};
+    job.previewReceived=(job.previewReceived||0)+1;
+    job.previewReceivedAt=Date.now();
     job.previewVersion=(job.previewVersion||0)+1;
     // Update the selected task's player only: no network request, no disk
     // writes, no full-window re-render, no interference with queued tasks.
@@ -1883,6 +1912,7 @@ function bindEvents() {
       const job=state.jobs.get(promptId);
       if(!job)return;
       job.busy=false;
+      job.finalizing=true;
       void (async()=>{
         await Promise.allSettled([
           job.startPromise,job.persistPromise,job.checkpointPromise,
@@ -1912,9 +1942,20 @@ function bindEvents() {
                 {error:"高清执行中断或失败"});
           }catch(error){toast(error.message,"error");}
         }
-        // After execution finishes, persist only the latest preview. The
-        // save is independent of later queued jobs and their live previews.
-        await persistPreview(job);
+        // KJ sends the final animated frame asynchronously. Drain only this
+        // job's in-memory preview; do not block newer queued tasks.
+        if(event==="execution_success")await waitForFinalTAEH3(job,promptId);
+        let saved=false;
+        if(job.mode==="pause" && job.preview_type!=="decoded"){
+          saved=await persistPreview(job);
+          if(!saved && job.checkpointId){
+            await savePreviewDiagnostic(job,
+              job.previewSaveError ||
+              (!job.previewReceived
+                ? "未收到 KJNodes 的有效采样预览事件；请检查 ModelPreviewOverrideKJ 是否产生视频，以及节点 ID 是否匹配"
+                : "已收到 "+job.previewReceived+" 次采样预览，但无法写入检查点"));
+          }
+        }
         // Remove the in-memory source BEFORE reloading task metadata, so
         // refresh() renders the saved MP4 once instead of briefly mounting
         // a Blob URL and revoking it during the following render.
