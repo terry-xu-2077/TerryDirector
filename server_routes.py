@@ -97,6 +97,43 @@ async def terrydirector_selflift_tasks(request: web.Request) -> web.Response:
     return web.json_response({"tasks": list_tasks()}, headers={"Cache-Control": "no-store"})
 
 
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/batch-delete")
+async def terrydirector_selflift_batch_delete(request: web.Request) -> web.Response:
+    """Permanently remove selected checkpoint folders, not any external outputs."""
+    from .director_selflift_task_store import (
+        checkpoint_ids_in_queue, delete_checkpoints,
+    )
+    try:
+        payload = await request.json()
+        ids = payload.get("checkpoint_ids") if isinstance(payload, dict) else None
+        if not isinstance(ids, list):
+            raise ValueError("请求缺少 checkpoint_ids 列表")
+        # A queue lock closes the check/delete race: a queued checkpoint cannot
+        # begin executing midway through deletion.
+        queue = getattr(PromptServer.instance, "prompt_queue", None)
+        if queue is None or not hasattr(queue, "mutex"):
+            return web.json_response({"error": "无法读取 ComfyUI 任务队列，已拒绝删除"}, status=503)
+        with queue.mutex:
+            running, pending = queue.get_current_queue_volatile()
+            selected = {item for item in ids if isinstance(item, str)}
+            occupied = checkpoint_ids_in_queue(running, selected, running=True)
+            occupied.update(checkpoint_ids_in_queue(pending, selected))
+            if occupied:
+                display = "首阶段生成仍在运行" if "*" in occupied else (
+                    "选中的检查点正在运行或已加入队列：" +
+                    "、".join(sorted(cid[:8] for cid in occupied))
+                )
+                return web.json_response({"error": display + "，请等待任务结束后再删除"},
+                                         status=409)
+            deleted = delete_checkpoints(ids)
+        return web.json_response({"deleted": deleted, "count": len(deleted)},
+                                 headers={"Cache-Control": "no-store"})
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except OSError as exc:
+        return web.json_response({"error": "部分文件删除失败：" + str(exc)}, status=500)
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/media/{kind}")
 async def terrydirector_selflift_task_media(request: web.Request) -> web.StreamResponse:
     from .director_selflift_task_store import media_path
