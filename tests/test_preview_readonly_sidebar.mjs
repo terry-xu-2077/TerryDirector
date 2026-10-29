@@ -26,8 +26,7 @@ const state={
     return selector.includes("sidebar-count")?count:holder;
   }},
 };
-const source=slice("const STATUS_NAMES=","const formatTime=")+"\n"+
-  slice("function sidebarDate(","function thumb(task) {");
+const source=slice("function sidebarDate(","function thumb(task) {");
 const {sidebarTaskMarkup,renderSidebarTaskList}=
   new Function("state","esc",source+"return {sidebarTaskMarkup,renderSidebarTaskList};")(state,esc);
 
