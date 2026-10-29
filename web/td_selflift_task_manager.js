@@ -150,7 +150,7 @@ async function refresh() {
 }
 function selectedTask() { return state.tasks.find(t => t.id === state.focused); }
 function thumb(task) {
-  const kind = task.media.decoded ? "decoded" : task.media.sampling ? "sampling" : null;
+  const kind = task.media.sampling ? "sampling" : task.media.decoded ? "decoded" : null;
   if (!kind) return '<div class="tdm-thumb"></div>';
   const file = task.media[kind];
   const url = mediaUrl(task.id, kind);
@@ -216,6 +216,7 @@ function render() {
     (state.configuring ? configMarkup() : "") +
     (state.deleting ? deleteMarkup() : "");
   bindControls();
+  wireImageFallback(state.root.querySelector(".tdm-assets"));
   renderAssetChoices();
 }
 function showDeleteConfirmation() {
@@ -566,6 +567,19 @@ async function openCreate() {
   }
   render();
 }
+function wireImageFallback(holder) {
+  if (!holder) return;
+  holder.querySelectorAll(".tdm-asset img").forEach(image => {
+    const fallback = () => {
+      const placeholder = document.createElement("span");
+      placeholder.className = "tdm-noimg";
+      placeholder.textContent = "图片未找到";
+      image.replaceWith(placeholder);
+    };
+    if (image.complete && image.naturalWidth === 0) fallback();
+    else image.addEventListener("error", fallback, { once: true });
+  });
+}
 function assetUrl(path) {
   if (!path) return "";
   return "/view?filename=" + encodeURIComponent(path) + "&type=input";
@@ -638,6 +652,7 @@ function renderAssetChoices() {
   holder.innerHTML = matches.map(f => assetCard(f.path, f.name,
     'data-action="choose-asset" data-path="' + esc(f.path) + '"')).join("") ||
     '<div class="tdm-small">没有匹配的图片</div>';
+  wireImageFallback(holder);
   holder.querySelectorAll('[data-action="choose-asset"]').forEach(button =>
     button.addEventListener("click", e => {
       e.preventDefault(); e.stopPropagation();
