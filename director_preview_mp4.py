@@ -10,6 +10,7 @@ All FFmpeg processing occurs only after generation, on the upload thread.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -97,10 +98,49 @@ def _verify_video(path: Path, executable: str) -> None:
         raise ValueError("预览仍是分片 MP4，无法作为最终视频文件使用")
 
 
-def _remux(source: Path, output: Path, executable: str) -> None:
+def _video_duration(source: Path, executable: str) -> float | None:
+    """Probe actual decoded video duration once, with no ffprobe dependency."""
+    try:
+        output = _run([
+            executable, "-hide_banner", "-nostdin", "-loglevel", "error",
+            "-i", str(source), "-map", "0:v:0", "-an",
+            "-progress", "pipe:1", "-f", "null", "-",
+        ])
+        clocks = re.findall(rb"out_time_us=(\d+)", output)
+        if clocks:
+            duration = int(clocks[-1]) / 1_000_000
+            return duration if duration > 0 else None
+        clocks = re.findall(rb"out_time=(\d+):(\d+):(\d+(?:\.\d+)?)", output)
+        if clocks:
+            h, m, sec = clocks[-1]
+            return int(h) * 3600 + int(m) * 60 + float(sec)
+    except ValueError:
+        return None
+    return None
+
+
+def _time_scale(source: Path, target_seconds: float | None, executable: str) -> float:
+    if target_seconds is None:
+        return 1.0
+    if not 4 <= target_seconds <= 20:
+        raise ValueError("预演时长必须在 4–20 秒之间")
+    measured = _video_duration(source, executable)
+    if not measured:
+        raise ValueError("无法读取采样预览的视频时长，拒绝错误地调整播放速度")
+    scale = target_seconds / measured
+    # A few frames of rounding are normal; don't rewrite timestamps if the
+    # clip already plays at the intended duration.
+    if abs(measured - target_seconds) <= 0.3:
+        return 1.0
+    if not 0.3 <= scale <= 10:
+        raise ValueError("采样预览帧数与目标时长偏差过大，请检查 KJ 预览帧数")
+    return scale
+
+
+def _remux(source: Path, output: Path, executable: str, scale: float = 1.0) -> None:
     _run([
         executable, "-hide_banner", "-nostdin", "-loglevel", "error",
-        "-xerror", "-y", "-i", str(source),
+        "-xerror", "-y", "-itsscale", str(scale), "-i", str(source),
         "-map", "0:v:0", "-map", "0:a?",
         "-c", "copy", "-movflags", "+faststart",
         "-f", "mp4", str(output),
@@ -108,12 +148,12 @@ def _remux(source: Path, output: Path, executable: str) -> None:
     _verify_video(output, executable)
 
 
-def _transcode(source: Path, output: Path, executable: str) -> None:
+def _transcode(source: Path, output: Path, executable: str, scale: float = 1.0) -> None:
     # Only if container remux/validation fails. Keep generation performance
     # unaffected; the fallback runs on CPU once at task completion.
     _run([
         executable, "-hide_banner", "-nostdin", "-loglevel", "error",
-        "-xerror", "-y", "-i", str(source),
+        "-xerror", "-y", "-itsscale", str(scale), "-i", str(source),
         "-map", "0:v:0", "-map", "0:a?",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
@@ -122,13 +162,14 @@ def _transcode(source: Path, output: Path, executable: str) -> None:
     _verify_video(output, executable)
 
 
-def _normalize(source: Path, destination: Path) -> None:
+def _normalize(source: Path, destination: Path, target_seconds: float | None = None) -> None:
     executable = _ffmpeg()
+    scale = _time_scale(source, target_seconds, executable)
     last_error = None
     for mode in (_remux, _transcode):
         try:
             destination.unlink(missing_ok=True)
-            mode(source, destination, executable)
+            mode(source, destination, executable, scale)
             return
         except ValueError as exc:
             last_error = exc
@@ -138,7 +179,7 @@ def _normalize(source: Path, destination: Path) -> None:
     )
 
 
-def finalize_preview_mp4(raw: bytes, folder: Path) -> Path:
+def finalize_preview_mp4(raw: bytes, folder: Path, target_seconds: float | None = None) -> Path:
     """Write a normalized MP4 atomically; never leave a broken final file."""
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / "sampling_preview.mp4"
@@ -147,7 +188,7 @@ def finalize_preview_mp4(raw: bytes, folder: Path) -> Path:
         source = base / "incoming.mp4"
         final = base / "normalized.mp4"
         source.write_bytes(raw)
-        _normalize(source, final)
+        _normalize(source, final, target_seconds)
         final.replace(target)
     return target
 
