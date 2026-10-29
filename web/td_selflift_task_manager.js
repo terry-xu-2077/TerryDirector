@@ -823,6 +823,20 @@ function bindControls() {
         if(!ids.has(state.focused))state.focused=visible[0]?.id||null;
         render();
       });
+    } else if (action === "task-duration") {
+      control.addEventListener("input",()=>{
+        if(!state.createDraft)return;
+        const seconds=Number(control.value);
+        if(!Number.isInteger(seconds) || seconds<PREVIEW_DURATION_MIN ||
+           seconds>PREVIEW_DURATION_MAX)return;
+        state.createDraft.duration_seconds=seconds;
+        const output=state.root.querySelector("[data-duration-output]");
+        if(output)output.textContent=seconds+" 秒";
+      });
+    } else if (action === "task-resolution") {
+      control.addEventListener("change",()=>{
+        if(state.createDraft)state.createDraft.highres_megapixels=Number(control.value);
+      });
     } else if (action === "draft-field") {
       control.addEventListener("input", () => {
         if (!state.createDraft) return;
@@ -1332,11 +1346,12 @@ function createMarkup() {
     '<header class="tdm-create-head">' +
     '<button class="tdm-btn close tdm-create-close" data-action="cancel-create" aria-label="关闭">×</button>' +
     '<div class="tdm-create-meta">' +
-    '<div class="tdm-field"><label class="tdm-name-label" for="tdm-new-task-name">'+
+    '<div class="tdm-field tdm-inline-field"><label class="tdm-name-label" for="tdm-new-task-name">'+
     (state.editDraftId?"编辑任务名称":"新建任务名称")+'</label>' +
     '<input id="tdm-new-task-name" data-action="draft-field" data-field="name" ' +
     'maxlength="120" value="' + esc(draft.name) + '"></div>' +
-    '<div class="tdm-field"><label>基于</label><select data-action="source-change">' +
+    '<div class="tdm-field tdm-inline-field"><label for="tdm-new-task-source">基于</label>'+
+    '<select id="tdm-new-task-source" data-action="source-change">' +
     sources.map(x => '<option value="' + esc(x.id) + '"' +
       (x.id === "template" && !state.template ? " disabled" : "") +
       (draft.source === x.id ? " selected" : "") + '>' + esc(x.title) + '</option>').join("") +
@@ -1353,13 +1368,25 @@ function createMarkup() {
     '<div class="tdm-prompt-hint"><span><b>@</b> 引用资产</span>' +
     '<span><b>\\ 或 /</b> H3 语法 / 运镜</span><span>↑↓ 选择 · Enter 插入</span></div>' +
     '<div class="tdm-create-bottom">' +
-    '<div class="tdm-field"><label for="tdm-new-task-seed">种子</label><div class="tdm-seed-row">' +
+    '<div class="tdm-field tdm-inline-field"><label for="tdm-new-task-seed">种子</label><div class="tdm-inline-control tdm-seed-row">' +
     '<input id="tdm-new-task-seed" data-action="draft-field" data-field="seed" ' +
     'inputmode="numeric" value="' + esc(draft.seed) + '">' +
     '<button type="button" class="tdm-btn tdm-seed-random" data-action="random-seed" ' +
     'title="生成随机种子" aria-label="生成随机种子">🎲</button></div></div>' +
-    '<div class="tdm-field"><label>预览视频</label>' +
-    '<div class="tdm-preview-radios" role="radiogroup" aria-label="预览视频">' +
+    '<div class="tdm-field tdm-inline-field"><label for="tdm-task-duration">视频时长</label>'+
+    '<div class="tdm-inline-control tdm-slider-control">'+
+    '<input type="range" id="tdm-task-duration" min="4" max="20" step="1" '+
+    'data-action="task-duration" aria-label="视频时长" value="'+esc(draft.duration_seconds)+'">'+
+    '<output class="tdm-slider-value" for="tdm-task-duration" data-duration-output>'+
+      esc(draft.duration_seconds)+' 秒</output></div></div>'+
+    '<div class="tdm-field tdm-inline-field"><label for="tdm-task-resolution">高清分辨率</label>'+
+    '<select id="tdm-task-resolution" data-action="task-resolution">'+
+    PREVIEW_RESOLUTION_OPTIONS.map(mp=>
+      '<option value="'+mp+'"'+(mp===Number(draft.highres_megapixels)?' selected':'')+'>'+
+      esc(mp.toFixed(2)+' MP 高清 · '+(mp/4).toFixed(2)+' MP 低清')+'</option>'
+    ).join("")+'</select></div>'+
+    '<div class="tdm-field tdm-inline-field"><label>预览视频</label>' +
+    '<div class="tdm-inline-control tdm-preview-radios" role="radiogroup" aria-label="预览视频">' +
     '<label class="tdm-preview-radio"><input type="radio" name="tdm-preview-type" ' +
     'data-action="preview-choice" value="sampling" ' +
     (draft.previewType !== "decoded" ? 'checked' : '') + '>TAEH3 · 默认</label>' +
@@ -1484,6 +1511,9 @@ function draftSnapshot(draft) {
   if(!draft?.workflow || !draft.api_prompt || !draft.prompt_binding || !draft.seed_binding)
     throw Error("工作流尚未编译，请在「配置工作流」重新保存");
   const seed=validatePreviewSeed(draft.seed,draft);
+  taskVideoFrameCount(Number(draft.duration_seconds));
+  if(!PREVIEW_RESOLUTION_OPTIONS.includes(Number(draft.highres_megapixels)))
+    throw Error("请选择有效的高清分辨率");
   return {
     name:String(draft.name||"").trim() || "未命名预演镜头",
     prompt:String(draft.prompt||""),seed:String(seed),
