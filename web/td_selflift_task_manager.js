@@ -1991,7 +1991,8 @@ function bindEvents() {
       // Native SaveVideo returns {images:[{filename,subfolder,type}]},
       // VHS_VideoCombine returns {gifs:[...]}. Both point to Comfy output.
       const outputs=p.output||{};
-      const candidates=[...(outputs.images||[]),...(outputs.gifs||[]),...(outputs.videos||[])];
+      const candidates=["images","gifs","videos"].flatMap(key=>
+        Array.isArray(outputs[key])?outputs[key]:[]);
       const video=candidates.find(x=>x?.type==="output" &&
         /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(x.filename||""));
       if(video)job.highresPersistPromise=request(
@@ -2068,6 +2069,9 @@ function bindEvents() {
         // a Blob URL and revoking it during the following render.
         state.jobs.delete(promptId);
         releasePreviewBlobUrls(job);
+        if(event==="execution_success" && job.mode==="continue" &&
+           (state.focused===job.draftId || state.focused===job.checkpointId))
+          state.preview="auto";
         await refresh();
       })();
     });
