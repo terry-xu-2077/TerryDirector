@@ -44,13 +44,13 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector Llama** | 共享本地 Llama/VLM 的提示词增强能力 |
 | **TerryDirector 提示词增强编辑器** | 连接 Llama 后增强 STRING 提示词 |
 | **TerryDirector 双采样分辨率选择器** | 只输入高清目标 MP，低清自动取 1/4；共用宽高比并实时预览两组分辨率 |
-| **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
+| **TerryDirector 保存低清审片视频** | 把低清 VAE 解码结果以 MP4 保存到对应 SelfLift 检查点文件夹 |\n| **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
 
 独立 SelfLift 内部节点仍可被现有工作流按节点 ID 使用，但不再提供 Base / Advanced 的封装式二采配置。
 
 ### 分阶段 SelfLift 示例工作流
 
-推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
+推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。**左侧边栏「低清任务」** 打开独立浮窗，集中管理多个检查点、VAE / TAEH3 双预览、创建任务、重跑和多选批量高清。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
 
 ## 怎样连接
 
