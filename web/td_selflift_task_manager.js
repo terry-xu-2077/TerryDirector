@@ -22,7 +22,7 @@ const URL_BASE = "/terrydirector/api/selflift";
 // Same mark URL as the TerryDirector timeline node and timeline editor.
 const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
 const state = {
-  tasks: [], selected: new Set(), focused: null, preview: "sampling", statusFilter: "all",
+  tasks: [], selected: new Set(), focused: null, preview: "auto", statusFilter: "all",
   busy: false, root: null, creating: false, configuring: false, deleting: null,
   template: null, templates: [], defaultTemplateId: null, configSelectedId: null,
   configError: "", configSaving: false, configDraft: null, createDraft: null, editDraftId: null,
@@ -559,7 +559,8 @@ function handleSamplerProgress(event,fromState=false) {
   if(recordSamplerProgress(job,progress))updateTaskProgress(job);
 }
 function thumb(task) {
-  const media=task.media||{},kind=media.sampling?"sampling":media.decoded?"decoded":null;
+  const media=task.media||{},kind=task.status==="high_complete"&&media.highres?"highres":
+    media.sampling?"sampling":media.decoded?"decoded":null;
   if(!kind)return '<div class="tdm-thumb"></div>';
   const file=media[kind],id=task.checkpoint_id || task.id,url=mediaUrl(id,kind);
   return file.endsWith(".mp4")
@@ -644,17 +645,23 @@ function updateLivePreview(job) {
 }
 function details(task) {
   if(!task)return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
-  const media=task.media||{},kind=state.preview;
+  const media=task.media||{};
+  const kind=state.preview==="auto"
+    ? task.status==="high_complete"?"highres":media.sampling?"sampling":
+      media.decoded?"decoded":"sampling"
+    : state.preview;
   const file=media[kind],cid=task.checkpoint_id || (task.kind==="checkpoint"?task.id:null);
   const live=kind==="sampling" ? livePreviewJobForTask(task) : null;
   const preview=live
     ? livePreviewMarkup(live)
     : !file || !cid
       ? '<div class="tdm-player tdm-detail-pending">'+
-        (cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":
-          task.status==="low_running"?"正在生成低清，等待首轮 TAEH3 预览":
-          task.queued_stage?"已加入生成队列，等待开始执行":
-          "尚未生成低清视频，请点击「开始预演」")+
+        (kind==="highres"
+          ? "高清已完成，但未找到关联的成片文件。请刷新预演台；若 ComfyUI 历史已清除，需要重新关联原始输出。"
+          : cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":
+            task.status==="low_running"?"正在生成低清，等待首轮 TAEH3 预览":
+            task.queued_stage?"已加入生成队列，等待开始执行":
+            "尚未生成低清视频，请点击「开始预演」")+
         '</div>'
       : file.endsWith(".mp4")
         ? '<video class="tdm-player" data-saved-video data-media-key="'+
@@ -684,6 +691,9 @@ function details(task) {
   return '<h3 style="margin:0;font-size:15px">'+esc(task.name||"未命名任务")+'</h3>'+
     statusMarkup(task)+
     '<div class="tdm-tabs">'+
+    ((task.status==="high_complete" || media.highres)
+      ? '<button data-action="preview" data-kind="highres" class="'+(kind==="highres"?"on":"")+
+        '">高清成片</button>' : '')+
     '<button data-action="preview" data-kind="sampling" class="'+(kind==="sampling"?"on":"")+'">TAEH3 采样预览</button>'+
     '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button>'+
     ((live?.preview?.mime==="video/mp4" || file?.endsWith(".mp4")) ?
@@ -953,7 +963,7 @@ async function handleAction(action, data) {
   try {
     if (action === "close") return close();
     if (action === "refresh") return refresh();
-    if (action === "focus") { state.focused = data.id; return render(); }
+    if (action === "focus") { state.focused = data.id; state.preview="auto"; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "toggle-preview-playback") return await togglePreviewPlayback();
     if (action === "cancel-create") { state.creating = false; state.editDraftId = null; state.assetPicker = null; return render(); }
@@ -1727,7 +1737,8 @@ async function queueFromCheckpoint(id,mode) {
   if(mode==="continue" && task.status!=="low_complete")
     throw Error("只有低清完成的任务可以续采高清");
   if(mode==="continue")
-    await saveLegacyLifecycle(id,"high_pending",{queued_stage:"high"});
+    await saveLegacyLifecycle(id,"high_pending",{queued_stage:"high",
+      highres_video:null,highres_prompt_id:null});
   let queued;
   try{
     queued=await submitPreviewJob(template,overrides,mode,
@@ -1739,6 +1750,9 @@ async function queueFromCheckpoint(id,mode) {
     throw error;
   }
   if(mode==="continue") {
+    await saveLegacyLifecycle(id,"high_pending",{
+      queued_stage:"high",highres_prompt_id:queued.promptId,
+    });
     state.jobs.set(queued.promptId,{
       mode:"continue",checkpointId:id,busy:true,
     });
@@ -1913,7 +1927,10 @@ function bindEvents() {
           toast("开始状态记录失败："+err.message,"error"));
       }
       else if(job.mode==="continue")
-        void saveLegacyLifecycle(job.checkpointId,"high_running",{high_started_at:new Date().toISOString()})
+        void saveLegacyLifecycle(job.checkpointId,"high_running",{
+          high_started_at:new Date().toISOString(),
+          highres_prompt_id:state.activePromptId,
+        })
           .then(refresh).catch(err=>toast(err.message,"error"));
       return;
     }
