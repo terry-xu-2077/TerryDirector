@@ -78,6 +78,9 @@ export function resolvePreviewSeedBounds(workflow,binding,apiPrompt={},nodeDefin
       }
     }
   }
+  if(!seedFields.some(field=>/sampler/i.test(field.class_type))) {
+    throw Error("配置的种子源没有连接 ComfyUI 采样器的 seed/noise_seed 输入，请先修正工作流连线");
+  }
   if(bound.max<bound.min)
     throw Error("种子源和采样器的有效范围不相交，无法创建预演任务");
   return {...bound,consumers:seedFields};
