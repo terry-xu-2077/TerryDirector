@@ -105,7 +105,8 @@ def list_tasks() -> list[dict]:
 
 def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     folder = checkpoint_dir(checkpoint_id)
-    allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow", "prompt_binding", "seed_binding", "preview_type"}
+    allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow",
+               "prompt_binding", "seed_binding", "preview_type", "h3_properties"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
