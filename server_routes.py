@@ -91,6 +91,27 @@ async def terrydirector_selflift_checkpoint_status(request: web.Request) -> web.
     )
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/template")
+async def terrydirector_preview_template_get(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import load_preview_template
+    try:
+        return web.json_response({"template": load_preview_template()},
+                                 headers={"Cache-Control": "no-store"})
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/template")
+async def terrydirector_preview_template_set(request: web.Request) -> web.Response:
+    from .director_selflift_task_store import save_preview_template
+    try:
+        template = await request.json()
+        save_preview_template(template)
+        return web.json_response({"ok": True})
+    except (ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks")
 async def terrydirector_selflift_tasks(request: web.Request) -> web.Response:
     from .director_selflift_task_store import list_tasks
