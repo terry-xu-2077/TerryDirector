@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 from pathlib import Path
@@ -225,9 +226,12 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
             # and remove it if an earlier candidate turns out playable.
             debug = folder / "sampling_preview_failed.bin"
             if not debug.exists():
-                stage = folder / "sampling_preview_failed.partial"
-                stage.write_bytes(raw)
-                stage.replace(debug)
+                try:
+                    stage = folder / "sampling_preview_failed.partial"
+                    stage.write_bytes(raw)
+                    stage.replace(debug)
+                except OSError as exc:
+                    logging.warning("[TerryDirector 预演台] 无法保留损坏预览诊断文件：%s", exc)
             raise
     else:
         if mime == "image/webp" and not (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
