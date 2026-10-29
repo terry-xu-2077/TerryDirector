@@ -2,6 +2,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import { queueManagedSelfLift } from "./td_selflift_pause_resume.js";
+import { attachPreviewPromptMenus, closePreviewPromptMenu } from "./td_preview_prompt_menus.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
@@ -117,6 +118,46 @@ function styles() {
 .tdm-modal-sub{font-size:11px;color:#93a0b2;margin:8px 0}
 
 .tdm-blank{color:#87919e;padding:38px 18px;text-align:center}.tdm-select-note{font-size:11px;color:#87919e}
+/* A writing surface first: full-height prompt to the left, reference assets to the right. */
+.tdm-form.tdm-create{width:min(1380px,96vw);height:min(880px,94vh);max-height:94vh;
+ padding:0;display:flex;flex-direction:column;overflow:hidden}
+.tdm-create-head{padding:18px 22px 12px;border-bottom:1px solid #353a43;flex:none}
+.tdm-create-head .tdm-modal-top{margin-bottom:10px}
+.tdm-create-meta{display:grid;grid-template-columns:minmax(260px,1.3fr) minmax(190px,1fr);
+ gap:14px;align-items:end}
+.tdm-create-meta .tdm-field{margin:3px 0 0}
+.tdm-create-content{flex:1;min-height:0;overflow:hidden;padding:16px 22px}
+.tdm-create-columns{display:grid;grid-template-columns:minmax(440px,1.4fr) minmax(300px,1fr);
+ height:100%;min-height:0;column-gap:18px}
+.tdm-create-left{display:flex;flex-direction:column;min-height:0;min-width:0}
+.tdm-create-right{min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+ border-left:1px solid #353a43;padding-left:18px}
+.tdm-create .tdm-section{margin:0 0 10px;padding:4px 0 10px;flex:none}
+.tdm-create .tdm-field{margin:0}
+.tdm-create .tdm-prompt-wrap{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+.tdm-create .tdm-prompt-editor{display:block;min-height:220px;flex:1;width:100%;resize:none;
+ font:14px/1.68 "Segoe UI","Microsoft Yahei",system-ui,sans-serif;background:#14171c;
+ color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:14px 15px;
+ box-sizing:border-box;white-space:pre-wrap;overflow:auto;tab-size:4}
+.tdm-create .tdm-prompt-editor:focus{outline:none;border-color:#6394d1}
+.tdm-prompt-hint{display:flex;gap:13px;color:#8c9aaa;font-size:11px;padding:8px 2px 10px;flex:none}
+.tdm-prompt-hint b{color:#b1cce9;font-weight:600}
+.tdm-create-bottom{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(260px,1.5fr);
+ gap:14px;align-items:end;flex:none;padding-top:8px}
+.tdm-create-bottom .tdm-pillset{margin-top:0}
+.tdm-create-bottom .tdm-pillset button{font-size:11px;padding:10px 8px}
+.tdm-create .tdm-assets{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px}
+.tdm-create .tdm-asset{padding:6px}
+.tdm-create .tdm-asset label{font-size:11px}
+.tdm-create-foot{display:flex;align-items:center;gap:12px;padding:12px 22px 14px;
+ border-top:1px solid #353a43;flex:none}
+.tdm-create-foot .tdm-small{max-width:65%}
+@media(max-width:850px){.tdm-form.tdm-create{height:94vh}
+ .tdm-create-content{overflow:auto}.tdm-create-columns{grid-template-columns:1fr;gap:22px;height:auto}
+ .tdm-create .tdm-prompt-editor{height:40vh;min-height:260px;flex:none}
+ .tdm-create-right{border-left:0;border-top:1px solid #353a43;padding:16px 0 0;overflow:visible}
+ .tdm-create-meta,.tdm-create-bottom{grid-template-columns:1fr}
+ .tdm-create-foot .tdm-small{display:none}}
 @media(max-width:820px){.tdm-main{grid-template-columns:1fr}.tdm-right{border-top:1px solid #333}
  .tdm-shell{overflow:auto}.tdm-card{grid-template-columns:24px 105px 1fr}.tdm-thumb{width:105px;height:64px}}
 `;
@@ -185,6 +226,7 @@ function details(task) {
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
+  closePreviewPromptMenu();
   state.root.innerHTML = '<div class="tdm-shell"><header class="tdm-head">' +
     '<h2>TerryDirector · 预演台</h2><span class="tdm-tag">' + state.tasks.length + ' 个任务</span>' +
     '<div class="tdm-space"></div><button class="tdm-btn" data-action="config">配置工作流</button>' +
@@ -218,6 +260,7 @@ function render() {
   bindControls();
   wireImageFallback(state.root.querySelector(".tdm-assets"));
   renderAssetChoices();
+  installCreatePromptEditor();
 }
 function showDeleteConfirmation() {
   if (state.busy || !state.selected.size) return;
@@ -597,41 +640,65 @@ function createMarkup() {
   if (!draft) return "";
   const sources = [
     { id: "template", title: state.template ? "已配置工作流 · " + state.template.workflow_name : "未配置工作流" },
-    ...state.tasks.filter(t => t.metadata?.has_workflow).map(t => ({ id: "task:" + t.id, title: "继承 · " + (t.name || "预演") +
-      " · " + t.id.slice(0, 8) })),
+    ...state.tasks.filter(t => t.metadata?.has_workflow).map(t => ({
+      id: "task:" + t.id, title: "继承 · " + (t.name || "预演") + " · " + t.id.slice(0, 8),
+    })),
   ];
-  return '<div class="tdm-dialog"><div class="tdm-form" role="dialog" aria-modal="true">' +
+  return '<div class="tdm-dialog"><div class="tdm-form tdm-create" role="dialog" aria-modal="true">' +
+    '<header class="tdm-create-head">' +
     '<div class="tdm-modal-top"><h2>新建预演</h2><span class="tdm-space"></span>' +
-    '<button class="tdm-btn" data-action="cancel-create">×</button></div>' +
+    '<button class="tdm-btn close" data-action="cancel-create">×</button></div>' +
+    '<div class="tdm-create-meta">' +
     '<div class="tdm-field"><label>基于</label><select data-action="source-change">' +
-    sources.map(s => '<option value="' + esc(s.id) + '"' +
-      (s.id === "template" && !state.template ? " disabled" : "") +
-      (draft.source === s.id ? ' selected' : '') + '>' + esc(s.title) + '</option>').join("") +
+    sources.map(x => '<option value="' + esc(x.id) + '"' +
+      (x.id === "template" && !state.template ? " disabled" : "") +
+      (draft.source === x.id ? " selected" : "") + '>' + esc(x.title) + '</option>').join("") +
     '</select></div>' +
-    '<div class="tdm-modal-sub">从已有预演创建可继承提示词、资产、种子和预览类型；旧检查点如果没有快照则不能完整继承。</div>' +
-    '<div class="tdm-field"><label>任务名称</label><input data-action="draft-field" data-field="name" maxlength="120" value="' +
-    esc(draft.name) + '"></div>' +
+    '<div class="tdm-field"><label>任务名称</label><input data-action="draft-field" data-field="name" ' +
+    'maxlength="120" value="' + esc(draft.name) + '"></div></div>' +
+    '</header>' +
+    '<div class="tdm-create-content"><div class="tdm-create-columns">' +
+    '<section class="tdm-create-left">' +
     '<div class="tdm-section">提示词</div>' +
-    '<div class="tdm-field"><textarea rows="5" data-action="draft-field" data-field="prompt" placeholder="输入镜头提示词">' +
+    '<div class="tdm-prompt-wrap"><textarea spellcheck="false" class="tdm-prompt-editor" ' +
+    'data-action="draft-field" data-field="prompt" placeholder="编写镜头描述，@ 引用右侧资产，\\ 或 / 插入 H3 指令…">' +
     esc(draft.prompt) + '</textarea></div>' +
-    '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
-    '<div class="tdm-assets">' + draft.assets.map((a, i) =>
-      assetCard(a.value, "图片 " + (i + 1) + " · " + (a.value || "未设置"),
-      'data-action="open-assets" data-index="' + i + '"')).join("") + '</div>' +
-    (!draft.assets.length ? '<div class="tdm-small">当前工作流没有 LoadImage 图片节点</div>' : '') +
-    '<div class="tdm-section">种子</div>' +
-    '<div class="tdm-field"><input data-action="draft-field" data-field="seed" inputmode="numeric" value="' +
-    esc(draft.seed) + '"></div>' +
-    '<div class="tdm-section">预览视频</div>' +
-    '<div class="tdm-pillset">' +
+    '<div class="tdm-prompt-hint"><span><b>@</b> 引用资产</span>' +
+    '<span><b>\\ 或 /</b> H3 语法 / 运镜</span><span>↑↓ 选择 · Enter 插入</span></div>' +
+    '<div class="tdm-create-bottom">' +
+    '<div class="tdm-field"><label>种子</label><input data-action="draft-field" data-field="seed" ' +
+    'inputmode="numeric" value="' + esc(draft.seed) + '"></div>' +
+    '<div class="tdm-field"><label>预览视频</label><div class="tdm-pillset">' +
     '<button class="' + (draft.previewType === "sampling" ? "on" : "") +
-    '" data-action="set-preview" data-kind="sampling">TAEH3 采样预览 · 默认</button>' +
+    '" data-action="set-preview" data-kind="sampling">TAEH3 · 默认</button>' +
     '<button class="' + (draft.previewType === "decoded" ? "on" : "") +
-    '" data-action="set-preview" data-kind="decoded">VAE 解码预览</button></div>' +
-    '<div class="tdm-form-actions"><button class="tdm-btn" data-action="cancel-create">取消</button>' +
-    '<button class="tdm-btn primary" data-action="submit">加入预演队列</button></div>' +
+    '" data-action="set-preview" data-kind="decoded">VAE 解码</button></div></div></div>' +
+    '</section>' +
+    '<aside class="tdm-create-right">' +
+    '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
+    '<div class="tdm-assets">' + draft.assets.map((asset,i) =>
+      assetCard(asset.value, "图片 " + (i + 1) + " · " + (asset.value || "未设置"),
+        'data-action="open-assets" data-index="' + i + '"')).join("") + '</div>' +
+    (draft.assets.length ? '' : '<div class="tdm-small">当前模板没有 LoadImage 参考资产</div>') +
+    '</aside></div></div>' +
+    '<footer class="tdm-create-foot"><span class="tdm-small">预演独立保存检查点，高清续采不会重跑首阶段。</span>' +
+    '<span class="tdm-space"></span>' +
+    '<button class="tdm-btn" data-action="cancel-create">取消</button>' +
+    '<button class="tdm-btn primary" data-action="submit">加入预演队列</button></footer>' +
     '</div></div>' +
     (state.assetPicker ? assetPickerMarkup() : "");
+}
+function installCreatePromptEditor() {
+  const textarea = state.root?.querySelector(".tdm-prompt-editor");
+  if (!textarea || !state.createDraft) return;
+  attachPreviewPromptMenus(textarea, {
+    getAssets: () => (state.createDraft?.assets || []).map((asset,i) => ({
+      path: asset.value,
+      index: i + 1,
+      name: asset.value?.split(/[\\/]/).pop() || "未设置",
+    })),
+    onChange: text => { if (state.createDraft) state.createDraft.prompt = text; },
+  });
 }
 function assetPickerMarkup() {
   const picker = state.assetPicker;
