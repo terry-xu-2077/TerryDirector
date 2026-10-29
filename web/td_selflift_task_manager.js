@@ -121,10 +121,10 @@ function styles() {
 .tdm-modal-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .tdm-modal-top .tdm-space{flex:1}
 .tdm-modal-sub{font-size:11px;color:#93a0b2;margin:8px 0}
-.tdm-form.tdm-config{width:min(940px,94vw);padding:0;max-height:min(700px,90vh);overflow:hidden}
+.tdm-form.tdm-config{width:min(860px,94vw);padding:0;max-height:min(700px,90vh);overflow:hidden}
 .tdm-config-header{padding:17px 20px 14px;border-bottom:1px solid #363a43;display:flex;align-items:center;gap:12px}
 .tdm-config-header h2{margin:0;font-size:16px}
-.tdm-config-layout{display:grid;grid-template-columns:245px minmax(0,1fr);max-height:calc(min(700px,90vh) - 65px)}
+.tdm-config-layout{display:grid;grid-template-columns:260px minmax(0,1fr);max-height:calc(min(700px,90vh) - 65px)}
 .tdm-config-sidebar{border-right:1px solid #353b45;background:#1a1d22;display:flex;flex-direction:column;min-height:0}
 .tdm-config-list{min-height:0;overflow:auto;flex:1;padding:9px}
 .tdm-config-entry{width:100%;border:1px solid transparent;background:transparent;color:#d1d7df;text-align:left;
@@ -535,7 +535,8 @@ function traceH3PromptInputs(workflow) {
   const nodes = new Map((workflow?.nodes || []).map(n => [String(n.id),n]));
   const links = new Map((workflow?.links || []).map(l => [String(l[0]),l]));
   const results = [], failures = [];
-  const isH3 = n => /(?:MiniMaxH3|QwenH3|H3Prompt|H3Reference)/i.test(String(n.type));
+  const isH3 = n => /(?:MiniMaxH3|QwenH3|H3Prompt|H3Reference)/i.test(String(n.type)) &&
+    (n.outputs||[]).some(x=>x.type==="CONDITIONING" || x.type==="LATENT");
   for (const h3 of nodes.values()) {
     if (!isH3(h3)) continue;
     const ports=(h3.inputs || []).filter(i=>i.name === "prompt" || i.name === "text_prompt");
@@ -586,6 +587,7 @@ function traceH3PromptInputs(workflow) {
       else for(const item of discovered.values())results.push(item);
     }
   }
+  if(!results.length && !failures.length)failures.push("未找到 H3 条件节点或它的 prompt 接口");
   return {fields:[...new Map(results.map(x=>[bindingKey(x),x])).values()],failures};
 }
 function fieldsOf(workflow,type) {
@@ -620,7 +622,7 @@ function templateFromGraph(workflow, name) {
   const seeds = fieldsOf(workflow, "seed");
   const pause = (workflow.nodes || []).find(n => n.type === START_CLASS);
   return {
-    schema: 1, workflow, workflow_name: name || "当前画布",
+    schema: 1, workflow, workflow_name: name || "当前画布", source_name:name || "当前画布",
     pause_node_id: pause?.id || null,
     prompt_binding: prompts[0] ? {node_id: prompts[0].node_id, widget_name: prompts[0].widget_name} : null,
     seed_binding: seeds.find(x => /SeedNode/.test(bindingNode(workflow, x)?.type || "")) ||
@@ -649,6 +651,7 @@ async function openConfig() {
 function useCurrentWorkflow() {
   const retained=state.configDraft?.workflow_name || "新预演工作流";
   state.configDraft = templateFromGraph(app.graph.serialize(), retained);
+  state.configDraft.source_name="当前画布";
   state.configDraft.template_id=state.configSelectedId;
   state.configError="";
   render();
@@ -688,7 +691,7 @@ function configMarkup() {
     '<div class="tdm-field"><label>工作流名称</label>'+
     '<input data-action="config-name" value="'+esc(cfg?.workflow_name||"新预演工作流")+'" maxlength="100"></div>'+
     '<div class="tdm-field"><label>工作流来源</label><div class="tdm-actions">'+
-    '<input value="'+esc(cfg?.workflow_name||"当前画布")+'" disabled style="flex:1;min-width:0">'+
+    '<input value="'+esc(cfg?.source_name||"当前画布")+'" disabled style="flex:1;min-width:0">'+
     '<button class="tdm-btn" data-action="use-canvas">使用当前画布</button>'+
     '<button class="tdm-btn" data-action="import-workflow">导入 JSON</button></div></div>'+
     '<div class="tdm-field"><label>暂停/继续节点</label><select data-action="config-field" data-field="pause_node_id">'+
