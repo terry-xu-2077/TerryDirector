@@ -361,30 +361,41 @@ async function queueFromCheckpoint(id, mode) {
   const task = state.tasks.find(t => t.id === id);
   if (!task) throw Error("请选择任务");
   const info = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
-  const pause = app.graph?.getNodeById?.(Number(task.metadata.pause_node_id));
-  const expectedNodes = new Map((info.workflow?.nodes || []).map(n => [String(n.id), n.type]));
-  const incompatible = [...expectedNodes].some(([nodeId, type]) =>
-    nodeType(app.graph?.getNodeById?.(Number(nodeId))) !== type);
-  if (incompatible || nodeType(pause) !== START_CLASS) {
-    throw Error("当前画布不是该任务的工作流，请先点击「载入任务工作流」");
+  if (!Array.isArray(info.workflow?.nodes) || !app.loadGraphData) {
+    throw Error("该任务缺少可恢复的 ComfyUI 工作流");
   }
-  const overrides = [...(info.overrides || [])];
-  if (mode === "pause") {
-    const namePatch = overrides.find(x => String(x.node_id) === String(pause.id) && x.widget_name === "name");
-    if (namePatch) namePatch.value = String(task.name) + " · 重跑";
+  // Every checkpoint retains its own model/conditioning/resolution settings.
+  // Temporarily load that snapshot, serialize a prompt, and restore the user's
+  // original canvas immediately. This supports batch jobs with different
+  // source workflows rather than silently reusing the wrong conditioning.
+  const savedCanvas = app.graph.serialize();
+  try {
+    await app.loadGraphData(info.workflow);
+    const pause = app.graph?.getNodeById?.(Number(task.metadata.pause_node_id));
+    if (nodeType(pause) !== START_CLASS) {
+      throw Error("此任务的工作流缺少原暂停节点，请重新生成低清");
+    }
+    const overrides = [...(info.overrides || [])];
+    if (mode === "pause") {
+      const namePatch = overrides.find(x => String(x.node_id) === String(pause.id) && x.widget_name === "name");
+      if (namePatch) namePatch.value = String(task.name) + " · 重跑";
+    }
+    const queued = await queueManagedSelfLift(pause, mode, overrides, mode === "continue" ? id : "");
+    if (!queued.promptId) throw Error("未收到入队任务编号");
+    if (mode === "pause") {
+      state.jobs.set(queued.promptId, {
+        mode, overrides, workflow: info.workflow, name: task.name + " · 重跑",
+        workflow_name: task.metadata.workflow_name,
+        pause_node_id: String(pause.id), preview_node_id: task.metadata.preview_node_id,
+        checkpointId: null, preview: null, uploadedStep: 0, busy: true,
+      });
+    }
+    toast((mode === "continue" ? "高清续采" : "低清重跑") + "已入队：" + task.name);
+  } finally {
+    await app.loadGraphData(savedCanvas);
   }
-  const queued = await queueManagedSelfLift(pause, mode, overrides, mode === "continue" ? id : "");
-  if (!queued.promptId) throw Error("未收到入队任务编号");
-  if (mode === "pause") {
-    state.jobs.set(queued.promptId, {
-      mode, overrides, workflow: info.workflow, name: task.name + " · 重跑",
-      workflow_name: task.metadata.workflow_name,
-      pause_node_id: String(pause.id), preview_node_id: task.metadata.preview_node_id,
-      checkpointId: null, preview: null, uploadedStep: 0, busy: true,
-    });
-  }
-  toast((mode === "continue" ? "高清续采" : "低清重跑") + "已入队：" + task.name);
 }
+
 async function batchHighres() {
   const ids = [...state.selected];
   if (!ids.length) return;
