@@ -212,8 +212,9 @@ function styles() {
 .tdm-create-foot .tdm-small{max-width:65%}
 
 /* ComfyUI sidebar: a read-only overview, not a second task editor. */
-.tdm-sidebar{box-sizing:border-box;display:flex;flex-direction:column;min-height:100%;
- padding:18px 15px 12px;gap:0;color:#dce3ef;font:13px system-ui,sans-serif}
+.tdm-sidebar{box-sizing:border-box;display:flex;flex-direction:column;min-height:0;
+ height:100%;width:100%;overflow:hidden;padding:18px 15px 12px;gap:0;
+ color:#dce3ef;font:13px system-ui,sans-serif}
 .tdm-sidebar-brand{display:flex;align-items:center;gap:11px;padding:3px 1px 17px;
  border-bottom:1px solid #343840;margin-bottom:15px;min-width:0}
 .tdm-sidebar-mark{width:35px;height:35px;object-fit:contain;flex:0 0 35px}
