@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import mimetypes
 import shutil
 from pathlib import Path
@@ -324,11 +325,15 @@ async def terrydirector_selflift_sampling_preview(request: web.Request) -> web.R
     from .director_selflift_task_store import save_sampling_preview
     mime = str(request.headers.get("Content-Type", "")).split(";")[0].strip()
     try:
+        duration_param = request.query.get("duration")
+        duration = float(duration_param) if duration_param is not None else None
+        if duration is not None and (not math.isfinite(duration) or not 4 <= duration <= 20):
+            raise ValueError("预演时长须在 4–20 秒之间")
         raw = await request.content.read(48 * 1024 * 1024 + 1)
         # FFmpeg muxing/validation can take seconds; do not hold up ComfyUI
         # websocket/queue handling or other pending Preview Stage tasks.
         filename = await asyncio.to_thread(
-            save_sampling_preview, request.match_info["checkpoint_id"], mime, raw,
+            save_sampling_preview, request.match_info["checkpoint_id"], mime, raw, duration,
         )
     except (FileNotFoundError, OSError, ValueError) as exc:
         return web.json_response({"error": str(exc)}, status=400)
