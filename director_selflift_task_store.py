@@ -187,7 +187,7 @@ def load_metadata(checkpoint_id: str) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes) -> str:
+def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_seconds: float | None = None) -> str:
     folder = checkpoint_dir(checkpoint_id)
     ext = _PREVIEW_EXT.get(mime)
     if ext is None or not raw or len(raw) > _MAX_PREVIEW:
@@ -198,7 +198,7 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes) -> str:
         # KJNodes encodes fragmented MP4 for its live websocket preview.
         # Normalize to a complete, fully-decoded/tested MP4 before exposing it.
         from .director_preview_mp4 import finalize_preview_mp4
-        path = finalize_preview_mp4(raw, folder)
+        path = finalize_preview_mp4(raw, folder, duration_seconds)
     else:
         if mime == "image/webp" and not (raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"):
             raise ValueError("无效 WebP")
