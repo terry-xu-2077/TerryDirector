@@ -91,25 +91,62 @@ async def terrydirector_selflift_checkpoint_status(request: web.Request) -> web.
     )
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/templates")
+async def terrydirector_preview_templates(request: web.Request) -> web.Response:
+    from .director_preview_template_catalog import list_preview_templates
+    return web.json_response(list_preview_templates(),headers={"Cache-Control":"no-store"})
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/template")
 async def terrydirector_preview_template_get(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import load_preview_template
+    from .director_preview_template_catalog import load_preview_template
     try:
-        return web.json_response({"template": load_preview_template()},
-                                 headers={"Cache-Control": "no-store"})
+        return web.json_response({"template":load_preview_template(request.query.get("id"))},
+                                 headers={"Cache-Control":"no-store"})
     except (ValueError, OSError, json.JSONDecodeError) as exc:
-        return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response({"error":str(exc)},status=400)
 
 
 @PromptServer.instance.routes.post("/terrydirector/api/selflift/template")
 async def terrydirector_preview_template_set(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import save_preview_template
+    from .director_preview_template_catalog import save_preview_template
     try:
-        template = await request.json()
-        save_preview_template(template)
-        return web.json_response({"ok": True})
+        value=await request.json()
+        result=save_preview_template(value)
+        return web.json_response({"ok":True,**result})
     except (ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
-        return web.json_response({"error": str(exc)}, status=400)
+        return web.json_response({"error":str(exc)},status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/templates/{template_id}/rename")
+async def terrydirector_preview_template_rename(request: web.Request) -> web.Response:
+    from .director_preview_template_catalog import rename_preview_template
+    try:
+        value=await request.json()
+        rename_preview_template(request.match_info["template_id"],value.get("name"))
+        return web.json_response({"ok":True})
+    except (ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error":str(exc)},status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/templates/{template_id}/default")
+async def terrydirector_preview_template_default(request: web.Request) -> web.Response:
+    from .director_preview_template_catalog import set_default_preview_template
+    try:
+        set_default_preview_template(request.match_info["template_id"])
+        return web.json_response({"ok":True})
+    except (ValueError, OSError) as exc:
+        return web.json_response({"error":str(exc)},status=400)
+
+
+@PromptServer.instance.routes.delete("/terrydirector/api/selflift/templates/{template_id}")
+async def terrydirector_preview_template_delete(request: web.Request) -> web.Response:
+    from .director_preview_template_catalog import delete_preview_template
+    try:
+        result=delete_preview_template(request.match_info["template_id"])
+        return web.json_response({"ok":True,**result})
+    except (ValueError, OSError) as exc:
+        return web.json_response({"error":str(exc)},status=400)
 
 
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks")
