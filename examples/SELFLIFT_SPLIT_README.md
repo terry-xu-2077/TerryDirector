@@ -22,7 +22,7 @@
 - **Seed / CFG**：固定 seed=8，CFG=1。低清原生采样器和检查点节点共用同一个 SeedNode，避免两处种子不一致。
 - **高清转场**：`minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`
 - **高清空间分块**：默认关闭；模式 manual、4 块、axis auto（只有开启开关后才生效）
-- **低清预览**：KJ 采样预览仍为 1 帧、12 fps；蓝色「生成低清」按钮还会执行低清 `denoised_output` → 视频/音频 VAE 解码 → `CreateVideo` → `SaveVideo`，保存完整有声审片视频。
+- **低清预览**：默认工作流③把低清 `denoised_output` 分成视频/音频两路 VAE 解码，接入 `TerryDirector 保存低清审片视频`，将完整有声 MP4 保存到同一个检查点的 `review.mp4`。KJ Model Preview Override 的动画帧由任务管理器接收最后一个预览事件并存为 `sampling_preview.mp4` 或 `.webp`；单帧模式只能保存 JPEG。
 
 `H3SigmaRefiner` 增加一个低噪修整步；在完整 Sigma 日程上从第 6 步分段，因此高清会继续执行余下日程。检查点必须与对应模型、条件、目标分辨率和 Sigma 日程兼容。
 
@@ -31,11 +31,11 @@
 ## 工作流③使用方式
 
 1. 第一次运行点击蓝色 **「生成低清」** 按钮；低清采样完成后同时保存检查点和独立低清审片视频，高清分支不会执行。
-2. 在 ComfyUI `output/video/` 下找到前缀 `TerryDirector_SelfLift_PauseResume_lowres` 的低清视频并审片。通过后点击绿色 **「继续高清」** 按钮；仅执行高清输出，不重跑低清采样或低清保存支路。
+2. 点击 ComfyUI 左侧 **低清任务** →「打开低清任务管理器」；可切换检查点中的 VAE 解码视频与 TAEH3 采样预览。文件位于 `output/TerryDirector/checkpoints/<id>/review.mp4` 与 `sampling_preview.mp4/.webp/.jpg`。通过后点击绿色 **「继续高清」** 按钮或在任务管理器中提交高清续采；均不重跑低清。
 3. 工作流中的 LoadImage 节点示例指向 `黄昏盐滩独行宇航员镜头首帧图片生成.jpg`。若本机没有该图片，请替换为自己的参考图，或断开该参考图输入。
 4. 工作流①和②可以分开使用，但保存与读取必须对应同一组兼容参数；切换模型、参考条件、分辨率或 Sigma 日程时，请重新生成检查点。
 
-**自定义工作流**：低清视频保存支路必须从原生 `SamplerCustom` 的 `denoised_output`（干净 x0）出发，经过 `VAEDecode` 与 `VAEDecodeAudio`，最后到 `SaveVideo` 或 `VHS_VideoCombine`。蓝色按钮自动发现并执行这一支路；若没接则保持原有的只存检查点行为。只允许一个低清视频保存终点。绿色按钮不触发这条支路。
+**自定义工作流**：低清视频保存支路从原生 `SamplerCustom` 的 `denoised_output`（干净 x0）出发，经过 `VAEDecode` 与 `VAEDecodeAudio`，最后接 `TerryDirector 保存低清审片视频`（同时把「暂停/继续」的「检查点 ID」接到保存节点），才能自动在检查点目录中形成 `review.mp4`。仍可使用普通 `SaveVideo` 或 `VHS_VideoCombine`，但这两种节点按其自身路径保存、不会自动归档到检查点目录。蓝色按钮执行唯一的低清视频保存终点，绿色按钮不触发这条支路。
 
 ## 高清 MODEL 输入口
 
