@@ -20,7 +20,13 @@ function knownSamplerId(job,id){
   const suffix=text.split(".").pop();
   if(isSamplingProgressNode(map[suffix]))return true;
   const match=suffix.match(/^\d+_(\d+)$/);
-  return !!(match && isSamplingProgressNode(map[match[1]]));
+  if(match && isSamplingProgressNode(map[match[1]]))return true;
+  // Manual node-button executions can have a serialized UI workflow but no
+  // compiled API snapshot. Accept only actual sampler nodes in that graph.
+  return (job.workflow?.nodes || []).some(node=>
+    (String(node.id)===text || String(node.id)===suffix ||
+     (match && String(node.id)===match[1])) &&
+    isSamplingProgressNode(node));
 }
 function current(job,id){
   return job?.progressNode && String(job.progressNode)===String(id);
