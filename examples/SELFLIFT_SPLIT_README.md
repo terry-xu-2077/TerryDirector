@@ -22,7 +22,7 @@
 - **Seed / CFG**：固定 seed=8，CFG=1。低清原生采样器和检查点节点共用同一个 SeedNode，避免两处种子不一致。
 - **高清转场**：`minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`
 - **高清空间分块**：默认关闭；模式 manual、4 块、axis auto（只有开启开关后才生效）
-- **低清预览**：默认工作流③把低清 `denoised_output` 分成视频/音频两路 VAE 解码，接入 `TerryDirector 保存低清审片视频`，将完整有声 MP4 保存到同一个检查点的 `review.mp4`。KJ Model Preview Override 的动画帧由任务管理器接收最后一个预览事件并存为 `sampling_preview.mp4` 或 `.webp`；单帧模式只能保存 JPEG。
+- **低清预览**：默认工作流③把低清 `denoised_output` 分成视频/音频两路 VAE 解码，接入 `TerryDirector 保存低清审片视频`，将完整有声 MP4 保存到同一个检查点的 `review.mp4`。KJ Model Preview Override 的动画帧由任务管理器接收最后一个预览事件；其中 MP4 是供实时预览使用的**分片 MP4**，上传时 TerryDirector 使用 FFmpeg 在后台整理为普通可解码 MP4（优先无损 remux，必要时回退 H.264 转码），验证后才保存为 `sampling_preview.mp4`。旧检查点中直接保存的分片 MP4 在首次从预演台请求播放时会尝试就地修复；若原始数据已损坏，保留原文件并提示原因。`.webp` 保留原始动画；单帧模式只能保存 JPEG。
 
 `H3SigmaRefiner` 增加一个低噪修整步；在完整 Sigma 日程上从第 6 步分段，因此高清会继续执行余下日程。检查点必须与对应模型、条件、目标分辨率和 Sigma 日程兼容。
 
