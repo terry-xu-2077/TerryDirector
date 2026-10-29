@@ -7,6 +7,7 @@ from .director_selflift_split_node import (
     TerryDirectorSelfLiftHighres,
     TerryDirectorSelfLiftPauseResume,
 )
+from .director_selflift_review_node import TerryDirectorLowresReviewSave
 from .director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
 from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
 from .director_dual_resolution_selector import TerryDirectorDualSamplingResolutionSelector
@@ -41,6 +42,7 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorReadLowresCheckpoint,
             TerryDirectorSelfLiftHighres,
             TerryDirectorSelfLiftPauseResume,
+            TerryDirectorLowresReviewSave,
             TerryDirectorH3X2LowRAMDecode,
             TerryDirectorLooper,
             TerryDirectorLoopInfo,
