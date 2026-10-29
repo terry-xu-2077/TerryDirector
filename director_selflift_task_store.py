@@ -86,13 +86,13 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes) -> str:
         raise ValueError("无效 WebP")
     if mime == "image/jpeg" and not raw.startswith(bytes((0xff, 0xd8, 0xff))):
         raise ValueError("无效 JPEG")
-    for old in folder.glob("sampling_preview.*"):
-        if old.suffix in {".mp4", ".webp", ".jpg"}:
-            old.unlink(missing_ok=True)
     path = folder / ("sampling_preview" + ext)
     stage = folder / ("sampling_preview.partial" + ext)
     stage.write_bytes(raw)
     stage.replace(path)
+    for old in folder.glob("sampling_preview.*"):
+        if old != path and old.suffix in {".mp4", ".webp", ".jpg"}:
+            old.unlink(missing_ok=True)
     return path.name
 
 
