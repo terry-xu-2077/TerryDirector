@@ -337,6 +337,10 @@ export async function queueManagedSelfLift(node, mode, overrides = [], checkpoin
   if (!["pause", "continue"].includes(mode)) throw new Error("无效任务模式");
   const target = mode === "continue" ? findDownstreamOutput(node) : node;
   const saver = mode === "pause" && options.saveDecoded === true ? findLowresOutput(node) : null;
+  if (mode === "pause" && options.saveDecoded === true &&
+      (saver?.comfyClass || saver?.type) !== "TerryDirectorLowresReviewSave") {
+    throw new Error("VAE 解码预览需要连线到「TerryDirector 保存低清审片视频」节点");
+  }
   const ids = [String(target.id), ...(saver ? [String(saver.id)] : [])];
   const modified = [];
   const apply = (item, value) => {
