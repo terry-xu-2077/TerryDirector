@@ -261,6 +261,35 @@ async def terrydirector_selflift_batch_delete(request: web.Request) -> web.Respo
         return web.json_response({"error": "部分文件删除失败：" + str(exc)}, status=500)
 
 
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/highres-video")
+async def terrydirector_selflift_highres_video(request: web.Request) -> web.Response:
+    """Persist the exact SaveVideo/VHS result reported by the running job."""
+    from .director_selflift_task_store import load_metadata, save_metadata
+    from .director_preview_highres import validated_video_result
+    try:
+        checkpoint_id = request.match_info["checkpoint_id"]
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("高清视频结果必须是对象")
+        meta = load_metadata(checkpoint_id)
+        node_id = str(payload.get("node_id", ""))
+        prompt_id = str(payload.get("prompt_id", ""))
+        if not node_id or node_id != str(meta.get("highres_target", "")):
+            raise ValueError("高清输出节点与任务工作流不一致")
+        expected_prompt = meta.get("highres_prompt_id")
+        if expected_prompt and prompt_id != expected_prompt:
+            raise ValueError("高清输出不属于当前任务")
+        video = validated_video_result(payload.get("video"))
+        if video is None:
+            raise ValueError("没有找到已保存的高清视频")
+        save_metadata(checkpoint_id, {**meta, "highres_video": video,
+                                      "highres_prompt_id": prompt_id})
+        return web.json_response({"ok": True, "filename": video["filename"]})
+    except (FileNotFoundError, OSError, ValueError, TypeError,
+            json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/media/{kind}")
 async def terrydirector_selflift_task_media(request: web.Request) -> web.StreamResponse:
     from .director_selflift_task_store import media_path
