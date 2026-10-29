@@ -121,11 +121,12 @@ function styles() {
 /* A writing surface first: full-height prompt to the left, reference assets to the right. */
 .tdm-form.tdm-create{width:min(1380px,96vw);height:min(880px,94vh);max-height:94vh;
  padding:0;display:flex;flex-direction:column;overflow:hidden}
-.tdm-create-head{padding:18px 22px 12px;border-bottom:1px solid #353a43;flex:none}
-.tdm-create-head .tdm-modal-top{margin-bottom:10px}
-.tdm-create-meta{display:grid;grid-template-columns:minmax(260px,1.3fr) minmax(190px,1fr);
- gap:14px;align-items:end}
-.tdm-create-meta .tdm-field{margin:3px 0 0}
+.tdm-create-head{padding:20px 54px 14px 22px;border-bottom:1px solid #353a43;flex:none;position:relative}
+.tdm-create-head .tdm-create-close{position:absolute;right:15px;top:13px}
+.tdm-create-meta{display:grid;grid-template-columns:minmax(220px,.9fr) minmax(320px,1.35fr);
+ gap:16px;align-items:end}
+.tdm-create-meta .tdm-field{margin:0}
+.tdm-create-meta .tdm-name-label{font-size:14px;font-weight:700;color:#e5ebf5}
 .tdm-create-content{flex:1;min-height:0;overflow:hidden;padding:16px 22px}
 .tdm-create-columns{display:grid;grid-template-columns:minmax(440px,1.4fr) minmax(300px,1fr);
  height:100%;min-height:0;column-gap:18px}
@@ -155,8 +156,17 @@ function styles() {
 .tdm-prompt-hint b{color:#b1cce9;font-weight:600}
 .tdm-create-bottom{display:grid;grid-template-columns:minmax(170px,.85fr) minmax(260px,1.5fr);
  gap:14px;align-items:end;flex:none;padding-top:8px}
-.tdm-create-bottom .tdm-pillset{margin-top:0}
-.tdm-create-bottom .tdm-pillset button{font-size:11px;padding:10px 8px}
+.tdm-seed-row{display:flex;gap:6px;align-items:stretch}
+.tdm-seed-row input{flex:1;min-width:0}
+.tdm-seed-random{flex:none;min-width:40px;padding:6px 10px;font-size:18px;line-height:1.15;
+ display:grid;place-items:center}
+.tdm-preview-radios{display:flex;gap:14px;align-items:center;min-height:38px;flex-wrap:wrap}
+.tdm-preview-radio{display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap;
+ font-size:12px;color:#b7bfcb;user-select:none}
+.tdm-preview-radio:has(input:checked){color:#edf4ff}
+.tdm-preview-radio input{width:16px!important;height:16px!important;margin:0;accent-color:#619ff1;
+ cursor:pointer}
+.tdm-preview-radio input:focus-visible{outline:2px solid #9dc7fa;outline-offset:3px}
 .tdm-create .tdm-assets{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px}
 .tdm-create .tdm-asset{padding:6px}
 .tdm-create .tdm-asset label{font-size:11px}
@@ -353,6 +363,12 @@ function bindControls() {
         if (!state.createDraft) return;
         state.createDraft[control.dataset.field] = control.value;
       });
+    } else if (action === "preview-choice") {
+      control.addEventListener("change", () => {
+        if (state.createDraft && control.checked) {
+          state.createDraft.previewType = control.value;
+        }
+      });
     } else if (action === "config-field") {
       control.addEventListener("change", () => {
         if (!state.configDraft) return;
@@ -387,6 +403,14 @@ async function handleAction(action, data) {
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "cancel-create") { state.creating = false; state.assetPicker = null; return render(); }
     if (action === "config") return openConfig();
+    if (action === "random-seed") {
+      if (!state.createDraft) return;
+      const seed = randomPreviewSeed();
+      state.createDraft.seed = seed;
+      const input = state.root?.querySelector("#tdm-new-task-seed");
+      if (input) input.value = seed;
+      return;
+    }
     if (action === "set-preview") { state.createDraft.previewType = data.kind; return render(); }
     if (action === "toggle-prompt-mode") {
       state.createDraft.editorMode = state.createDraft.editorMode === "raw" ? "visual" : "raw";
@@ -652,6 +676,16 @@ function assetCard(path, title, attrs, selected = false) {
     '" ' + attrs + '>' + image + '<label title="' + esc(path || "未选择") + '">' +
     esc(title || path || "添加图片") + '</label></button>';
 }
+// Non-negative 53-bit seed (fits existing ComfyUI JSON and validation).
+// Write directly to the field so the H3 rich editor/caret is not recreated.
+function randomPreviewSeed() {
+  const numbers = new Uint32Array(2);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(numbers);
+    return String((numbers[0] & 0x1fffff) * 0x100000000 + numbers[1]);
+  }
+  return String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+}
 function createMarkup() {
   const draft = state.createDraft;
   if (!draft) return "";
@@ -663,16 +697,16 @@ function createMarkup() {
   ];
   return '<div class="tdm-dialog"><div class="tdm-form tdm-create" role="dialog" aria-modal="true">' +
     '<header class="tdm-create-head">' +
-    '<div class="tdm-modal-top"><h2>新建预演</h2><span class="tdm-space"></span>' +
-    '<button class="tdm-btn close" data-action="cancel-create">×</button></div>' +
+    '<button class="tdm-btn close tdm-create-close" data-action="cancel-create" aria-label="关闭">×</button>' +
     '<div class="tdm-create-meta">' +
+    '<div class="tdm-field"><label class="tdm-name-label" for="tdm-new-task-name">新建任务名称</label>' +
+    '<input id="tdm-new-task-name" data-action="draft-field" data-field="name" ' +
+    'maxlength="120" value="' + esc(draft.name) + '"></div>' +
     '<div class="tdm-field"><label>基于</label><select data-action="source-change">' +
     sources.map(x => '<option value="' + esc(x.id) + '"' +
       (x.id === "template" && !state.template ? " disabled" : "") +
       (draft.source === x.id ? " selected" : "") + '>' + esc(x.title) + '</option>').join("") +
-    '</select></div>' +
-    '<div class="tdm-field"><label>任务名称</label><input data-action="draft-field" data-field="name" ' +
-    'maxlength="120" value="' + esc(draft.name) + '"></div></div>' +
+    '</select></div></div>' +
     '</header>' +
     '<div class="tdm-create-content"><div class="tdm-create-columns">' +
     '<section class="tdm-create-left">' +
@@ -685,13 +719,19 @@ function createMarkup() {
     '<div class="tdm-prompt-hint"><span><b>@</b> 引用资产</span>' +
     '<span><b>\\ 或 /</b> H3 语法 / 运镜</span><span>↑↓ 选择 · Enter 插入</span></div>' +
     '<div class="tdm-create-bottom">' +
-    '<div class="tdm-field"><label>种子</label><input data-action="draft-field" data-field="seed" ' +
-    'inputmode="numeric" value="' + esc(draft.seed) + '"></div>' +
-    '<div class="tdm-field"><label>预览视频</label><div class="tdm-pillset">' +
-    '<button class="' + (draft.previewType === "sampling" ? "on" : "") +
-    '" data-action="set-preview" data-kind="sampling">TAEH3 · 默认</button>' +
-    '<button class="' + (draft.previewType === "decoded" ? "on" : "") +
-    '" data-action="set-preview" data-kind="decoded">VAE 解码</button></div></div></div>' +
+    '<div class="tdm-field"><label for="tdm-new-task-seed">种子</label><div class="tdm-seed-row">' +
+    '<input id="tdm-new-task-seed" data-action="draft-field" data-field="seed" ' +
+    'inputmode="numeric" value="' + esc(draft.seed) + '">' +
+    '<button type="button" class="tdm-btn tdm-seed-random" data-action="random-seed" ' +
+    'title="生成随机种子" aria-label="生成随机种子">🎲</button></div></div>' +
+    '<div class="tdm-field"><label>预览视频</label>' +
+    '<div class="tdm-preview-radios" role="radiogroup" aria-label="预览视频">' +
+    '<label class="tdm-preview-radio"><input type="radio" name="tdm-preview-type" ' +
+    'data-action="preview-choice" value="sampling" ' +
+    (draft.previewType !== "decoded" ? 'checked' : '') + '>TAEH3 · 默认</label>' +
+    '<label class="tdm-preview-radio"><input type="radio" name="tdm-preview-type" ' +
+    'data-action="preview-choice" value="decoded" ' +
+    (draft.previewType === "decoded" ? 'checked' : '') + '>VAE 解码</label></div></div></div>' +
     '</section>' +
     '<aside class="tdm-create-right">' +
     '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
