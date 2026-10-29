@@ -31,7 +31,7 @@ assert.equal(api.serializeH3RichText(editor),
 const tags="summary:\n[Shot 1] <Picture 1> (S2) [00:13] <d>[Chinese] 你好</d> The camera moves in an arc around the subject ";
 const matches=[...tags.matchAll(new RegExp(api.H3_TOKEN_PATTERN.source,api.H3_TOKEN_PATTERN.flags))].map(m=>m[0]);
 for(const expected of ["summary:","[Shot 1]","<Picture 1>","(S2)","[00:13]",
-                       "<d>[Chinese] 你好</d>","The camera moves in an arc around the subject "])
+                       "<d>[Chinese] 你好</d>","The camera moves in an arc around the subject"])
   assert.ok(matches.includes(expected),`Missing H3 token: ${expected}`);
 assert.equal(api.H3_CAMERA_COMMANDS.length,20);
 assert.ok(menus.includes('export function openH3AssetMenuForChip'));
