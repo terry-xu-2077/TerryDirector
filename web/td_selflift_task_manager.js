@@ -282,11 +282,14 @@ function thumb(task) {
 }
 function details(task) {
   if(!task)return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
-  const media=task.media||{},kind=media[state.preview]?state.preview:(media.sampling?"sampling":"decoded");
+  const media=task.media||{},kind=media[state.preview]?state.preview:(media.sampling?"sampling":media.decoded?"decoded":"sampling");
   const file=media[kind],cid=task.checkpoint_id || (task.kind==="checkpoint"?task.id:null);
   const preview=!file || !cid
     ? '<div class="tdm-player tdm-detail-pending">'+
-      (cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":"尚未生成低清视频，请手动点击「开始预演」")+
+      (cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":
+        task.status==="low_running"?"正在生成低清，完成后可查看预览":
+        task.queued_stage?"已加入生成队列，等待开始执行":
+        "尚未生成低清视频，请点击「开始预演」")+
       '</div>'
     : file.endsWith(".mp4")
       ? '<video class="tdm-player" src="'+mediaUrl(cid,kind)+'" controls loop playsinline></video>'
@@ -985,7 +988,7 @@ function createMarkup() {
         'data-action="open-assets" data-index="' + i + '"')).join("") + '</div>' +
     (draft.assets.length ? '' : '<div class="tdm-small">当前模板没有 LoadImage 参考资产</div>') +
     '</aside></div></div>' +
-    '<footer class="tdm-create-foot"><span class="tdm-small">预演独立保存检查点，高清续采不会重跑首阶段。</span>' +
+    '<footer class="tdm-create-foot"><span class="tdm-small">创建任务只保存配置，不会启动 ComfyUI 生成。</span>' +
     '<span class="tdm-space"></span>' +
     '<button class="tdm-btn" data-action="cancel-create">取消</button>' +
     '<button class="tdm-btn primary" data-action="submit">'+
