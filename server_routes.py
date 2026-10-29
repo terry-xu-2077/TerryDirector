@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import mimetypes
 import shutil
@@ -336,7 +337,11 @@ async def terrydirector_selflift_sampling_preview(request: web.Request) -> web.R
             save_sampling_preview, request.match_info["checkpoint_id"], mime, raw, duration,
         )
     except (FileNotFoundError, OSError, ValueError) as exc:
+        logging.exception("[TerryDirector 预演台] TAEH3 最终预览写入失败 checkpoint=%s",
+                          request.match_info["checkpoint_id"])
         return web.json_response({"error": str(exc)}, status=400)
+    logging.info("[TerryDirector 预演台] TAEH3 预览已保存 checkpoint=%s file=%s",
+                 request.match_info["checkpoint_id"], filename)
     return web.json_response({"ok": True, "filename": filename})
 
 
