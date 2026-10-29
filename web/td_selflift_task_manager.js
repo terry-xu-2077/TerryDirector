@@ -343,7 +343,9 @@ function render() {
     (!state.selected.size || state.busy ? "disabled" : "") +
     '>删除所选 · ' + state.selected.size + '</button>' +
     '<span class="tdm-space"></span><button class="tdm-btn primary" data-action="batch" ' +
-    (!state.selected.size || state.busy ? "disabled" : "") +
+    (!state.selected.size || state.busy ||
+     [...state.selected].some(id=>state.tasks.find(t=>t.id===id)?.status!=="low_complete")
+      ? "disabled" : "") +
     '>批量高清续采 · ' + state.selected.size + '</button></footer></div>' +
     (state.creating ? createMarkup() : "") +
     (state.configuring ? configMarkup() : "") +
@@ -527,8 +529,9 @@ async function handleAction(action, data) {
     if (action === "create") return await openCreate();
     if (action === "duplicate") {
       await loadInputFiles();
-      state.creating = true;
-      return changeCreateSource({}, "task:" + state.focused);
+      state.editDraftId=null;
+      state.creating=true;
+      return await changeCreateSource({}, "task:"+state.focused);
     }
     if (action === "import-workflow") return importWorkflow();
     if (action === "upload-image") return uploadImage(Number(data.patch));
@@ -831,6 +834,18 @@ async function changeCreateSource(_data, source) {
     state.createDraft.source = source;
   } else if (source.startsWith("task:")) {
     const id = source.slice(5);
+    if(id.startsWith("draft_")){
+      const prior=await request("/drafts/"+encodeURIComponent(id));
+      const cfg={...prior,h3_properties:prior.h3_properties};
+      state.createDraft=buildDraft(cfg,[],(prior.name||"预演镜头")+" · 新版",prior.previewType);
+      state.createDraft.prompt=prior.prompt;
+      state.createDraft.seed=prior.seed;
+      state.createDraft.assets=structuredClone(prior.assets||[]);
+      state.createDraft.source=source;
+      state.editDraftId=null;state.assetPicker=null;
+      render();
+      return;
+    }
     const task = state.tasks.find(t => t.id === id);
     if (!task) throw Error("来源任务不存在");
     const result = await request("/tasks/" + encodeURIComponent(id) + "/workflow");
@@ -1219,8 +1234,13 @@ async function batchHighres() {
   let queued = 0, failures = [];
   try {
     for (const id of ids) {
-      try { await queueFromCheckpoint(id, "continue"); queued++; }
-      catch (e) { failures.push(e.message); }
+      try {
+        const task=state.tasks.find(t=>t.id===id);
+        if(task?.status!=="low_complete")throw Error("任务未处于低清完成状态");
+        if(task.kind==="draft")await runDraft(id,"continue");
+        else await queueFromCheckpoint(id,"continue");
+        queued++;
+      } catch(e){failures.push(e.message);}
     }
   } finally { state.busy = false; render(); }
   if (failures.length) toast("成功入队 " + queued + " 个；失败 " + failures.length + " 个：" + failures[0], "error");
