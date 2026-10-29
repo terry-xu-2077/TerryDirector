@@ -149,6 +149,67 @@ async def terrydirector_preview_template_delete(request: web.Request) -> web.Res
         return web.json_response({"error":str(exc)},status=400)
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/drafts")
+async def terrydirector_preview_drafts(request: web.Request) -> web.Response:
+    from .director_preview_draft_store import list_drafts
+    return web.json_response({"drafts": list_drafts()}, headers={"Cache-Control": "no-store"})
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts")
+async def terrydirector_preview_draft_create(request: web.Request) -> web.Response:
+    from .director_preview_draft_store import save_draft
+    try:
+        result = save_draft(await request.json())
+        return web.json_response(result, status=201)
+    except (ValueError, TypeError, KeyError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/selflift/drafts/{draft_id}")
+async def terrydirector_preview_draft_get(request: web.Request) -> web.Response:
+    from .director_preview_draft_store import get_draft
+    try:
+        return web.json_response(get_draft(request.match_info["draft_id"]),
+                                 headers={"Cache-Control": "no-store"})
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=404)
+
+
+@PromptServer.instance.routes.put("/terrydirector/api/selflift/drafts/{draft_id}")
+async def terrydirector_preview_draft_update(request: web.Request) -> web.Response:
+    from .director_preview_draft_store import save_draft
+    try:
+        return web.json_response(save_draft(await request.json(), request.match_info["draft_id"]))
+    except (FileNotFoundError, ValueError, TypeError, OSError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts/{draft_id}/status")
+async def terrydirector_preview_draft_status(request: web.Request) -> web.Response:
+    from .director_preview_draft_store import set_draft_status
+    try:
+        payload = await request.json()
+        return web.json_response(set_draft_status(
+            request.match_info["draft_id"], payload["status"],
+            prompt_id=payload.get("prompt_id"),
+            checkpoint_id=payload.get("checkpoint_id"),
+            error=payload.get("error")))
+    except (FileNotFoundError, ValueError, TypeError, KeyError, OSError,
+            json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts/batch-delete")
+async def terrydirector_preview_draft_batch_delete(request: web.Request) -> web.Response:
+    from .director_preview_draft_store import delete_drafts
+    try:
+        payload = await request.json()
+        return web.json_response({"deleted": delete_drafts(payload["draft_ids"])})
+    except (FileNotFoundError, ValueError, TypeError, KeyError, OSError,
+            json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks")
 async def terrydirector_selflift_tasks(request: web.Request) -> web.Response:
     from .director_selflift_task_store import list_tasks
