@@ -50,7 +50,8 @@ export function resolvePreviewSeedBounds(workflow,binding,apiPrompt={},nodeDefin
     if(widget)constrained(bound,{
       min:num(widget.options?.min),max:num(widget.options?.max),
     });
-    if(/rgthree.*seed|seed.*rgthree/i.test(type))bound.max=Math.min(bound.max,RGTHREE_MAX_SEED);
+    if(/rgthree.*seed|seed.*rgthree/i.test(type) || type==="SeedNode")
+      bound.max=Math.min(bound.max,RGTHREE_MAX_SEED);
     seedFields.push({node_id:id(nodeId),class_type:type,input:name,range:schema || null});
   };
   constrainField(source.id,sourceType,binding.widget_name,runtimeNode);
