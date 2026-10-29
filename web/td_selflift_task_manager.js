@@ -851,8 +851,10 @@ async function persistPreview(job) {
   } catch (e) { console.warn("[TerryDirector SelfLift preview]", e); }
   finally {
     job.previewPending = false;
-    if (job.preview && job.preview.step > job.uploadedStep) {
-      // The last KJ event may arrive while a previous upload is pending.
+    // Only enqueue a newer frame after a successful upload. Never spin on a
+    // failed HTTP request (which could otherwise cause an infinite microtask loop).
+    if (job.uploadedStep >= (p.step || 1) &&
+        job.preview && job.preview.step > job.uploadedStep) {
       if (!job.busy || !job.preview.total || job.preview.step >= job.preview.total) {
         queueMicrotask(() => void persistPreview(job));
       }
