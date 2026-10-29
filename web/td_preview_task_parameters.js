@@ -39,7 +39,7 @@ export function taskAspectRatio(apiPrompt, workflow=null){
   if(Array.isArray(ratio)){
     const source=apiPrompt?.[String(ratio[0])]?.inputs || {};
     for(const key of ["aspect_ratio","value","text","string"]){
-      if(typeof source[key]==="string" && /^\\s*\\d+(?:\\.\\d+)?\\s*:/.test(source[key]))
+      if(typeof source[key]==="string" && source[key].includes(":"))
         return source[key];
     }
   }
