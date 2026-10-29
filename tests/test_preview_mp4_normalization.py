@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1] / "director_preview_mp4.py"
@@ -74,6 +75,29 @@ class PreviewMP4NormalizationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             mp4.finalize_preview_mp4(original, self.folder, target_seconds=30)
         self.assertEqual(path.read_bytes(), original)
+
+    def test_missing_duration_probe_keeps_playable_original_duration(self):
+        with patch.object(mp4, "_video_duration", return_value=None):
+            self.assertEqual(mp4._time_scale(self.folder / "x.mp4", 15, "ffmpeg"), 1.0)
+
+    def test_timestamp_remux_failure_retries_without_timing_change(self):
+        attempts = []
+        def remux(source, output, executable, scale=1.0):
+            attempts.append(("remux", scale))
+            if scale != 1.0:
+                raise ValueError("invalid timestamps")
+        def transcode(source, output, executable, scale=1.0):
+            attempts.append(("transcode", scale))
+            if scale != 1.0:
+                raise ValueError("invalid timestamps")
+        with patch.object(mp4, "_ffmpeg", return_value="ffmpeg"), \
+             patch.object(mp4, "_time_scale", return_value=1.875), \
+             patch.object(mp4, "_remux", side_effect=remux), \
+             patch.object(mp4, "_transcode", side_effect=transcode):
+            mp4._normalize(self.folder / "input.mp4", self.folder / "out.mp4", 15)
+        self.assertEqual(attempts, [
+            ("remux", 1.875), ("transcode", 1.875), ("remux", 1.0),
+        ])
 
     def test_repair_old_fragmented_file_without_rerun(self):
         target = self.folder / "sampling_preview.mp4"
