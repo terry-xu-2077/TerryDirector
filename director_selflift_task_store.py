@@ -16,6 +16,50 @@ _MAX_PREVIEW = 48 * 1024 * 1024
 _MAX_METADATA = 5 * 1024 * 1024
 
 
+_TEMPLATE_FILE = "preview_stage_template.json"
+
+
+def load_preview_template() -> dict:
+    """Shared workflow/template configuration, separate from generated tasks."""
+    root = Path(folder_paths.get_output_directory()) / "TerryDirector"
+    path = root / _TEMPLATE_FILE
+    if not path.is_file():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        return {}
+    return value
+
+
+def save_preview_template(value: dict) -> None:
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        raise ValueError("预演工作流配置格式不正确")
+    workflow = value.get("workflow")
+    if not isinstance(workflow, dict) or not isinstance(workflow.get("nodes"), list):
+        raise ValueError("需要 ComfyUI 完整工作流")
+    pause = value.get("pause_node_id")
+    if not any(str(n.get("id")) == str(pause) and
+               n.get("type") == "TerryDirectorSelfLiftPauseResume"
+               for n in workflow["nodes"] if isinstance(n, dict)):
+        raise ValueError("工作流中没有所选的暂停/继续节点")
+    prompt = value.get("prompt_binding")
+    seed = value.get("seed_binding")
+    for label, binding in (("提示词", prompt), ("种子", seed)):
+        if (not isinstance(binding, dict) or
+            not any(str(n.get("id")) == str(binding.get("node_id"))
+                    for n in workflow["nodes"] if isinstance(n, dict)) or
+            not isinstance(binding.get("widget_name"), str)):
+            raise ValueError(f"{label}输入节点未正确配置")
+    raw = json.dumps(value, ensure_ascii=False)
+    if len(raw.encode("utf-8")) > _MAX_METADATA:
+        raise ValueError("工作流配置大于 5 MB")
+    root = Path(folder_paths.get_output_directory()) / "TerryDirector"
+    root.mkdir(parents=True, exist_ok=True)
+    stage = root / (_TEMPLATE_FILE + ".partial")
+    stage.write_text(raw, encoding="utf-8")
+    stage.replace(root / _TEMPLATE_FILE)
+
+
 def checkpoint_dir(checkpoint_id: str) -> Path:
     if not isinstance(checkpoint_id, str) or not _ID.fullmatch(checkpoint_id):
         raise ValueError("非法检查点 ID")
@@ -52,6 +96,7 @@ def list_tasks() -> list[dict]:
                 "overrides": details.get("overrides", []),
                 "pause_node_id": details.get("pause_node_id"),
                 "preview_node_id": details.get("preview_node_id"),
+                "preview_type": details.get("preview_type", "sampling"),
             },
         })
     return rows
@@ -59,7 +104,7 @@ def list_tasks() -> list[dict]:
 
 def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     folder = checkpoint_dir(checkpoint_id)
-    allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow"}
+    allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow", "prompt_binding", "seed_binding", "preview_type"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
