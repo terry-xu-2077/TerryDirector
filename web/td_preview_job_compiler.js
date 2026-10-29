@@ -17,27 +17,69 @@ const clone = obj => structuredClone(obj);
 const uiNodes = workflow => new Map((workflow?.nodes || []).map(node => [id(node.id),node]));
 const apiNode = (api,nodeId) => api[id(nodeId)];
 
-export function resolvePreviewSeedBounds(workflow, binding, runtimeNode) {
-  const node = uiNodes(workflow).get(id(binding?.node_id));
-  const type = String(node?.type || runtimeNode?.comfyClass || "");
-  const live = runtimeNode?.widgets?.find(w => w.name === binding?.widget_name);
-  const serialized = node?.properties || {};
-  let low = Number(live?.options?.min);
-  let high = Number(live?.options?.max);
-  if (!Number.isSafeInteger(low)) low = 0;
-  if (!Number.isSafeInteger(high)) high = Number.MAX_SAFE_INTEGER;
-  if (/rgthree.*seed|seed.*rgthree/i.test(type)) {
-    // Backend cap is authoritative even if the client exposes a wider range.
-    low = Math.max(low, -RGTHREE_MAX_SEED);
-    high = Math.min(high, RGTHREE_MAX_SEED);
-    if (Number.isFinite(Number(serialized.randomMax))) {
-      high = Math.min(high,Number(serialized.randomMax));
-    }
-    if (Number.isFinite(Number(serialized.randomMin))) {
-      low = Math.max(low,Number(serialized.randomMin));
+const isSeedField = name => /^(seed|noise_seed|random_seed|sampling_seed)$/i.test(String(name));
+const num = x => typeof x === "number" && Number.isSafeInteger(x) ? x : null;
+const constrained = (bounds,lim) => {
+  if(num(lim?.min)!==null)bounds.min=Math.max(bounds.min,lim.min);
+  if(num(lim?.max)!==null)bounds.max=Math.min(bounds.max,lim.max);
+};
+const rangeFromDef = (defs,apiNodeType,inputName) => {
+  const definition=defs?.[apiNodeType]?.input || {};
+  const tuple=definition.required?.[inputName] || definition.optional?.[inputName];
+  return Array.isArray(tuple) && tuple[1] && typeof tuple[1] === "object"
+    ? {min:num(tuple[1].min),max:num(tuple[1].max)} : null;
+};
+
+/**
+ * Find all seed consumers in this workflow, including ComfyUI samplers and the
+ * paused SelfLift node. The source rgthree Seed value is not modified; only
+ * the submitted API prompt receives the selected task's seed override.
+ */
+export function resolvePreviewSeedBounds(workflow,binding,apiPrompt={},nodeDefinitions={},
+                                          runtimeNode=null) {
+  const nodes=uiNodes(workflow);
+  const source=nodes.get(id(binding?.node_id));
+  if(!source)throw Error("种子源节点不存在");
+  const sourceType=String(apiPrompt[id(source.id)]?.class_type || source.type || "");
+  const bound={min:0,max:Number.MAX_SAFE_INTEGER};
+  const seedFields=[];
+  const constrainField=(nodeId,type,name,live) => {
+    const schema=rangeFromDef(nodeDefinitions,type,name);
+    if(schema)constrained(bound,schema);
+    const widget=live?.widgets?.find(w=>w.name===name);
+    if(widget)constrained(bound,{
+      min:num(widget.options?.min),max:num(widget.options?.max),
+    });
+    if(/rgthree.*seed|seed.*rgthree/i.test(type))bound.max=Math.min(bound.max,RGTHREE_MAX_SEED);
+    seedFields.push({node_id:id(nodeId),class_type:type,input:name,range:schema || null});
+  };
+  constrainField(source.id,sourceType,binding.widget_name,runtimeNode);
+  // Source output may feed both the lowres sampler and the SelfLift
+  // checkpoint's own seed input. Intersect every linked consumer.
+  const links=workflow.links || [];
+  const pending=[id(source.id)],visited=new Set();
+  while(pending.length) {
+    const current=pending.shift();
+    if(visited.has(current))continue;
+    visited.add(current);
+    for(const link of links) {
+      if(id(link[1])!==current)continue;
+      const dest=nodes.get(id(link[3]));
+      if(!dest)continue;
+      const input=dest.inputs?.[link[4]];
+      if(!input)continue;
+      const type=String(apiPrompt[id(dest.id)]?.class_type || dest.type || "");
+      if(isSeedField(input.name)) {
+        constrainField(dest.id,type,input.name,null);
+      } else if ((dest.outputs||[]).length && !/sampler|selflift/i.test(type)) {
+        // Permits a switch, bus or relay between Seed and actual sampler.
+        pending.push(id(dest.id));
+      }
     }
   }
-  return {min:Math.max(0,low),max:Math.min(Number.MAX_SAFE_INTEGER,high)};
+  if(bound.max<bound.min)
+    throw Error("种子源和采样器的有效范围不相交，无法创建预演任务");
+  return {...bound,consumers:seedFields};
 }
 
 function outgoing(workflow, api, startNode, startSlot, {stopAtPause=false}={}) {
