@@ -572,6 +572,7 @@ function buildDraft(cfg, overrides = [], preferredName = "", previewType = "samp
     workflow: structuredClone(cfg.workflow), workflow_name: cfg.workflow_name,
     pause_node_id: cfg.pause_node_id, prompt_binding: cfg.prompt_binding,
     seed_binding: cfg.seed_binding, preview_node_id: cfg.preview_node_id,
+    h3Properties: structuredClone(cfg.h3_properties || {}),
     name: preferredName || "新预演镜头",
     prompt: String(valueAt(cfg.prompt_binding) ?? ""),
     seed: String(valueAt(cfg.seed_binding) ?? "8"),
@@ -597,6 +598,7 @@ async function changeCreateSource(_data, source) {
     const meta = await request("/tasks/" + encodeURIComponent(id) + "/metadata");
     configured.prompt_binding = meta.prompt_binding || configured.prompt_binding;
     configured.seed_binding = meta.seed_binding || configured.seed_binding;
+    configured.h3_properties = meta.h3_properties || {};
     state.createDraft = buildDraft(configured, result.overrides || [],
       (task.name || "预演镜头") + " · 新版", task.metadata?.preview_type || "sampling");
     state.createDraft.source = source;
@@ -836,6 +838,7 @@ async function submitCreate() {
       workflow_name: draft.workflow_name, pause_node_id: String(pause.id),
       preview_node_id: preview ? String(preview.id) : null,
       prompt_binding: draft.prompt_binding, seed_binding: draft.seed_binding,
+      h3_properties: structuredClone(draft.h3Properties || {}),
       preview_type: draft.previewType,
       checkpointId: null, preview: null, uploadedStep: 0, busy: true,
     });
@@ -888,7 +891,7 @@ async function queueFromCheckpoint(id, mode) {
         workflow_name: task.metadata.workflow_name,
         pause_node_id: String(pause.id), preview_node_id: task.metadata.preview_node_id,
         preview_type: previewType, prompt_binding: info.prompt_binding,
-        seed_binding: info.seed_binding,
+        seed_binding: info.seed_binding, h3_properties: info.h3_properties || {},
         checkpointId: null, preview: null, uploadedStep: 0, busy: true,
       });
     }
@@ -922,6 +925,7 @@ async function persistJob(job) {
         workflow_name: job.workflow_name, overrides: job.overrides,
         pause_node_id: job.pause_node_id, preview_node_id: job.preview_node_id,
         prompt_binding: job.prompt_binding, seed_binding: job.seed_binding,
+        h3_properties: job.h3_properties || {},
         preview_type: job.preview_type || "sampling",
         workflow: job.workflow,
       }),
