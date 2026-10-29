@@ -9,6 +9,7 @@ All FFmpeg processing occurs only after generation, on the upload thread.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -126,14 +127,16 @@ def _time_scale(source: Path, target_seconds: float | None, executable: str) -> 
         raise ValueError("预演时长必须在 4–20 秒之间")
     measured = _video_duration(source, executable)
     if not measured:
-        raise ValueError("无法读取采样预览的视频时长，拒绝错误地调整播放速度")
+        logging.warning("[TerryDirector 预演台] 无法读取 TAEH3 预览原始时长，保留可解码视频原时长")
+        return 1.0
     scale = target_seconds / measured
     # A few frames of rounding are normal; don't rewrite timestamps if the
     # clip already plays at the intended duration.
     if abs(measured - target_seconds) <= 0.3:
         return 1.0
     if not 0.3 <= scale <= 10:
-        raise ValueError("采样预览帧数与目标时长偏差过大，请检查 KJ 预览帧数")
+        logging.warning("[TerryDirector 预演台] TAEH3 预览时长缩放异常（%.3fx），保留原时长", scale)
+        return 1.0
     return scale
 
 
@@ -166,10 +169,17 @@ def _normalize(source: Path, destination: Path, target_seconds: float | None = N
     executable = _ffmpeg()
     scale = _time_scale(source, target_seconds, executable)
     last_error = None
-    for mode in (_remux, _transcode):
+    # A bad timestamp adjustment must not discard an otherwise playable
+    # preview. Fall back to unscaled remux, then video transcode.
+    attempts = [(mode, scale) for mode in (_remux, _transcode)]
+    if scale != 1.0:
+        attempts += [(mode, 1.0) for mode in (_remux, _transcode)]
+    for mode, attempt_scale in attempts:
         try:
             destination.unlink(missing_ok=True)
-            mode(source, destination, executable, scale)
+            mode(source, destination, executable, attempt_scale)
+            if attempt_scale != scale:
+                logging.warning("[TerryDirector 预演台] 预览已保存，但时长校正失败，采用原始播放时长")
             return
         except ValueError as exc:
             last_error = exc
