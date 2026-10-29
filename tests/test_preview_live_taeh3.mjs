@@ -3,6 +3,9 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const candidateSource=await readFile(new URL("../web/td_preview_candidate_buffer.js",import.meta.url),"utf8");
+const candidates=await import("data:text/javascript;base64,"+
+  Buffer.from(candidateSource).toString("base64"));
 const between=(a,b)=>{
   const start=source.indexOf(a),end=source.indexOf(b,start);
   assert.ok(start>=0&&end>start,"Missing "+a);
@@ -67,8 +70,8 @@ const eventHandlers={};
 const queueApi={addEventListener(name,fn){eventHandlers[name]=fn;}};
 const onPreview=between('  api.addEventListener("kj_preview_override",e=>{','  api.addEventListener("executed",e=>{');
 let liveUpdates=0;
-new Function("api","state","updateLivePreview",onPreview)
-  (queueApi,state,()=>{liveUpdates++;});
+new Function("api","state","updateLivePreview","rememberSamplingPreview",onPreview)
+  (queueApi,state,()=>{liveUpdates++;},candidates.rememberSamplingPreview);
 state.activePromptId="prompt-B";
 const originalA=A.preview.image;
 eventHandlers.kj_preview_override({detail:{
@@ -100,9 +103,12 @@ const uploadApi={fetchApi:async (path,options)=>{
   return {ok:true,json:async()=>({ok:true})};
 }};
 const persistCode=between("async function persistPreview(job) {","async function saveLegacyLifecycle(");
-const persist=new Function("api","URL_BASE","atob","toast",
+const persist=new Function("api","URL_BASE","atob","request","console",
+  "finalSamplingCandidates","previewFallbackWarning",
   persistCode+"return persistPreview;")
-  (uploadApi,"/terrydirector/api/selflift",globalThis.atob,()=>{});
+  (uploadApi,"/terrydirector/api/selflift",globalThis.atob,
+    async(path,opts)=>opts?{ok:true}:{workflow_name:"Test"},
+    console,candidates.finalSamplingCandidates,candidates.previewFallbackWarning);
 A.checkpointId="a".repeat(32);
 const two=await Promise.all([persist(A),persist(A)]);
 assert.deepEqual(two,[true,true]);
