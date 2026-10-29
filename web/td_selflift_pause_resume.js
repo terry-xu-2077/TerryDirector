@@ -19,6 +19,7 @@ const OUTPUT_TYPES = new Set(["SaveVideo", "VHS_VideoCombine", "TerryDirectorLow
 const MIN_WIDTH = 350;
 const STYLE_ID = "td-selflift-action-style";
 const pendingBranchSubmissions = [];
+const managedPromptIds = new Set();
 
 function bindPartialPromptTracking() {
   if (api.__tdSelfLiftPartialTrackingBound) return;
@@ -364,6 +365,7 @@ export async function queueManagedSelfLift(node, mode, overrides = [], checkpoin
     };
     pendingBranchSubmissions.push(request);
     const result = await app.queuePrompt(0, 1, ids);
+    if (result?.prompt_id) managedPromptIds.add(String(result.prompt_id));
     return { promptId: String(result?.prompt_id || ""), targetIds: ids };
   } catch (error) {
     if (request) {
@@ -462,6 +464,10 @@ function bindExecutionResult() {
     const detail = event.detail || {};
     const result = detail.output?.terrydirector_selflift_checkpoint?.[0];
     if (!result || typeof result.checkpoint_id !== "string") return;
+    // Managed jobs may be queued from a temporary offscreen workflow and the
+    // user's original canvas already restored. Never write this checkpoint ID
+    // into an unrelated current canvas node that happens to reuse the same ID.
+    if (managedPromptIds.has(String(detail.prompt_id || ""))) return;
     const node = app.graph?.getNodeById?.(Number(detail.node)) ||
       app.graph?._nodes_by_id?.[detail.node];
     if (node?.comfyClass !== CLASS_NAME) return;
@@ -505,6 +511,7 @@ function bindExecutionResult() {
   for (const eventName of ["execution_success", "execution_error", "execution_interrupted"]) {
     api.addEventListener(eventName, event => {
       const info = event.detail || {};
+      if (info.prompt_id) managedPromptIds.delete(String(info.prompt_id));
       for (const node of app.graph?._nodes || []) {
         if (node.comfyClass !== CLASS_NAME || !node.__tdSelfLiftRun?.busy) continue;
         const run = node.__tdSelfLiftRun;
