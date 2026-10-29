@@ -13,7 +13,9 @@ const URL_BASE = "/terrydirector/api/selflift";
 const state = {
   tasks: [], selected: new Set(), focused: null, preview: "sampling",
   busy: false, root: null, creating: false, configuring: false, deleting: null,
-  template: null, configDraft: null, createDraft: null, assetPicker: null, inputFiles: [],
+  template: null, templates: [], defaultTemplateId: null, configSelectedId: null,
+  configError: "", configSaving: false, configDraft: null, createDraft: null,
+  assetPicker: null, inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
 };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c =>
@@ -119,6 +121,25 @@ function styles() {
 .tdm-modal-top{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .tdm-modal-top .tdm-space{flex:1}
 .tdm-modal-sub{font-size:11px;color:#93a0b2;margin:8px 0}
+.tdm-form.tdm-config{width:min(940px,94vw);padding:0;max-height:min(700px,90vh);overflow:hidden}
+.tdm-config-header{padding:17px 20px 14px;border-bottom:1px solid #363a43;display:flex;align-items:center;gap:12px}
+.tdm-config-header h2{margin:0;font-size:16px}
+.tdm-config-layout{display:grid;grid-template-columns:245px minmax(0,1fr);max-height:calc(min(700px,90vh) - 65px)}
+.tdm-config-sidebar{border-right:1px solid #353b45;background:#1a1d22;display:flex;flex-direction:column;min-height:0}
+.tdm-config-list{min-height:0;overflow:auto;flex:1;padding:9px}
+.tdm-config-entry{width:100%;border:1px solid transparent;background:transparent;color:#d1d7df;text-align:left;
+ border-radius:7px;display:flex;flex-direction:column;gap:5px;padding:11px;cursor:pointer;font:13px system-ui}
+.tdm-config-entry small{font-size:10px;color:#8793a2}
+.tdm-config-entry.active{background:#28384e;border-color:#4a7bad}
+.tdm-config-entry:hover{background:#303943}
+.tdm-config-sidebar-footer{display:grid;gap:7px;padding:11px;border-top:1px solid #363a43}
+.tdm-config-editor{padding:15px 20px 18px;overflow:auto;min-height:0}
+.tdm-config-editor .tdm-field{margin:9px 0}
+.tdm-config-editor .tdm-form-actions{margin-top:16px}
+.tdm-config-error{border:1px solid #a65c5c;background:#372729;color:#ffc1be;border-radius:6px;
+ padding:10px 12px;line-height:1.6;font-size:12px;margin:10px 0;white-space:pre-wrap}
+@media(max-width:680px){.tdm-config-layout{grid-template-columns:155px minmax(0,1fr)}
+ .tdm-form.tdm-config{max-height:94vh}.tdm-config-editor{padding:12px}}
 
 .tdm-blank{color:#87919e;padding:38px 18px;text-align:center}.tdm-select-note{font-size:11px;color:#87919e}
 /* A writing surface first: full-height prompt to the left, reference assets to the right. */
@@ -446,9 +467,12 @@ async function handleAction(action, data) {
 
 async function loadTemplate() {
   try {
-    const result = await request("/template");
-    state.template = result.template?.schema === 1 ? result.template : null;
-  } catch (e) { toast("读取工作流配置失败：" + e.message, "error"); }
+    const catalogue=await request("/templates");
+    state.templates=catalogue.templates || [];
+    state.defaultTemplateId=catalogue.default_id || null;
+    const result=await request("/template");
+    state.template=result.template?.schema===2 ? result.template : null;
+  } catch(e) { toast("读取工作流配置失败："+e.message,"error"); }
   render();
 }
 async function loadInputFiles() {
@@ -568,52 +592,87 @@ function templateFromGraph(workflow, name) {
     preview_node_id: (workflow.nodes || []).find(n => n.type === KJ_CLASS)?.id || null,
   };
 }
-function openConfig() {
-  state.configDraft = structuredClone(state.template ||
-    templateFromGraph(app.graph.serialize(), "当前画布"));
-  state.configuring = true;
-  state.creating = false;
+async function loadConfigDraft(templateId) {
+  if(!templateId) {
+    const fresh=templateFromGraph(app.graph.serialize(),"新预演工作流");
+    state.configSelectedId=null;state.configDraft=fresh;
+  } else {
+    const result=await request("/template?id="+encodeURIComponent(templateId));
+    if(!result.template?.workflow)throw Error("保存的工作流数据不完整");
+    state.configSelectedId=templateId;
+    state.configDraft=structuredClone(result.template);
+  }
+  state.configError="";
   render();
 }
+async function openConfig() {
+  state.configuring=true;state.creating=false;state.configError="";
+  await loadTemplate();
+  await loadConfigDraft(state.defaultTemplateId);
+}
 function useCurrentWorkflow() {
-  state.configDraft = templateFromGraph(app.graph.serialize(), "当前画布");
+  const retained=state.configDraft?.workflow_name || "新预演工作流";
+  state.configDraft = templateFromGraph(app.graph.serialize(), retained);
+  state.configDraft.template_id=state.configSelectedId;
+  state.configError="";
   render();
 }
 function configMarkup() {
-  const cfg = state.configDraft, graph = cfg?.workflow;
-  if (!cfg || !graph) return "";
-  const pauseNodes = (graph.nodes || []).filter(n => n.type === START_CLASS);
-  const prompts = fieldsOf(graph, "prompt");
-  const seeds = fieldsOf(graph, "seed");
-  function bindingSelect(key, options) {
-    const current = bindingKey(cfg[key] || {});
-    return '<select data-action="config-field" data-field="' + key + '">' +
-      options.map(item => '<option value="' + esc(bindingKey(item)) + '"' +
-      (bindingKey(item) === current ? ' selected' : '') + '>' +
-      esc(item.label) + '</option>').join("") + '</select>';
+  const cfg=state.configDraft,graph=cfg?.workflow;
+  const pauseNodes=(graph?.nodes||[]).filter(n=>n.type===START_CLASS);
+  const promptInfo=traceH3PromptInputs(graph);
+  const prompts=promptInfo.fields;
+  const seeds=fieldsOf(graph,"seed");
+  const selected=state.configSelectedId;
+  const current=state.templates.find(t=>t.id===selected);
+  const listing=state.templates.map(item=>
+    '<button class="tdm-config-entry '+(item.id===selected?'active':'')+
+    '" data-action="select-config" data-id="'+esc(item.id)+'">'+
+    '<span>'+esc(item.name)+(item.id===state.defaultTemplateId?' ★':'')+'</span>'+
+    '<small>'+(item.id===state.defaultTemplateId?'默认工作流':'已保存')+'</small></button>').join("");
+  function selectBinding(key,options) {
+    const currentValue=bindingKey(cfg?.[key]||{});
+    return '<select data-action="config-field" data-field="'+key+'">'+
+      (options.length?'':'<option value="">未检测到可编辑输入</option>')+
+      options.map(item=>'<option value="'+esc(bindingKey(item))+'" '+
+        (currentValue===bindingKey(item)?'selected':'')+'>'+esc(item.label)+'</option>').join("")+
+      '</select>';
   }
-  return '<div class="tdm-dialog"><div class="tdm-form" role="dialog" aria-modal="true">' +
-    '<div class="tdm-modal-top"><h2>配置预演工作流</h2><span class="tdm-space"></span>' +
-    '<button class="tdm-btn" data-action="cancel-config">×</button></div>' +
-    '<div class="tdm-modal-sub">仅首次配置或切换工作流时使用。新建预演无需操作节点映射。</div>' +
-    '<div class="tdm-field"><label>工作流模板</label><div class="tdm-actions">' +
-    '<input value="' + esc(cfg.workflow_name) + '" disabled style="flex:1">' +
-    '<button class="tdm-btn" data-action="use-canvas">使用当前画布</button>' +
-    '<button class="tdm-btn" data-action="import-workflow">导入 JSON</button></div></div>' +
-    '<div class="tdm-field"><label>暂停/继续节点</label><select data-action="config-field" data-field="pause_node_id">' +
-    pauseNodes.map(n => '<option value="' + esc(n.id) + '"' +
-      (String(n.id) === String(cfg.pause_node_id) ? ' selected' : '') + '>' +
-      esc((n.title || n.type) + " #" + n.id) + '</option>').join("") + '</select></div>' +
-    '<div class="tdm-field"><label>提示词输入节点（用户指定）</label>' +
-    bindingSelect("prompt_binding", prompts) + '</div>' +
-    '<div class="tdm-field"><label>种子输入节点（应同时控制采样器与检查点）</label>' +
-    bindingSelect("seed_binding", seeds) + '</div>' +
-    '<div class="tdm-small">参考资产自动读取工作流里的 LoadImage 节点，在新建任务中以网格编辑。</div>' +
-    '<div class="tdm-form-actions"><button class="tdm-btn" data-action="cancel-config">取消</button>' +
-    '<button class="tdm-btn primary" data-action="save-config" ' +
-    (!pauseNodes.length || !prompts.length || !seeds.length ? 'disabled' : '') +
-    '>保存工作流配置</button></div></div></div>';
+  return '<div class="tdm-dialog"><div class="tdm-form tdm-config" role="dialog" aria-modal="true">'+
+    '<header class="tdm-config-header"><h2>配置预演工作流</h2><span class="tdm-space"></span>'+
+    '<button class="tdm-btn close" data-action="cancel-config">×</button></header>'+
+    '<div class="tdm-config-layout"><aside class="tdm-config-sidebar">'+
+    '<div class="tdm-config-list">'+(listing||'<p class="tdm-small" style="padding:12px">尚无已配置工作流</p>')+
+    '</div><div class="tdm-config-sidebar-footer">'+
+    '<button class="tdm-btn primary" data-action="new-config">＋ 新建工作流</button>'+
+    '<button class="tdm-btn" data-action="default-config" '+(!selected||selected===state.defaultTemplateId?'disabled':'')+'>设为默认</button>'+
+    '<button class="tdm-btn" data-action="rename-config" '+(!selected?'disabled':'')+'>仅修改名称</button>'+
+    '<button class="tdm-btn danger" data-action="delete-config" '+(!selected?'disabled':'')+'>删除此工作流</button>'+
+    '</div></aside><div class="tdm-config-editor">'+
+    '<div class="tdm-field"><label>工作流名称</label>'+
+    '<input data-action="config-name" value="'+esc(cfg?.workflow_name||"新预演工作流")+'" maxlength="100"></div>'+
+    '<div class="tdm-field"><label>工作流来源</label><div class="tdm-actions">'+
+    '<input value="'+esc(cfg?.workflow_name||"当前画布")+'" disabled style="flex:1;min-width:0">'+
+    '<button class="tdm-btn" data-action="use-canvas">使用当前画布</button>'+
+    '<button class="tdm-btn" data-action="import-workflow">导入 JSON</button></div></div>'+
+    '<div class="tdm-field"><label>暂停/继续节点</label><select data-action="config-field" data-field="pause_node_id">'+
+    pauseNodes.map(n=>'<option value="'+esc(n.id)+'" '+(String(n.id)===String(cfg?.pause_node_id)?'selected':'')+'>'+
+      esc((n.title||n.type)+' #'+n.id)+'</option>').join("")+'</select></div>'+
+    '<div class="tdm-field"><label>提示词输入（从 H3.prompt 连线反向追踪）</label>'+
+    selectBinding("prompt_binding",prompts)+'</div>'+
+    (promptInfo.failures.length?'<div class="tdm-small">'+esc(promptInfo.failures.join("；"))+'</div>':'')+
+    '<div class="tdm-field"><label>种子输入（覆盖采样器与检查点）</label>'+
+    selectBinding("seed_binding",seeds)+'</div>'+
+    '<div class="tdm-small">参考资产将使用工作流内的 LoadImage 节点，在新建预演时编辑。</div>'+
+    (state.configError?'<div class="tdm-config-error">'+esc(state.configError)+'</div>':'')+
+    '<div class="tdm-form-actions">'+
+    '<button class="tdm-btn" data-action="cancel-config">取消</button>'+
+    '<button class="tdm-btn primary" data-action="save-config" '+
+    (state.configSaving||!pauseNodes.length||!prompts.length||!seeds.length?'disabled':'')+
+    '>'+(state.configSaving?'保存中…':'保存工作流配置')+'</button></div>'+
+    '</div></div></div></div>';
 }
+
 async function compileConfiguredWorkflow(cfg) {
   // Existing on-screen workflow: read-only compilation. Imported JSON:
   // construct an isolated LiteGraph instance; never invoke loadGraphData(),
