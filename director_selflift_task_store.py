@@ -169,6 +169,7 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow",
                "prompt_binding", "seed_binding", "preview_type", "h3_properties", "api_prompt", "pause_target",
                "highres_target", "decoded_target", "seed_min", "seed_max", "draft_id",
+               "duration_seconds", "highres_megapixels",
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
                "high_started_at", "high_finished_at", "error"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
