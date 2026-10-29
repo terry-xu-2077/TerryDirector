@@ -18,7 +18,14 @@ import folder_paths
 _LOCK = threading.RLock()
 _ID = re.compile(r"^draft_[0-9a-f]{32}$")
 _MAX_DRAFT = 15 * 1024 * 1024
-_STATUSES = {"pending", "submitting", "queued", "failed", "completed"}
+# Six display states; queued/failed are separate internal flags.
+_STATUSES = {"low_pending", "low_running", "low_complete",
+             "high_pending", "high_running", "high_complete"}
+_STAGE = {"low": ("low_pending", "low_running", "low_complete"),
+          "high": ("high_pending", "high_running", "high_complete")}
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _folder() -> Path:
@@ -146,6 +153,11 @@ def delete_drafts(ids: list[str]) -> list[str]:
     return ids
 
 
+def draft_checkpoint_ids() -> set[str]:
+    """Used to avoid duplicate entries after a draft creates its checkpoint."""
+    return {x["checkpoint_id"] for x in list_drafts() if x.get("checkpoint_id")}
+
+
 def list_drafts() -> list[dict]:
     root = _folder()
     if not root.is_dir():
@@ -159,18 +171,27 @@ def list_drafts() -> list[dict]:
                 value = get_draft(path.stem)
             except (OSError, ValueError, TypeError, json.JSONDecodeError):
                 continue
-            if value.get("status") == "completed":
-                continue
             items.append({
-                "id": value["id"], "kind": "draft", "status": value.get("status", "pending"),
-                "name": value.get("name", "未命名任务"), "created_at": value.get("created_at"),
-                "seed": value.get("seed", ""), "prompt": value.get("prompt", ""),
-                "assets": value.get("assets", []),
+                "id": value["id"], "kind": "draft",
+                "status": value.get("status", "low_pending"),
+                "queued_stage": value.get("queued_stage"),
+                "prompt_id": value.get("prompt_id"),
+                "checkpoint_id": value.get("checkpoint_id"),
+                "name": value.get("name", "未命名任务"),
+                "created_at": value.get("created_at"),
+                "low_started_at": value.get("low_started_at"),
+                "low_finished_at": value.get("low_finished_at"),
+                "high_started_at": value.get("high_started_at"),
+                "high_finished_at": value.get("high_finished_at"),
+                "error": value.get("error"),
+                "seed": value.get("seed", ""),
                 "media": {"decoded": None, "sampling": None},
                 "metadata": {
                     "workflow_name": value.get("workflow_name", ""),
                     "preview_type": value.get("previewType", "sampling"),
                     "has_workflow": bool(value.get("api_prompt")),
+                    "pause_node_id": value.get("pause_node_id"),
+                    "preview_node_id": value.get("preview_node_id"),
                 },
             })
     return items
