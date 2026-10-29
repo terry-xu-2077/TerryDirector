@@ -235,7 +235,7 @@ function caretRange(editor, trigger) {
   const boundary = caretTextBoundary(editor, container, offset);
   if (!boundary) return null;
   const before = String(boundary.node.textContent || "").slice(0, boundary.offset);
-  const match = before.match(trigger === "@" ? /[@＠]([^@＠\n]*)$/ : /[\/／]([^\/／\n]*)$/);
+  const match = before.match(trigger === "@" ? /[@＠]([^@＠\n]*)$/ : /[\/／\\＼]([^\/／\\＼\n]*)$/);
   if (!match) return null;
   const range = document.createRange();
   range.setStart(boundary.node, boundary.offset - match[0].length);
@@ -597,7 +597,7 @@ export function attachH3Menus({ node, editor, mode = "prompt", onChange = null }
     const data = String(event?.data || "");
     if (!data) return null;
     const assetAt = Math.max(data.lastIndexOf("@"), data.lastIndexOf("＠"));
-    const commandAt = Math.max(data.lastIndexOf("/"), data.lastIndexOf("／"));
+    const commandAt = Math.max(data.lastIndexOf("/"), data.lastIndexOf("／"), data.lastIndexOf("\\"), data.lastIndexOf("＼"));
     const last = Math.max(assetAt, commandAt);
     if (last < 0 || last !== data.length - 1) return null;
     return assetAt > commandAt ? "@" : "/";
@@ -605,7 +605,7 @@ export function attachH3Menus({ node, editor, mode = "prompt", onChange = null }
   const triggerFromKey = (event) => {
     const key = String(event?.key || "");
     if (key === "@" || key === "＠") return "@";
-    if (key === "/" || key === "／") return "/";
+    if (key === "/" || key === "／" || key === "\\" || key === "＼") return "/";
     // Some IMEs report Process/Unidentified for Shift+2 rather than "@"
     // even though the browser will insert the character after keydown.
     if (event?.shiftKey && event?.code === "Digit2"
@@ -632,7 +632,7 @@ export function attachH3Menus({ node, editor, mode = "prompt", onChange = null }
   const lastTrigger = (text) => {
     const last = String(text || "").slice(-1);
     if (last === "@" || last === "＠") return "@";
-    if (last === "/" || last === "／") return "/";
+    if (last === "/" || last === "／" || last === "\\" || last === "＼") return "/";
     return null;
   };
   const insertedText = (before, after) => {
