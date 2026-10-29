@@ -632,7 +632,7 @@ async function togglePreviewPlayback() {
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
-  const visible=visibleTasks(),visibleIds=new Set(visible.map(t=>t.id));
+  const visible=visibleTasks();
   const batch=batchActionInfo();
   // Keep the same media element across regular task/status refreshes.
   // Reconstructing the whole dialog used to reset playback while the user
