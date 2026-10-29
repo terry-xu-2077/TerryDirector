@@ -126,6 +126,9 @@ def transition_draft(draft_id: str, action: str, *,
                 raise ValueError("只有低清待生成任务可开始预演")
             value["queued_stage"] = "low"
             value["prompt_id"] = None
+            value["checkpoint_id"] = None
+            value["low_started_at"] = None
+            value["low_finished_at"] = None
             value.pop("error", None)
         elif action == "claim_high":
             if old != "low_complete" or stage or not value.get("checkpoint_id"):
@@ -133,6 +136,8 @@ def transition_draft(draft_id: str, action: str, *,
             value["status"] = "high_pending"
             value["queued_stage"] = "high"
             value["prompt_id"] = None
+            value["high_started_at"] = None
+            value["high_finished_at"] = None
             value.pop("error", None)
         elif action == "ack":
             if not prompt_id:
