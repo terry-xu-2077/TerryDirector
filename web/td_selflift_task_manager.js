@@ -383,10 +383,12 @@ function fieldsOf(workflow, type) {
       if (linked.has(name)) continue;
       const kind = String(node.type || "");
       const lower = name.toLowerCase();
-      if (type === "prompt" &&
-          typeof value === "string" && !/image|filename|model|path|format/i.test(lower) &&
-          (/prompt|text|string|value|conditioning/i.test(lower) ||
-          /text|prompt|encode/i.test(kind))) {
+      const inputType = node.inputs?.find(x => x.name === name)?.type;
+      // Custom text/prompt editors do not necessarily use "prompt" as their
+      // node class name. The explicit selection belongs in Configuration.
+      if (type === "prompt" && typeof value === "string" &&
+          inputType !== "COMBO" &&
+          !/image|file|model|path|format|mode|preset|sampler|scheduler|vae|upscaler|tiling|device|backend|dtype|quality|codec|prefix|folder|expression|formula|control|suffix|filename|resolution|ratio|type|time|name|seed/i.test(lower)) {
         rows.push({ node_id: node.id, widget_name: name,
           label: (node.title || kind) + " #" + node.id + " · " + name });
       }
@@ -580,6 +582,7 @@ function createMarkup() {
     '<button class="tdm-btn" data-action="cancel-create">×</button></div>' +
     '<div class="tdm-field"><label>基于</label><select data-action="source-change">' +
     sources.map(s => '<option value="' + esc(s.id) + '"' +
+      (s.id === "template" && !state.template ? " disabled" : "") +
       (draft.source === s.id ? ' selected' : '') + '>' + esc(s.title) + '</option>').join("") +
     '</select></div>' +
     '<div class="tdm-modal-sub">从已有预演创建可继承提示词、资产、种子和预览类型；旧检查点如果没有快照则不能完整继承。</div>' +
