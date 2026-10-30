@@ -1789,12 +1789,12 @@ function batchImportMarkup() {
   const stats=batchImportStats(),current=batch.batches[batch.activeIndex],disabled=stats.valid===0||batch.saving;
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
-    '<div class="tdm-small">按 Markdown「## 批次01｜名称」自动拆分，每个批次保存为独立待生成任务</div></div>'+
+    '<div class="tdm-small">自动识别「批次01｜名称」独占行；支持 Markdown 和复制后丢失 #、粗体、列表符号的纯文本</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-prompt" '+(batch.saving?'disabled':'')+'>导入 Markdown</button>'+
     '<button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
-    '<div class="tdm-batch-section-head"><strong>多批次提示词</strong><span>支持粘贴或导入 .md / .txt</span></div>'+
-    '<textarea class="tdm-batch-text" data-action="batch-text" spellcheck="false" placeholder="粘贴多批次 Markdown 提示词，或点击「导入 Markdown」">'+esc(batch.text)+'</textarea>'+
+    '<div class="tdm-batch-section-head"><strong>多批次提示词</strong><span>支持 Markdown / 纯文本 · .md / .txt</span></div>'+
+    '<textarea class="tdm-batch-text" data-action="batch-text" spellcheck="false" placeholder="粘贴 Markdown 或纯文本；每个批次标题单独占一行，例如：批次01｜场景名称">'+esc(batch.text)+'</textarea>'+
     '<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
       (batch.includePreamble?'checked ':'')+(!batch.preamble||batch.saving?'disabled ':'')+
       '><span data-batch-preamble-label>'+esc(batch.preamble?
