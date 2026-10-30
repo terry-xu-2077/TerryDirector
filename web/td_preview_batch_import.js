@@ -157,9 +157,8 @@ function parseLegacyReferences(body){
   const oldGenerated=value.match(/^待生成资产\s*[｜|:：]\s*(.*)$/);
   if(oldGenerated){
    activePrompt=null;
-   const payload=oldGenerated[1].trim(),promptMatch=payload.match(/^(.+?)\s+生图提示词\s*[:：]\s*(.*)$/);
-   if(promptMatch)generatedAssets.push({type:"image",name:promptMatch[1].trim(),prompt:promptMatch[2].trim()});
-   else generatedAssets.push(payload||"未命名资产");
+   const payload=oldGenerated[1].trim();
+   generatedAssets.push((payload.split(/\s+生图提示词\s*[:：]/)[0]||"未命名资产").trim());
    continue;
   }
   const legacyMedia=value.match(mediaFilePattern);
