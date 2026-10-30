@@ -445,7 +445,7 @@ function styles() {
 .tdm-batch-ref-card[data-kind="video"] .tdm-batch-ref-index{color:#e0f6e7;background:rgba(104,168,123,.22)}
 .tdm-batch-ref-card[data-kind="audio"] .tdm-batch-ref-index{color:#efe7ff;background:rgba(141,112,201,.24)}
 .tdm-batch-ref-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aeb9c8;font-size:10px}
-.tdm-batch-ref-remove{flex:none;width:25px;height:25px;padding:0;border:1px solid #4a3c40;border-radius:5px;background:#262126;color:#c98b91;font-size:17px;line-height:1;cursor:pointer}
+.tdm-batch-ref-remove{flex:none;width:25px;height:25px;padding:0;border:1px solid #3f4855;border-radius:5px;background:#222831;color:#aeb9c8;font-size:17px;line-height:1;cursor:pointer}
 .tdm-batch-ref-remove:hover{border-color:#a65d66;background:#382328;color:#ffd6d9}
 .tdm-batch-ref-remove:disabled{opacity:.35;cursor:not-allowed}
 .tdm-batch-ref-sync{width:100%;margin-top:auto;padding:5px 7px;font-size:10px;line-height:1.35}
