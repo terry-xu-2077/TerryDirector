@@ -1407,7 +1407,7 @@ function configMarkup() {
       ' 个 STRING 文本源，请选择本次预演需要接管的节点。</div>':'')+
     '<div class="tdm-field"><label>种子输入（INT 输出节点）</label>'+
     selectBinding("seed_binding",seeds)+'</div>'+
-    '<div class="tdm-small">参考资产将使用工作流内的 LoadImage 节点，在新建预演时编辑。</div>'+
+    '<div class="tdm-small">参考资产将使用工作流内的 LoadImage、LoadAudio、LoadVideo 等媒体加载节点，在新建预演时编辑。</div>'+
     (state.configError?'<div class="tdm-config-error">'+esc(state.configError)+'</div>':'')+
     '<div class="tdm-form-actions">'+
     '<button class="tdm-btn" data-action="cancel-config">取消</button>'+
