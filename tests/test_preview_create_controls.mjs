@@ -116,18 +116,39 @@ const kindLabel=kind=>kind==="video"?"视频":kind==="audio"?"音频":"图片";
 const preview=(file,options={})=>'<media-preview data-kind="'+(file?.kind||options.kind||"image")+'"/>';
 const assetCardStub=(path,title,attrs,selected,kind,incompatible)=>
   '<asset data-kind="'+kind+'" '+attrs+' data-incompatible="'+!!incompatible+'"/>';
-const renderBatch=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup",
-  source.slice(batchStart,batchEnd)+";return batchImportMarkup;");
-const batchMarkup=renderBatch({
-    batchImport:{
-      text:"# 批量提示词",preamble:"全局风格规则",includePreamble:true,
-      batches:[{name:"批次01｜场景一",body:"导演说明\n分镜",duration_seconds:15,
-        references:[{name:"特瑞.jpg",kind:"image",path:"特瑞.jpg"}],generatedAssets:[]}],
-      assetSlots:[{kind:"image"}],activeIndex:0,selectedRefIndex:0,search:"",saving:false,uploading:false,
-    },
-    inputFiles:[{kind:"image",name:"特瑞.jpg",path:"特瑞.jpg"}],
-  },value=>String(value),assetCardStub,kindLabel,preview)();
+const batchState={
+  batchImport:{
+    text:"# 批量提示词",importText:"",importFileName:"",importError:"",promptImportOpen:false,
+    preamble:"全局风格规则",includePreamble:true,
+    batches:[{name:"批次01｜场景一",body:"导演说明\n分镜",duration_seconds:15,
+      references:[{name:"特瑞.jpg",kind:"image",path:"特瑞.jpg"}],generatedAssets:[]}],
+    assetSlots:[{kind:"image"}],activeIndex:0,selectedRefIndex:0,search:"",saving:false,uploading:false,
+  },
+  inputFiles:[{kind:"image",name:"特瑞.jpg",path:"特瑞.jpg"}],
+};
+const batchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup",
+  source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};")(
+    batchState,value=>String(value),assetCardStub,kindLabel,preview);
+const batchMarkup=batchRenderers.batchImportMarkup();
 assert.ok(batchMarkup.includes("批量添加任务"));
+assert.ok(batchMarkup.includes("当前批次提示词原文"));
+assert.ok(batchMarkup.includes("导演说明\n分镜"));
+assert.ok(!batchMarkup.includes("# 批量提示词"));
+assert.ok(!batchMarkup.includes('data-action="batch-text"'));
+assert.ok(batchMarkup.includes('data-action="batch-import-prompt">导入提示词</button>'));
+batchState.batchImport.promptImportOpen=true;
+batchState.batchImport.importText="批次01｜测试\n[分镜脚本]\n镜头";
+batchState.batchImport.importFileName="test.md";
+const importMarkup=batchRenderers.batchPromptImportMarkup();
+assert.ok(importMarkup.includes("导入多批次提示词"));
+assert.ok(importMarkup.includes('data-action="batch-import-text"'));
+assert.ok(importMarkup.includes('data-batch-prompt-dropzone'));
+assert.ok(importMarkup.includes('data-action="batch-import-browse">浏览文件</button>'));
+assert.ok(importMarkup.includes('data-action="batch-import-apply">解析批次</button>'));
+assert.ok(importMarkup.includes("已读取：test.md"));
+assert.ok(source.includes('addEventListener("dragover"'));
+assert.ok(source.includes('addEventListener("drop"'));
+assert.ok(source.includes("function applyBatchPromptImport() {"));
 assert.ok(batchMarkup.includes("批次01｜场景一"));
 assert.ok(batchMarkup.includes('data-action="batch-upload-assets"'));
 assert.ok(batchMarkup.includes('data-action="batch-submit"'));
