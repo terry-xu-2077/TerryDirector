@@ -58,4 +58,14 @@ assert.ok(holder.innerHTML.includes("高清完成"));
 assert.ok(!holder.innerHTML.includes("<img src=x"));
 assert.ok(!/<(?:button|input|select|textarea|a)\b/i.test(holder.innerHTML));
 assert.ok(sidebarTaskMarkup(state.tasks[0]).includes("低清待生成"));
+// A queued_stage field is a stage lock and can remain truthy during execution.
+// Only pending stages may display queue status in the readonly sidebar.
+for (const stage of ["low","high"]) {
+  const queued={name:"排队测试",status:stage+"_pending",queued_stage:stage};
+  const active={...queued,status:stage+"_running"};
+  assert.match(sidebarTaskMarkup(queued),/ · 排队<\/span>/);
+  assert.doesNotMatch(sidebarTaskMarkup(active),/ · 排队<\/span>/);
+  assert.match(sidebarTaskMarkup(active),new RegExp(stage==="low"?"低清生成中":"高清生成中"));
+  assert.doesNotMatch(sidebarTaskMarkup({...queued,queued_stage:null}),/ · 排队<\/span>/);
+}
 console.log("TerryDirector Preview Stage read-only branded sidebar overview: PASS");

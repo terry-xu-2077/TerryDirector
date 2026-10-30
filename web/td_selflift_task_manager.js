@@ -365,6 +365,12 @@ function sidebarLastStage(task) {
   if (task.queued_stage) return "已加入 ComfyUI 队列";
   return "尚未生成";
 }
+function taskIsQueued(task) {
+  // queued_stage also remains set while a task runs; only pending stages
+  // are waiting in ComfyUI's queue. Running tasks must never say "排队".
+  return !!task?.queued_stage &&
+    (task.status==="low_pending" || task.status==="high_pending");
+}
 function sidebarTaskMarkup(task) {
   // This is deliberately plain text: no links, editing, selection or queue actions.
   const status = Object.prototype.hasOwnProperty.call(STATUS_NAMES,task.status)
@@ -375,7 +381,7 @@ function sidebarTaskMarkup(task) {
     esc(name) + '">' + esc(name) + '</strong>' +
     '<span class="tdm-sidebar-entry-status ' + status + '">' +
     '<span class="tdm-status-icon" aria-hidden="true">'+esc(STATUS_ICONS[status])+'</span>'+
-    esc(STATUS_NAMES[status]) + (task.queued_stage ? " · 排队" : "") + '</span></div>' +
+    esc(STATUS_NAMES[status]) + (taskIsQueued(task) ? " · 排队" : "") + '</span></div>' +
     '<div class="tdm-sidebar-entry-meta"><span>创建 ' +
     esc(sidebarDate(task.created_at)) + '</span><span>' +
     esc(sidebarLastStage(task)) + '</span></div></div>';
@@ -542,7 +548,7 @@ function updateVisibleElapsed() {
 }
 function statusMarkup(task) {
   const status=task.status || "low_complete";
-  const queued=task.queued_stage && /pending$/.test(status);
+  const queued=taskIsQueued(task);
   return '<span class="tdm-status '+esc(status)+'">'+
     '<span class="tdm-status-icon" aria-hidden="true">'+
       esc(STATUS_ICONS[status] || STATUS_ICONS.low_pending)+'</span>'+
