@@ -194,11 +194,34 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
   const pause=apiNode(api,template.pause_node_id);
   if(!pause || pause.class_type!==PAUSE_TYPE)throw Error("已配置的 SelfLift 节点丢失");
   applyPreviewInputs(api,overrides);
+  // Older saved templates still naming KJ are translated within the submitted
+  // job only; the new preview does not import KJNodes or send fMP4 over WS.
+  let nativeTinyVae=null;
+  for(const item of Object.values(api)){
+    if(item?.class_type!=="ModelPreviewOverrideKJ")continue;
+    const prior=item.inputs||{};
+    nativeTinyVae=typeof prior.tiny_vae==="string" ? prior.tiny_vae : "taeh3.safetensors";
+    item.class_type="TerryDirectorH3Preview";
+    item.inputs={
+      model:prior.model, tiny_vae:nativeTinyVae,
+      preview_frames:prior.preview_frames ?? 6,
+      preview_fps:prior.preview_fps ?? 12,
+      max_resolution:prior.max_resolution ?? 768,
+    };
+  }
   if(template.duration_seconds!=null && template.highres_megapixels!=null)
     applyTaskVideoParameters(api,template);
   pause.inputs.mode=mode==="pause"?"暂停并保存":"继续高清";
-  if(mode==="pause" && Number.isFinite(Number(template.duration_seconds)))
-    pause.inputs.preview_duration=Number(template.duration_seconds);
+  if(mode==="pause") {
+    if(Number.isFinite(Number(template.duration_seconds)))
+      pause.inputs.preview_duration=Number(template.duration_seconds);
+    if(!pause.inputs.preview_tiny_vae && nativeTinyVae && nativeTinyVae!=="none")
+      pause.inputs.preview_tiny_vae=nativeTinyVae;
+    if(!pause.inputs.preview_tiny_vae &&
+       Object.values(api).some(n=>n?.class_type==="TerryDirectorH3Preview"))
+      pause.inputs.preview_tiny_vae=Object.values(api).find(
+        n=>n?.class_type==="TerryDirectorH3Preview")?.inputs?.tiny_vae||"none";
+  }
   pause.inputs.checkpoint_id=mode==="pause"?"":checkpointId;
   const target = mode==="continue" ? template.highres_target : template.pause_target;
   const targets=[id(target)];

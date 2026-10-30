@@ -71,7 +71,7 @@ assert.equal(new Set(revoked).size,urls.length,"No object URL leak after complet
 // Preview event stores only latest media in its own running job.
 const eventHandlers={};
 const queueApi={addEventListener(name,fn){eventHandlers[name]=fn;}};
-const onPreview=between('  api.addEventListener("kj_preview_override",e=>{','  api.addEventListener("executed",e=>{');
+const onPreview=between('  const onPreviewPacket = e=>{','  api.addEventListener("executed",e=>{');
 let liveUpdates=0;
 new Function("api","state","updateLivePreview","rememberSamplingPreview",onPreview)
   (queueApi,state,()=>{liveUpdates++;},candidates.rememberSamplingPreview);
@@ -89,6 +89,8 @@ eventHandlers.kj_preview_override({detail:{
 }});
 assert.equal(A.preview.step,4);
 assert.equal(B.preview.step,1);
+assert.equal(eventHandlers.kj_preview_override,eventHandlers.terrydirector_preview,
+  "Legacy and native events share the same isolated task handler");
 assert.equal(liveUpdates,1);
 eventHandlers.kj_preview_override({detail:{
   prompt_id:"prompt-A",node_id:17,mime:"video/mp4",

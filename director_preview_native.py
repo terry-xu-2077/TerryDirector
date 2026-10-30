@@ -230,7 +230,12 @@ class _LivePreviewWrapper:
                  denoise_mask, callback, disable_pbar, seed, latent_shapes):
         from server import PromptServer
 
-        decoder = _decoder(self.tiny_vae)
+        try:
+            decoder = _decoder(self.tiny_vae)
+        except Exception as error:
+            LOG.warning("[TerryDirector] 原生实时预览不可用，继续正常采样：%s", error)
+            return executor(noise, latent_image, sampler, sigmas, denoise_mask,
+                            callback, disable_pbar, seed, latent_shapes=latent_shapes)
         thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="td_h3_preview")
         task = None
 
