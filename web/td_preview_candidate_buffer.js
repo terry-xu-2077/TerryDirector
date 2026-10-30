@@ -54,6 +54,6 @@ export function previewFallbackWarning(saved, candidates) {
   if(!saved || !candidates?.length)return null;
   const latest=candidates[0];
   if(saved.step>=latest.step)return null;
-  return "最后一轮 TAEH3 视频编码异常，已回退保存第 "+
+  return "最后一轮采样预览视频编码异常，已回退保存第 "+
     saved.step+" / "+(latest.total||latest.step)+" 步的可播放预览";
 }

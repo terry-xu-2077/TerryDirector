@@ -71,11 +71,28 @@ def save_preview_template(value):
     pause=str(value.get("pause_node_id"))
     if api.get(pause,{}).get("class_type")!="TerryDirectorSelfLiftPauseResume":
         raise ValueError("工作流没有有效暂停节点")
-    for field in ("prompt_binding","seed_binding"):
+    h3_id=value.get("h3_node_id")
+    h3_node=next((node for node in graph["nodes"] if
+        str(node.get("id"))==str(h3_id) and
+        (node.get("type")=="MiniMaxH3ReferenceToVideo" or
+         node.get("properties",{}).get("Node name for S&R")=="MiniMaxH3ReferenceToVideo")),None) if h3_id is not None else None
+    if h3_id is not None:
+        h3_api=api.get(str(h3_id),{})
+        prompt_bind=value.get("prompt_binding") or {}
+        if (not h3_node or h3_api.get("class_type")!="MiniMaxH3ReferenceToVideo" or
+            str(prompt_bind.get("node_id"))!=str(h3_id) or
+            prompt_bind.get("widget_name")!="prompt" or
+            "prompt" not in h3_api.get("inputs",{})):
+            raise ValueError("H3 提示词必须直接映射到 MiniMaxH3ReferenceToVideo.prompt")
+        bindings=("seed_binding",)
+    else:
+        bindings=("prompt_binding","seed_binding")
+    for field in bindings:
         bind=value.get(field) or {}
         inputs=api.get(str(bind.get("node_id")),{}).get("inputs",{})
         key=bind.get("widget_name")
-        if key not in inputs or isinstance(inputs.get(key),list): raise ValueError(field+" 没有映射到独立输入")
+        if key not in inputs or isinstance(inputs.get(key),list):
+            raise ValueError(field+" 没有映射到独立输入")
     if str(value.get("pause_target"))!=pause or str(value.get("highres_target")) not in api:
         raise ValueError("工作流输出目标无效")
     total=sum(len(json.dumps(v,ensure_ascii=False).encode()) for v in (graph,api,value))

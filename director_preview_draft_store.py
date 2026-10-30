@@ -68,6 +68,9 @@ def _validate_content(data: dict) -> None:
         raise ValueError("请填写 1～120 字的任务名称")
     if data.get("previewType") not in ("sampling", "decoded"):
         raise ValueError("请选择有效的预览类型")
+    for field in ("sampling_preview_enabled", "vae_decode_enabled"):
+        if field in data and type(data[field]) is not bool:
+            raise ValueError("预览开关必须为布尔值："+field)
     if not isinstance(data.get("prompt"), str):
         raise ValueError("提示词必须是字符串")
     if not isinstance(data.get("assets"), list):
@@ -88,7 +91,7 @@ def _validate_content(data: dict) -> None:
     duration = data.get("duration_seconds", 15)
     if type(duration) not in (int, float) or not float(duration).is_integer() or not 4 <= duration <= 20:
         raise ValueError("视频时长须为 4–20 秒之间的整数")
-    mp = data.get("highres_megapixels", 0.8)
+    mp = data.get("highres_megapixels", 2.0)
     if type(mp) not in (int, float) or float(mp) not in (0.4,0.6,0.8,1.0,1.2,1.5,2.0,3.0,4.0):
         raise ValueError("高清分辨率必须是预演台提供的 MP 档位")
 
@@ -108,6 +111,9 @@ def save_draft(data: dict, draft_id: str | None = None) -> dict:
                     "updated_at", "error", "queued_stage", "low_started_at",
                     "low_finished_at", "high_started_at", "high_finished_at"}
         value = {k: v for k, v in data.items() if k not in excluded}
+        legacy_type=value.get("previewType","sampling")
+        value.setdefault("sampling_preview_enabled",legacy_type!="decoded")
+        value.setdefault("vae_decode_enabled",legacy_type=="decoded")
         value.update({
             "id": draft_id, "status": "low_pending", "queued_stage": None,
             "created_at": created, "updated_at": _now(),
@@ -247,6 +253,9 @@ def list_drafts() -> list[dict]:
                 "metadata": {
                     "workflow_name": value.get("workflow_name", ""),
                     "preview_type": value.get("previewType", "sampling"),
+                    "sampling_preview_enabled":value.get("sampling_preview_enabled",value.get("previewType","sampling")!="decoded"),
+                    "vae_decode_enabled":value.get("vae_decode_enabled",value.get("previewType")=="decoded"),
+                    "h3_node_id":value.get("h3_node_id"),
                     "has_workflow": bool(value.get("api_prompt")),
                     "pause_node_id": value.get("pause_node_id"),
                     "preview_node_id": value.get("preview_node_id"),

@@ -129,7 +129,7 @@ def _video_latent(value, shapes=None):
 def _frames(video, decoder, *, max_frames: int, max_resolution: int):
     model, device, dtype, channels, factor = decoder
     if video.ndim != 5 or video.shape[0] != 1 or video.shape[1] != channels:
-        raise ValueError("TAEH3 通道数与低清视频 latent 不匹配")
+        raise ValueError("采样预览解码器通道数与低清视频 latent 不匹配")
     idx = _indices(video.shape[2], max_frames)
     if not idx:
         raise ValueError("低清预览没有视频帧")
@@ -335,9 +335,9 @@ class TerryDirectorH3Preview(io.ComfyNode):
         choices = tiny_vae_choices()
         return io.Schema(
             node_id="TerryDirectorH3Preview",
-            display_name="TerryDirector H3 采样预览",
+            display_name="TerryDirector 采样预览",
             category="TerryDirector/SelfLift",
-            description="原生 TAEH3 实时预览：无 KJNodes 依赖，WebP/JPEG 传输，最终 MP4 由暂停节点直接保存。",
+            description="原生采样预览：无 KJNodes 依赖，WebP/JPEG 传输，最终 MP4 由暂停节点直接保存。",
             inputs=[
                 io.Model.Input("model"),
                 io.Combo.Input("tiny_vae", options=choices, default=default_tiny_vae()),

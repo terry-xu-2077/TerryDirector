@@ -236,25 +236,104 @@ export function compilePreviewTargets(workflow, api, pauseNodeId) {
     decoded_target:decoded?.id || null};
 }
 export function applyPreviewInputs(api, overrides) {
+  const mediaPatches=[];
   for(const patch of overrides||[]) {
+    if(patch?.role==="h3_media"){
+      mediaPatches.push(patch);
+      continue;
+    }
     const node=apiNode(api,patch.node_id),name=patch.widget_name;
     if(!node || typeof name!=="string" ||
        !Object.prototype.hasOwnProperty.call(node.inputs||{},name))
       throw Error("配置的输入节点不存在："+patch.node_id+"."+name+"，请重新配置预演工作流");
-    if(isLink(node.inputs[name]))
+    const directH3Prompt=patch.role==="h3_prompt" &&
+      node.class_type==="MiniMaxH3ReferenceToVideo" && name==="prompt";
+    if(isLink(node.inputs[name]) && !directH3Prompt)
       throw Error("不能覆盖连线终点："+patch.node_id+"."+name+"，请选择上游输入源节点");
     if(typeof patch.value!=="string" && typeof patch.value!=="number")
       throw Error("输入值必须是文本或数字："+name);
     node.inputs[name]=patch.value;
   }
+  return mediaPatches;
 }
-export function buildPreviewJob(template, overrides=[], mode="pause", checkpointId="", previewType="sampling") {
+
+const H3_MEDIA_INPUT=/^(?:ref_images\.ref_image_\d+|ref_videos\.ref_video_\d+|ref_video_audios\.ref_video_audio_\d+|ref_audios\.ref_audio_\d+)$/;
+export function applyH3MediaAssets(api,h3NodeId,patches=[],workflow={},knownInputs=[]) {
+  const h3=apiNode(api,h3NodeId);
+  if(!h3 || h3.class_type!=="MiniMaxH3ReferenceToVideo")
+    throw Error("配置的 H3 参考生成节点不存在："+h3NodeId);
+  h3.inputs ||= {};
+  const uiNode=(workflow?.nodes||[]).find(node=>id(node.id)===id(h3NodeId));
+  const available=new Set([
+    ...(knownInputs||[]).map(String),
+    ...(uiNode?.inputs||[]).map(input=>String(input?.name||"")),
+    ...Object.keys(h3.inputs||{}),
+  ]);
+  for(const name of Object.keys(h3.inputs||{}))
+    if(H3_MEDIA_INPUT.test(name))delete h3.inputs[name];
+
+  let nextId=Math.max(0,...Object.keys(api).map(Number).filter(Number.isSafeInteger))+1;
+  const add=(classType,inputs,title)=>{
+    const nodeId=String(nextId++);
+    api[nodeId]={class_type:classType,inputs,_meta:{title}};
+    return nodeId;
+  };
+  let hasImage=false,hasVideo=false;
+  const selected=(patches||[]).filter(p=>String(p?.value||"").trim());
+  for(const patch of selected){
+    if(id(patch.node_id)!==id(h3NodeId))
+      throw Error("H3 参考资产映射到了其他节点："+patch.node_id);
+    const name=String(patch.widget_name||"");
+    if(!H3_MEDIA_INPUT.test(name) || name.startsWith("ref_video_audios."))
+      throw Error("H3 参考资产输入端无效："+name);
+    const expected=name.startsWith("ref_images.")?"image":
+      name.startsWith("ref_videos.")?"video":"audio";
+    if(patch.kind!==expected)
+      throw Error("H3 参考资产类型不匹配："+name+"（需要"+expected+"）");
+    const value=String(patch.value).trim();
+    if(expected==="image"){
+      const loader=add("LoadImage",{image:value},"TerryDirector H3 参考图片");
+      h3.inputs[name]=[loader,0];hasImage=true;
+    }else if(expected==="audio"){
+      const loader=add("LoadAudio",{audio:value},"TerryDirector H3 参考音频");
+      h3.inputs[name]=[loader,0];
+    }else{
+      const loader=add("LoadVideo",{file:value},"TerryDirector H3 参考视频");
+      const components=add("GetVideoComponents",{video:[loader,0]},"TerryDirector H3 视频帧与音轨提取");
+      h3.inputs[name]=[components,0];hasVideo=true;
+      const index=Number(name.match(/_(\d+)$/)?.[1]||0);
+      const paired="ref_video_audios.ref_video_audio_"+index;
+      if(available.has(paired))h3.inputs[paired]=[components,1];
+    }
+  }
+  if(!hasImage && !hasVideo)
+    throw Error("MiniMax H3 参考生成至少需要一张参考图片或一个参考视频");
+}
+export function normalizePreviewOptions(value="sampling") {
+  if(typeof value==="string")return value==="decoded"
+    ? {sampling_preview_enabled:false,vae_decode_enabled:true}
+    : {sampling_preview_enabled:true,vae_decode_enabled:false};
+  const legacy=value?.previewType ?? value?.preview_type;
+  const sampling=typeof value?.sampling_preview_enabled==="boolean"
+    ? value.sampling_preview_enabled
+    : typeof value?.samplingPreviewEnabled==="boolean"
+      ? value.samplingPreviewEnabled : legacy==="decoded" ? false : true;
+  const decoded=typeof value?.vae_decode_enabled==="boolean"
+    ? value.vae_decode_enabled
+    : typeof value?.vaeDecodeEnabled==="boolean"
+      ? value.vaeDecodeEnabled : legacy==="decoded";
+  return {sampling_preview_enabled:sampling,vae_decode_enabled:decoded};
+}
+export function buildPreviewJob(template, overrides=[], mode="pause", checkpointId="", previewOptions="sampling") {
   if(template?.schema!==2 || !template?.api_prompt)throw Error("工作流未编译，请重新配置");
   if(!["pause","continue"].includes(mode))throw Error("无效的预演任务模式");
+  const preview=normalizePreviewOptions(previewOptions);
   const api=clone(template.api_prompt);
   const pause=apiNode(api,template.pause_node_id);
   if(!pause || pause.class_type!==PAUSE_TYPE)throw Error("已配置的 SelfLift 节点丢失");
-  applyPreviewInputs(api,overrides);
+  const mediaPatches=applyPreviewInputs(api,overrides);
+  if(template.h3_node_id!=null)
+    applyH3MediaAssets(api,template.h3_node_id,mediaPatches,template.workflow,template.h3_media_bindings||[]);
   const taskName=String(pause.inputs.name || "").trim();
   if(taskName){
     const safeName=sanitizeTaskFilename(taskName);
@@ -293,9 +372,9 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
        Object.values(api).some(n=>n?.class_type==="TerryDirectorH3Preview"))
       pause.inputs.preview_tiny_vae=Object.values(api).find(
         n=>n?.class_type==="TerryDirectorH3Preview")?.inputs?.tiny_vae||"none";
-    if(previewType==="decoded"){
-      // The dedicated full-VAE branch already saves the user's decoded video.
-      // Disable both quick preview decoders rather than consuming more VRAM.
+    if(!preview.sampling_preview_enabled){
+      // Sampling preview is independent from the full VAE decode output.
+      // Disable the quick decoder only when its own switch is off.
       pause.inputs.preview_tiny_vae="none";
       for(const n of Object.values(api))
         if(n?.class_type==="TerryDirectorH3Preview")n.inputs.tiny_vae="none";
@@ -304,7 +383,7 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
   pause.inputs.checkpoint_id=mode==="pause"?"":checkpointId;
   const target = mode==="continue" ? template.highres_target : template.pause_target;
   const targets=[id(target)];
-  if(mode==="pause" && previewType==="decoded"){
+  if(mode==="pause" && preview.vae_decode_enabled){
     // Old configs saved before automatic recognition have decoded_target=null.
     // Resolve the real low-clean VAE branch again rather than forcing reimport.
     const targetId=id(template.decoded_target ||

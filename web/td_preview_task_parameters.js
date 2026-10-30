@@ -5,7 +5,7 @@ export const PREVIEW_DURATION_MIN=4;
 export const PREVIEW_DURATION_MAX=20;
 export const PREVIEW_DURATION_DEFAULT=15;
 export const PREVIEW_RESOLUTION_OPTIONS=[0.4,0.6,0.8,1.0,1.2,1.5,2.0,3.0,4.0];
-export const PREVIEW_RESOLUTION_DEFAULT=0.8;
+export const PREVIEW_RESOLUTION_DEFAULT=2.0;
 
 export function taskVideoFrameCount(seconds){
   const n=Number(seconds);

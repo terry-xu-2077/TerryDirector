@@ -88,15 +88,28 @@ def save_preview_template(value: dict) -> None:
         raise ValueError("工作流未选择有效的暂停/继续节点")
     if api_prompt.get(pause, {}).get("class_type") != "TerryDirectorSelfLiftPauseResume":
         raise ValueError("可执行工作流缺少所选暂停节点")
-    for label, binding in (("提示词", value.get("prompt_binding")),
-                           ("种子", value.get("seed_binding"))):
-        if not isinstance(binding, dict):
+    h3_id=value.get("h3_node_id")
+    if h3_id is not None:
+        h3_ui=next((n for n in workflow["nodes"] if str(n.get("id"))==str(h3_id) and
+            (n.get("type")=="MiniMaxH3ReferenceToVideo" or
+             n.get("properties",{}).get("Node name for S&R")=="MiniMaxH3ReferenceToVideo")),None)
+        h3_api=api_prompt.get(str(h3_id),{})
+        binding=value.get("prompt_binding") or {}
+        if (not h3_ui or h3_api.get("class_type")!="MiniMaxH3ReferenceToVideo" or
+            str(binding.get("node_id"))!=str(h3_id) or binding.get("widget_name")!="prompt" or
+            "prompt" not in h3_api.get("inputs",{})):
+            raise ValueError("H3 提示词必须直接映射到 MiniMaxH3ReferenceToVideo.prompt")
+        bindings=(("种子",value.get("seed_binding")),)
+    else:
+        bindings=(("提示词",value.get("prompt_binding")),("种子",value.get("seed_binding")))
+    for label,binding in bindings:
+        if not isinstance(binding,dict):
             raise ValueError(f"{label}尚未指定输入节点")
-        node_id = str(binding.get("node_id"))
-        widget = binding.get("widget_name")
-        if not isinstance(widget, str) or widget not in api_prompt.get(node_id, {}).get("inputs", {}):
+        node_id=str(binding.get("node_id"))
+        widget=binding.get("widget_name")
+        if not isinstance(widget,str) or widget not in api_prompt.get(node_id,{}).get("inputs",{}):
             raise ValueError(f"{label}输入无法映射到可执行工作流：{node_id}.{widget}")
-        if isinstance(api_prompt[node_id]["inputs"][widget], list):
+        if isinstance(api_prompt[node_id]["inputs"][widget],list):
             raise ValueError(f"{label}绑定仍指向连线终点，请选择实际输入源节点")
     for key in ("pause_target", "highres_target", "decoded_target"):
         node_id = value.get(key)
@@ -196,6 +209,9 @@ def list_tasks() -> list[dict]:
                 "pause_node_id": details.get("pause_node_id"),
                 "preview_node_id": details.get("preview_node_id"),
                 "preview_type": details.get("preview_type", "sampling"),
+                "sampling_preview_enabled":details.get("sampling_preview_enabled",details.get("preview_type","sampling")!="decoded"),
+                "vae_decode_enabled":details.get("vae_decode_enabled",details.get("preview_type")=="decoded"),
+                "h3_node_id":details.get("h3_node_id"),
                 "preview_error": details.get("preview_error"),
                 "preview_warning": details.get("preview_warning"),
                 "preview_saved_step": details.get("preview_saved_step"),
@@ -213,7 +229,8 @@ def list_tasks() -> list[dict]:
 def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     folder = checkpoint_dir(checkpoint_id)
     allowed = {"workflow_name", "overrides", "pause_node_id", "preview_node_id", "workflow",
-               "prompt_binding", "seed_binding", "preview_type", "h3_properties", "api_prompt", "pause_target",
+               "prompt_binding", "seed_binding", "preview_type", "sampling_preview_enabled",
+               "vae_decode_enabled", "h3_node_id", "h3_properties", "api_prompt", "pause_target",
                "highres_target", "decoded_target", "seed_min", "seed_max", "draft_id",
                "duration_seconds", "highres_megapixels",
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
