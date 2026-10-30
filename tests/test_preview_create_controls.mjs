@@ -116,7 +116,7 @@ const kindLabel=kind=>kind==="video"?"视频":kind==="audio"?"音频":"图片";
 const preview=(file,options={})=>'<media-preview data-kind="'+(file?.kind||options.kind||"image")+'"/>';
 const assetCardStub=(path,title,attrs,selected,kind,incompatible)=>
   '<asset data-kind="'+kind+'" '+attrs+' data-incompatible="'+!!incompatible+'"/>';
-const batchState={
+const batchMarkupState={
   batchImport:{
     text:"# 批量提示词",importText:"",importFileName:"",importError:"",promptImportOpen:false,
     preamble:"全局风格规则",includePreamble:true,
@@ -128,7 +128,7 @@ const batchState={
 };
 const batchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup",
   source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};")(
-    batchState,value=>String(value),assetCardStub,kindLabel,preview);
+    batchMarkupState,value=>String(value),assetCardStub,kindLabel,preview);
 const batchMarkup=batchRenderers.batchImportMarkup();
 assert.ok(batchMarkup.includes("批量添加任务"));
 assert.ok(batchMarkup.includes("当前批次提示词原文"));
@@ -138,9 +138,9 @@ assert.ok(!batchMarkup.includes('data-action="batch-text"'));
 assert.ok(!batchMarkup.includes("导入提示词"));
 assert.ok(!batchMarkup.includes('data-action="batch-import-prompt"'));
 assert.ok(batchMarkup.includes('data-action="batch-cancel"'));
-batchState.batchImport.promptImportOpen=true;
-batchState.batchImport.importText="批次01｜测试\n[分镜脚本]\n镜头";
-batchState.batchImport.importFileName="test.md";
+batchMarkupState.batchImport.promptImportOpen=true;
+batchMarkupState.batchImport.importText="批次01｜测试\n[分镜脚本]\n镜头";
+batchMarkupState.batchImport.importFileName="test.md";
 const firstStageMarkup=batchRenderers.batchImportMarkup();
 assert.ok(firstStageMarkup.includes("导入多批次提示词"));
 assert.ok(!firstStageMarkup.includes("批量添加任务"));
