@@ -156,23 +156,66 @@ function outgoing(workflow, api, startNode, startSlot, {stopAtPause=false}={}) {
   }
   return [...new Map(terminals.map(t=>[t.id,t])).values()];
 }
+/** Identify the user's actual low-res VAE branch, not just a TerryDirector
+ * saver. In a normal H3 graph, sampler.denoised_output fans out to the pause
+ * checkpoint and to VAEDecode/VAEDecodeAudio -> VHS_VideoCombine.
+ *
+ * An existing VHS node is an *output template*: when running a VAE review, we
+ * replace that node in the cloned API prompt with TerryDirectorLowresReviewSave
+ * (same ID, no canvas edits). This writes review.mp4 into the checkpoint.
+ */
+export function detectLowresReviewSink(workflow, api, pauseNodeId) {
+  const nodes=uiNodes(workflow), pause=nodes.get(id(pauseNodeId));
+  const clean=pause?.inputs?.find(x=>x.name==="low_clean");
+  const links=new Map((workflow?.links||[]).map(l=>[id(l[0]),l]));
+  const origin=links.get(id(clean?.link));
+  if(!origin)return null;
+  const rootId=id(origin[1]),rootSlot=Number(origin[2]);
+  // Runtime API links are authoritative. The UI-link fallback permits a
+  // useful detection message before the imported workflow is compiled.
+  const incoming=(nodeId,name)=>{
+    const runtime=apiNode(api,nodeId)?.inputs?.[name];
+    if(isLink(runtime))return runtime;
+    const node=nodes.get(id(nodeId));
+    const linkId=node?.inputs?.find(i=>i.name===name)?.link;
+    const link=links.get(id(linkId));
+    return link?[id(link[1]),Number(link[2])]:null;
+  };
+  const dependsOnClean=(ref, decoderType, decoded=false, seen=new Set())=>{
+    if(!isLink(ref))return false;
+    const nodeId=id(ref[0]),slot=Number(ref[1]);
+    if(nodeId===rootId && slot===rootSlot)return decoded;
+    const node=nodes.get(nodeId);
+    const type=apiNode(api,nodeId)?.class_type||node?.type;
+    if(!type || type===PAUSE_TYPE || seen.has(nodeId))return false;
+    const nextSeen=new Set(seen);nextSeen.add(nodeId);
+    const hasDecoder=decoded || type===decoderType;
+    const inputNames=new Set([
+      ...Object.keys(apiNode(api,nodeId)?.inputs||{}),
+      ...(node?.inputs||[]).map(input=>input.name),
+    ]);
+    return [...inputNames].some(name=>dependsOnClean(
+      incoming(nodeId,name),decoderType,hasDecoder,nextSeen));
+  };
+  const candidates=outgoing(workflow,api,rootId,rootSlot,{stopAtPause:true});
+  const dedicated=candidates.filter(x=>x.type==="TerryDirectorLowresReviewSave");
+  if(dedicated.length>1)throw Error("检测到多个低清审片保存节点，请保留一条低清保存支路");
+  if(dedicated.length)return dedicated[0];
+  const vhs=candidates.filter(x=>x.type==="VHS_VideoCombine" &&
+    dependsOnClean(incoming(x.id,"images"),"VAEDecode") &&
+    dependsOnClean(incoming(x.id,"audio"),"VAEDecodeAudio"));
+  if(vhs.length>1)throw Error("检测到多条低清 VAE 视频输出，请保留一条低清审片支路");
+  return vhs[0]||null;
+}
 export function compilePreviewTargets(workflow, api, pauseNodeId) {
   const nodes=uiNodes(workflow), pause=nodes.get(id(pauseNodeId));
   if(!pause || apiNode(api,pauseNodeId)?.class_type !== PAUSE_TYPE)
     throw Error("工作流未连接有效的 SelfLift 暂停节点");
   const highres=outgoing(workflow,api,pauseNodeId,0).filter(x=>VIDEO_TYPES.has(x.type));
   if(highres.length!==1) throw Error("高清线路必须恰好连接一个视频保存终点");
-  const clean=pause.inputs?.find(x=>x.name==="low_clean");
-  const links=new Map((workflow.links||[]).map(l=>[id(l[0]),l]));
-  const upstream=links.get(id(clean?.link));
-  let decoded=[];
-  if(upstream) {
-    decoded=outgoing(workflow,api,upstream[1],upstream[2],{stopAtPause:true})
-      .filter(x=>x.type==="TerryDirectorLowresReviewSave");
-  }
-  if(decoded.length>1)throw Error("预演解码线路只能连接一个 TerryDirector 视频保存节点");
+  const decoded=detectLowresReviewSink(workflow,api,pauseNodeId);
   return {pause_target:id(pauseNodeId),highres_target:highres[0].id,
-    decoded_target:decoded[0]?.id || null};
+    decoded_target:decoded?.id || null};
 }
 export function applyPreviewInputs(api, overrides) {
   for(const patch of overrides||[]) {
@@ -233,8 +276,26 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
   const target = mode==="continue" ? template.highres_target : template.pause_target;
   const targets=[id(target)];
   if(mode==="pause" && previewType==="decoded"){
-    if(!template.decoded_target)throw Error("工作流未连接预演 VAE 解码视频保存节点");
-    targets.push(id(template.decoded_target));
+    // Old configs saved before automatic recognition have decoded_target=null.
+    // Resolve the real low-clean VAE branch again rather than forcing reimport.
+    const targetId=id(template.decoded_target ||
+      detectLowresReviewSink(template.workflow,api,template.pause_node_id)?.id||"");
+    const node=apiNode(api,targetId);
+    if(!node)throw Error("未识别到低清 VAE 审片线路，请检查视频和音频是否连接同一个低清保存节点");
+    if(node.class_type==="VHS_VideoCombine"){
+      // Keep the input video+audio decoders, but replace only the queued
+      // output node. No duplicate VHS encode, changes to the canvas, or
+      // output-directory copies; checkpoint ID enforces execution order.
+      const images=node.inputs?.images,audio=node.inputs?.audio;
+      if(!isLink(images)||!isLink(audio))
+        throw Error("低清 VHS 视频节点缺少已连接的 VAE 画面或音频");
+      api[targetId]={class_type:"TerryDirectorLowresReviewSave",inputs:{
+        checkpoint_id:[id(template.pause_node_id),1],images,audio,
+      },_meta:{title:"TerryDirector 自动低清 VAE 审片保存"}};
+    }else if(node.class_type!=="TerryDirectorLowresReviewSave"){
+      throw Error("无法自动归档的低清 VAE 保存节点类型："+node.class_type);
+    }
+    targets.push(targetId);
   }
   if(targets.some(nodeId=>!apiNode(api,nodeId)))
     throw Error("所需预演输出不存在，请重新配置");
