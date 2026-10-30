@@ -1854,7 +1854,7 @@ function batchAssetPoolMarkup() {
   const item=batch.batches[batch.activeIndex],selectedRef=item?.references?.[batch.selectedRefIndex];
   return matches.map(file=>{
     const selected=!!item?.references?.some(ref=>ref.path===file.path);
-    const compatible=!selectedRef||selectedRef.kind===file.kind;
+    const compatible=!selectedRef||(selectedRef.kind||"image")===file.kind;
     const title=compatible?file.name:file.name+" · 类型不匹配";
     return assetCard(file.path,title,
       'data-action="batch-assign-asset" data-path="'+esc(file.path)+'"'+
