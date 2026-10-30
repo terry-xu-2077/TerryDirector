@@ -43,8 +43,9 @@ def test_highres_route_still_runs_through_pause_checkpoint():
     highres = nodes[18]
     assert links[highres["inputs"][0]["link"]][1:5] == [13, 0, 18, 0]
     assert nodes[22]["type"] == "SaveVideo"
-    # Sampling preview retains taeh3 as a pass-through model preview override.
-    kj = next(n for n in graph["nodes"] if n["type"] == "ModelPreviewOverrideKJ")
-    assert kj.get("widgets_values_named", {}).get("tiny_vae") == "taeh3.safetensors"
+    # The example now uses TerryDirector's independently encoded WebP preview.
+    native = next(n for n in graph["nodes"] if n["type"] == "TerryDirectorH3Preview")
+    assert native["widgets_values"][0] == "taeh3.safetensors"
     assert any(input_["name"] == "preview_frames" and input_["link"] is not None
-               for input_ in kj["inputs"])
+               for input_ in native["inputs"])
+    assert any(input_["name"] == "preview_tiny_vae" for input_ in pause["inputs"])
