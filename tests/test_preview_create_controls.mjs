@@ -7,8 +7,14 @@ const mod=await import("data:text/javascript;base64,"+Buffer.from(parameters).to
 assert.doesNotThrow(()=>new Function(source.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 const begin=source.indexOf("function createMarkup() {"),end=source.indexOf("function installCreatePromptEditor()",begin);
 assert.ok(begin>=0 && end>begin);
+const resolutionStart=source.indexOf("function resolutionOptionsMarkup(");
+const resolutionEnd=source.indexOf("function createMarkup()",resolutionStart);
+const resolutionOptionsMarkup=new Function("PREVIEW_RESOLUTION_OPTIONS","taskResolutionInfo","esc",
+  source.slice(resolutionStart,resolutionEnd)+";return resolutionOptionsMarkup;")(
+    mod.PREVIEW_RESOLUTION_OPTIONS,mod.taskResolutionInfo,x=>String(x));
 const create=new Function("state","esc","assetCard","PREVIEW_RESOLUTION_OPTIONS",
-  "taskAspectRatio","taskResolutionInfo",source.slice(begin,end)+";return createMarkup;");
+  "taskAspectRatio","taskResolutionInfo","resolutionOptionsMarkup",
+  source.slice(begin,end)+";return createMarkup;");
 assert.equal(mod.PREVIEW_RESOLUTION_DEFAULT,2.0);
 const normalizeSettingsStart=source.indexOf("function normalizePreviewSettings(value) {");
 const normalizeSettingsEnd=source.indexOf("function readPreviewSettings()",normalizeSettingsStart);
@@ -33,7 +39,7 @@ const state={template:{workflow_name:"预演工作流"},tasks:[],
  sampling_preview_enabled:false,vae_decode_enabled:true,decoded_target:"100",
  duration_seconds:15,highres_megapixels:2.0,assets:[],api_prompt:{}}};
 const html=()=>create(state,x=>String(x),()=>"<asset/>",mod.PREVIEW_RESOLUTION_OPTIONS,
- mod.taskAspectRatio,mod.taskResolutionInfo)();
+ mod.taskAspectRatio,mod.taskResolutionInfo,resolutionOptionsMarkup)();
 let rendered=html();
 assert.ok(rendered.indexOf("新建任务名称")<rendered.indexOf("基于"));
 assert.ok(rendered.includes('id="tdm-new-task-name"'));
@@ -94,7 +100,7 @@ assert.ok(source.includes('<span class="tdm-noimg"><span>＋</span><small>添加
 assert.ok(source.includes(".tdm-create .tdm-asset .tdm-media-icon small{font-size:12px"));
 assert.ok(source.includes(".tdm-create .tdm-asset .tdm-noimg small{font-size:12px"));
 assert.ok(source.includes("tdm-asset-index"));
-assert.ok(source.includes("tdm-asset-status"));
+assert.ok(!source.includes("tdm-asset-status"));
 assert.ok(source.includes("data-kind=") && source.includes("esc(kind)"));
 assert.ok(source.includes('.tdm-create .tdm-asset[data-kind="image"]{border-color:'));
 assert.ok(source.includes('.tdm-create .tdm-asset[data-kind="video"]{border-color:'));
@@ -190,6 +196,22 @@ assert.match(mediaHelpers.mediaPreviewMarkup({kind:"image",path:"person.png"}),/
 assert.match(mediaHelpers.mediaPreviewMarkup({kind:"video",path:"motion.mp4"},{controls:true}),/<video[^>]+controls/);
 assert.match(mediaHelpers.mediaPreviewMarkup({kind:"audio",path:"dialogue.wav"},{controls:true}),/<audio[^>]+controls/);
 assert.match(mediaHelpers.mediaPreviewMarkup({kind:"audio",path:""},{kind:"audio"}),/未绑定音频/);
+const cardStart=source.indexOf("function assetCard(");
+const cardEnd=source.indexOf("function resolutionOptionsMarkup(",cardStart);
+const renderCard=new Function("state","esc","mediaPreviewMarkup","assetUrl",
+  source.slice(cardStart,cardEnd)+";return assetCard;")(
+    {inputFiles:[]},value=>String(value),mediaHelpers.mediaPreviewMarkup,path=>path);
+for(const [kind,title,expected] of [
+  ["image","参考图片 1 · 未设置","图片 1"],
+  ["video","参考视频 2 · 未设置","视频 2"],
+  ["audio","独立音频 3 · 未设置","音频 3"],
+]){
+ const markup=renderCard("",title,'data-action="replace"',false,kind,false,true);
+ assert.ok(markup.includes('class="tdm-asset-index">'+expected+'</span>'));
+ assert.ok(!markup.includes("未设置"));
+ assert.ok(!markup.includes("参考"));
+ assert.ok(!markup.includes("独立"));
+}
 const slotStart=source.indexOf("function batchSlotPreviewMarkup(ref) {");
 const slotEnd=source.indexOf("function batchReferenceLabel(item,index)",slotStart);
 assert.ok(slotStart>=0&&slotEnd>slotStart);
@@ -223,7 +245,7 @@ const assetCardStub=(path,title,attrs,selected,kind,incompatible)=>
 const batchMarkupState={
   batchImport:{
     text:"# 批量提示词",importText:"",importFileName:"",importError:"",promptImportOpen:false,
-    template:{decoded_target:"100"},highres_megapixels:2.0,
+    template:{decoded_target:"100",api_prompt:{},workflow:{}},highres_megapixels:2.0,
     sampling_preview_enabled:false,vae_decode_enabled:true,
     preamble:"全局风格规则",includePreamble:true,
     batches:[{name:"批次01｜场景一",body:"导演说明\n分镜",duration_seconds:15,
@@ -232,9 +254,13 @@ const batchMarkupState={
   },
   inputFiles:[{kind:"image",name:"特瑞.jpg",path:"特瑞.jpg"}],
 };
-const batchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup","PREVIEW_RESOLUTION_OPTIONS",
-  source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};")(
-    batchMarkupState,value=>String(value),assetCardStub,kindLabel,preview,[0.4,0.6,0.8,1,1.2,1.5,2,3,4]);
+const createBatchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup","PREVIEW_RESOLUTION_OPTIONS",
+  "taskAspectRatio","taskResolutionInfo","resolutionOptionsMarkup",
+  source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};");
+const batchRendererArgs=[value=>String(value),assetCardStub,kindLabel,preview,[0.4,0.6,0.8,1,1.2,1.5,2,3,4],
+  mod.taskAspectRatio,mod.taskResolutionInfo,resolutionOptionsMarkup];
+const batchRenderers=createBatchRenderers(batchMarkupState,...batchRendererArgs);
+const renderBatch=batchState=>createBatchRenderers(batchState,...batchRendererArgs).batchImportMarkup;
 const batchMarkup=batchRenderers.batchImportMarkup();
 assert.ok(batchMarkup.includes("批量添加任务"));
 assert.ok(batchMarkup.includes("当前批次提示词原文"));
@@ -285,13 +311,25 @@ assert.ok(source.includes("function applyBatchPromptImport() {"));
 assert.match(source,/action === "batch-import-text"[\s\S]*?state\.batchImport\.importText=control\.value/);
 assert.match(source,/const editor=state\.root\?\.querySelector\('\[data-action="batch-import-text"\]'\)/);
 assert.ok(source.includes("if(batch.promptImportOpen)return batchPromptImportMarkup();"));
-assert.ok(source.includes('if (action === "batch-import-cancel") {\n      state.batchImport=null;'));
+assert.ok(source.includes('if (action === "batch-import-cancel") {\n      state.batchImport=null;state.assetPicker=null;'));
 assert.ok(batchMarkup.includes("批次01｜场景一"));
-assert.ok(batchMarkup.includes('data-action="batch-upload-assets"'));
+assert.ok(batchMarkup.includes('data-action="batch-open-assets"'));
+assert.ok(!batchMarkup.includes('data-action="batch-upload-assets"'));
+assert.ok(!batchMarkup.includes('data-action="batch-search"'));
+assert.ok(!batchMarkup.includes("资产池"));
+assert.ok(batchMarkup.includes("2.00 MP 高清 ("));
+assert.ok(batchMarkup.includes("0.50 MP 低清 ("));
+assert.ok(batchMarkup.includes("1888×1088"));
+assert.ok(batchMarkup.includes("960×544"));
 assert.ok(batchMarkup.includes('data-action="batch-submit"'));
 assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任务"));
 assert.ok(batchMarkup.includes('class="tdm-batch-ref-card active"'));
 assert.ok(source.includes("function syncBatchAssetToOtherBatches(index) {"));
+assert.ok(source.includes('action === "batch-open-assets"'));
+assert.ok(source.includes("batchReferenceIndex"));
+assert.ok(!source.includes("function batchAssetPoolMarkup()"));
+assert.ok(!source.includes("function renderBatchAssetPool()"));
+assert.ok(!source.includes("function assignBatchAsset(path)"));
 const refStart=source.indexOf("function batchReferenceLabel(item,index) {");
 const refEnd=source.indexOf("function batchGeneratedMarkup()",refStart);
 const renderRefs=new Function("state","esc","mediaKindLabel","batchSlotPreviewMarkup",
@@ -304,10 +342,39 @@ const compactRefs=renderRefs({
 },value=>String(value),kindLabel,()=>" <img src='preview'/>")();
 assert.ok(compactRefs.includes("图片 1"));
 assert.ok(compactRefs.includes('data-action="batch-sync-asset"'));
+assert.ok(compactRefs.includes('data-action="batch-open-assets"'));
+assert.ok(compactRefs.includes('data-kind="image"'));
+assert.ok(compactRefs.includes('class="tdm-batch-ref-index">图片 1</span>'));
 assert.ok(!compactRefs.includes("logical-reference.jpg"));
 assert.ok(!compactRefs.includes("人物说明不应显示"));
 assert.ok(!compactRefs.includes("physical-file-name.jpg"));
 
+const pickerStart=source.indexOf("function assetPickerMarkup() {");
+const pickerEnd=source.indexOf("function renderAssetChoices()",pickerStart);
+const renderPicker=new Function("state","esc","mediaKindLabel",
+  source.slice(pickerStart,pickerEnd)+";return assetPickerMarkup;")(
+    {assetPicker:{index:1,batchReferenceIndex:1,kind:"video",search:"motion"}},
+    value=>String(value),kind=>kind);
+const pickerMarkup=renderPicker();
+assert.ok(pickerMarkup.includes("选择video资产"));
+assert.ok(pickerMarkup.includes('data-action="upload-asset"'));
+assert.ok(pickerMarkup.includes('data-action="asset-search"'));
+
+const chooseStart=source.indexOf("function chooseAsset(data) {");
+const chooseEnd=source.indexOf("async function uploadAsset(index)",chooseStart);
+const chooseState={assetPicker:{index:0,batchReferenceIndex:1,kind:"video"},
+  batchImport:{activeIndex:0,selectedRefIndex:0,batches:[{references:[
+    {kind:"image",path:"old.jpg"},{kind:"video",path:"old.mp4"}
+  ]}]},inputFiles:[{kind:"video",path:"new.mp4"}]};
+let chooseRenders=0;
+const choose=new Function("state","mediaKindLabel","render",
+  source.slice(chooseStart,chooseEnd)+";return chooseAsset;")(
+    chooseState,kind=>kind,()=>chooseRenders++);
+choose({path:"new.mp4"});
+assert.equal(chooseState.batchImport.batches[0].references[1].path,"new.mp4");
+assert.equal(chooseState.batchImport.selectedRefIndex,1);
+assert.equal(chooseState.assetPicker,null);
+assert.equal(chooseRenders,1);
 const syncStart=source.indexOf("function syncBatchAssetToOtherBatches(index) {");
 const syncEnd=source.indexOf("function isBatchPromptFile(file)",syncStart);
 const syncState={batchImport:{activeIndex:0,batches:[
@@ -331,6 +398,7 @@ assert.equal(syncMessages[0].severity,"success");
 assert.ok(source.includes('action === "batch-sync-asset"'));
 const typedBatchMarkup=renderBatch({
   batchImport:{
+    template:{decoded_target:"100",api_prompt:{},workflow:{}},
     text:"多媒体",preamble:"",includePreamble:false,
     batches:[{name:"批次02",body:"多媒体正文",duration_seconds:15,references:[
       {name:"角色.jpg",kind:"image",path:"角色.jpg"},
@@ -351,9 +419,13 @@ assert.ok(typedBatchMarkup.includes('data-kind="audio"'));
 assert.ok(typedBatchMarkup.includes('data-kind="video"'));
 assert.ok(typedBatchMarkup.includes("工作流媒体槽位：图片 1 / 音频 1 / 视频 1"));
 assert.ok(typedBatchMarkup.includes("当前批次引用资产"));
-assert.match(typedBatchMarkup,/data-kind="video"[^>]+disabled title="当前槽位需要图片，不能绑定视频"/);
+assert.ok(typedBatchMarkup.includes('data-action="batch-open-assets"'));
+assert.ok(typedBatchMarkup.includes('class="tdm-batch-ref-index"'));
+assert.ok(!typedBatchMarkup.includes("batch-pool"));
+assert.ok(!typedBatchMarkup.includes("当前槽位需要图片，不能绑定视频"));
 const overflowMarkup=renderBatch({
   batchImport:{
+    template:{decoded_target:"100",api_prompt:{},workflow:{}},
     text:"多媒体",preamble:"",includePreamble:false,
     batches:[{name:"批次03",body:"正文",duration_seconds:15,references:[
       {name:"A.jpg",kind:"image",path:"A.jpg"},{name:"B.jpg",kind:"image",path:"B.jpg"},
