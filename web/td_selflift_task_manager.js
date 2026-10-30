@@ -1907,7 +1907,7 @@ function batchReferencesMarkup() {
 }
 function batchGeneratedMarkup() {
   const item=state.batchImport?.batches?.[state.batchImport.activeIndex];
-  if(!item?.generatedAssets?.length&&!item?.parseWarnings?.length&&!item?.unparsedGeneratedAssets?.length)return "";
+  if(!item?.generatedAssets?.length&&!item?.parseErrors?.length&&!item?.parseWarnings?.length&&!item?.unparsedGeneratedAssets?.length)return "";
   const assets=(item.generatedAssets||[]).map(asset=>{
     if(typeof asset==="string")return '<div class="tdm-small">待生成资产：'+esc(asset)+'</div>';
     const typeLabel=({image:"图片",audio:"音频",video:"视频"})[asset.type]||"资产";
