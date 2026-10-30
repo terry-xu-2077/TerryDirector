@@ -147,7 +147,7 @@ function parseLegacyReferences(body){
     activePrompt={name,parts:[content]};promptEntries.push(activePrompt);
    }else{
     const kind=type==="picture"?"image":type==="audio"?"audio":"video";
-    references.push({name,kind,description:content.trim()});
+    references.push({name,displayName:name,kind,description:content.trim()});
    }
    continue;
   }

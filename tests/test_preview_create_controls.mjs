@@ -103,6 +103,14 @@ assert.equal(typedConverted,[
   "特瑞继续驾驶。",
 ].join("\n"));
 
+
+const namedRefLabelStart=source.indexOf("function batchReferenceLabel(item,index) {");
+const namedRefLabelEnd=source.indexOf("function batchReferencesMarkup()",namedRefLabelStart);
+const namedRefLabel=new Function(namedRefLabelStart>=0&&namedRefLabelEnd>namedRefLabelStart?
+  source.slice(namedRefLabelStart,namedRefLabelEnd)+";return batchReferenceLabel;":"")();
+assert.equal(namedRefLabel({references:[{name:"特瑞",displayName:"特瑞",kind:"image"}]},0),"图片 1 · 特瑞");
+assert.ok(source.includes("if(generated)generated.innerHTML=batchGeneratedMarkup();"));
+
 const mediaStart=source.indexOf("function mediaKindLabel(kind) {");
 const mediaEnd=source.indexOf("function assetCard(",mediaStart);
 const mediaHelpers=new Function("state","esc","assetUrl",

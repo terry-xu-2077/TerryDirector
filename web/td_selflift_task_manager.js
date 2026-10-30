@@ -1899,7 +1899,7 @@ function batchReferenceLabel(item,index) {
   const kind=ref?.kind||"image";
   const number=(item?.references||[]).slice(0,index+1)
     .filter(entry=>(entry.kind||"image")===kind).length;
-  return mediaKindLabel(kind)+" "+number;
+  return mediaKindLabel(kind)+" "+number+(ref?.displayName?" · "+ref.displayName:"");
 }
 function batchReferencesMarkup() {
   const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
@@ -2050,7 +2050,7 @@ function renderBatchImportViews() {
   const refs=state.root?.querySelector(".tdm-batch-ref-list");
   if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);wireMediaFallback(refs);}
   const generated=state.root?.querySelector(".tdm-batch-generated");
-  if(generated)generated.textContent=batchGeneratedMarkup();
+  if(generated)generated.innerHTML=batchGeneratedMarkup();
   const preambleControl=state.root?.querySelector('[data-action="batch-preamble"]');
   if(preambleControl)preambleControl.disabled=!batch.preamble||batch.saving;
   const preambleLabel=state.root?.querySelector("[data-batch-preamble-label]");
