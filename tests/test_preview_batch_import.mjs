@@ -107,4 +107,85 @@ assert.deepEqual(media.batches[0].references.map(x=>[x.name,x.kind]),[
   ["角色.jpg","image"],["环境.webp","image"],["对白.wav","audio"],
   ["环境声.mp3","audio"],["运动参考.mp4","video"],["镜头参考.mov","video"]
 ]);
+
+// TBPM: structured Markdown sections, typed references, and detachable generated assets.
+const tbpmSource = [
+  "# 全局规则",
+  "全片采用高预算实拍真人科幻剧集质感。",
+  "",
+  "## 批次01｜菌伞峡道·赛车穿越机（建议15秒）",
+  "",
+  "### 导演说明",
+  "第一镜以赛车式穿越机的自由飞行把观众拉进这颗星球。",
+  "",
+  "### 引用资产",
+  "- 图片：\x6000_特瑞_Terry.jpg\x60 — 特瑞面容、沙棕旧披覆外层及深灰工装",
+  "- 图片：\x60蚂蚱载具.jpg\x60 — 866单座及机械腿结构",
+  "- 音频：\x60荒原风声.wav\x60 — 荒原环境风声",
+  "- 视频：\x60FPV参考.mp4\x60 — 赛车式穿越机运动参考",
+  "",
+  "### 待生成资产",
+  "#### 图片｜干燥菌伞峡道母图｜2.39:1",
+  "",
+  "提示词：",
+  "",
+  "\x60\x60\x60text",
+  "请生成一张2.39:1横幅的真人写实电影空间母图。",
+  "蓝灰岩壁与大型紫灰蘑菇状植物交错遮蔽道路。",
+  "\x60\x60\x60",
+  "",
+  "#### 图片｜旧施工路细节图｜16:9",
+  "提示词：",
+  "\x60\x60\x60text",
+  "生成一张旧施工路的电影级实景参考图。",
+  "\x60\x60\x60",
+  "",
+  "### 连续性状态",
+  "866在干燥旧路行驶，四轮完好，翼膜收拢。",
+  "",
+  "### 视觉基调",
+  "空气流动、衣料物理、摄影机运动等要求。",
+  "",
+  "### 色彩光影",
+  "岩壁阴影蓝灰，出口日间泛白亮光逐渐放大。",
+  "",
+  "### 分镜脚本",
+  "镜头01｜[0–9s] 景别 / 焦段：18mm。",
+  "镜头02｜[9–15s] 驾驶POV。",
+  "",
+  "### 声音设计",
+  "保留荒原风噪和机械关节细响。"
+].join("\n");
+const tbpm = parsePreviewBatches(tbpmSource);
+assert.equal(tbpm.preamble,"全片采用高预算实拍真人科幻剧集质感。");
+assert.equal(tbpm.batches.length,1);
+assert.equal(tbpm.batches[0].duration_seconds,15);
+assert.deepEqual(tbpm.batches[0].references.map(x=>[x.name,x.kind]),[
+  ["00_特瑞_Terry.jpg","image"],["蚂蚱载具.jpg","image"],
+  ["荒原风声.wav","audio"],["FPV参考.mp4","video"]
+]);
+assert.equal(tbpm.batches[0].generatedAssets.length,2);
+assert.equal(tbpm.batches[0].generatedAssets[0].name,"干燥菌伞峡道母图");
+assert.equal(tbpm.batches[0].generatedAssets[0].aspect_ratio,"2.39:1");
+assert.match(tbpm.batches[0].generatedAssets[0].prompt,/蓝灰岩壁/);
+assert.equal(tbpm.batches[0].generatedAssets[1].aspect_ratio,"16:9");
+assert.doesNotMatch(tbpm.batches[0].body,/干燥菌伞峡道母图|请生成一张2\.39:1|旧施工路的电影级实景/);
+assert.match(tbpm.batches[0].body,/\[导演说明\]/);
+assert.match(tbpm.batches[0].body,/\[连续性状态\]/);
+assert.match(tbpm.batches[0].body,/\[分镜脚本\]/);
+assert.match(tbpm.batches[0].body,/声音设计/);
+assert.match(tbpm.batches[0].sourceBody,/待生成资产/);
+assert.deepEqual(tbpm.batches[0].parseErrors,[]);
+assert.deepEqual(tbpm.batches[0].parseWarnings,[]);
+
+const malformedTbpm = parsePreviewBatches([
+  "## 批次02｜错误引用格式",
+  "### 引用资产",
+  "- 图片：角色.jpg — 缺少反引号",
+  "### 分镜脚本",
+  "镜头。",
+].join("\n"));
+assert.equal(malformedTbpm.batches[0].references.length,0);
+assert.equal(malformedTbpm.batches[0].parseErrors.length,1);
+
 console.log("Preview Stage Markdown + plain-text + H3 media batch parser: PASS");

@@ -281,3 +281,7 @@ assert.ok(rendered.includes('aria-label="生成随机种子"'));
 assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));
 assert.ok(source.includes('state.createDraft.highres_megapixels=Number(control.value);'));
 console.log("Preview Stage inline create controls, duration/resolution and preview selection: PASS");
+
+assert.ok(source.includes("asset.prompt||\"尚未提供生成提示词\""));
+assert.ok(source.includes("current?.sourceBody||current?.body||\"\""));
+assert.ok(source.includes("item.parseErrors||[]"));
