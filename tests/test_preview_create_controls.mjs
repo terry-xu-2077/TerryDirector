@@ -85,6 +85,7 @@ const typedConverted = promptWithTokens([
   "<Picture 菌伞峡道>：正常图片描述",
   "<Prompt 菌伞峡道>：请生成菌伞峡道母图。",
   "这里是多行生图提示词的续行。",
+  "road.jpg：这是提示词里的文件名描述，不能被当成媒体引用。",
   "[连续性状态]",
   "特瑞继续驾驶。",
 ].join("\n"),[
@@ -102,6 +103,7 @@ assert.equal(typedConverted,[
   "[连续性状态]",
   "特瑞继续驾驶。",
 ].join("\n"));
+assert.ok(!typedConverted.includes("road.jpg"));
 
 
 const namedRefLabelStart=source.indexOf("function batchReferenceLabel(item,index) {");
