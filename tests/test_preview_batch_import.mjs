@@ -129,7 +129,6 @@ const typed = parsePreviewBatches([
   "<Prompt 菌伞峡道>：请生成一张2.39:1横幅的干燥菌伞峡道电影母图。",
   "两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。",
   "road.jpg：这只是生图提示词中的文件名描述，不是媒体引用。",
-  "road.jpg：这只是生图提示词中的文件名描述，不是媒体引用。",
   "[连续性状态]",
   "866四轮完好，翼膜收拢。",
 ].join("\n"));
@@ -145,7 +144,7 @@ assert.deepEqual(typed.batches[0].references.map(ref => [
 assert.deepEqual(typed.batches[0].generatedAssets, [{
   type: "image",
   name: "菌伞峡道",
-  prompt: "请生成一张2.39:1横幅的干燥菌伞峡道电影母图。\n两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。",
+  prompt: "请生成一张2.39:1横幅的干燥菌伞峡道电影母图。\n两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。\nroad.jpg：这只是生图提示词中的文件名描述，不是媒体引用。",
 }]);
 assert.match(typed.batches[0].body, /<Prompt 菌伞峡道>/);
 assert.deepEqual(typed.batches[0].parseErrors, []);
