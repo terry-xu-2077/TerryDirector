@@ -1078,6 +1078,13 @@ function bindControls() {
         if(!ids.has(state.focused))state.focused=visible[0]?.id||null;
         render();
       });
+    } else if (action === "batch-import-text") {
+      control.addEventListener("input",()=>{
+        if(!state.batchImport)return;
+        state.batchImport.importText=control.value;
+        state.batchImport.importError="";
+        state.root?.querySelector(".tdm-batch-import-error")?.remove();
+      });
     } else if (action === "batch-text") {
       control.addEventListener("input",()=>{
         if(!state.batchImport)return;
@@ -2096,7 +2103,9 @@ function browseBatchPromptFile() {
 }
 function applyBatchPromptImport() {
   const batch=state.batchImport;if(!batch)return;
-  const candidate=String(batch.importText||"");
+  const editor=state.root?.querySelector('[data-action="batch-import-text"]');
+  const candidate=String(editor ? editor.value : batch.importText || "");
+  batch.importText=candidate;
   const parsed=parsePreviewBatches(candidate);
   if(!parsed.batches.length){
     batch.importError=parsed.error||"未识别到有效批次，请检查提示词标题格式";

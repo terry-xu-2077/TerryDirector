@@ -22,6 +22,18 @@ assert.match(parsed.batches[0].body,/镜头01｜/);
 assert.deepEqual(parsed.batches[0].references.map(x=>x.name),["00_特瑞_Terry.jpg","蚂蚱载具.jpg"]);
 assert.deepEqual(parsed.batches[0].generatedAssets,["干燥菌伞峡道母图"]);
 assert.deepEqual(parsed.batches[1].references.map(x=>x.name),["开场遗迹.jpg"]);
+const screenshotFormat=parsePreviewBatches([
+  "# 《异星边境》S1E01《异星拾荒》｜Seedance 2.5 全集视频提示词",
+  "> 全集规则与制作说明。",
+  "---",
+  "## 批次01｜场景一-菌伞峡道／赛车穿越机（建议15秒）",
+  "[导演说明]",
+  "第一镜以赛车式穿越机的自由飞行把观众拉进这颗星球。",
+  "[分镜脚本]",
+  "镜头01｜[0–15s] 贴地飞行。",
+].join("\n"));
+assert.equal(screenshotFormat.batches.length,1);
+assert.equal(screenshotFormat.batches[0].name,"批次01｜场景一-菌伞峡道／赛车穿越机");
 const repeated=parsePreviewBatches("## 批次03｜重复引用\n[全局参考]\n- a.jpg：正面\n- a.jpg：侧面\n[分镜脚本]\n镜头");
 assert.equal(repeated.batches[0].references.length,2);
 assert.equal(parsePreviewBatches("没有批次标题").batches.length,0);

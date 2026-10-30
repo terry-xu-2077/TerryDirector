@@ -154,6 +154,8 @@ assert.ok(importMarkup.includes("已读取：test.md"));
 assert.ok(source.includes('addEventListener("dragover"'));
 assert.ok(source.includes('addEventListener("drop"'));
 assert.ok(source.includes("function applyBatchPromptImport() {"));
+assert.match(source,/action === "batch-import-text"[\s\S]*?state\.batchImport\.importText=control\.value/);
+assert.match(source,/const editor=state\.root\?\.querySelector\('\[data-action="batch-import-text"\]'\)/);
 assert.ok(source.includes("if(batch.promptImportOpen)return batchPromptImportMarkup();"));
 assert.ok(source.includes('if (action === "batch-import-cancel") {\n      state.batchImport=null;'));
 assert.ok(batchMarkup.includes("批次01｜场景一"));
