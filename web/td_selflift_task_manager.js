@@ -1981,7 +1981,7 @@ function batchImportMarkup() {
   const stats=batchImportStats(),current=batch.batches[batch.activeIndex],disabled=stats.valid===0||batch.saving;
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
-    '<div class="tdm-small">识别批次标题与 [全局参考] 媒体标签；其他正文保持原样</div></div>'+
+    '<div class="tdm-small">识别 [全局参考] 中的 &lt;Picture 名字&gt; / &lt;Audio 名字&gt; / &lt;Video 名字&gt; / &lt;Prompt 名字&gt;</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>当前批次提示词原文</strong>'+
@@ -2019,7 +2019,7 @@ function batchPromptImportMarkup() {
   return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
-    '<div class="tdm-small">识别「批次NN｜名称」标题和 [全局参考] 媒体标签</div></div>'+
+    '<div class="tdm-small">识别「批次NN｜名称」和 [全局参考] 中的四种媒体 / 提示词标签</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
     '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
     'placeholder="在这里粘贴完整提示词；每个「批次01｜名称」标题单独占一行">'+esc(batch.importText||"")+'</textarea>'+

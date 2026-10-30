@@ -183,6 +183,10 @@ const batchRenderers=new Function("state","esc","assetCard","mediaKindLabel","me
 const batchMarkup=batchRenderers.batchImportMarkup();
 assert.ok(batchMarkup.includes("批量添加任务"));
 assert.ok(batchMarkup.includes("当前批次提示词原文"));
+assert.ok(batchMarkup.includes("&lt;Picture 名字&gt;"));
+assert.ok(batchMarkup.includes("&lt;Audio 名字&gt;"));
+assert.ok(batchMarkup.includes("&lt;Video 名字&gt;"));
+assert.ok(batchMarkup.includes("&lt;Prompt 名字&gt;"));
 assert.ok(batchMarkup.includes("导演说明\n分镜"));
 assert.ok(!batchMarkup.includes("# 批量提示词"));
 assert.ok(!batchMarkup.includes('data-action="batch-text"'));
