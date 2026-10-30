@@ -946,6 +946,7 @@ function render() {
   bindControls();
   bindPreviewPlaybackErrors();
   wireImageFallback(state.root.querySelector(".tdm-assets"));
+  wireImageFallback(state.root.querySelector(".tdm-batch-ref-list"));
   wireImageFallback(state.root.querySelector(".tdm-batch-pool-grid"));
   renderAssetChoices();
   installCreatePromptEditor();
@@ -1933,7 +1934,7 @@ function renderBatchImportViews() {
   const list=state.root?.querySelector(".tdm-batch-list");
   if(list){list.innerHTML=batchListMarkup();bindBatchDynamicActions(list);}
   const refs=state.root?.querySelector(".tdm-batch-ref-list");
-  if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);}
+  if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);wireImageFallback(refs);}
   const generated=state.root?.querySelector(".tdm-batch-generated");
   if(generated)generated.textContent=batchGeneratedMarkup();
   const preambleControl=state.root?.querySelector('[data-action="batch-preamble"]');
@@ -1956,19 +1957,23 @@ function renderBatchImportViews() {
 function syncBatchAssetMatches() {
   const batch=state.batchImport;if(!batch)return;
   for(const item of batch.batches)for(const ref of item.references){
-    if(!ref.path||!state.inputFiles.some(file=>file.kind==="image"&&file.path===ref.path))
-      ref.path=findBatchPoolAsset(ref.name);
+    const kind=ref.kind||"image";
+    if(!ref.path||!state.inputFiles.some(file=>file.kind===kind&&file.path===ref.path))
+      ref.path=findBatchPoolAsset(ref.name,kind);
   }
 }
 function assignBatchAsset(path) {
   const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
   if(!item?.references?.length)return;
+  const file=state.inputFiles.find(entry=>entry.path===path);
+  if(!file)throw Error("资产池中找不到所选文件，请刷新后重试");
   let index=batch.selectedRefIndex;
-  if(index<0||index>=item.references.length){
-    index=item.references.findIndex(ref=>!ref.path);if(index<0)index=0;
+  if(index<0||index>=item.references.length||item.references[index].kind!==file.kind){
+    index=item.references.findIndex(ref=>(ref.kind||"image")===file.kind&&!ref.path);
+    if(index<0)throw Error("当前批次没有待绑定的"+mediaKindLabel(file.kind)+"槽位");
   }
   item.references[index].path=path;
-  const next=item.references.findIndex((ref,i)=>i>index&&!ref.path);
+  const next=item.references.findIndex((ref,i)=>i>index&&!ref.path&&(ref.kind||"image")===file.kind);
   batch.selectedRefIndex=next>=0?next:index;
 }
 async function importBatchPrompt() {
@@ -1986,7 +1991,7 @@ async function uploadBatchAssets() {
   const batch=state.batchImport;if(!batch||batch.uploading)return;
   const item=batch.batches[batch.activeIndex],selectedRef=batch.selectedRefIndex;
   const picker=document.createElement("input");
-  picker.type="file";picker.accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff";picker.multiple=true;
+  picker.type="file";picker.accept=".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg,.mp4,.mov,.mkv,.webm,.avi,.m4v,.wav,.mp3,.flac,.ogg,.m4a,.aac,.opus";picker.multiple=true;
   picker.onchange=async()=>{
     const chosen=Array.from(picker.files||[]);if(!chosen.length)return;
     batch.uploading=true;render();
@@ -1996,7 +2001,7 @@ async function uploadBatchAssets() {
         const form=new FormData();form.append("file",file,file.name);
         const response=await api.fetchApi("/terrydirector/api/upload",{method:"POST",body:form});
         const data=await response.json();
-        if(!response.ok||!data.path||data.kind!=="image")throw Error(data.error||"图片上传失败");
+        if(!response.ok||!data.path||!["image","audio","video"].includes(data.kind))throw Error(data.error||"不支持的媒体文件");
         uploaded.push({originalName:file.name,data});
       }catch(error){failures.push(file.name+"："+(error?.message||error));}
     }
@@ -2004,12 +2009,16 @@ async function uploadBatchAssets() {
     for(const entry of uploaded){
       let matched=false;
       for(const target of batch.batches)for(const ref of target.references){
-        if(ref.name.toLowerCase()===entry.originalName.toLowerCase()){ref.path=entry.data.path;matched=true;}
+        if((ref.kind||"image")===entry.data.kind&&ref.name.toLowerCase()===entry.originalName.toLowerCase()){
+          ref.path=entry.data.path;matched=true;
+        }
       }
-      if(!matched&&chosen.length===1&&item?.references?.[selectedRef])item.references[selectedRef].path=entry.data.path;
+      if(!matched&&chosen.length===1&&item?.references?.[selectedRef]&&
+         (item.references[selectedRef].kind||"image")===entry.data.kind)
+        item.references[selectedRef].path=entry.data.path;
     }
     batch.uploading=false;render();
-    toast("已上传 "+uploaded.length+" 张图片"+(failures.length?"；失败 "+failures.length+" 项":""),
+    toast("已上传 "+uploaded.length+" 个媒体文件"+(failures.length?"；失败 "+failures.length+" 项":""),
       failures.length?"warning":"success");
   };
   picker.click();
@@ -2018,9 +2027,9 @@ async function createBatchTasks() {
   const batch=state.batchImport;if(!batch||batch.saving)return;
   const ready=batch.batches.filter(item=>batchTaskStatus(item).valid);
   const skipped=batch.batches.length-ready.length;
-  if(!ready.length)throw Error("没有可创建的批次。请先补齐引用图片，或调整工作流的 LoadImage 输入数量。");
+  if(!ready.length)throw Error("没有可创建的批次。请先补齐引用媒体，或调整工作流对应类型的媒体输入槽位数量。");
   if(skipped&&!window.confirm("共有 "+batch.batches.length+" 个批次，其中 "+skipped+
-    " 个批次缺少图片或超出工作流输入槽位。本次只创建其余 "+ready.length+" 个有效批次，继续吗？"))return;
+    " 个批次缺少媒体或超出对应类型的工作流输入槽位。本次只创建其余 "+ready.length+" 个有效批次，继续吗？"))return;
   batch.saving=true;render();
   let created=0,firstId=null;const failures=[];
   for(const item of ready){
@@ -2028,7 +2037,16 @@ async function createBatchTasks() {
       const draft=randomizeNewTaskSeed(buildDraft(batch.template,[],item.name,"sampling"));
       draft.prompt=[batch.includePreamble?batch.preamble:"",item.body].filter(Boolean).join("\n\n");
       draft.duration_seconds=Number(item.duration_seconds||PREVIEW_DURATION_DEFAULT);
-      item.references.forEach((ref,index)=>{if(draft.assets[index])draft.assets[index].value=ref.path;});
+      const slotsByKind=new Map();
+      for(const slot of draft.assets){
+        const kind=slot.kind||"image";
+        if(!slotsByKind.has(kind))slotsByKind.set(kind,[]);
+        slotsByKind.get(kind).push(slot);
+      }
+      for(const ref of item.references){
+        const slot=slotsByKind.get(ref.kind||"image")?.shift();
+        if(slot)slot.value=ref.path;
+      }
       const payload=draftSnapshot(draft);
       const saved=await request("/drafts",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload)});
