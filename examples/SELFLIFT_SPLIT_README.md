@@ -17,7 +17,7 @@
 - **CLIP**：`qwen3vl_32b_minimax_h3_int8_convrot.safetensors`
 - **视频 VAE**：`minimax_h3_video_vae_int8_convrot.safetensors`
 - **音频 VAE**：`minimax_h3_audio_vae_fp32.safetensors`
-- **分辨率**：16:9；只输入高清目标 0.8 MP，自动推导低清 0.2 MP；预览低清 608×352、高清 1216×672；124 帧
+- **分辨率**：16:9；示例工作流 JSON 原始高清目标 0.8 MP，自动推导低清 0.2 MP（低清 608×352、高清 1216×672）；预演台新建任务默认覆盖为 2.0 MP（低清 0.5 MP，实际 960×544 → 1888×1088），并按当前宽高比重新计算实际尺寸；124 帧
 - **采样**：`BasicScheduler(simple, 8)` → `H3SigmaRefiner(extra_steps=1, start_at_sigma=0.7, end_at_sigma=0, spacing=cosine)` → `SplitSigmas(step=6)`
 - **Seed / CFG**：固定 seed=8，CFG=1。低清原生采样器和检查点节点共用同一个 SeedNode，避免两处种子不一致。
 - **高清转场**：`minimax_h3_latent_upscaler_3d_conv_v1_bf16.safetensors`
