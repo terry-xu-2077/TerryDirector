@@ -1916,9 +1916,11 @@ function batchGeneratedMarkup() {
       '<pre>'+esc(asset.prompt||"尚未提供生成提示词")+'</pre></details>';
   }).join("");
   const warnings=(item.parseWarnings||[]).map(warning=>'<div class="tdm-small tdm-batch-generated-warning">'+esc(warning)+'</div>').join("");
+  const errors=(item.parseErrors||[]).map(error=>'<div class="tdm-small tdm-batch-generated-warning">引用格式错误：'+esc(error)+'</div>').join("");
   const unparsed=(item.unparsedGeneratedAssets||[]).map(value=>
     '<details><summary>未识别的待生成资产内容</summary><pre>'+esc(value)+'</pre></details>').join("");
-  return '<div class="tdm-small">待生成资产（不会占用媒体输入槽位）</div>'+assets+warnings+unparsed;
+  return (item.generatedAssets?.length?'<div class="tdm-small">待生成资产（不会占用媒体输入槽位）</div>':"")+
+    assets+errors+warnings+unparsed;
 }
 function batchAssetPoolMarkup() {
   const batch=state.batchImport;if(!batch)return "";
@@ -2005,7 +2007,7 @@ function batchPromptImportMarkup() {
   return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
-    '<div class="tdm-small">粘贴提示词原文，或拖入 Markdown / 纯文本文件（.md、.txt）</div></div>'+
+    '<div class="tdm-small">支持 TBPM Markdown：全局规则、批次、引用资产、待生成资产</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
     '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
     'placeholder="在这里粘贴完整提示词；每个「批次01｜名称」标题单独占一行">'+esc(batch.importText||"")+'</textarea>'+
