@@ -708,6 +708,22 @@
             "name": "name"
           },
           "link": null
+        },
+        {
+          "name": "preview_tiny_vae",
+          "type": "COMBO",
+          "widget": {
+            "name": "preview_tiny_vae"
+          },
+          "link": null
+        },
+        {
+          "name": "preview_duration",
+          "type": "FLOAT",
+          "widget": {
+            "name": "preview_duration"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -729,7 +745,9 @@
         6,
         8,
         1,
-        "示例-宇航员盐湖镜头-对齐爱屋1020"
+        "示例-宇航员盐湖镜头-对齐爱屋1020",
+        "taeh3.safetensors",
+        15
       ]
     },
     {
