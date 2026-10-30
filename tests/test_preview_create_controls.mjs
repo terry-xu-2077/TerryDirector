@@ -112,8 +112,43 @@ assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任
 assert.ok(batchMarkup.includes('class="tdm-batch-ref-card active"'));
 assert.ok(batchMarkup.includes('data-action="batch-sync-asset"'));
 assert.ok(batchMarkup.includes("图片 1"));
-assert.ok(!batchMarkup.includes("特瑞.jpg") || batchMarkup.includes("特瑞.jpg"));
 assert.ok(source.includes("function syncBatchAssetToOtherBatches(index) {"));
+const refStart=source.indexOf("function batchReferenceLabel(item,index) {");
+const refEnd=source.indexOf("function batchGeneratedMarkup()",refStart);
+const renderRefs=new Function("state","esc","mediaKindLabel","batchSlotPreviewMarkup",
+  source.slice(refStart,refEnd)+";return batchReferencesMarkup;");
+const compactRefs=renderRefs({
+  batchImport:{activeIndex:0,selectedRefIndex:0,batches:[{references:[
+    {name:"logical-reference.jpg",description:"人物说明不应显示",kind:"image",path:"physical-file-name.jpg"}
+  ]}]},
+  inputFiles:[{kind:"image",path:"physical-file-name.jpg",name:"physical-file-name.jpg"}],
+},value=>String(value),kindLabel,()=>" <img src='preview'/>")();
+assert.ok(compactRefs.includes("图片 1"));
+assert.ok(compactRefs.includes('data-action="batch-sync-asset"'));
+assert.ok(!compactRefs.includes("logical-reference.jpg"));
+assert.ok(!compactRefs.includes("人物说明不应显示"));
+assert.ok(!compactRefs.includes("physical-file-name.jpg"));
+
+const syncStart=source.indexOf("function syncBatchAssetToOtherBatches(index) {");
+const syncEnd=source.indexOf("async function importBatchPrompt()",syncStart);
+const syncState={batchImport:{activeIndex:0,batches:[
+  {references:[{name:"蚂蚱载具.jpg",kind:"image",path:"/input/new-vehicle.png"}]},
+  {references:[
+    {name:"蚂蚱载具.jpg",kind:"image",path:"/input/old-vehicle.jpg"},
+    {name:"蚂蚱载具.jpg",kind:"audio",path:"/input/sound.wav"},
+    {name:"荒星地貌.jpg",kind:"image",path:"/input/landscape.jpg"},
+  ]},
+  {references:[{name:"蚂蚱载具.jpg",kind:"image",path:""}]},
+]}};
+const syncMessages=[];
+const sync=new Function("state","toast",source.slice(syncStart,syncEnd)+";return syncBatchAssetToOtherBatches;")(
+  syncState,(message,severity)=>syncMessages.push({message,severity}));
+sync(0);
+assert.equal(syncState.batchImport.batches[1].references[0].path,"/input/new-vehicle.png");
+assert.equal(syncState.batchImport.batches[1].references[1].path,"/input/sound.wav");
+assert.equal(syncState.batchImport.batches[1].references[2].path,"/input/landscape.jpg");
+assert.equal(syncState.batchImport.batches[2].references[0].path,"/input/new-vehicle.png");
+assert.equal(syncMessages[0].severity,"success");
 assert.ok(source.includes('action === "batch-sync-asset"'));
 const typedBatchMarkup=renderBatch({
   batchImport:{
