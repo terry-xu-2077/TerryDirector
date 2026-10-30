@@ -326,6 +326,10 @@ assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任
 assert.ok(batchMarkup.includes('class="tdm-batch-ref-card active"'));
 assert.ok(source.includes("function syncBatchAssetToOtherBatches(index) {"));
 assert.ok(source.includes('action === "batch-open-assets"'));
+assert.ok(source.includes('action === "batch-remove-asset"'));
+assert.ok(source.includes("function removeBatchAsset(index) {"));
+assert.ok(source.includes(".tdm-batch-ref-sync{width:100%;margin-top:auto;"));
+assert.ok(source.includes('control.classList.contains("tdm-batch-ref-preview")'));
 assert.ok(source.includes("batchReferenceIndex"));
 assert.ok(!source.includes("function batchAssetPoolMarkup()"));
 assert.ok(!source.includes("function renderBatchAssetPool()"));
@@ -343,6 +347,9 @@ const compactRefs=renderRefs({
 assert.ok(compactRefs.includes("图片 1"));
 assert.ok(compactRefs.includes('data-action="batch-sync-asset"'));
 assert.ok(compactRefs.includes('data-action="batch-open-assets"'));
+assert.ok(compactRefs.includes('class="tdm-batch-ref-preview" data-action="batch-open-assets"'));
+assert.ok(compactRefs.includes('data-action="batch-remove-asset"'));
+assert.ok(compactRefs.includes('aria-label="移除当前绑定"'));
 assert.ok(compactRefs.includes('data-kind="image"'));
 assert.ok(compactRefs.includes('class="tdm-batch-ref-index">图片 1</span>'));
 assert.ok(!compactRefs.includes("logical-reference.jpg"));
@@ -375,6 +382,40 @@ assert.equal(chooseState.batchImport.batches[0].references[1].path,"new.mp4");
 assert.equal(chooseState.batchImport.selectedRefIndex,1);
 assert.equal(chooseState.assetPicker,null);
 assert.equal(chooseRenders,1);
+const removeStart=source.indexOf("function removeBatchAsset(index) {");
+const removeEnd=source.indexOf("function syncBatchAssetToOtherBatches(index) {",removeStart);
+const removeState={batchImport:{activeIndex:0,selectedRefIndex:0,batches:[{references:[
+  {kind:"image",path:"/input/terry.jpg",name:"特瑞.jpg"},
+  {kind:"video",path:"",name:"动作.mp4"}
+]}]}};
+const remove=new Function("state",source.slice(removeStart,removeEnd)+";return removeBatchAsset;")(removeState);
+assert.equal(remove(0),true);
+assert.equal(removeState.batchImport.batches[0].references[0].path,"");
+assert.equal(removeState.batchImport.batches[0].references[0].name,"特瑞.jpg");
+assert.equal(removeState.batchImport.selectedRefIndex,0);
+assert.equal(remove(1),false);
+assert.equal(removeState.batchImport.batches[0].references.length,2);
+const bindStart=source.indexOf("function bindBatchDynamicActions(holder) {");
+const bindEnd=source.indexOf("function renderBatchImportViews()",bindStart);
+const actionCalls=[],handlers={};
+const previewControl={dataset:{action:"batch-open-assets",index:"0"},
+  classList:{contains:name=>name==="tdm-batch-ref-preview"},
+  addEventListener:(name,handler)=>{handlers[name]=handler;}};
+const bindActions=new Function("handleAction",
+  source.slice(bindStart,bindEnd)+";return bindBatchDynamicActions;")(
+    (action,data)=>actionCalls.push({action,index:data.index}));
+bindActions({querySelectorAll:()=>[previewControl]});
+const event=(target,extra={})=>({target,preventDefault(){},stopPropagation(){},...extra});
+handlers.click(event({closest:()=>null}));
+handlers.click(event({closest:()=>({tagName:"VIDEO",clientHeight:116})},{offsetY:20}));
+handlers.click(event({closest:()=>({tagName:"VIDEO",clientHeight:116})},{offsetY:100}));
+handlers.click(event({closest:()=>({tagName:"AUDIO",clientHeight:38})},{offsetY:12}));
+handlers.keydown(event({closest:()=>null},{key:"Enter"}));
+assert.equal(actionCalls.length,3);
+assert.deepEqual(actionCalls.map(item=>item.action),[
+  "batch-open-assets","batch-open-assets","batch-open-assets"
+]);
+assert.deepEqual(actionCalls.map(item=>item.index),["0","0","0"]);
 const syncStart=source.indexOf("function syncBatchAssetToOtherBatches(index) {");
 const syncEnd=source.indexOf("function isBatchPromptFile(file)",syncStart);
 const syncState={batchImport:{activeIndex:0,batches:[

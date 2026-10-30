@@ -448,8 +448,12 @@ function styles() {
 .tdm-batch-ref-replace{flex:none;padding:3px 8px;border:1px solid #3f4855;border-radius:5px;background:#222831;color:#aeb9c8;font-size:10px;cursor:pointer}
 .tdm-batch-ref-replace:hover{border-color:#75869b;color:#e1e8f2}
 .tdm-batch-ref-replace:disabled{opacity:.45;cursor:not-allowed}
-.tdm-batch-ref-sync{width:100%;padding:5px 7px;font-size:10px;line-height:1.35}
-.tdm-batch-ref-preview{display:flex;align-items:center;justify-content:center;min-height:74px;max-height:116px;overflow:hidden;border-radius:5px;background:#11151b}
+.tdm-batch-ref-remove{flex:none;width:25px;height:25px;padding:0;border:1px solid #4a3c40;border-radius:5px;background:#262126;color:#c98b91;font-size:17px;line-height:1;cursor:pointer}
+.tdm-batch-ref-remove:hover{border-color:#a65d66;background:#382328;color:#ffd6d9}
+.tdm-batch-ref-remove:disabled{opacity:.35;cursor:not-allowed}
+.tdm-batch-ref-sync{width:100%;margin-top:auto;padding:5px 7px;font-size:10px;line-height:1.35}
+.tdm-batch-ref-preview{display:flex;align-items:center;justify-content:center;min-height:74px;max-height:116px;overflow:hidden;border-radius:5px;background:#11151b;cursor:pointer}
+.tdm-batch-ref-preview:hover{outline:1px solid #657b96;outline-offset:-1px}
 .tdm-batch-ref-preview img,.tdm-batch-ref-preview video{display:block;width:100%;max-height:116px;object-fit:contain;background:#11151b}
 .tdm-batch-ref-preview audio{display:block;width:100%;height:38px}
 .tdm-batch-ref-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
@@ -1287,6 +1291,10 @@ async function handleAction(action, data) {
       state.batchImport.selectedRefIndex=index;
       state.assetPicker={index,batchReferenceIndex:index,kind:ref.kind||"image",search:""};
       return render();
+    }
+    if (action === "batch-remove-asset") {
+      removeBatchAsset(Number(data.index));
+      return renderBatchImportViews();
     }
     if (action === "batch-sync-asset") {
       syncBatchAssetToOtherBatches(Number(data.index));
@@ -2170,9 +2178,12 @@ function batchReferencesMarkup() {
       '<button type="button" class="tdm-batch-ref-select" data-action="batch-select-ref" data-index="'+index+'">'+
       '<span class="tdm-batch-ref-index">'+esc(primary)+'</span>'+
       (secondary?'<span class="tdm-batch-ref-name">'+esc(secondary)+'</span>':"")+'</button>'+
+      '<button type="button" class="tdm-batch-ref-remove" data-action="batch-remove-asset" data-index="'+index+'" '+
+      (!ref.path||batch.saving?'disabled ':'')+'title="移除当前绑定" aria-label="移除当前绑定">×</button>'+
       '<button type="button" class="tdm-batch-ref-replace" data-action="batch-open-assets" data-index="'+index+'" '+
       (batch.saving?'disabled ':'')+'title="替换当前引用资产">替换</button></div>'+
-      '<div class="tdm-batch-ref-preview">'+batchSlotPreviewMarkup(ref)+'</div>'+
+      '<div class="tdm-batch-ref-preview" data-action="batch-open-assets" data-index="'+index+'" role="button" tabindex="0" '+
+      'title="点击选择或替换资产">'+batchSlotPreviewMarkup(ref)+'</div>'+
       '<button type="button" class="tdm-btn tdm-batch-ref-sync" data-action="batch-sync-asset" data-index="'+index+'" '+
       (file?'':'disabled ')+'title="将相同媒体类型、相同引用名称的绑定同步到其他批次">同步到其他批次</button>'+
       '</article>';
@@ -2287,8 +2298,24 @@ function batchPromptImportMarkup() {
 function bindBatchDynamicActions(holder) {
   holder?.querySelectorAll("[data-action]").forEach(control=>{
     control.addEventListener("click",event=>{
+      if(control.classList.contains("tdm-batch-ref-preview")){
+        const media=event.target?.closest?.("video,audio");
+        if(media){
+          const isVideo=String(media.tagName||"").toLowerCase()==="video";
+          const frameClick=isVideo&&Number.isFinite(event.offsetY)&&
+            event.offsetY<Math.max(0,Number(media.clientHeight||0)-34);
+          if(!frameClick)return;
+        }
+      }
       event.preventDefault();event.stopPropagation();void handleAction(control.dataset.action,control.dataset);
     });
+    if(control.classList.contains("tdm-batch-ref-preview")){
+      control.addEventListener("keydown",event=>{
+        if(event.target?.closest?.("video,audio"))return;
+        if(event.key!=="Enter"&&event.key!==" ")return;
+        event.preventDefault();event.stopPropagation();void handleAction(control.dataset.action,control.dataset);
+      });
+    }
   });
 }
 function renderBatchImportViews() {
@@ -2314,6 +2341,14 @@ function renderBatchImportViews() {
   const submit=state.root?.querySelector('[data-action="batch-submit"]');
   if(submit){const stats=batchImportStats();submit.disabled=stats.valid===0||batch.saving;
     submit.textContent=batch.saving?"正在创建…":"创建 "+stats.valid+" 个任务";}
+}
+function removeBatchAsset(index) {
+  const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
+  const ref=item?.references?.[index];
+  if(!ref||!ref.path)return false;
+  ref.path="";
+  batch.selectedRefIndex=index;
+  return true;
 }
 function syncBatchAssetToOtherBatches(index) {
   const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
