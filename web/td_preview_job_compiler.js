@@ -258,6 +258,27 @@ export function applyPreviewInputs(api, overrides) {
 }
 
 const H3_MEDIA_INPUT=/^(?:ref_images\.ref_image_\d+|ref_videos\.ref_video_\d+|ref_video_audios\.ref_video_audio_\d+|ref_audios\.ref_audio_\d+)$/;
+const H3_MEDIA_INPUT_LIMITS=[
+  [/^ref_images\.ref_image_(\d+)$/,9],
+  [/^ref_videos\.ref_video_(\d+)$/,3],
+  [/^ref_video_audios\.ref_video_audio_(\d+)$/,3],
+  [/^ref_audios\.ref_audio_(\d+)$/,3],
+];
+function isSupportedH3MediaInput(name) {
+  for(const [pattern,limit] of H3_MEDIA_INPUT_LIMITS){
+    const match=String(name||"").match(pattern);
+    if(match)return Number(match[1])<limit;
+  }
+  return false;
+}
+function h3SupportedMediaInputNames() {
+  return [
+    ...Array.from({length:9},(_,i)=>"ref_images.ref_image_"+i),
+    ...Array.from({length:3},(_,i)=>"ref_videos.ref_video_"+i),
+    ...Array.from({length:3},(_,i)=>"ref_video_audios.ref_video_audio_"+i),
+    ...Array.from({length:3},(_,i)=>"ref_audios.ref_audio_"+i),
+  ];
+}
 export function applyH3MediaAssets(api,h3NodeId,patches=[],workflow={},knownInputs=[]) {
   const h3=apiNode(api,h3NodeId);
   if(!h3 || h3.class_type!=="MiniMaxH3ReferenceToVideo")
@@ -265,6 +286,7 @@ export function applyH3MediaAssets(api,h3NodeId,patches=[],workflow={},knownInpu
   h3.inputs ||= {};
   const uiNode=(workflow?.nodes||[]).find(node=>id(node.id)===id(h3NodeId));
   const available=new Set([
+    ...h3SupportedMediaInputNames(),
     ...(knownInputs||[]).map(String),
     ...(uiNode?.inputs||[]).map(input=>String(input?.name||"")),
     ...Object.keys(h3.inputs||{}),
@@ -284,7 +306,7 @@ export function applyH3MediaAssets(api,h3NodeId,patches=[],workflow={},knownInpu
     if(id(patch.node_id)!==id(h3NodeId))
       throw Error("H3 参考资产映射到了其他节点："+patch.node_id);
     const name=String(patch.widget_name||"");
-    if(!H3_MEDIA_INPUT.test(name) || name.startsWith("ref_video_audios."))
+    if(!isSupportedH3MediaInput(name) || name.startsWith("ref_video_audios."))
       throw Error("H3 参考资产输入端无效："+name);
     const expected=name.startsWith("ref_images.")?"image":
       name.startsWith("ref_videos.")?"video":"audio";

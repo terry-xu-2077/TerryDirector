@@ -79,10 +79,15 @@ const h3Slots=matchingAssets({nodes:[
  ]},
  {id:1,type:"LoadImage",widgets_values_named:{image:"ignored.png"}},
 ]},6);
-assert.deepEqual(h3Slots.map(x=>x.widget_name),[
- "ref_images.ref_image_0","ref_videos.ref_video_0","ref_audios.ref_audio_0"
-]);
-assert.deepEqual(h3Slots.map(x=>x.kind),["image","video","audio"]);
+assert.equal(h3Slots.length,15);
+assert.deepEqual(h3Slots.filter(x=>x.kind==="image").map(x=>x.widget_name),
+ Array.from({length:9},(_,i)=>"ref_images.ref_image_"+i));
+assert.deepEqual(h3Slots.filter(x=>x.kind==="video").map(x=>x.widget_name),
+ Array.from({length:3},(_,i)=>"ref_videos.ref_video_"+i));
+assert.deepEqual(h3Slots.filter(x=>x.kind==="audio").map(x=>x.widget_name),
+ Array.from({length:3},(_,i)=>"ref_audios.ref_audio_"+i));
+assert.deepEqual(h3Slots.map(x=>x.kind),
+ [...Array(9).fill("image"),...Array(3).fill("video"),...Array(3).fill("audio")]);
 assert.ok(h3Slots.every(x=>x.h3_media&&x.value===""));
 assert.ok(h3Slots.every(x=>x.node_id===6));
 const promptTokenStart=source.indexOf("function batchPromptWithMediaTokens(body,references) {");

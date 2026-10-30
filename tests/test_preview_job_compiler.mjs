@@ -105,8 +105,10 @@ const h3Api={
 const h3Template={
  schema:2,workflow:h3Workflow,api_prompt:h3Api,h3_node_id:6,
  h3_media_bindings:[
-  "ref_images.ref_image_0","ref_videos.ref_video_0",
-  "ref_video_audios.ref_video_audio_0","ref_audios.ref_audio_0",
+  ...Array.from({length:9},(_,i)=>"ref_images.ref_image_"+i),
+  ...Array.from({length:3},(_,i)=>"ref_videos.ref_video_"+i),
+  ...Array.from({length:3},(_,i)=>"ref_video_audios.ref_video_audio_"+i),
+  ...Array.from({length:3},(_,i)=>"ref_audios.ref_audio_"+i),
  ],
  pause_node_id:13,pause_target:"13",highres_target:"22",decoded_target:null,
 };
@@ -115,6 +117,9 @@ const h3Job=buildPreviewJob(h3Template,[
  {node_id:6,widget_name:"ref_images.ref_image_0",value:"new-reference.png",role:"h3_media",kind:"image"},
  {node_id:6,widget_name:"ref_videos.ref_video_0",value:"motion.mp4",role:"h3_media",kind:"video"},
  {node_id:6,widget_name:"ref_audios.ref_audio_0",value:"voice.wav",role:"h3_media",kind:"audio"},
+ {node_id:6,widget_name:"ref_images.ref_image_8",value:"ninth-reference.png",role:"h3_media",kind:"image"},
+ {node_id:6,widget_name:"ref_videos.ref_video_2",value:"third-motion.mp4",role:"h3_media",kind:"video"},
+ {node_id:6,widget_name:"ref_audios.ref_audio_2",value:"third-voice.wav",role:"h3_media",kind:"audio"},
 ],"pause","",{sampling_preview_enabled:true,vae_decode_enabled:false});
 const h3Inputs=h3Job.output["6"].inputs;
 assert.equal(h3Inputs.prompt,"new H3 prompt");
@@ -122,6 +127,10 @@ assert.deepEqual(h3Inputs["ref_images.ref_image_0"],["64",0]);
 assert.deepEqual(h3Inputs["ref_videos.ref_video_0"],["66",0]);
 assert.deepEqual(h3Inputs["ref_video_audios.ref_video_audio_0"],["66",1]);
 assert.deepEqual(h3Inputs["ref_audios.ref_audio_0"],["67",0]);
+assert.deepEqual(h3Inputs["ref_images.ref_image_8"],["68",0]);
+assert.deepEqual(h3Inputs["ref_videos.ref_video_2"],["70",0]);
+assert.deepEqual(h3Inputs["ref_video_audios.ref_video_audio_2"],["70",1]);
+assert.deepEqual(h3Inputs["ref_audios.ref_audio_2"],["71",0]);
 assert.equal(h3Job.output["64"].class_type,"LoadImage");
 assert.equal(h3Job.output["64"].inputs.image,"new-reference.png");
 assert.equal(h3Job.output["65"].class_type,"LoadVideo");
@@ -133,4 +142,7 @@ assert.equal(h3Job.output["67"].inputs.audio,"voice.wav");
 assert.deepEqual(h3Api["6"].inputs["ref_images.ref_image_0"],["32",0]);
 assert.deepEqual(h3Api["6"].inputs.prompt,["63",0]);
 assert.deepEqual(h3Job.targets,["13"]);
+assert.throws(()=>buildPreviewJob(h3Template,[
+ {node_id:6,widget_name:"ref_images.ref_image_9",value:"too-many.png",role:"h3_media",kind:"image"},
+],"pause","",{sampling_preview_enabled:true,vae_decode_enabled:false}),/H3 参考资产输入端无效/);
 console.log("Preview Stage seed/sampler cap, independent preview options, H3 direct bindings and immutable compilation: PASS");

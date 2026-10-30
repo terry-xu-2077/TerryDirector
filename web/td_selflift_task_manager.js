@@ -1440,17 +1440,25 @@ function h3MediaInputKind(name) {
   if(/^ref_video_audios\.ref_video_audio_\d+$/.test(key))return "video_audio";
   return null;
 }
+// ComfyUI native MiniMaxH3ReferenceToVideo Autogrow schema limits.
+const H3_REFERENCE_LIMITS = Object.freeze({image:9,video:3,video_audio:3,audio:3});
 function h3MediaInputNames(node) {
-  return (node?.inputs||[]).map(input=>String(input?.name||""))
-    .filter(name=>h3MediaInputKind(name));
+  if(!node)return [];
+  return [
+    ...Array.from({length:H3_REFERENCE_LIMITS.image},(_,i)=>"ref_images.ref_image_"+i),
+    ...Array.from({length:H3_REFERENCE_LIMITS.video},(_,i)=>"ref_videos.ref_video_"+i),
+    ...Array.from({length:H3_REFERENCE_LIMITS.video_audio},(_,i)=>"ref_video_audios.ref_video_audio_"+i),
+    ...Array.from({length:H3_REFERENCE_LIMITS.audio},(_,i)=>"ref_audios.ref_audio_"+i),
+  ];
 }
 function h3MediaSlots(node) {
+  if(!node)return [];
   const order={image:0,video:1,audio:2};
-  return (node?.inputs||[]).map(input=>{
-    const name=String(input?.name||""),kind=h3MediaInputKind(name);
+  return h3MediaInputNames(node).map(name=>{
+    const kind=h3MediaInputKind(name);
     if(!kind||kind==="video_audio")return null;
     const match=name.match(/_(\d+)$/),index=Number(match?.[1]||0);
-    const title=kind==="image"?"参考图片":kind==="video"?"参考视频":"参考音频";
+    const title=kind==="image"?"参考图片":kind==="video"?"参考视频":"独立音频";
     return {node_id:node.id,widget_name:name,value:"",kind,slot_kind:kind,
       slot_index:index,label:title+" "+(index+1),h3_media:true};
   }).filter(Boolean).sort((a,b)=>order[a.kind]-order[b.kind]||a.slot_index-b.slot_index);
@@ -2032,7 +2040,7 @@ function createMarkup() {
     '</section>' +
     '<aside class="tdm-create-right">' +
     '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
-    '<div class="tdm-assets">' + draft.assets.map((asset,i) =>
+    (draft.h3_node_id?'<div class="tdm-small">H3 上限：图片 9 · 视频 3 · 独立音频 3；视频音轨自动配对</div>':'') +'<div class="tdm-assets">' + draft.assets.map((asset,i) =>
       assetCard(asset.value, (asset.label||mediaKindLabel(asset.kind)+" "+(i+1))+" · "+(asset.value||"未设置"),
         'data-action="open-assets" data-index="' + i + '"',false,asset.kind||"image")).join("") + '</div>' +
     (draft.assets.length ? '' : '<div class="tdm-small">'+
