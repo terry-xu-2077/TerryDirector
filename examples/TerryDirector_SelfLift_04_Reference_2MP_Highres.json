@@ -140,7 +140,7 @@
     },
     {
       "id": 5,
-      "type": "ModelPreviewOverrideKJ",
+      "type": "TerryDirectorH3Preview",
       "pos": [
         475,
         70
@@ -159,13 +159,35 @@
           "link": 1
         },
         {
-          "name": "vae",
-          "type": "VAE",
+          "name": "tiny_vae",
+          "type": "COMBO",
+          "widget": {
+            "name": "tiny_vae"
+          },
           "link": null
         },
         {
-          "name": "audio_vae",
-          "type": "VAE",
+          "name": "preview_frames",
+          "type": "INT",
+          "widget": {
+            "name": "preview_frames"
+          },
+          "link": null
+        },
+        {
+          "name": "preview_fps",
+          "type": "INT",
+          "widget": {
+            "name": "preview_fps"
+          },
+          "link": null
+        },
+        {
+          "name": "max_resolution",
+          "type": "INT",
+          "widget": {
+            "name": "max_resolution"
+          },
           "link": null
         }
       ],
@@ -183,14 +205,12 @@
         "Node name for S&R": "ModelPreviewOverrideKJ"
       },
       "widgets_values": [
-        1024,
-        80,
-        true,
-        1,
-        12,
         "taeh3.safetensors",
-        ""
-      ]
+        6,
+        12,
+        768
+      ],
+      "title": "TerryDirector H3 采样预览"
     },
     {
       "id": 6,
@@ -708,6 +728,22 @@
             "name": "cfg"
           },
           "link": null
+        },
+        {
+          "name": "preview_tiny_vae",
+          "type": "COMBO",
+          "widget": {
+            "name": "preview_tiny_vae"
+          },
+          "link": null
+        },
+        {
+          "name": "preview_duration",
+          "type": "FLOAT",
+          "widget": {
+            "name": "preview_duration"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -733,7 +769,9 @@
         "参考-0.5MP低清转2.0MP高清",
         6,
         8,
-        1
+        1,
+        "taeh3.safetensors",
+        15
       ]
     },
     {

@@ -229,7 +229,7 @@
     },
     {
       "id": 5,
-      "type": "ModelPreviewOverrideKJ",
+      "type": "TerryDirectorH3Preview",
       "pos": [
         471.8026149059232,
         -128.51330390273972
@@ -249,48 +249,14 @@
           "link": 1
         },
         {
-          "localized_name": "vae",
-          "name": "vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        },
-        {
-          "localized_name": "audio_vae",
-          "name": "audio_vae",
-          "shape": 7,
-          "type": "VAE",
-          "link": null
-        },
-        {
-          "localized_name": "max_resolution",
-          "name": "max_resolution",
-          "type": "INT",
+          "name": "tiny_vae",
+          "type": "COMBO",
           "widget": {
-            "name": "max_resolution"
+            "name": "tiny_vae"
           },
           "link": null
         },
         {
-          "localized_name": "jpeg_quality",
-          "name": "jpeg_quality",
-          "type": "INT",
-          "widget": {
-            "name": "jpeg_quality"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "suppress_default_preview",
-          "name": "suppress_default_preview",
-          "type": "BOOLEAN",
-          "widget": {
-            "name": "suppress_default_preview"
-          },
-          "link": null
-        },
-        {
-          "localized_name": "preview_frames",
           "name": "preview_frames",
           "type": "INT",
           "widget": {
@@ -299,7 +265,6 @@
           "link": 46
         },
         {
-          "localized_name": "preview_fps",
           "name": "preview_fps",
           "type": "INT",
           "widget": {
@@ -308,12 +273,10 @@
           "link": null
         },
         {
-          "localized_name": "tiny_vae",
-          "name": "tiny_vae",
-          "shape": 7,
-          "type": "COMBO",
+          "name": "max_resolution",
+          "type": "INT",
           "widget": {
-            "name": "tiny_vae"
+            "name": "max_resolution"
           },
           "link": null
         }
@@ -333,13 +296,10 @@
         "Node name for S&R": "ModelPreviewOverrideKJ"
       },
       "widgets_values": [
-        1024,
-        80,
-        true,
-        1,
-        12,
         "taeh3.safetensors",
-        ""
+        6,
+        12,
+        768
       ],
       "widgets_values_named": {
         "max_resolution": 1024,
@@ -349,7 +309,8 @@
         "preview_fps": 12,
         "tiny_vae": "taeh3.safetensors",
         "preview": ""
-      }
+      },
+      "title": "TerryDirector H3 采样预览"
     },
     {
       "id": 6,
@@ -1005,6 +966,22 @@
             "name": "cfg"
           },
           "link": null
+        },
+        {
+          "name": "preview_tiny_vae",
+          "type": "COMBO",
+          "widget": {
+            "name": "preview_tiny_vae"
+          },
+          "link": null
+        },
+        {
+          "name": "preview_duration",
+          "type": "FLOAT",
+          "widget": {
+            "name": "preview_duration"
+          },
+          "link": null
         }
       ],
       "outputs": [
@@ -1034,7 +1011,9 @@
         "示例-宇航员盐湖镜头-对齐爱屋1020",
         6,
         8,
-        1
+        1,
+        "taeh3.safetensors",
+        15
       ],
       "widgets_values_named": {
         "mode": "暂停并保存",
@@ -2337,7 +2316,7 @@
       29,
       1,
       5,
-      6,
+      2,
       "INT"
     ],
     [
