@@ -49,7 +49,7 @@ def _decoder(name: str):
     from comfy.taesd.taesd import Block, Clamp, conv
 
     if name not in tiny_vae_choices() or name == "none":
-        raise ValueError("请选择已安装的 taeh3.safetensors 小型预览 VAE")
+        raise ValueError("请选择已安装的采样预览 VAE（taeh3.safetensors）")
     path = folder_paths.get_full_path("vae_approx", name)
     if not path:
         raise FileNotFoundError("找不到预览 VAE：" + name)

@@ -835,10 +835,10 @@ function livePreviewMarkup(job) {
   const content=p.mime==="video/mp4"
     ? '<video class="tdm-player" data-live-video data-media-key="'+esc("live:"+url)+
       '" src="'+esc(url)+'" controls autoplay muted loop playsinline preload="auto"></video>'
-    : '<img class="tdm-player" src="'+esc(url)+'" alt="采样预览 实时采样预览">';
+    : '<img class="tdm-player" src="'+esc(url)+'" alt="采样预览">';
   const step=Number(p.step)||1,total=Number(p.total)||0;
   return '<div class="tdm-live-media">'+content+
-    '<div class="tdm-live-caption">采样预览 实时采样 · 第 '+step+
+    '<div class="tdm-live-caption">采样预览 · 第 '+step+
     (total?" / "+total:"")+' 步 · 仅内存预览，结束后保存</div></div>';
 }
 function updateLivePreview(job) {
@@ -879,7 +879,7 @@ function details(task) {
       ? '<div class="tdm-player tdm-detail-pending">'+
         (task.status==="high_complete" && !media.highres
           ? "高清已完成，但未找到关联的成片文件。请刷新预演台；若 ComfyUI 历史已清除，需要重新关联原始输出。"
-          : task.status==="low_running"?"正在生成低清，等待实时采样预览":
+          : task.status==="low_running"?"正在生成低清，等待采样预览":
             task.queued_stage?"已加入生成队列，等待开始执行":
             "尚未生成可用视频，请点击「开始预演」")+
         '</div>'
@@ -890,7 +890,7 @@ function details(task) {
           '" controls loop playsinline preload="auto"></video>'
         : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
   const previewDiagnostic=kind==="sampling" && !file && task.metadata?.preview_error
-    ? '<div class="tdm-warning">采样预览 预览未保存：'+esc(task.metadata.preview_error)+'</div>'
+    ? '<div class="tdm-warning">预览未保存：'+esc(task.metadata.preview_error)+'</div>'
     : kind==="sampling" && file && task.metadata?.preview_warning
       ? '<div class="tdm-warning">'+esc(task.metadata.preview_warning)+'</div>'
       : '';
@@ -1659,7 +1659,7 @@ function configMarkup() {
       lowresReview?
         '已检测：'+esc(lowresReview.type)+' #'+esc(lowresReview.id)+
         ' · 选择 VAE 解码预览时，自动保存到对应检查点 review.mp4（不改原工作流）':
-        '未检测到完整的低清 VAE 视频+音频输出；仍可使用 采样预览 采样预览')+
+        '未检测到完整的低清 VAE 视频+音频输出；仍可使用采样预览')+
     '</div></div>'+
     h3Markup+promptMarkup+
     '<div class="tdm-field"><label>种子输入（INT 输出节点）</label>'+
@@ -2905,7 +2905,7 @@ async function persistPreview(job) {
             method:"POST",headers:{"Content-Type":p.mime},body:bytes,
           });
         if(!response.ok){
-          let reason="采样预览 预览保存失败（HTTP "+response.status+"）";
+          let reason="预览保存失败（HTTP "+response.status+"）";
           try{reason=(await response.json()).error||reason;}catch{/* non-JSON error */}
           throw Error(reason);
         }
@@ -2919,12 +2919,12 @@ async function persistPreview(job) {
         return true;
       }catch(error){
         const reason=String(error?.message||error);
-        console.warn("[TerryDirector 预演台] 采样预览 候选视频解码/保存失败，步骤 "+
+        console.warn("[TerryDirector 预演台] 采样预览候选视频解码/保存失败，步骤 "+
           p.step+":",reason);
         errors.push("第 "+p.step+" 步："+reason.slice(0,220));
       }
     }
-    job.previewSaveError="已尝试 "+candidates.length+" 轮 采样预览 预览（包含首轮保底）均无法解码或保存。"+
+    job.previewSaveError="已尝试 "+candidates.length+" 轮候选采样预览（包含首轮保底）均无法解码或保存。"+
       "可能是 KJNodes 的 H.264 数据损坏。"+
       (errors.length?" "+errors[0]:"");
     return false;
@@ -2963,7 +2963,7 @@ async function saveLegacyLifecycle(checkpointId,status,extras={}) {
     body:JSON.stringify(value),
   });
 }
-async function waitForFinal采样预览(job,promptId) {
+async function waitForFinalSamplingPreview(job,promptId) {
   // KJNodes encodes animated video in a bounded worker, so the final
   // kj_preview_override can arrive slightly after execution_success.
   // This promise does not block ComfyUI's queue or the next running task.
@@ -2979,7 +2979,7 @@ async function savePreviewDiagnostic(job,error) {
   if(!job?.checkpointId)return;
   const reason=String(error?.message||error).slice(0,1200);
   console.error("[TerryDirector 预演台] 检查点",job.checkpointId,"采样预览保存失败：",reason);
-  toast("低清检查点已保存，但 采样预览 预览缺失："+reason,"error");
+  toast("低清检查点已保存，但采样预览缺失："+reason,"error");
   try {
     const url="/tasks/"+encodeURIComponent(job.checkpointId)+"/metadata";
     const previous=await request(url).catch(()=>({}));
@@ -3130,7 +3130,7 @@ function bindEvents() {
         // KJ sends the final animated frame asynchronously. Drain only this
         // job's in-memory preview; do not block newer queued tasks.
         if(event==="execution_success" && !job.nativePreviewSaved)
-          await waitForFinal采样预览(job,promptId);
+          await waitForFinalSamplingPreview(job,promptId);
         let saved=false;
         if(job.mode==="pause" && samplingPreviewEnabled(job)){
           saved=await persistPreview(job);
@@ -3138,7 +3138,7 @@ function bindEvents() {
             await savePreviewDiagnostic(job,
               job.previewSaveError ||
               (!job.previewReceived
-                ? "未收到 KJNodes 的有效采样预览事件；请检查 ModelPreviewOverrideKJ 是否产生视频，以及节点 ID 是否匹配"
+                ? "未收到有效采样预览事件；请检查采样预览节点是否产生视频，以及节点 ID 是否匹配"
                 : "已收到 "+job.previewReceived+" 次采样预览，但无法写入检查点"));
           }
         }

@@ -1,4 +1,4 @@
-"""Finalize KJNodes TAEH3 sampling previews as ordinary, verified MP4 files.
+"""Finalize KJNodes sampling previews as ordinary, verified MP4 files.
 
 ModelPreviewOverrideKJ uses fragmented MP4 for websocket/blob transport
 (movflags=frag_keyframe+empty_moov+default_base_moof). An ftyp signature is
@@ -34,7 +34,7 @@ def _ffmpeg() -> str:
         if candidate and os.path.isfile(candidate):
             return str(candidate)
     raise ValueError(
-        "TAEH3 MP4 预览保存需要 FFmpeg。请安装 FFmpeg / imageio-ffmpeg，"
+        "采样预览 MP4 保存需要 FFmpeg。请安装 FFmpeg / imageio-ffmpeg，"
         "或设置 FFMPEG_BINARY 环境变量。"
     )
 
@@ -70,7 +70,7 @@ def _run(cmd: list[str], *, timeout: int = 90) -> bytes:
             stderr=subprocess.PIPE, check=False, timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        raise ValueError("TAEH3 MP4 处理超时") from exc
+        raise ValueError("采样预览 MP4 处理超时") from exc
     except OSError as exc:
         raise ValueError("无法启动 FFmpeg：" + str(exc)) from exc
     if done.returncode:
@@ -127,7 +127,7 @@ def _time_scale(source: Path, target_seconds: float | None, executable: str) -> 
         raise ValueError("预演时长必须在 4–20 秒之间")
     measured = _video_duration(source, executable)
     if not measured:
-        logging.warning("[TerryDirector 预演台] 无法读取 TAEH3 预览原始时长，保留可解码视频原时长")
+        logging.warning("[TerryDirector 预演台] 无法读取采样预览原始时长，保留可解码视频原时长")
         return 1.0
     scale = target_seconds / measured
     # A few frames of rounding are normal; don't rewrite timestamps if the
@@ -135,7 +135,7 @@ def _time_scale(source: Path, target_seconds: float | None, executable: str) -> 
     if abs(measured - target_seconds) <= 0.3:
         return 1.0
     if not 0.3 <= scale <= 10:
-        logging.warning("[TerryDirector 预演台] TAEH3 预览时长缩放异常（%.3fx），保留原时长", scale)
+        logging.warning("[TerryDirector 预演台] 采样预览时长缩放异常（%.3fx），保留原时长", scale)
         return 1.0
     return scale
 
@@ -231,7 +231,7 @@ def _normalize(source: Path, destination: Path, target_seconds: float | None = N
         return
     except ValueError as recovery_error:
         raise ValueError(
-            "TAEH3 预览 MP4 无法整理为可播放视频；原始文件可能不完整。"
+            "采样预览 MP4 无法整理为可播放视频；原始文件可能不完整。"
             " 原因：" + str(last_error) +
             "；容错恢复失败：" + str(recovery_error)
         ) from recovery_error

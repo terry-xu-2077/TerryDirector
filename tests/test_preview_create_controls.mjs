@@ -10,6 +10,24 @@ assert.ok(begin>=0 && end>begin);
 const create=new Function("state","esc","assetCard","PREVIEW_RESOLUTION_OPTIONS",
   "taskAspectRatio","taskResolutionInfo",source.slice(begin,end)+";return createMarkup;");
 assert.equal(mod.PREVIEW_RESOLUTION_DEFAULT,2.0);
+const settingsStart=source.indexOf("function normalizePreviewSettings(value) {");
+const settingsEnd=source.indexOf("function readPreviewSettings()",settingsStart);
+assert.ok(settingsStart>=0&&settingsEnd>settingsStart);
+const normalizeSettings=new Function("PREVIEW_RESOLUTION_OPTIONS","PREVIEW_RESOLUTION_DEFAULT",
+  source.slice(settingsStart,settingsEnd)+";return normalizePreviewSettings;")(
+    mod.PREVIEW_RESOLUTION_OPTIONS,mod.PREVIEW_RESOLUTION_DEFAULT);
+const defaultSettings=normalizeSettings(null);
+assert.deepEqual(defaultSettings,{
+  highres_megapixels:2.0,default_preview_mode:"decoded",
+});
+const defaultOptionsStart=source.indexOf("function defaultPreviewOptions(settings) {");
+const defaultOptionsEnd=source.indexOf("function normalizeTaskPreviewOptions",defaultOptionsStart);
+assert.ok(defaultOptionsStart>=0&&defaultOptionsEnd>defaultOptionsStart);
+const defaultOptions=new Function("state",source.slice(defaultOptionsStart,defaultOptionsEnd)+
+  ";return defaultPreviewOptions;")({previewSettings:defaultSettings});
+assert.deepEqual(defaultOptions(),{
+  sampling_preview_enabled:false,vae_decode_enabled:true,
+});
 const state={template:{workflow_name:"预演工作流"},tasks:[],
  createDraft:{source:"template",name:"S1_E1",seed:"42",prompt:"",previewType:"decoded",
  sampling_preview_enabled:false,vae_decode_enabled:true,decoded_target:"100",
@@ -28,7 +46,7 @@ assert.ok(rendered.includes('id="tdm-new-task-duration"') || rendered.includes('
 assert.ok(rendered.includes('min="4" max="20" step="1"'));
 assert.ok(rendered.includes('value="15"'));
 assert.ok(rendered.includes('data-action="task-resolution"'));
-assert.ok(rendered.includes("0.20 MP 低清"));
+assert.ok(rendered.includes("0.50 MP 低清"));
 assert.ok(rendered.indexOf("预览输出")>rendered.indexOf("高清分辨率"));
 state.createDraft.sampling_preview_enabled=true;
 state.createDraft.vae_decode_enabled=false;
@@ -219,6 +237,9 @@ assert.ok(batchMarkup.includes('data-action="batch-resolution"'));
 assert.ok(batchMarkup.includes('data-field="sampling_preview_enabled"'));
 assert.ok(batchMarkup.includes('data-field="vae_decode_enabled"'));
 assert.ok(batchMarkup.includes("对本次创建的所有批次生效"));
+assert.match(batchMarkup,/value="2" selected/);
+assert.match(batchMarkup,/data-field="vae_decode_enabled" checked/);
+assert.ok(!batchMarkup.match(/data-field="sampling_preview_enabled" checked/));
 const settingsStart=source.indexOf("function settingsMarkup() {");
 const settingsEnd=source.indexOf("function configMarkup()",settingsStart);
 assert.ok(settingsStart>=0&&settingsEnd>settingsStart);
@@ -340,6 +361,7 @@ const createBatchStart=source.indexOf("async function createBatchTasks() {");
 const createBatchEnd=source.indexOf("function installCreatePromptEditor()",createBatchStart);
 let savedBatch=null;
 const batchState={batchImport:{saving:false,includePreamble:true,preamble:"全局规则",template:{},
+  highres_megapixels:2.0,sampling_preview_enabled:false,vae_decode_enabled:true,
   batches:[{name:"多媒体批次",body:"正文",duration_seconds:15,references:[
     {name:"a.jpg",kind:"image",path:"a.jpg"},
     {name:"b.wav",kind:"audio",path:"b.wav"},
@@ -352,11 +374,12 @@ const draftWithMediaSlots=()=>({assets:[
   {kind:"image",node_id:4,widget_name:"image",value:"default-b.jpg"},
 ]});
 const createBatch=new Function("state","batchTaskStatus","randomizeNewTaskSeed","buildDraft",
-  "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window","batchPromptWithMediaTokens",
+  "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window","batchPromptWithMediaTokens","legacyPreviewType",
   source.slice(createBatchStart,createBatchEnd)+";return createBatchTasks;")(
   batchState,()=>({valid:true}),draft=>draft,draftWithMediaSlots,15,draft=>draft,
   async(_url,options)=>{savedBatch=JSON.parse(options.body);return {id:"draft_test"};},
-  async()=>{},()=>{},()=>{},{confirm:()=>true},promptWithTokens);
+  async()=>{},()=>{},()=>{},{confirm:()=>true},promptWithTokens,
+  options=>options.vae_decode_enabled&&!options.sampling_preview_enabled?"decoded":"sampling");
 batchState.batchImport.batches[0].body=[
   "[全局参考]","- a.jpg：人物","- b.wav：对白","- c.mp4：动作","[分镜脚本]","正文"
 ].join("\n");
@@ -368,6 +391,10 @@ assert.equal(savedBatch.prompt,[
 assert.deepEqual(savedBatch.assets.map(asset=>asset.value),[
   "a.jpg","b.wav","c.mp4","default-b.jpg"
 ]);
+assert.equal(savedBatch.highres_megapixels,2.0);
+assert.equal(savedBatch.sampling_preview_enabled,false);
+assert.equal(savedBatch.vae_decode_enabled,true);
+assert.equal(savedBatch.previewType,"decoded");
 assert.equal(batchState.batchImport,null);
 assert.ok(rendered.includes('aria-label="生成随机种子"'));
 assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));

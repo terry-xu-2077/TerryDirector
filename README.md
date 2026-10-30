@@ -51,7 +51,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 
 ### 分阶段 SelfLift 示例工作流
 
-推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。**左侧边栏「预演台」** 打开任务浮窗；「配置工作流」独立设置工作流模板、提示词及种子输入节点。新建预演只需填写提示词、参考资产、种子和预览类型，参考资产显示为紧凑缩略图网格；支持从已有任务继承配置、重跑、批量高清续采和批量删除。默认仅保存 TAEH3 采样预览（不运行额外 VAE 解码），用户可切换为 VAE 解码预览。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
+推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。**左侧边栏「预演台」** 打开任务浮窗；「配置工作流」独立设置工作流模板、提示词及种子输入节点。新建预演只需填写提示词、参考资产、种子和预览输出；采样预览与 VAE 解码为独立开关，参考资产显示为紧凑缩略图网格；支持从已有任务继承配置、重跑、批量高清续采和批量删除。高清分辨率默认 2.0 MP、默认启用 VAE 解码；采样预览可独立开关，也可与 VAE 解码同时启用。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
 
 ## 怎样连接
 

@@ -1,5 +1,5 @@
 // Run: node tests/test_preview_live_taeh3.mjs
-// Browserless regression of per-step TAEH3 display and one final upload.
+// Browserless regression of per-step sampling preview display and one final upload.
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
@@ -130,4 +130,4 @@ assert.ok(!jobMetadata.includes("await persistPreview("),
 const completed=source.slice(source.indexOf('for(const event of ["execution_success"'));
 assert.ok(completed.includes("await persistPreview(job);"),
   "Execution completion must perform final upload");
-console.log("TerryDirector live TAEH3 steps, job isolation and one final disk write: PASS");
+console.log("TerryDirector live sampling preview steps, job isolation and one final disk write: PASS");
