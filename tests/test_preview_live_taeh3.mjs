@@ -32,7 +32,7 @@ const state={
     return selector==="[data-live-preview-host]"?host:null;
   }},
 };
-const uiCode=between("function previewJobMatchesTask(job,task) {","function details(task) {");
+const uiCode=between("function effectivePreviewKind(task) {","function details(task) {");
 const tools=new Function("state","URL","Blob","atob","esc","selectedTask",
   uiCode+"return {previewJobMatchesTask,updateLivePreview,livePreviewMarkup,releasePreviewBlobUrls};")
   (state,fakeURL,Blob,globalThis.atob,esc,()=>state.tasks.find(t=>t.id===state.focused));
