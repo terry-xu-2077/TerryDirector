@@ -99,6 +99,24 @@ class PreviewMP4NormalizationTests(unittest.TestCase):
             ("remux", 1.875), ("transcode", 1.875), ("remux", 1.0),
         ])
 
+    def test_strict_failure_attempts_tolerant_salvage(self):
+        output = self.folder / "recovered.mp4"
+        with patch.object(mp4, "_ffmpeg", return_value="ffmpeg"), \
+             patch.object(mp4, "_time_scale", return_value=1.0), \
+             patch.object(mp4, "_remux", side_effect=ValueError("broken NAL")), \
+             patch.object(mp4, "_transcode", side_effect=ValueError("broken NAL")), \
+             patch.object(mp4, "_recover_video") as recovered:
+            mp4._normalize(self.folder / "broken.mp4", output)
+        recovered.assert_called_once_with(self.folder / "broken.mp4", output, "ffmpeg")
+
+    def test_salvage_requires_a_strictly_decodable_output(self):
+        target = self.folder / "recovered.mp4"
+        with patch.object(mp4.subprocess, "run", return_value=subprocess.CompletedProcess(
+            args=[], returncode=1, stdout=b"", stderr=b"partial file"
+        )), patch.object(mp4, "_verify_video", side_effect=ValueError("no frames")):
+            with self.assertRaisesRegex(ValueError, "partial file"):
+                mp4._recover_video(self.folder / "broken.mp4", target, "ffmpeg")
+
     def test_repair_old_fragmented_file_without_rerun(self):
         target = self.folder / "sampling_preview.mp4"
         _generate_fragment(target)

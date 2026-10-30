@@ -571,6 +571,13 @@ function thumb(task) {
     : '<img class="tdm-thumb" src="'+url+'" alt="">';
 }
 /** Live TAEH3 media is attached to a single queued prompt, never globally. */
+function effectivePreviewKind(task) {
+  const media=task?.media||{};
+  return state.preview==="auto"
+    ? task?.status==="high_complete"?"highres":media.sampling?"sampling":
+      media.decoded?"decoded":"sampling"
+    : state.preview;
+}
 function previewJobMatchesTask(job,task) {
   if(!job || !task || job.mode!=="pause" || job.preview_type==="decoded")return false;
   return !!((job.draftId && job.draftId===task.id) ||
@@ -622,10 +629,11 @@ function livePreviewMarkup(job) {
     (total?" / "+total:"")+' 步 · 仅内存预览，结束后保存</div></div>';
 }
 function updateLivePreview(job) {
-  if(!state.root || state.root.style.display==="none" || state.preview!=="sampling")return;
-  // Do not replace a prompt editor, config dialog or an unrelated task.
+  if(!state.root || state.root.style.display==="none")return;
+  // The default "auto" tab also displays sampling media during low-res runs.
+  // Check the *visible* tab instead of requiring a manual sampling-tab click.
   const task=selectedTask();
-  if(!previewJobMatchesTask(job,task))return;
+  if(effectivePreviewKind(task)!=="sampling" || !previewJobMatchesTask(job,task))return;
   const host=state.root.querySelector("[data-live-preview-host]");
   if(!host || host.dataset.taskId!==String(task.id))return;
   const wasPlaying=host.querySelector("video[data-live-video]");
@@ -649,10 +657,7 @@ function updateLivePreview(job) {
 function details(task) {
   if(!task)return '<div class="tdm-no-media">选择左侧预演任务查看预览</div>';
   const media=task.media||{};
-  const kind=state.preview==="auto"
-    ? task.status==="high_complete"?"highres":media.sampling?"sampling":
-      media.decoded?"decoded":"sampling"
-    : state.preview;
+  const kind=effectivePreviewKind(task);
   const file=media[kind],cid=task.checkpoint_id || (task.kind==="checkpoint"?task.id:null);
   const live=kind==="sampling" ? livePreviewJobForTask(task) : null;
   const preview=live
@@ -1885,7 +1890,7 @@ async function persistPreview(job) {
         errors.push("第 "+p.step+" 步："+reason.slice(0,220));
       }
     }
-    job.previewSaveError="最近 "+candidates.length+" 轮 TAEH3 预览均无法解码或保存。"+
+    job.previewSaveError="已尝试 "+candidates.length+" 轮 TAEH3 预览（包含首轮保底）均无法解码或保存。"+
       "可能是 KJNodes 的 H.264 数据损坏。"+
       (errors.length?" "+errors[0]:"");
     return false;

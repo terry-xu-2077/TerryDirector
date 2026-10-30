@@ -22,7 +22,8 @@ assert.equal(mod.previewFallbackWarning(mod.finalSamplingCandidates(job)[1],
   "最后一轮 TAEH3 视频编码异常，已回退保存第 2 / 3 步的可播放预览");
 assert.equal(mod.rememberSamplingPreview(job,preview(1,"too-late")),false);
 for(let i=4;i<=10;i++)mod.rememberSamplingPreview(job,preview(i,"ok"+i,10));
-assert.deepEqual(mod.finalSamplingCandidates(job).map(x=>x.step),[10,9,8,7]);
+assert.deepEqual(mod.finalSamplingCandidates(job).map(x=>x.step),[10,9,8,1],
+  "Keep the first preview as fallback when all recent KJ H.264 packets are corrupt");
 assert.ok(job.previewCandidates.length<=mod.MAX_PREVIEW_CANDIDATES);
 
 const source=src.slice(src.indexOf("async function persistPreview(job) {"),
@@ -90,5 +91,5 @@ const failPersist=new Function("api","URL_BASE","atob","request","console",
  mod.finalSamplingCandidates,mod.previewFallbackWarning);
 assert.equal(await failPersist(bad),false);
 assert.equal(bad.previewSaved,undefined);
-assert.match(bad.previewSaveError,/最近 1 轮/);
+assert.match(bad.previewSaveError,/已尝试 1 轮/);
 console.log("KJ preview candidate buffer: final-step failure recovers prior decoded video: PASS");

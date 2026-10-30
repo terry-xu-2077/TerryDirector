@@ -48,6 +48,8 @@ assert.match(host.innerHTML,/第 1 \/ 4 步/);
 const first=host.innerHTML;
 tools.updateLivePreview(B);
 assert.equal(host.innerHTML,first,"A's preview must not be replaced by B");
+// The default auto tab must update exactly like the explicitly selected sampling tab.
+state.preview="auto";
 A.preview={image:payload("video-step-2"),mime:"video/mp4",step:2,total:4};
 A.previewVersion++;
 tools.updateLivePreview(A);
@@ -55,6 +57,7 @@ assert.match(host.innerHTML,/第 2 \/ 4 步/);
 assert.notEqual(host.innerHTML,first);
 assert.equal(urls.length,2,"Exactly one in-memory blob per visible iteration");
 assert.equal(revoked.length,0,"Keep previous video alive while swapping");
+state.preview="sampling";
 
 state.focused=right.id;host.dataset.taskId=right.id;
 tools.updateLivePreview(A);

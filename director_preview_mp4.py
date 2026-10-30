@@ -165,6 +165,45 @@ def _transcode(source: Path, output: Path, executable: str, scale: float = 1.0) 
     _verify_video(output, executable)
 
 
+def _recover_video(source: Path, destination: Path, executable: str) -> None:
+    """Last-resort salvage: discard broken KJ packets and re-encode intact frames.
+
+    Do not use -xerror here: its purpose is to stop on precisely the upstream
+    H.264 corruption we are attempting to recover from. The resulting MP4
+    must still pass strict *output* validation before it can be saved.
+    Audio is omitted only in this degraded fallback to isolate a broken track.
+    """
+    cmd = [
+        executable, "-hide_banner", "-nostdin", "-loglevel", "warning",
+        "-y", "-fflags", "+genpts+discardcorrupt",
+        "-err_detect", "ignore_err", "-i", str(source),
+        "-map", "0:v:0", "-an",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
+        "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        "-f", "mp4", str(destination),
+    ]
+    try:
+        done = subprocess.run(
+            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, check=False, timeout=45,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("损坏预览容错恢复超时") from exc
+    except OSError as exc:
+        raise ValueError("无法运行 FFmpeg 容错恢复：" + str(exc)) from exc
+    # FFmpeg can exit nonzero after a truncated input yet leave fully decoded,
+    # valid frames in the output. Do not discard them solely on exit status.
+    try:
+        _verify_video(destination, executable)
+    except ValueError as exc:
+        detail = done.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError("损坏预览仍无法恢复：" + (detail[-500:] or str(exc))) from exc
+    logging.warning(
+        "[TerryDirector 预演台] KJ H.264 预览源有损坏；已恢复可解码画面"
+        "（可能丢帧/无音轨），严格验证通过"
+    )
+
+
 def _normalize(source: Path, destination: Path, target_seconds: float | None = None) -> None:
     executable = _ffmpeg()
     scale = _time_scale(source, target_seconds, executable)
@@ -183,10 +222,19 @@ def _normalize(source: Path, destination: Path, target_seconds: float | None = N
             return
         except ValueError as exc:
             last_error = exc
-    raise ValueError(
-        "TAEH3 预览 MP4 无法整理为可播放视频；原始文件可能不完整。"
-        " 原因：" + str(last_error)
-    )
+    # KJNodes can emit truncated fMP4 or invalid NAL packets at later steps.
+    # Strict remux/transcode correctly reject those. Recover intact video
+    # frames as a last resort rather than leaving the preview entirely blank.
+    try:
+        destination.unlink(missing_ok=True)
+        _recover_video(source, destination, executable)
+        return
+    except ValueError as recovery_error:
+        raise ValueError(
+            "TAEH3 预览 MP4 无法整理为可播放视频；原始文件可能不完整。"
+            " 原因：" + str(last_error) +
+            "；容错恢复失败：" + str(recovery_error)
+        ) from recovery_error
 
 
 def finalize_preview_mp4(raw: bytes, folder: Path, target_seconds: float | None = None) -> Path:

@@ -27,7 +27,13 @@ export function rememberSamplingPreview(job, preview) {
   while(candidates.length>1 &&
         (candidates.length>MAX_PREVIEW_CANDIDATES ||
          size>MAX_PREVIEW_CANDIDATE_BASE64_CHARS)){
-    size-=candidates.shift().image.length;
+    // Pin the first successfully received step as an emergency fallback:
+    // later KJ H.264 packets can all be broken even when the first worked.
+    // Prefer evicting older intermediate steps; keep the newest step.
+    // Under a tight byte limit with only two clips, evict the first.
+    const index=candidates.length>2?1:0;
+    size-=candidates[index].image.length;
+    candidates.splice(index,1);
   }
   job.previewCandidates=candidates;
   job.preview=next;
