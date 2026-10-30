@@ -10,11 +10,11 @@ assert.ok(begin>=0 && end>begin);
 const create=new Function("state","esc","assetCard","PREVIEW_RESOLUTION_OPTIONS",
   "taskAspectRatio","taskResolutionInfo",source.slice(begin,end)+";return createMarkup;");
 assert.equal(mod.PREVIEW_RESOLUTION_DEFAULT,2.0);
-const settingsStart=source.indexOf("function normalizePreviewSettings(value) {");
-const settingsEnd=source.indexOf("function readPreviewSettings()",settingsStart);
-assert.ok(settingsStart>=0&&settingsEnd>settingsStart);
+const normalizeSettingsStart=source.indexOf("function normalizePreviewSettings(value) {");
+const normalizeSettingsEnd=source.indexOf("function readPreviewSettings()",normalizeSettingsStart);
+assert.ok(normalizeSettingsStart>=0&&normalizeSettingsEnd>normalizeSettingsStart);
 const normalizeSettings=new Function("PREVIEW_RESOLUTION_OPTIONS","PREVIEW_RESOLUTION_DEFAULT",
-  source.slice(settingsStart,settingsEnd)+";return normalizePreviewSettings;")(
+  source.slice(normalizeSettingsStart,normalizeSettingsEnd)+";return normalizePreviewSettings;")(
     mod.PREVIEW_RESOLUTION_OPTIONS,mod.PREVIEW_RESOLUTION_DEFAULT);
 const defaultSettings=normalizeSettings(null);
 assert.deepEqual(defaultSettings,{
