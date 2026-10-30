@@ -259,7 +259,7 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
   if(taskName){
     const safeName=sanitizeTaskFilename(taskName);
     const highresNode=apiNode(api,template.highres_target);
-    if(highresNode && VIDEO_TYPES.has(highresNode.class_type)){
+    if(highresNode && highresNode.inputs && VIDEO_TYPES.has(highresNode.class_type)){
       const prior=String(highresNode.inputs?.filename_prefix || "TerryDirector");
       const normalized=prior.replace(/\\/g,"/");
       const slash=normalized.lastIndexOf("/");
