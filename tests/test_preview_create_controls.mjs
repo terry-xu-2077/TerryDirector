@@ -110,6 +110,22 @@ const namedRefLabel=new Function("mediaKindLabel",namedRefLabelStart>=0&&namedRe
   source.slice(namedRefLabelStart,namedRefLabelEnd)+";return batchReferenceLabel;":"")(
   kind=>kind==="audio"?"音频":kind==="video"?"视频":"图片");
 assert.equal(namedRefLabel({references:[{name:"特瑞",displayName:"特瑞",kind:"image"}]},0),"图片 1 · 特瑞");
+
+// Logical media labels can resolve to a uniquely matching filename in the shared asset pool.
+const poolStart=source.indexOf("function findBatchPoolAsset(");
+const poolEnd=source.indexOf("function parseBatchImportText()",poolStart);
+assert.ok(poolStart>=0&&poolEnd>poolStart);
+const findPoolAsset=new Function("state",source.slice(poolStart,poolEnd)+";return findBatchPoolAsset;")({
+  inputFiles:[
+    {kind:"image",name:"00_特瑞_Terry.jpg",path:"input/00_特瑞_Terry.jpg"},
+    {kind:"audio",name:"特瑞音色.wav",path:"input/特瑞音色.wav"},
+    {kind:"video",name:"穿越机参考.mp4",path:"input/穿越机参考.mp4"},
+  ],
+});
+assert.equal(findPoolAsset("特瑞","image"),"input/00_特瑞_Terry.jpg");
+assert.equal(findPoolAsset("特瑞音色","audio"),"input/特瑞音色.wav");
+assert.equal(findPoolAsset("穿越机参考","video"),"input/穿越机参考.mp4");
+
 assert.ok(source.includes("if(generated)generated.innerHTML=batchGeneratedMarkup();"));
 
 const mediaStart=source.indexOf("function mediaKindLabel(kind) {");

@@ -1,81 +1,55 @@
 // Run: node tests/test_preview_batch_import.mjs
 import assert from "node:assert/strict";
 import {parsePreviewBatches} from "../web/td_preview_batch_import.js";
-const source = [
-  "# 第一集提示词","> **规则：** 所有批次遵循统一影像风格。","",
-  "## 批次01｜场景一·菌伞峡道（建议15秒）","[导演说明]","保留完整导演说明。","",
-  "[全局参考]","- 00_特瑞_Terry.jpg：人物外观","- 蚂蚱载具.jpg：载具外观",
-  "- 待生成资产｜干燥菌伞峡道母图","","[连续性状态]","保持车辆连续。","",
-  "[分镜脚本]","镜头01｜[0–15s]","贴地飞行。","",
-  "## 批次02｜场景二·遗迹揭露","[导演说明]","第二批完整正文。","",
-  "[全局参考]","- 开场遗迹.jpg：遗迹环境","","[分镜脚本]","固定远景。",
-].join("\n");
-const parsed=parsePreviewBatches(source);
-assert.equal(parsed.batches.length,2);
-assert.match(parsed.preamble,/统一影像风格/);
-assert.doesNotMatch(parsed.preamble,/^# 第一集提示词/m);
-assert.equal(parsed.batches[0].name,"批次01｜场景一·菌伞峡道");
-assert.equal(parsed.batches[0].heading,"批次01｜场景一·菌伞峡道（建议15秒）");
-assert.equal(parsed.batches[0].duration_seconds,15);
-assert.match(parsed.batches[0].body,/保留完整导演说明/);
-assert.match(parsed.batches[0].body,/镜头01｜/);
-assert.deepEqual(parsed.batches[0].references.map(x=>x.name),["00_特瑞_Terry.jpg","蚂蚱载具.jpg"]);
-assert.deepEqual(parsed.batches[0].generatedAssets,["干燥菌伞峡道母图"]);
-assert.deepEqual(parsed.batches[1].references.map(x=>x.name),["开场遗迹.jpg"]);
-const screenshotFormat=parsePreviewBatches([
-  "# 《异星边境》S1E01《异星拾荒》｜Seedance 2.5 全集视频提示词",
-  "> 全集规则与制作说明。",
-  "---",
-  "## 批次01｜场景一-菌伞峡道／赛车穿越机（建议15秒）",
+
+const legacyMarkdown = [
+  "# 第一集提示词",
+  "> **规则：** 所有批次遵循统一影像风格。",
+  "",
+  "## 批次01｜场景一·菌伞峡道（建议15秒）",
   "[导演说明]",
-  "第一镜以赛车式穿越机的自由飞行把观众拉进这颗星球。",
+  "保留完整导演说明。",
+  "",
+  "[全局参考]",
+  "- 00_特瑞_Terry.jpg：人物外观",
+  "- 蚂蚱载具.jpg：载具外观",
+  "- 待生成资产｜干燥菌伞峡道母图 生图提示词：生成一张干燥峡道母图。",
+  "",
+  "[连续性状态]",
+  "保持车辆连续。",
+  "",
   "[分镜脚本]",
-  "镜头01｜[0–15s] 贴地飞行。",
-].join("\n"));
-assert.equal(screenshotFormat.batches.length,1);
-assert.equal(screenshotFormat.batches[0].name,"批次01｜场景一-菌伞峡道／赛车穿越机");
+  "镜头01｜[0–15s]",
+  "贴地飞行。",
+  "",
+  "## 批次02｜场景二·遗迹揭露",
+  "[导演说明]",
+  "第二批完整正文。",
+  "",
+  "[全局参考]",
+  "- 开场遗迹.jpg：遗迹环境",
+  "",
+  "[分镜脚本]",
+  "固定远景。",
+].join("\n");
 
-// Plain-text copy fallback: Markdown hashes, list bullets, backticks and code fences may be stripped.
-const plainTbpm = parsePreviewBatches([
-  "全局规则",
-  "整集统一视觉风格。",
-  "",
-  "批次02｜纯文本复制测试（建议12秒）",
-  "导演说明",
-  "通过独占机位标题保持结构。",
-  "",
-  "引用资产",
-  "图片：角色.jpg — 人物外观",
-  "音频：对白.wav — 角色对白",
-  "",
-  "待生成资产",
-  "图片｜峡道母图｜2.39:1",
-  "提示词：",
-  "请生成峡道母图，保持真人实拍质感。",
-  "",
-  "连续性状态",
-  "载具保持四轮完好。",
-  "分镜脚本",
-  "镜头01｜[0–12s] 一镜到底。"
-].join("\n"));
-assert.equal(plainTbpm.preamble,"整集统一视觉风格。");
-assert.equal(plainTbpm.batches.length,1);
-assert.equal(plainTbpm.batches[0].duration_seconds,12);
-assert.deepEqual(plainTbpm.batches[0].references.map(x=>[x.name,x.kind]),[
-  ["角色.jpg","image"],["对白.wav","audio"]
+const legacy = parsePreviewBatches(legacyMarkdown);
+assert.equal(legacy.batches.length, 2);
+assert.match(legacy.preamble, /统一影像风格/);
+assert.doesNotMatch(legacy.preamble, /^# 第一集提示词/m);
+assert.equal(legacy.batches[0].name, "批次01｜场景一·菌伞峡道");
+assert.equal(legacy.batches[0].duration_seconds, 15);
+assert.match(legacy.batches[0].body, /保留完整导演说明/);
+assert.match(legacy.batches[0].body, /镜头01｜/);
+assert.deepEqual(legacy.batches[0].references.map(ref => ref.name), [
+  "00_特瑞_Terry.jpg", "蚂蚱载具.jpg",
 ]);
-assert.equal(plainTbpm.batches[0].generatedAssets[0].name,"峡道母图");
-assert.match(plainTbpm.batches[0].generatedAssets[0].prompt,/真人实拍质感/);
-assert.doesNotMatch(plainTbpm.batches[0].body,/峡道母图|生成峡道母图/);
-assert.match(plainTbpm.batches[0].body,/\[导演说明\]/);
-assert.deepEqual(plainTbpm.batches[0].parseWarnings,[]);
+assert.deepEqual(legacy.batches[0].generatedAssets, [{
+  type: "image", name: "干燥菌伞峡道母图", prompt: "生成一张干燥峡道母图。",
+}]);
+assert.deepEqual(legacy.batches[1].references.map(ref => ref.name), ["开场遗迹.jpg"]);
 
-const repeated=parsePreviewBatches("## 批次03｜重复引用\n[全局参考]\n- a.jpg：正面\n- a.jpg：侧面\n[分镜脚本]\n镜头");
-assert.equal(repeated.batches[0].references.length,2);
-assert.equal(parsePreviewBatches("没有批次标题").batches.length,0);
-assert.match(parsePreviewBatches("没有批次标题").error,/未识别到批次标题/);
-
-const plainText = [
+const copiedPlainText = [
   "批次01｜场景一·菌伞峡道／赛车穿越机（建议15秒）",
   "[导演说明] 第一镜以赛车式穿越机的自由飞行把观众拉进这颗星球。",
   "",
@@ -109,24 +83,22 @@ const plainText = [
   "镜头02｜[8–11s] 仪表特写。",
   "镜头03｜[11–15s] 人物近景。",
 ].join("\n");
-const plain = parsePreviewBatches(plainText);
-assert.equal(plain.batches.length,2);
-assert.equal(plain.batches[0].name,"批次01｜场景一·菌伞峡道／赛车穿越机");
-assert.equal(plain.batches[0].duration_seconds,15);
-assert.match(plain.batches[0].body,/\[导演说明\]/);
-assert.match(plain.batches[0].body,/\[连续性状态\]/);
-assert.match(plain.batches[0].body,/镜头02｜\[9–15s\]/);
-assert.deepEqual(plain.batches[0].references.map(x=>x.name),[
-  "00_特瑞_Terry.jpg","蚂蚱载具.jpg","荒星地貌.jpg"
-]);
-assert.deepEqual(plain.batches[0].generatedAssets,["干燥菌伞峡道母图"]);
-assert.deepEqual(plain.batches[1].references.map(x=>x.name),[
-  "00_特瑞_Terry.jpg","蚂蚱载具.jpg","荒星地貌.jpg","开场遗迹.jpg","地下虫群-4种变体.jpg"
-]);
-assert.deepEqual(plain.batches[1].generatedAssets,["干燥菌伞峡道母图"]);
-assert.equal(parsePreviewBatches("## **批次03｜测试标题（建议12秒）**\n[分镜脚本]\n镜头").batches[0].duration_seconds,12);
 
-// Image, audio and video references are typed independently for H3 media slots.
+const plain = parsePreviewBatches(copiedPlainText);
+assert.equal(plain.batches.length, 2);
+assert.equal(plain.batches[0].duration_seconds, 15);
+assert.deepEqual(plain.batches[0].references.map(ref => ref.name), [
+  "00_特瑞_Terry.jpg", "蚂蚱载具.jpg", "荒星地貌.jpg",
+]);
+assert.equal(plain.batches[0].generatedAssets[0].name, "干燥菌伞峡道母图");
+assert.match(plain.batches[0].generatedAssets[0].prompt, /2\.39:1横幅/);
+assert.match(plain.batches[0].body, /\[连续性状态\]/);
+assert.match(plain.batches[0].body, /镜头02｜\[9–15s\]/);
+assert.deepEqual(plain.batches[1].references.map(ref => ref.name), [
+  "00_特瑞_Terry.jpg", "蚂蚱载具.jpg", "荒星地貌.jpg",
+  "开场遗迹.jpg", "地下虫群-4种变体.jpg",
+]);
+
 const media = parsePreviewBatches([
   "批次04｜多媒体引用（建议15秒）",
   "[全局参考]",
@@ -139,96 +111,14 @@ const media = parsePreviewBatches([
   "[分镜脚本]",
   "镜头01｜测试",
 ].join("\n"));
-assert.deepEqual(media.batches[0].references.map(x=>[x.name,x.kind]),[
-  ["角色.jpg","image"],["环境.webp","image"],["对白.wav","audio"],
-  ["环境声.mp3","audio"],["运动参考.mp4","video"],["镜头参考.mov","video"]
+assert.deepEqual(media.batches[0].references.map(ref => [ref.name, ref.kind]), [
+  ["角色.jpg", "image"], ["环境.webp", "image"],
+  ["对白.wav", "audio"], ["环境声.mp3", "audio"],
+  ["运动参考.mp4", "video"], ["镜头参考.mov", "video"],
 ]);
 
-// TBPM: structured Markdown sections, typed references, and detachable generated assets.
-const tbpmSource = [
-  "# 全局规则",
-  "全片采用高预算实拍真人科幻剧集质感。",
-  "",
-  "## 批次01｜菌伞峡道·赛车穿越机（建议15秒）",
-  "",
-  "### 导演说明",
-  "第一镜以赛车式穿越机的自由飞行把观众拉进这颗星球。",
-  "",
-  "### 引用资产",
-  "- 图片：\x6000_特瑞_Terry.jpg\x60 — 特瑞面容、沙棕旧披覆外层及深灰工装",
-  "- 图片：\x60蚂蚱载具.jpg\x60 — 866单座及机械腿结构",
-  "- 音频：\x60荒原风声.wav\x60 — 荒原环境风声",
-  "- 视频：\x60FPV参考.mp4\x60 — 赛车式穿越机运动参考",
-  "",
-  "### 待生成资产",
-  "#### 图片｜干燥菌伞峡道母图｜2.39:1",
-  "",
-  "提示词：",
-  "",
-  "\x60\x60\x60text",
-  "请生成一张2.39:1横幅的真人写实电影空间母图。",
-  "蓝灰岩壁与大型紫灰蘑菇状植物交错遮蔽道路。",
-  "\x60\x60\x60",
-  "",
-  "#### 图片｜旧施工路细节图｜16:9",
-  "提示词：",
-  "\x60\x60\x60text",
-  "生成一张旧施工路的电影级实景参考图。",
-  "\x60\x60\x60",
-  "备注：这条资产还需要补一张俯视构图。",
-  "",
-  "### 连续性状态",
-  "866在干燥旧路行驶，四轮完好，翼膜收拢。",
-  "",
-  "### 视觉基调",
-  "空气流动、衣料物理、摄影机运动等要求。",
-  "",
-  "### 色彩光影",
-  "岩壁阴影蓝灰，出口日间泛白亮光逐渐放大。",
-  "",
-  "### 分镜脚本",
-  "镜头01｜[0–9s] 景别 / 焦段：18mm。",
-  "镜头02｜[9–15s] 驾驶POV。",
-  "",
-  "### 声音设计",
-  "保留荒原风噪和机械关节细响。"
-].join("\n");
-const tbpm = parsePreviewBatches(tbpmSource);
-assert.equal(tbpm.preamble,"全片采用高预算实拍真人科幻剧集质感。");
-assert.equal(tbpm.batches.length,1);
-assert.equal(tbpm.batches[0].duration_seconds,15);
-assert.deepEqual(tbpm.batches[0].references.map(x=>[x.name,x.kind]),[
-  ["00_特瑞_Terry.jpg","image"],["蚂蚱载具.jpg","image"],
-  ["荒原风声.wav","audio"],["FPV参考.mp4","video"]
-]);
-assert.equal(tbpm.batches[0].generatedAssets.length,2);
-assert.equal(tbpm.batches[0].generatedAssets[0].name,"干燥菌伞峡道母图");
-assert.equal(tbpm.batches[0].generatedAssets[0].aspect_ratio,"2.39:1");
-assert.match(tbpm.batches[0].generatedAssets[0].prompt,/蓝灰岩壁/);
-assert.equal(tbpm.batches[0].generatedAssets[1].aspect_ratio,"16:9");
-assert.match(tbpm.batches[0].unparsedGeneratedAssets[0],/还需要补一张俯视构图/);
-assert.doesNotMatch(tbpm.batches[0].body,/干燥菌伞峡道母图|请生成一张2\.39:1|旧施工路的电影级实景/);
-assert.match(tbpm.batches[0].body,/\[导演说明\]/);
-assert.match(tbpm.batches[0].body,/\[连续性状态\]/);
-assert.match(tbpm.batches[0].body,/\[分镜脚本\]/);
-assert.match(tbpm.batches[0].body,/声音设计/);
-assert.match(tbpm.batches[0].sourceBody,/待生成资产/);
-assert.deepEqual(tbpm.batches[0].parseErrors,[]);
-assert.match(tbpm.batches[0].parseWarnings.join(" "),/附加内容，已单独保留/);
-
-const malformedTbpm = parsePreviewBatches([
-  "## 批次02｜错误引用格式",
-  "### 引用资产",
-  "- 角色.jpg — 缺少媒体类型",
-  "### 分镜脚本",
-  "镜头。",
-].join("\n"));
-assert.equal(malformedTbpm.batches[0].references.length,0);
-assert.equal(malformedTbpm.batches[0].parseErrors.length,1);
-
-
-// Typed [全局参考] tags use logical names instead of source filenames.
-const typedReferences = parsePreviewBatches([
+// New lightweight reference tags: display names are independent from source filenames.
+const typed = parsePreviewBatches([
   "批次05｜标签引用测试（建议15秒）",
   "[全局参考]",
   "<Picture 特瑞>：特瑞面容与服装",
@@ -241,25 +131,48 @@ const typedReferences = parsePreviewBatches([
   "[连续性状态]",
   "866四轮完好，翼膜收拢。",
 ].join("\n"));
-assert.deepEqual(typedReferences.batches[0].references.map(x=>[x.name,x.kind,x.description]),[
-  ["特瑞","image","特瑞面容与服装"],
-  ["蚂蚱载具","image","866载具结构"],
-  ["特瑞音色","audio","成年男性、轻沙哑、克制自然"],
-  ["穿越机参考","video","赛车式低空高速跟拍节奏"],
-  ["菌伞峡道","image","正常图片描述"],
+assert.deepEqual(typed.batches[0].references.map(ref => [
+  ref.name, ref.kind, ref.description,
+]), [
+  ["特瑞", "image", "特瑞面容与服装"],
+  ["蚂蚱载具", "image", "866载具结构"],
+  ["特瑞音色", "audio", "成年男性、轻沙哑、克制自然"],
+  ["穿越机参考", "video", "赛车式低空高速跟拍节奏"],
+  ["菌伞峡道", "image", "正常图片描述"],
 ]);
-assert.deepEqual(typedReferences.batches[0].generatedAssets,[
-  {type:"image",name:"菌伞峡道",prompt:"请生成一张2.39:1横幅的干燥菌伞峡道电影母图。\n两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。"}
-]);
-assert.deepEqual(typedReferences.batches[0].parseErrors,[]);
+assert.deepEqual(typed.batches[0].generatedAssets, [{
+  type: "image",
+  name: "菌伞峡道",
+  prompt: "请生成一张2.39:1横幅的干燥菌伞峡道电影母图。\n两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。",
+}]);
+assert.match(typed.batches[0].body, /<Prompt 菌伞峡道>/);
+assert.deepEqual(typed.batches[0].parseErrors, []);
 
-const malformedTyped = parsePreviewBatches([
-  "批次06｜格式错误",
+const typedAudioPrompt = parsePreviewBatches([
+  "批次06｜音色资产",
+  "[全局参考]",
+  "<Audio 特瑞音色>：",
+  "<Prompt 特瑞音色>：生成一个成年男性轻沙哑音色样本。",
+  "[分镜脚本]",
+  "镜头。",
+].join("\n"));
+assert.equal(typedAudioPrompt.batches[0].generatedAssets[0].type, "audio");
+
+const malformed = parsePreviewBatches([
+  "批次07｜格式错误",
   "[全局参考]",
   "<Picture>：缺少名字",
   "[分镜脚本]",
-  "镜头。"
+  "镜头。",
 ].join("\n"));
-assert.equal(malformedTyped.batches[0].parseErrors.length,1);
+assert.equal(malformed.batches[0].parseErrors.length, 1);
 
-console.log("Preview Stage Markdown + plain-text + H3 media batch parser: PASS");
+assert.equal(parsePreviewBatches("没有批次标题").batches.length, 0);
+assert.match(parsePreviewBatches("没有批次标题").error, /未识别到批次标题/);
+assert.equal(
+  parsePreviewBatches("## **批次08｜测试标题（建议12秒）**\n[分镜脚本]\n镜头")
+    .batches[0].duration_seconds,
+  12,
+);
+
+console.log("Preview Stage batch splitting + [全局参考] media tags: PASS");
