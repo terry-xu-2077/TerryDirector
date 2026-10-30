@@ -123,6 +123,33 @@ const overflowMarkup=renderBatch({
 },value=>String(value),assetCardStub,kindLabel,preview)();
 assert.ok(overflowMarkup.includes("工作流媒体输入槽位不足：图片 2/1"));
 assert.ok(overflowMarkup.includes("1 个批次超出容量，不会创建"));
+
+const createBatchStart=source.indexOf("async function createBatchTasks() {");
+const createBatchEnd=source.indexOf("function installCreatePromptEditor()",createBatchStart);
+let savedBatch=null;
+const batchState={batchImport:{saving:false,includePreamble:true,preamble:"全局规则",template:{},
+  batches:[{name:"多媒体批次",body:"正文",duration_seconds:15,references:[
+    {name:"a.jpg",kind:"image",path:"a.jpg"},
+    {name:"b.wav",kind:"audio",path:"b.wav"},
+    {name:"c.mp4",kind:"video",path:"c.mp4"},
+  ]}]}};
+const draftWithMediaSlots=()=>({assets:[
+  {kind:"image",node_id:1,widget_name:"image",value:"default-a.jpg"},
+  {kind:"audio",node_id:2,widget_name:"audio",value:"default.wav"},
+  {kind:"video",node_id:3,widget_name:"video",value:"default.mp4"},
+  {kind:"image",node_id:4,widget_name:"image",value:"default-b.jpg"},
+]});
+const createBatch=new Function("state","batchTaskStatus","randomizeNewTaskSeed","buildDraft",
+  "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window",
+  source.slice(createBatchStart,createBatchEnd)+";return createBatchTasks;")(
+  batchState,()=>({valid:true}),draft=>draft,draftWithMediaSlots,15,draft=>draft,
+  async(_url,options)=>{savedBatch=JSON.parse(options.body);return {id:"draft_test"};},
+  async()=>{},()=>{},()=>{},{confirm:()=>true});
+await createBatch();
+assert.deepEqual(savedBatch.assets.map(asset=>asset.value),[
+  "a.jpg","b.wav","c.mp4","default-b.jpg"
+]);
+assert.equal(batchState.batchImport,null);
 assert.ok(rendered.includes('aria-label="生成随机种子"'));
 assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));
 assert.ok(source.includes('state.createDraft.highres_megapixels=Number(control.value);'));
