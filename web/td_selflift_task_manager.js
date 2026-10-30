@@ -1804,7 +1804,7 @@ function batchImportMarkup() {
     '<div class="tdm-batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
     '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
-    '<div class="tdm-batch-note">先点选一项引用，再点击下方资产池图片进行绑定。按引用顺序写入工作流图片输入。</div>'+
+    '<div class="tdm-batch-note">右侧是所有批次共用的资产池：可扫描 ComfyUI 输入目录或上传本地图片；文件名相同的引用会自动匹配。点选引用后，再点图片即可绑定。</div>'+
     '<div class="tdm-batch-ref-list">'+batchReferencesMarkup()+'</div>'+
     '<div class="tdm-batch-generated">'+esc(batchGeneratedMarkup())+'</div>'+
     '<div class="tdm-batch-pool"><div class="tdm-batch-pool-head">'+
