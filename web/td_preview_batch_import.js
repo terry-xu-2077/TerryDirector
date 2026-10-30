@@ -117,7 +117,7 @@ function parseGeneratedAssetSection(lines){
   }else if(promptLabel>=0){
    const labelLine=content[promptLabel].replace(/^\s*提示词\s*[:：]\s*/,"");
    prompt=[labelLine,...content.slice(promptLabel+1)].join("\n").trim();
-   if(prompt)warnings.push(name+"：提示词未使用代码块，已按普通文本提取。");
+
   }else{
    prompt=content.join("\n").trim();
    if(prompt)warnings.push(name+"：未找到“提示词：”标记，已提取资产正文。");

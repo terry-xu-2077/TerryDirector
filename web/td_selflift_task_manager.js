@@ -2007,7 +2007,7 @@ function batchPromptImportMarkup() {
   return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
-    '<div class="tdm-small">支持 TBPM Markdown：全局规则、批次、引用资产、待生成资产</div></div>'+
+    '<div class="tdm-small">支持 TBPM Markdown；复制后格式标记丢失也可识别纯文本结构</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
     '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
     'placeholder="在这里粘贴完整提示词；每个「批次01｜名称」标题单独占一行">'+esc(batch.importText||"")+'</textarea>'+

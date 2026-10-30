@@ -68,6 +68,7 @@ assert.equal(plainTbpm.batches[0].generatedAssets[0].name,"峡道母图");
 assert.match(plainTbpm.batches[0].generatedAssets[0].prompt,/真人实拍质感/);
 assert.doesNotMatch(plainTbpm.batches[0].body,/峡道母图|生成峡道母图/);
 assert.match(plainTbpm.batches[0].body,/\[导演说明\]/);
+assert.deepEqual(plainTbpm.batches[0].parseWarnings,[]);
 
 const repeated=parsePreviewBatches("## 批次03｜重复引用\n[全局参考]\n- a.jpg：正面\n- a.jpg：侧面\n[分镜脚本]\n镜头");
 assert.equal(repeated.batches[0].references.length,2);
