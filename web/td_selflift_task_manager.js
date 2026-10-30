@@ -334,6 +334,7 @@ function styles() {
 .tdm-batch .tdm-asset label{font-size:10px;overflow-wrap:anywhere}
 .tdm-batch-summary{font-size:11px;color:#a9c7e7;line-height:1.5}
 .tdm-batch-warning{font-size:10px;line-height:1.5;color:#e7b77e;background:#30271f;border:1px solid #624a31;border-radius:6px;padding:8px 10px}
+.tdm-batch-warning:empty,.tdm-batch-generated:empty{display:none}
 .tdm-batch-note{font-size:10px;color:#8f9cac;line-height:1.5}
 .tdm-batch-foot{display:flex;align-items:center;gap:12px;padding:11px 20px 13px;border-top:1px solid #353a43;flex:none}
 .tdm-batch-foot>div{min-width:0;display:flex;flex-direction:column;gap:3px}
