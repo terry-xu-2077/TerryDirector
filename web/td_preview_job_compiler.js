@@ -197,7 +197,12 @@ export function detectLowresReviewSink(workflow, api, pauseNodeId) {
     return [...inputNames].some(name=>dependsOnClean(
       incoming(nodeId,name),decoderType,hasDecoder,nextSeen));
   };
-  const candidates=outgoing(workflow,api,rootId,rootSlot,{stopAtPause:true});
+  // Before configuration compilation, the imported graph has no API prompt
+  // yet. Use its node types for discovery; execution-time validation still
+  // uses the real compiled prompt.
+  const scanApi=Object.keys(api||{}).length?api:Object.fromEntries(
+    [...nodes].map(([nodeId,node])=>[nodeId,{class_type:node.type,inputs:{}}]));
+  const candidates=outgoing(workflow,scanApi,rootId,rootSlot,{stopAtPause:true});
   const dedicated=candidates.filter(x=>x.type==="TerryDirectorLowresReviewSave");
   if(dedicated.length>1)throw Error("检测到多个低清审片保存节点，请保留一条低清保存支路");
   if(dedicated.length)return dedicated[0];
