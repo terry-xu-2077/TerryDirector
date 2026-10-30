@@ -696,6 +696,9 @@ function details(task) {
     '<button class="tdm-btn primary" data-action="run-draft">开始预演</button>';
   if(duplicate)actions+='<button class="tdm-btn" data-action="duplicate">以此新建</button>';
   if(canHigh)actions+='<button class="tdm-btn primary" data-action="highres">继续高清</button>';
+  if(cid && task.status==="low_complete" && kind==="sampling")
+    actions+='<button class="tdm-btn" data-action="rebuild-preview" '+(state.busy?'disabled':'')+
+      '>重建预览</button>';
   if(task.kind==="checkpoint" && task.status==="low_complete")
     actions+='<button class="tdm-btn" data-action="load">载入任务工作流</button>';
   if(task.status==="low_running" || task.status==="high_running")
@@ -978,6 +981,24 @@ async function handleAction(action, data) {
     if (action === "focus") { state.focused = data.id; state.preview="auto"; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "toggle-preview-playback") return await togglePreviewPlayback();
+    if (action === "rebuild-preview") {
+      if(state.busy)return;
+      const task=selectedTask();
+      const id=task?.checkpoint_id || (task?.kind==="checkpoint"?task.id:null);
+      if(!id || task.status!=="low_complete")throw Error("没有可重建的低清检查点");
+      state.busy=true;
+      render();
+      try{
+        await request("/tasks/"+encodeURIComponent(id)+"/rebuild-native-preview",{
+          method:"POST",
+        });
+        toast("低清预览已从检查点重新生成，无需再次采样","success");
+      }finally{
+        state.busy=false;
+        await refresh();
+      }
+      return;
+    }
     if (action === "cancel-create") { state.creating = false; state.editDraftId = null; state.assetPicker = null; return render(); }
     if (action === "config") return await openConfig();
     if (action === "new-config") return await loadConfigDraft(null);
