@@ -358,7 +358,8 @@ function styles() {
 .tdm-batch-pool-card>button small{display:block;font-size:9px;color:#98a4b4;margin-top:3px}
 .tdm-batch-pool-card>button:disabled{cursor:not-allowed}
 .tdm-batch .tdm-asset video{width:100%;height:74px;object-fit:contain;background:#11151b}
-.tdm-batch .tdm-asset .tdm-media-icon{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:74px;background:#11151b}
+.tdm-asset .tdm-media-icon{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:74px;background:#11151b}
+.tdm-batch .tdm-asset .tdm-media-icon{width:100%;height:74px}
 .tdm-batch .tdm-asset:disabled{opacity:.35;cursor:not-allowed}
 .tdm-batch-note{font-size:10px;color:#8f9cac;line-height:1.5}
 .tdm-batch-foot{display:flex;align-items:center;gap:12px;padding:11px 20px 13px;border-top:1px solid #353a43;flex:none}
@@ -1659,7 +1660,8 @@ function mediaKindIcon(kind) {
 }
 function mediaPreviewMarkup(file,options={}) {
   const kind=file?.kind||options.kind||"image",path=file?.path||"";
-  if(!path)return '<span class="tdm-noimg">＋</span>';
+  if(!path)return kind==="image"?'<span class="tdm-noimg">＋</span>':
+    '<span class="tdm-media-icon">'+mediaKindIcon(kind)+'<small>未绑定'+mediaKindLabel(kind)+'</small></span>';
   const url=file?.preview_url||assetUrl(path);
   if(kind==="image")return '<img class="tdm-media-thumb" loading="lazy" src="'+esc(url)+'" alt="">';
   if(kind==="video"&&options.controls)
