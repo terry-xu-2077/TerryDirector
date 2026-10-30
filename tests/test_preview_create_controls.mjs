@@ -322,7 +322,10 @@ assert.ok(batchMarkup.includes("0.50 MP 低清 ("));
 assert.ok(batchMarkup.includes("1888×1088"));
 assert.ok(batchMarkup.includes("960×544"));
 assert.ok(batchMarkup.includes('data-action="batch-submit"'));
-assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任务"));
+assert.ok(!batchMarkup.includes('data-action="batch-preamble"'));
+assert.ok(!batchMarkup.includes("将批次标题之前的说明附加到每个任务"));
+assert.ok(!source.includes('action === "batch-preamble"'));
+assert.ok(!source.includes("includePreamble"));
 assert.ok(batchMarkup.includes('class="tdm-batch-ref-card active"'));
 assert.ok(source.includes("function syncBatchAssetToOtherBatches(index) {"));
 assert.ok(source.includes('action === "batch-open-assets"'));
@@ -349,7 +352,9 @@ assert.ok(compactRefs.includes('data-action="batch-sync-asset"'));
 assert.ok(compactRefs.includes('data-action="batch-open-assets"'));
 assert.ok(compactRefs.includes('class="tdm-batch-ref-preview" data-action="batch-open-assets"'));
 assert.ok(compactRefs.includes('data-action="batch-remove-asset"'));
-assert.ok(compactRefs.includes('aria-label="移除当前绑定"'));
+assert.ok(compactRefs.includes('aria-label="清除当前绑定"'));
+assert.ok(!compactRefs.includes("tdm-batch-ref-replace"));
+assert.ok(!compactRefs.includes(">替换</button>"));
 assert.ok(compactRefs.includes('data-kind="image"'));
 assert.ok(compactRefs.includes('class="tdm-batch-ref-index">图片 1</span>'));
 assert.ok(!compactRefs.includes("logical-reference.jpg"));
@@ -486,7 +491,7 @@ assert.ok(overflowMarkup.includes("1 个批次超出容量，不会创建"));
 const createBatchStart=source.indexOf("async function createBatchTasks() {");
 const createBatchEnd=source.indexOf("function installCreatePromptEditor()",createBatchStart);
 let savedBatch=null;
-const batchState={batchImport:{saving:false,includePreamble:true,preamble:"全局规则",template:{},
+const batchState={batchImport:{saving:false,includePreamble:false,preamble:"全局规则",template:{},
   highres_megapixels:2.0,sampling_preview_enabled:false,vae_decode_enabled:true,
   batches:[{name:"多媒体批次",body:"正文",duration_seconds:15,references:[
     {name:"a.jpg",kind:"image",path:"a.jpg"},

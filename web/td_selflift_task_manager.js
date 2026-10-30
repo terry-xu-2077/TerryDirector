@@ -445,9 +445,6 @@ function styles() {
 .tdm-batch-ref-card[data-kind="video"] .tdm-batch-ref-index{color:#e0f6e7;background:rgba(104,168,123,.22)}
 .tdm-batch-ref-card[data-kind="audio"] .tdm-batch-ref-index{color:#efe7ff;background:rgba(141,112,201,.24)}
 .tdm-batch-ref-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#aeb9c8;font-size:10px}
-.tdm-batch-ref-replace{flex:none;padding:3px 8px;border:1px solid #3f4855;border-radius:5px;background:#222831;color:#aeb9c8;font-size:10px;cursor:pointer}
-.tdm-batch-ref-replace:hover{border-color:#75869b;color:#e1e8f2}
-.tdm-batch-ref-replace:disabled{opacity:.45;cursor:not-allowed}
 .tdm-batch-ref-remove{flex:none;width:25px;height:25px;padding:0;border:1px solid #4a3c40;border-radius:5px;background:#262126;color:#c98b91;font-size:17px;line-height:1;cursor:pointer}
 .tdm-batch-ref-remove:hover{border-color:#a65d66;background:#382328;color:#ffd6d9}
 .tdm-batch-ref-remove:disabled{opacity:.35;cursor:not-allowed}
@@ -1174,10 +1171,6 @@ function bindControls() {
       control.addEventListener("input",()=>{
         if(!state.batchImport)return;
         state.batchImport.text=control.value;parseBatchImportText();renderBatchImportViews();
-      });
-    } else if (action === "batch-preamble") {
-      control.addEventListener("change",()=>{
-        if(state.batchImport)state.batchImport.includePreamble=control.checked;
       });
     } else if (action === "batch-resolution") {
       control.addEventListener("change",()=>{
@@ -1925,7 +1918,7 @@ async function openBatchImport() {
     template:structuredClone(state.template),assetSlots:matchingAssets(state.template.workflow,state.template.h3_node_id),
     text:"",importText:"",importFileName:"",importError:"",promptImportOpen:true,
     preamble:"",batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
-    includePreamble:true,saving:false,
+    saving:false,
     highres_megapixels:state.previewSettings.highres_megapixels,
     sampling_preview_enabled:batchOptions.sampling_preview_enabled,
     vae_decode_enabled:batchOptions.vae_decode_enabled,
@@ -2179,9 +2172,7 @@ function batchReferencesMarkup() {
       '<span class="tdm-batch-ref-index">'+esc(primary)+'</span>'+
       (secondary?'<span class="tdm-batch-ref-name">'+esc(secondary)+'</span>':"")+'</button>'+
       '<button type="button" class="tdm-batch-ref-remove" data-action="batch-remove-asset" data-index="'+index+'" '+
-      (!ref.path||batch.saving?'disabled ':'')+'title="移除当前绑定" aria-label="移除当前绑定">×</button>'+
-      '<button type="button" class="tdm-batch-ref-replace" data-action="batch-open-assets" data-index="'+index+'" '+
-      (batch.saving?'disabled ':'')+'title="替换当前引用资产">替换</button></div>'+
+      (!ref.path||batch.saving?'disabled ':'')+'title="清除当前绑定" aria-label="清除当前绑定">×</button></div>'+
       '<div class="tdm-batch-ref-preview" data-action="batch-open-assets" data-index="'+index+'" role="button" tabindex="0" '+
       'title="点击选择或替换资产">'+batchSlotPreviewMarkup(ref)+'</div>'+
       '<button type="button" class="tdm-btn tdm-batch-ref-sync" data-action="batch-sync-asset" data-index="'+index+'" '+
@@ -2257,17 +2248,12 @@ function batchImportMarkup() {
     '<textarea class="tdm-batch-text" readonly spellcheck="false" aria-label="当前批次提示词原文" '+
     'placeholder="这里显示当前选中批次的完整提示词原文">'+
     esc(current?.sourceBody||current?.body||"")+'</textarea>'+
-    '<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
-      (batch.includePreamble?'checked ':'')+(!batch.preamble||batch.saving?'disabled ':'')+
-      '><span data-batch-preamble-label>'+esc(batch.preamble?
-        '将全局规则附加到每个任务（推荐，保留整集统一要求）':
-        '批次标题之前没有说明内容')+'</span></label>'+
     '<div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
     '<div class="tdm-batch-warning" data-batch-warning>'+esc(batchImportWarning())+'</div>'+
     '<div class="tdm-batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
     '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
-    '<div class="tdm-batch-note">点击每个资产卡片上的「替换」选择对应类型媒体；绑定后可同步到其他批次。文件名相同的引用会自动匹配。</div>'+
+    '<div class="tdm-batch-note">点击资产预览区域选择或替换对应类型媒体；绑定后可同步到其他批次。文件名相同的引用会自动匹配。</div>'+
     '<div class="tdm-batch-ref-list">'+batchReferencesMarkup()+'</div>'+
     '<div class="tdm-batch-generated">'+batchGeneratedMarkup()+'</div>'+
     '</aside></div>'+
@@ -2326,12 +2312,6 @@ function renderBatchImportViews() {
   if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);wireMediaFallback(refs);}
   const generated=state.root?.querySelector(".tdm-batch-generated");
   if(generated)generated.innerHTML=batchGeneratedMarkup();
-  const preambleControl=state.root?.querySelector('[data-action="batch-preamble"]');
-  if(preambleControl)preambleControl.disabled=!batch.preamble||batch.saving;
-  const preambleLabel=state.root?.querySelector("[data-batch-preamble-label]");
-  if(preambleLabel)preambleLabel.textContent=batch.preamble?
-    "将批次标题之前的说明附加到每个任务（推荐，保留全局制作规则）":
-    "批次标题之前没有说明内容";
   const currentName=state.root?.querySelector("[data-batch-current-name]");
   if(currentName)currentName.textContent=batch.batches[batch.activeIndex]?.name||"等待解析";
   const warning=state.root?.querySelector("[data-batch-warning]");
@@ -2466,7 +2446,7 @@ async function createBatchTasks() {
   for(const item of ready){
     try{
       const draft=randomizeNewTaskSeed(buildDraft(batch.template,[],item.name,batch));
-      draft.prompt=[batch.includePreamble?batch.preamble:"",batchPromptWithMediaTokens(item.body,item.references)].filter(Boolean).join("\n\n");
+      draft.prompt=[batch.preamble,batchPromptWithMediaTokens(item.body,item.references)].filter(Boolean).join("\n\n");
       draft.duration_seconds=Number(item.duration_seconds||PREVIEW_DURATION_DEFAULT);
       draft.highres_megapixels=Number(batch.highres_megapixels??state.previewSettings.highres_megapixels);
       draft.sampling_preview_enabled=!!batch.sampling_preview_enabled;
