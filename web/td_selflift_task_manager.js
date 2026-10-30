@@ -306,6 +306,23 @@ function styles() {
 .tdm-batch-left{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 .tdm-batch-text{width:100%;height:34%;min-height:170px;max-height:44%;resize:vertical;box-sizing:border-box;background:#14171c;color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:12px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
 .tdm-batch-text:focus{outline:none;border-color:#6394d1}
+.tdm-batch-text[readonly]{resize:vertical;cursor:text;color:#d8e0eb}
+.tdm-batch-import-overlay{z-index:100040;background:rgba(0,0,0,.84)}
+.tdm-form.tdm-batch-import{width:min(900px,92vw);max-height:88vh;display:flex;flex-direction:column;gap:12px}
+.tdm-batch-import-head{display:flex;align-items:flex-start;gap:12px}
+.tdm-batch-import-head h2{font-size:17px;margin:0 0 4px}
+.tdm-batch-import-head .tdm-small{font-size:11px;color:#929eae}
+.tdm-batch-import-text{width:100%;height:min(48vh,520px);min-height:230px;box-sizing:border-box;resize:vertical;
+ background:#14171c;color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:12px;
+ font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow:auto}
+.tdm-batch-import-text:focus{outline:none;border-color:#6394d1}
+.tdm-batch-import-drop{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+ border:1px dashed #596575;border-radius:8px;background:#1a2029;padding:12px 14px;color:#aeb9c8}
+.tdm-batch-import-drop.dragover{border-color:#6ea5e7;background:#243449}
+.tdm-batch-import-drop strong{font-size:12px;color:#dce5f2}
+.tdm-batch-import-drop small{font-size:10px;color:#8996a8}
+.tdm-batch-import-drop .tdm-space{min-width:10px}
+.tdm-batch-import-error{font-size:11px;line-height:1.5;color:#f0b4a8;background:#382729;border:1px solid #70464a;border-radius:6px;padding:8px 10px}
 .tdm-batch-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px}
 .tdm-batch-item{display:flex;align-items:flex-start;gap:10px;text-align:left;width:100%;padding:10px 11px;border:1px solid #343b46;border-radius:7px;background:#1c2027;color:#dce4ef;cursor:pointer}
 .tdm-batch-item:hover{background:#242c37}
@@ -1013,6 +1030,26 @@ async function deleteSelectedTasks() {
 
 function bindControls() {
   const el = state.root;
+  const promptDropZone=el.querySelector("[data-batch-prompt-dropzone]");
+  if(promptDropZone){
+    const prevent=e=>{e.preventDefault();e.stopPropagation();};
+    promptDropZone.addEventListener("dragenter",e=>{
+      prevent(e);promptDropZone.classList.add("dragover");
+    });
+    promptDropZone.addEventListener("dragover",e=>{
+      prevent(e);if(e.dataTransfer)e.dataTransfer.dropEffect="copy";
+      promptDropZone.classList.add("dragover");
+    });
+    promptDropZone.addEventListener("dragleave",e=>{
+      if(!promptDropZone.contains(e.relatedTarget))promptDropZone.classList.remove("dragover");
+    });
+    promptDropZone.addEventListener("drop",e=>{
+      prevent(e);promptDropZone.classList.remove("dragover");
+      const file=Array.from(e.dataTransfer?.files||[]).find(isBatchPromptFile);
+      if(!file){toast("请拖入 .md、.markdown 或 .txt 提示词文件","warning");return;}
+      void loadBatchPromptFile(file).catch(error=>toast("读取提示词失败："+(error?.message||error),"error"));
+    });
+  }
   el.querySelectorAll("[data-action]").forEach(control => {
     const action = control.dataset.action;
     if (action === "delete-ack") {
@@ -1117,6 +1154,12 @@ async function handleAction(action, data) {
     if (action === "refresh") return refresh();
     if (action === "batch-create") return await openBatchImport();
     if (action === "batch-import-prompt") return importBatchPrompt();
+    if (action === "batch-import-browse") return browseBatchPromptFile();
+    if (action === "batch-import-apply") return applyBatchPromptImport();
+    if (action === "batch-import-cancel") {
+      if(state.batchImport)state.batchImport.promptImportOpen=false;
+      return render();
+    }
     if (action === "batch-cancel") { state.batchImport=null; return render(); }
     if (action === "batch-select") {
       const batch=state.batchImport;
@@ -1624,7 +1667,8 @@ async function openBatchImport() {
   state.editDraftId=null;
   state.batchImport={
     template:structuredClone(state.template),assetSlots:matchingAssets(state.template.workflow),
-    text:"",preamble:"",batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
+    text:"",importText:"",importFileName:"",importError:"",promptImportOpen:false,
+    preamble:"",batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
     includePreamble:true,search:"",saving:false,uploading:false,
   };
   render();
@@ -1903,11 +1947,14 @@ function batchImportMarkup() {
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
     '<div class="tdm-small">自动识别「批次01｜名称」独占行；支持 Markdown 和复制后丢失 #、粗体、列表符号的纯文本</div></div>'+
-    '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-prompt" '+(batch.saving?'disabled':'')+'>导入提示词文件</button>'+
+    '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-prompt" '+(batch.saving?'disabled':'')+'>导入提示词</button>'+
     '<button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
-    '<div class="tdm-batch-section-head"><strong>多批次提示词</strong><span>支持 Markdown / 纯文本 · .md / .txt</span></div>'+
-    '<textarea class="tdm-batch-text" data-action="batch-text" spellcheck="false" placeholder="粘贴 Markdown 或纯文本；每个批次标题单独占一行，例如：批次01｜场景名称">'+esc(batch.text)+'</textarea>'+
+    '<div class="tdm-batch-section-head"><strong>当前批次提示词原文</strong>'+
+    '<span>'+(current?esc(current.name):"尚未导入批次")+'</span></div>'+
+    '<textarea class="tdm-batch-text" readonly spellcheck="false" aria-label="当前批次提示词原文" '+
+    'placeholder="点击右上角「导入提示词」，解析后这里会显示当前选中批次的完整提示词原文">'+
+    esc(current?.body||"")+'</textarea>'+
     '<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
       (batch.includePreamble?'checked ':'')+(!batch.preamble||batch.saving?'disabled ':'')+
       '><span data-batch-preamble-label>'+esc(batch.preamble?
@@ -1931,7 +1978,26 @@ function batchImportMarkup() {
     '<div class="tdm-batch-note">缺少媒体或超出对应类型的工作流槽位时，该批次不会创建；未引用的输入槽保留工作流模板默认值。</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-cancel" '+(batch.saving?'disabled':'')+'>取消</button>'+
     '<button class="tdm-btn primary" data-action="batch-submit" '+(disabled?'disabled':'')+'>'+
-    (batch.saving?'正在创建…':'创建 '+stats.valid+' 个任务')+'</button></footer></div></div>';
+    (batch.saving?'正在创建…':'创建 '+stats.valid+' 个任务')+'</button></footer></div></div>'+
+    (batch.promptImportOpen?batchPromptImportMarkup():"");
+}
+function batchPromptImportMarkup() {
+  const batch=state.batchImport;if(!batch?.promptImportOpen)return "";
+  return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
+    'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
+    '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
+    '<div class="tdm-small">粘贴提示词原文，或拖入 Markdown / 纯文本文件（.md、.txt）</div></div>'+
+    '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
+    '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
+    'placeholder="在这里粘贴完整提示词；每个「批次01｜名称」标题单独占一行">'+esc(batch.importText||"")+'</textarea>'+
+    '<div class="tdm-batch-import-drop" data-batch-prompt-dropzone>'+
+    '<span aria-hidden="true">⇩</span><div><strong>拖入 .md / .markdown / .txt 文件</strong><br>'+
+    '<small>'+(batch.importFileName?"已读取："+esc(batch.importFileName):"也可以直接粘贴文本，或浏览文件选择")+'</small></div>'+
+    '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-browse">浏览文件</button></div>'+
+    (batch.importError?'<div class="tdm-batch-import-error">'+esc(batch.importError)+'</div>':'')+
+    '<footer class="tdm-form-actions"><button class="tdm-btn" data-action="batch-import-cancel">取消</button>'+
+    '<button class="tdm-btn primary" data-action="batch-import-apply">解析批次</button></footer>'+
+    '</section></div>';
 }
 function bindBatchDynamicActions(holder) {
   holder?.querySelectorAll("[data-action]").forEach(control=>{
@@ -2009,16 +2075,50 @@ function syncBatchAssetToOtherBatches(index) {
   toast(synced?"已同步到其他批次的 "+synced+" 个相同引用槽位":"其他批次没有相同媒体类型和引用名称的槽位",
     synced?"success":"info");
 }
-async function importBatchPrompt() {
+function importBatchPrompt() {
+  const batch=state.batchImport;if(!batch)return;
+  batch.importText=batch.text||"";
+  batch.importFileName="";
+  batch.importError="";
+  batch.promptImportOpen=true;
+  render();
+}
+function isBatchPromptFile(file) {
+  return !!file&&(/\.(?:md|markdown|txt)$/i.test(String(file.name||""))||
+    /^(?:text\/plain|text\/markdown)$/i.test(String(file.type||"")));
+}
+async function loadBatchPromptFile(file) {
+  const batch=state.batchImport;if(!batch||!file)return;
+  if(!isBatchPromptFile(file))throw Error("仅支持 .md、.markdown 和 .txt 提示词文件");
+  batch.importText=await file.text();
+  batch.importFileName=file.name||"已导入文件";
+  batch.importError="";
+  render();
+}
+function browseBatchPromptFile() {
   const picker=document.createElement("input");
   picker.type="file";picker.accept=".md,.markdown,.txt,text/markdown,text/plain";
-  picker.onchange=async()=>{
+  picker.onchange=()=>{
     const file=picker.files?.[0];if(!file)return;
-    try{state.batchImport.text=await file.text();parseBatchImportText();render();
-      toast("已导入提示词："+file.name);
-    }catch(error){toast("导入提示词失败："+(error?.message||error),"error");}
+    void loadBatchPromptFile(file).catch(error=>toast("读取提示词失败："+(error?.message||error),"error"));
   };
   picker.click();
+}
+function applyBatchPromptImport() {
+  const batch=state.batchImport;if(!batch)return;
+  const candidate=String(batch.importText||"");
+  const parsed=parsePreviewBatches(candidate);
+  if(!parsed.batches.length){
+    batch.importError=parsed.error||"未识别到有效批次，请检查提示词标题格式";
+    render();return;
+  }
+  batch.text=candidate;
+  parseBatchImportText();
+  batch.promptImportOpen=false;
+  batch.importError="";
+  const count=batch.batches.length,fileName=batch.importFileName;
+  render();
+  toast("已识别 "+count+" 个批次"+(fileName?" · "+fileName:""),"success");
 }
 async function uploadBatchAssets() {
   const batch=state.batchImport;if(!batch||batch.uploading)return;
