@@ -2,7 +2,7 @@
 import { app } from "/scripts/app.js";
 import { api } from "/scripts/api.js";
 import {
-  compilePreviewTargets, resolvePreviewSeedBounds, buildPreviewJob,
+  compilePreviewTargets, detectLowresReviewSink, resolvePreviewSeedBounds, buildPreviewJob,
   validatePreviewSeed, randomPreviewSeed,
 } from "./td_preview_job_compiler.js";
 import { attachPreviewRichEditor, closePreviewRichEditor } from "./td_preview_rich_editor.js";
@@ -1186,6 +1186,10 @@ function configMarkup() {
   const pauseNodes=(graph?.nodes||[]).filter(n=>n.type===START_CLASS);
   const prompts=fieldsOf(graph,"prompt");
   const seeds=fieldsOf(graph,"seed");
+  let lowresReview=null,lowresReviewError="";
+  try{
+    lowresReview=detectLowresReviewSink(graph,cfg?.api_prompt||{},cfg?.pause_node_id);
+  }catch(error){lowresReviewError=String(error?.message||error);}
   const selected=state.configSelectedId;
   const current=state.templates.find(t=>t.id===selected);
   const listing=state.templates.map(item=>
@@ -1223,6 +1227,14 @@ function configMarkup() {
     '<div class="tdm-field"><label>暂停/继续节点</label><select data-action="config-field" data-field="pause_node_id">'+
     pauseNodes.map(n=>'<option value="'+esc(n.id)+'" '+(String(n.id)===String(cfg?.pause_node_id)?'selected':'')+'>'+
       esc((n.title||n.type)+' #'+n.id)+'</option>').join("")+'</select></div>'+
+    '<div class="tdm-field"><label>低清 VAE 解码（自动识别）</label>'+
+    '<div class="tdm-small">'+
+    (lowresReviewError?'检测异常：'+esc(lowresReviewError):
+      lowresReview?
+        '已检测：'+esc(lowresReview.type)+' #'+esc(lowresReview.id)+
+        ' · 选择 VAE 解码预览时，自动保存到对应检查点 review.mp4（不改原工作流）':
+        '未检测到完整的低清 VAE 视频+音频输出；仍可使用 TAEH3 采样预览')+
+    '</div></div>'+
     '<div class="tdm-field"><label>提示词输入（STRING 输出节点）</label>'+
     selectBinding("prompt_binding",prompts)+'</div>'+
     (prompts.length>1?'<div class="tdm-small">检测到 '+prompts.length+
