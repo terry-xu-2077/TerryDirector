@@ -304,7 +304,7 @@ function styles() {
 .tdm-batch-head .tdm-small{font-size:11px;color:#929eae}
 .tdm-batch-columns{display:grid;grid-template-columns:minmax(460px,1.25fr) minmax(340px,.9fr);flex:1;min-height:0;gap:18px;padding:16px 20px}
 .tdm-batch-left{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
-.tdm-batch-text{width:100%;height:34%;min-height:170px;max-height:44%;resize:vertical;box-sizing:border-box;background:#14171c;color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:12px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto}
+.tdm-batch-text{width:100%;height:34%;min-height:170px;max-height:44%;resize:vertical;box-sizing:border-box;background:#14171c;color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:12px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
 .tdm-batch-text:focus{outline:none;border-color:#6394d1}
 .tdm-batch-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px}
 .tdm-batch-item{display:flex;align-items:flex-start;gap:10px;text-align:left;width:100%;padding:10px 11px;border:1px solid #343b46;border-radius:7px;background:#1c2027;color:#dce4ef;cursor:pointer}
@@ -333,6 +333,7 @@ function styles() {
 .tdm-batch .tdm-asset img{width:100%;height:74px;object-fit:contain;background:#11151b}
 .tdm-batch .tdm-asset label{font-size:10px;overflow-wrap:anywhere}
 .tdm-batch-summary{font-size:11px;color:#a9c7e7;line-height:1.5}
+.tdm-batch-warning{font-size:10px;line-height:1.5;color:#e7b77e;background:#30271f;border:1px solid #624a31;border-radius:6px;padding:8px 10px}
 .tdm-batch-note{font-size:10px;color:#8f9cac;line-height:1.5}
 .tdm-batch-foot{display:flex;align-items:center;gap:12px;padding:11px 20px 13px;border-top:1px solid #353a43;flex:none}
 .tdm-batch-foot>div{min-width:0;display:flex;flex-direction:column;gap:3px}
@@ -1746,6 +1747,7 @@ function batchReferencesMarkup() {
   return item.references.map((ref,index)=>
     '<button type="button" class="tdm-batch-ref '+(index===batch.selectedRefIndex?"active":"")+
     '" data-action="batch-select-ref" data-index="'+index+'"><strong>'+esc(ref.name)+'</strong>'+
+    (ref.description?'<small>'+esc(ref.description)+'</small>':'')+
     '<small>'+(ref.path?'已绑定：'+esc(ref.path):'未在资产池中找到，请从下方选择或上传')+'</small></button>'
   ).join("");
 }
@@ -1771,6 +1773,16 @@ function batchImportSummary() {
   return stats.total+' 个批次 · '+stats.valid+' 个可创建 · '+stats.invalid+
     ' 个需处理 · 当前工作流支持 '+stats.slots+' 张参考图/批次';
 }
+function batchImportWarning() {
+  const items=state.batchImport?.batches||[];
+  const overflow=items.filter(item=>batchTaskStatus(item).overflow>0).length;
+  const missing=items.filter(item=>batchTaskStatus(item).missing>0).length;
+  const warnings=[];
+  if(overflow)warnings.push('当前工作流每批次最多支持 '+(state.batchImport?.assetSlots?.length||0)+
+    ' 张参考图；'+overflow+' 个批次超出输入数量，将不会创建。');
+  if(missing)warnings.push(missing+' 个批次仍有未绑定图片，请先从右侧资产池补齐。');
+  return warnings.join(' ');
+}
 function batchImportMarkup() {
   const batch=state.batchImport;if(!batch)return "";
   const stats=batchImportStats(),current=batch.batches[batch.activeIndex],disabled=stats.valid===0||batch.saving;
@@ -1788,6 +1800,7 @@ function batchImportMarkup() {
         '将批次标题之前的说明附加到每个任务（推荐，保留全局制作规则）':
         '批次标题之前没有说明内容')+'</span></label>'+
     '<div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
+    '<div class="tdm-batch-warning" data-batch-warning>'+esc(batchImportWarning())+'</div>'+
     '<div class="tdm-batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
     '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
@@ -1796,7 +1809,7 @@ function batchImportMarkup() {
     '<div class="tdm-batch-generated">'+esc(batchGeneratedMarkup())+'</div>'+
     '<div class="tdm-batch-pool"><div class="tdm-batch-pool-head">'+
     '<input data-action="batch-search" placeholder="搜索资产池文件名" value="'+esc(batch.search)+'" '+(batch.saving?'disabled':'')+'>'+
-    '<button class="tdm-btn" data-action="batch-refresh-assets" '+(batch.uploading||batch.saving?'disabled':'')+'>刷新</button>'+
+    '<button class="tdm-btn" data-action="batch-refresh-assets" '+(batch.uploading||batch.saving?'disabled':'')+'>扫描目录</button>'+
     '<button class="tdm-btn" data-action="batch-upload-assets" '+(batch.uploading||batch.saving?'disabled':'')+'>'+
       (batch.uploading?'上传中…':'上传图片')+'</button></div>'+
     '<div class="tdm-batch-pool-grid">'+batchAssetPoolMarkup()+'</div></div></aside></div>'+
@@ -1833,6 +1846,8 @@ function renderBatchImportViews() {
     "批次标题之前没有说明内容";
   const currentName=state.root?.querySelector("[data-batch-current-name]");
   if(currentName)currentName.textContent=batch.batches[batch.activeIndex]?.name||"等待解析";
+  const warning=state.root?.querySelector("[data-batch-warning]");
+  if(warning)warning.textContent=batchImportWarning();
   const summary=batchImportSummary();
   state.root?.querySelectorAll("[data-batch-summary]").forEach(node=>node.textContent=summary);
   const submit=state.root?.querySelector('[data-action="batch-submit"]');
