@@ -265,9 +265,6 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
       const slash=normalized.lastIndexOf("/");
       highresNode.inputs.filename_prefix=(slash>=0?normalized.slice(0,slash+1):"")+safeName;
     }
-    for(const node of Object.values(api)){
-      if(node?.class_type==="TerryDirectorLowresReviewSave")node.inputs.name=taskName;
-    }
   }
   // Older saved templates still naming KJ are translated within the submitted
   // job only; the new preview does not import KJNodes or send fMP4 over WS.
@@ -322,7 +319,7 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
       if(!isLink(images)||!isLink(audio))
         throw Error("低清 VHS 视频节点缺少已连接的 VAE 画面或音频");
       api[targetId]={class_type:"TerryDirectorLowresReviewSave",inputs:{
-        checkpoint_id:[id(template.pause_node_id),1],images,audio,name:taskName,
+        checkpoint_id:[id(template.pause_node_id),1],images,audio,
       },_meta:{title:"TerryDirector 自动低清 VAE 审片保存"}};
     }else if(node.class_type!=="TerryDirectorLowresReviewSave"){
       throw Error("无法自动归档的低清 VAE 保存节点类型："+node.class_type);
