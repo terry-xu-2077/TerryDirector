@@ -178,7 +178,7 @@ assert.match(tbpm.batches[0].body,/\[分镜脚本\]/);
 assert.match(tbpm.batches[0].body,/声音设计/);
 assert.match(tbpm.batches[0].sourceBody,/待生成资产/);
 assert.deepEqual(tbpm.batches[0].parseErrors,[]);
-assert.deepEqual(tbpm.batches[0].parseWarnings,[]);
+assert.match(tbpm.batches[0].parseWarnings.join(" "),/附加内容，已单独保留/);
 
 const malformedTbpm = parsePreviewBatches([
   "## 批次02｜错误引用格式",
