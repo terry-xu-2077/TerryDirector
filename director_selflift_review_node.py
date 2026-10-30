@@ -19,7 +19,7 @@ class TerryDirectorLowresReviewSave(io.ComfyNode):
             display_name="TerryDirector 保存低清审片视频",
             category="TerryDirector/SelfLift",
             is_output_node=True,
-            description="将 denoised_output 解码后的音视频存入本次检查点文件夹的 review.mp4；不参与高清采样。",
+            description="将 denoised_output 解码后的音视频存入本次检查点文件夹，并按任务名称命名；不参与高清采样。",
             inputs=[
                 io.String.Input("checkpoint_id", display_name="检查点 ID"),
                 io.Image.Input("images", display_name="低清已解码画面"),

@@ -17,8 +17,8 @@ export function sanitizeTaskFilename(value) {
     .replace(/[：／＼｜？＊]/g,"_")
     .replace(/\s+/g,"_")
     .replace(/_+/g,"_")
-    .replace(/^[. ]+|[. ]+$/g,"")
-    .slice(0,100).replace(/[. ]+$/g,"");
+    .replace(/^[_ .]+|[_ .]+$/g,"")
+    .slice(0,100).replace(/[_ .]+$/g,"");
   if(RESERVED_FILENAME.test(name))name="_"+name;
   return name || "TerryDirector";
 }

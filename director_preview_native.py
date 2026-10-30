@@ -228,7 +228,9 @@ def save_native_video(checkpoint_id: str, video: torch.Tensor, *,
     old_filename = previous.get("sampling_video_filename")
     if isinstance(old_filename, str) and Path(old_filename).name == old_filename and old_filename != filename:
         (folder / old_filename).unlink(missing_ok=True)
-    (folder / "sampling_preview.mp4").unlink(missing_ok=True)
+    for legacy in folder.glob("sampling_preview.*"):
+        if legacy.name != filename and legacy.suffix in {".mp4", ".webp", ".jpg"}:
+            legacy.unlink(missing_ok=True)
     save_metadata(checkpoint_id, {"sampling_video_filename": filename})
     LOG.info("[TerryDirector] 原生低清预览已保存：%s, %.1fs, %d sampled frames",
              checkpoint_id, duration_seconds, len(frames))

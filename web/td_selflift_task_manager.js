@@ -1780,14 +1780,15 @@ function batchImportMarkup() {
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>多批次提示词</strong><span>支持粘贴或导入 .md / .txt</span></div>'+
     '<textarea class="tdm-batch-text" data-action="batch-text" spellcheck="false" placeholder="粘贴多批次 Markdown 提示词，或点击「导入 Markdown」">'+esc(batch.text)+'</textarea>'+
-    (batch.preamble?'<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
-      (batch.includePreamble?'checked ':'')+(batch.saving?'disabled ':'')+
-      '> 将批次标题之前的说明附加到每个任务（推荐，保留全局制作规则）</label>':
-      '<div class="tdm-batch-note">未检测到批次前置说明。</div>')+
+    '<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
+      (batch.includePreamble?'checked ':'')+(!batch.preamble||batch.saving?'disabled ':'')+
+      '><span data-batch-preamble-label>'+esc(batch.preamble?
+        '将批次标题之前的说明附加到每个任务（推荐，保留全局制作规则）':
+        '批次标题之前没有说明内容')+'</span></label>'+
     '<div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
     '<div class="tdm-batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
-    '<span>'+(current?esc(current.name):"等待解析")+'</span></div>'+
+    '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
     '<div class="tdm-batch-note">先点选一项引用，再点击下方资产池图片进行绑定。按引用顺序写入工作流图片输入。</div>'+
     '<div class="tdm-batch-ref-list">'+batchReferencesMarkup()+'</div>'+
     '<div class="tdm-batch-generated">'+esc(batchGeneratedMarkup())+'</div>'+
@@ -1822,6 +1823,14 @@ function renderBatchImportViews() {
   if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);}
   const generated=state.root?.querySelector(".tdm-batch-generated");
   if(generated)generated.textContent=batchGeneratedMarkup();
+  const preambleControl=state.root?.querySelector('[data-action="batch-preamble"]');
+  if(preambleControl)preambleControl.disabled=!batch.preamble||batch.saving;
+  const preambleLabel=state.root?.querySelector("[data-batch-preamble-label]");
+  if(preambleLabel)preambleLabel.textContent=batch.preamble?
+    "将批次标题之前的说明附加到每个任务（推荐，保留全局制作规则）":
+    "批次标题之前没有说明内容";
+  const currentName=state.root?.querySelector("[data-batch-current-name]");
+  if(currentName)currentName.textContent=batch.batches[batch.activeIndex]?.name||"等待解析";
   const summary=batchImportSummary();
   state.root?.querySelectorAll("[data-batch-summary]").forEach(node=>node.textContent=summary);
   const submit=state.root?.querySelector('[data-action="batch-submit"]');

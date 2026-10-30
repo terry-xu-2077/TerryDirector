@@ -61,6 +61,7 @@ const named=buildPreviewJob(template,[
 assert.equal(named.output["22"].inputs.filename_prefix,"video/TerryDirector/批次01_测试_镜头_A");
 assert.equal(sanitizeTaskFilename("CON"),"_CON");
 assert.equal(sanitizeTaskFilename("  "), "TerryDirector");
+assert.equal(sanitizeTaskFilename("/batch/"), "batch");
 assert.equal(job.output["11"].inputs.noise_seed[0],"77"); // sampler still linked
 assert.throws(()=>applyPreviewInputs(job.output,[{node_id:11,widget_name:"noise_seed",value:7}]),/不能覆盖连线终点/);
 assert.deepEqual(buildPreviewJob(template,[],"continue","a".repeat(32)).targets,["22"]);
