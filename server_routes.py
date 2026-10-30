@@ -355,6 +355,37 @@ async def terrydirector_selflift_task_metadata(request: web.Request) -> web.Resp
     return web.json_response({"ok": True})
 
 
+@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/rebuild-native-preview")
+async def terrydirector_rebuild_native_preview(request: web.Request) -> web.Response:
+    """Recover preview from the immutable low_clean checkpoint, no sampling."""
+    from .director_selflift_checkpoint import load_checkpoint
+    from .director_selflift_task_store import load_metadata, save_metadata
+    from .director_preview_native import save_native_video, default_tiny_vae
+    checkpoint_id = request.match_info["checkpoint_id"]
+    try:
+        saved = await asyncio.to_thread(load_checkpoint, checkpoint_id)
+        try:
+            metadata = load_metadata(checkpoint_id)
+        except FileNotFoundError:
+            metadata = {}
+        seconds = float(metadata.get("duration_seconds") or 15.0)
+        if not math.isfinite(seconds) or not 4 <= seconds <= 20:
+            raise ValueError("预览任务保存的时长无效")
+        name = default_tiny_vae()
+        if name == "none":
+            raise ValueError("未找到 taeh3.safetensors，请放入 ComfyUI/models/vae_approx")
+        filename = await asyncio.to_thread(
+            save_native_video, checkpoint_id, saved["clean"][0],
+            tiny_vae=name, duration_seconds=seconds,
+        )
+        save_metadata(checkpoint_id, {**metadata, "preview_error": None,
+                                     "preview_warning": None})
+    except (FileNotFoundError, OSError, ValueError, RuntimeError, KeyError) as exc:
+        logging.exception("[TerryDirector] 从低清检查点重建预览失败 %s", checkpoint_id)
+        return web.json_response({"error": str(exc)}, status=400)
+    return web.json_response({"ok": True, "filename": filename})
+
+
 @PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/sampling-preview")
 async def terrydirector_selflift_sampling_preview(request: web.Request) -> web.Response:
     from .director_selflift_task_store import save_sampling_preview
