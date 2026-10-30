@@ -105,7 +105,7 @@ assert.ok(typedBatchMarkup.includes('data-kind="audio"'));
 assert.ok(typedBatchMarkup.includes('data-kind="video"'));
 assert.ok(typedBatchMarkup.includes("工作流媒体槽位：图片 1 / 音频 1 / 视频 1"));
 assert.ok(typedBatchMarkup.includes("当前批次引用资产"));
-assert.ok(typedBatchMarkup.includes('data-kind="video" disabled title="当前槽位需要图片，不能绑定视频"'));
+assert.match(typedBatchMarkup,/data-kind="video"[^>]+disabled title="当前槽位需要图片，不能绑定视频"/);
 const overflowMarkup=renderBatch({
   batchImport:{
     text:"多媒体",preamble:"",includePreamble:false,
