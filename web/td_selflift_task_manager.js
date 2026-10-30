@@ -1853,7 +1853,8 @@ function batchTaskStatus(item) {
   ]));
   const overflow=Object.values(overflowByKind).reduce((sum,value)=>sum+value,0);
   const missing=references.filter(ref=>!ref.path).length,empty=!String(item.body||"").trim();
-  return {overflow,overflowByKind,missing,empty,valid:!overflow&&!missing&&!empty};
+  const formatErrors=(item.parseErrors||[]).length;
+  return {overflow,overflowByKind,missing,empty,formatErrors,valid:!overflow&&!missing&&!empty&&!formatErrors};
 }
 function batchImportStats() {
   const items=state.batchImport?.batches||[];
@@ -1865,11 +1866,12 @@ function batchListMarkup() {
   if(!batch?.batches.length)return '<div class="tdm-batch-empty">'+esc(batch?.error||"粘贴或导入 Markdown 后，将在这里显示识别出的批次。")+'</div>';
   return batch.batches.map((item,index)=>{
     const status=batchTaskStatus(item);
-    const label=status.overflow?"超出媒体槽位 "+status.overflow+" 项":
+    const label=status.formatErrors?"引用格式错误 "+status.formatErrors+" 项":
+      status.overflow?"超出媒体槽位 "+status.overflow+" 项":
       status.missing?"缺少资产 "+status.missing+" 项":status.empty?"正文为空":"可创建";
     return '<button type="button" class="tdm-batch-item '+(index===batch.activeIndex?"active":"")+
       '" data-action="batch-select" data-index="'+index+'"><span class="tdm-batch-item-main">'+
-      '<strong>'+esc(item.name)+'</strong><small>'+item.duration_seconds+' 秒 · '+item.body.length+' 字 · '+
+      '<strong>'+esc(item.name)+'</strong><small>'+item.duration_seconds+' 秒 · '+String(item.sourceBody||item.body).length+' 字 · '+
       item.references.length+' 项引用资产'+(item.generatedAssets.length?' · '+item.generatedAssets.length+' 项待生成资产':'')+
       '</small></span><span class="tdm-batch-item-status '+(status.valid?"":"warn")+'">'+esc(label)+'</span></button>';
   }).join("");
@@ -1905,8 +1907,18 @@ function batchReferencesMarkup() {
 }
 function batchGeneratedMarkup() {
   const item=state.batchImport?.batches?.[state.batchImport.activeIndex];
-  if(!item?.generatedAssets?.length)return "";
-  return '待生成资产占位（不会占用媒体输入槽位）：'+esc(item.generatedAssets.join("、"));
+  if(!item?.generatedAssets?.length&&!item?.parseWarnings?.length&&!item?.unparsedGeneratedAssets?.length)return "";
+  const assets=(item.generatedAssets||[]).map(asset=>{
+    if(typeof asset==="string")return '<div class="tdm-small">待生成资产：'+esc(asset)+'</div>';
+    const typeLabel=({image:"图片",audio:"音频",video:"视频"})[asset.type]||"资产";
+    const meta=typeLabel+"｜"+asset.name+(asset.aspect_ratio?"｜"+asset.aspect_ratio:"");
+    return '<details class="tdm-batch-generated-item"><summary>'+esc(meta)+'</summary>'+
+      '<pre>'+esc(asset.prompt||"尚未提供生成提示词")+'</pre></details>';
+  }).join("");
+  const warnings=(item.parseWarnings||[]).map(warning=>'<div class="tdm-small tdm-batch-generated-warning">'+esc(warning)+'</div>').join("");
+  const unparsed=(item.unparsedGeneratedAssets||[]).map(value=>
+    '<details><summary>未识别的待生成资产内容</summary><pre>'+esc(value)+'</pre></details>').join("");
+  return '<div class="tdm-small">待生成资产（不会占用媒体输入槽位）</div>'+assets+warnings+unparsed;
 }
 function batchAssetPoolMarkup() {
   const batch=state.batchImport;if(!batch)return "";
@@ -1942,9 +1954,11 @@ function batchImportWarning() {
   }
   const overflow=items.filter(item=>batchTaskStatus(item).overflow>0).length;
   const missing=items.filter(item=>batchTaskStatus(item).missing>0).length;
+  const malformed=items.filter(item=>(item.parseErrors||[]).length);
   const warnings=[];
   if(overflow)warnings.push('工作流媒体输入槽位不足：'+overflowKinds.join("、")+'；'+overflow+' 个批次超出容量，不会创建。');
   if(missing)warnings.push(missing+' 个批次仍有未绑定媒体，请先从右侧资产池补齐。');
+  if(malformed.length)warnings.push(malformed.length+' 个批次存在引用资产格式错误，需检查当前批次原文。');
   return warnings.join(" ");
 }
 function batchImportMarkup() {
@@ -1953,18 +1967,18 @@ function batchImportMarkup() {
   const stats=batchImportStats(),current=batch.batches[batch.activeIndex],disabled=stats.valid===0||batch.saving;
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
-    '<div class="tdm-small">自动识别「批次01｜名称」独占行；支持 Markdown 和复制后丢失 #、粗体、列表符号的纯文本</div></div>'+
+    '<div class="tdm-small">使用 TBPM Markdown 规范；兼容旧版批次提示词和纯文本</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>当前批次提示词原文</strong>'+
     '<span>'+(current?esc(current.name):"尚未导入批次")+'</span></div>'+
     '<textarea class="tdm-batch-text" readonly spellcheck="false" aria-label="当前批次提示词原文" '+
     'placeholder="这里显示当前选中批次的完整提示词原文">'+
-    esc(current?.body||"")+'</textarea>'+
+    esc(current?.sourceBody||current?.body||"")+'</textarea>'+
     '<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
       (batch.includePreamble?'checked ':'')+(!batch.preamble||batch.saving?'disabled ':'')+
       '><span data-batch-preamble-label>'+esc(batch.preamble?
-        '将批次标题之前的说明附加到每个任务（推荐，保留全局制作规则）':
+        '将全局规则附加到每个任务（推荐，保留整集统一要求）':
         '批次标题之前没有说明内容')+'</span></label>'+
     '<div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
     '<div class="tdm-batch-warning" data-batch-warning>'+esc(batchImportWarning())+'</div>'+
@@ -1973,7 +1987,7 @@ function batchImportMarkup() {
     '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
     '<div class="tdm-batch-note">右侧是所有批次共用的媒体资产池：支持图片、音频和视频。先选择一个媒体槽位，再点选同类型资产完成绑定；文件名相同的引用会自动匹配。</div>'+
     '<div class="tdm-batch-ref-list">'+batchReferencesMarkup()+'</div>'+
-    '<div class="tdm-batch-generated">'+esc(batchGeneratedMarkup())+'</div>'+
+    '<div class="tdm-batch-generated">'+batchGeneratedMarkup()+'</div>'+
     '<div class="tdm-batch-pool"><div class="tdm-batch-pool-head">'+
     '<input data-action="batch-search" placeholder="搜索资产池文件名" value="'+esc(batch.search)+'" '+(batch.saving?'disabled':'')+'>'+
     '<button class="tdm-btn" data-action="batch-refresh-assets" '+(batch.uploading||batch.saving?'disabled':'')+'>扫描目录</button>'+
