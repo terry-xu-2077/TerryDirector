@@ -106,8 +106,9 @@ assert.equal(typedConverted,[
 
 const namedRefLabelStart=source.indexOf("function batchReferenceLabel(item,index) {");
 const namedRefLabelEnd=source.indexOf("function batchReferencesMarkup()",namedRefLabelStart);
-const namedRefLabel=new Function(namedRefLabelStart>=0&&namedRefLabelEnd>namedRefLabelStart?
-  source.slice(namedRefLabelStart,namedRefLabelEnd)+";return batchReferenceLabel;":"")();
+const namedRefLabel=new Function("mediaKindLabel",namedRefLabelStart>=0&&namedRefLabelEnd>namedRefLabelStart?
+  source.slice(namedRefLabelStart,namedRefLabelEnd)+";return batchReferenceLabel;":"")(
+  kind=>kind==="audio"?"音频":kind==="video"?"视频":"图片");
 assert.equal(namedRefLabel({references:[{name:"特瑞",displayName:"特瑞",kind:"image"}]},0),"图片 1 · 特瑞");
 assert.ok(source.includes("if(generated)generated.innerHTML=batchGeneratedMarkup();"));
 
