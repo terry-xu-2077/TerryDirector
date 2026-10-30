@@ -194,15 +194,11 @@ def _encode_final(frames: list[Image.Image], destination: Path, seconds: float) 
         raise ValueError(f"原生预览时长异常：预期 {seconds:.2f}s，实际 {actual}s")
 
 
-def save_native_preview(checkpoint_id: str, low_clean: dict, *,
-                        tiny_vae: str, duration_seconds: float, max_resolution=768):
-    """Capture the complete temporal span at the pause boundary (server-side)."""
+def save_native_video(checkpoint_id: str, video: torch.Tensor, *,
+                      tiny_vae: str, duration_seconds: float, max_resolution=768):
+    """Write from original video latents; accepts live and disk-restored x0."""
     from .director_selflift_task_store import checkpoint_dir
     folder = checkpoint_dir(checkpoint_id)
-    samples = low_clean.get("samples") if isinstance(low_clean, dict) else None
-    if not getattr(samples, "is_nested", False):
-        raise ValueError("原生预览需要 H3 NestedTensor 低清视频流")
-    video = list(samples.unbind())[0]
     decoder = _decoder(tiny_vae)
     try:
         frames = _frames(video, decoder, max_frames=72,
@@ -216,6 +212,18 @@ def save_native_preview(checkpoint_id: str, low_clean: dict, *,
     LOG.info("[TerryDirector] 原生低清预览已保存：%s, %.1fs, %d sampled frames",
              checkpoint_id, duration_seconds, len(frames))
     return "sampling_preview.mp4"
+
+
+def save_native_preview(checkpoint_id: str, low_clean: dict, *,
+                        tiny_vae: str, duration_seconds: float, max_resolution=768):
+    """Capture the complete temporal span at the pause boundary (server-side)."""
+    samples = low_clean.get("samples") if isinstance(low_clean, dict) else None
+    if not getattr(samples, "is_nested", False):
+        raise ValueError("原生预览需要 H3 NestedTensor 低清视频流")
+    video = list(samples.unbind())[0]
+    return save_native_video(checkpoint_id, video, tiny_vae=tiny_vae,
+                             duration_seconds=duration_seconds,
+                             max_resolution=max_resolution)
 
 
 def save_checkpoint_preview(checkpoint_id: str, low_clean: dict, tiny_vae: str | None,
