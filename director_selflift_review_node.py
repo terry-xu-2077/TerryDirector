@@ -1,8 +1,9 @@
 """Small, deterministic low-res review sink bound to a SelfLift checkpoint.
 
 Unlike ComfyUI SaveVideo, it persists the decoded review movie directly next to
-state.safetensors. The checkpoint_id dependency guarantees saving happens after
-the pause node, without changing the checkpoint's blocked hi-res output.
+state.safetensors, using the task name from the checkpoint manifest. The
+checkpoint_id dependency guarantees saving happens after the pause node, without
+changing the checkpoint's blocked hi-res output.
 """
 from __future__ import annotations
 
