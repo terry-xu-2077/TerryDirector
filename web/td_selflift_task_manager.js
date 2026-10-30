@@ -214,6 +214,8 @@ function styles() {
 .tdm-asset:hover{border-color:#6399d5;background:#272d36}
 .tdm-asset img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:4px;background:#101319}
 .tdm-asset .tdm-noimg{display:grid;place-items:center;width:100%;aspect-ratio:4/3;background:#151920;border-radius:4px;color:#8c96a5}
+.tdm-create .tdm-asset .tdm-noimg{display:flex;flex-direction:column;gap:8px;font-size:28px}
+.tdm-create .tdm-asset .tdm-noimg small{font-size:12px;line-height:1.2;color:#8c96a5}
 .tdm-asset label{display:block;margin:5px 2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;cursor:pointer}
 .tdm-asset .tdm-chip{position:absolute;top:9px;left:9px;background:#13161bc9;color:#cfe4ff;padding:2px 5px;border-radius:4px;font-size:10px}
 .tdm-asset-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:46vh;overflow:auto;padding:8px 0}
@@ -325,6 +327,8 @@ function styles() {
 .tdm-create .tdm-assets{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:9px}
 .tdm-create .tdm-asset{padding:6px}
 .tdm-create .tdm-asset label{font-size:11px}
+.tdm-create .tdm-asset .tdm-media-icon{height:auto;min-height:0;aspect-ratio:4/3;box-sizing:border-box;gap:8px;font-size:26px}
+.tdm-create .tdm-asset .tdm-media-icon small{font-size:12px;line-height:1.2;color:#91a5bd}
 .tdm-create-foot{display:flex;align-items:center;gap:12px;padding:12px 22px 14px;
  border-top:1px solid #353a43;flex:none}
 .tdm-create-foot .tdm-small{max-width:65%}
@@ -1954,7 +1958,7 @@ function mediaKindIcon(kind) {
 }
 function mediaPreviewMarkup(file,options={}) {
   const kind=file?.kind||options.kind||"image",path=file?.path||"";
-  if(!path)return kind==="image"?'<span class="tdm-noimg">＋</span>':
+  if(!path)return kind==="image"?'<span class="tdm-noimg"><span>＋</span><small>添加图片</small></span>':
     '<span class="tdm-media-icon">'+mediaKindIcon(kind)+'<small>未绑定'+mediaKindLabel(kind)+'</small></span>';
   const url=file?.preview_url||assetUrl(path);
   if(kind==="image")return '<img class="tdm-media-thumb" loading="lazy" src="'+esc(url)+'" alt="">';

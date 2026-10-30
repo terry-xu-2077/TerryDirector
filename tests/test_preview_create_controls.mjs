@@ -90,6 +90,9 @@ assert.deepEqual(h3Slots.map(x=>x.kind),
  [...Array(9).fill("image"),...Array(3).fill("video"),...Array(3).fill("audio")]);
 assert.ok(h3Slots.every(x=>x.h3_media&&x.value===""));
 assert.ok(h3Slots.every(x=>x.node_id===6));
+assert.ok(source.includes('<span class="tdm-noimg"><span>＋</span><small>添加图片</small></span>'));
+assert.ok(source.includes(".tdm-create .tdm-asset .tdm-media-icon small{font-size:12px"));
+assert.ok(source.includes(".tdm-create .tdm-asset .tdm-noimg small{font-size:12px"));
 const promptTokenStart=source.indexOf("function batchPromptWithMediaTokens(body,references) {");
 const promptTokenEnd=source.indexOf("async function createBatchTasks()",promptTokenStart);
 assert.ok(promptTokenStart>=0&&promptTokenEnd>promptTokenStart);
