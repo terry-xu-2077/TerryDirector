@@ -7,7 +7,8 @@ const parameterUrl="data:text/javascript;base64,"+Buffer.from(parameterSource).t
 
 const compiler = await import("data:text/javascript;base64,"+Buffer.from(source.replace('"./td_preview_task_parameters.js"',JSON.stringify(parameterUrl))).toString("base64"));
 const {resolvePreviewSeedBounds,validatePreviewSeed,randomPreviewSeed,
-  compilePreviewTargets,buildPreviewJob,applyPreviewInputs,RGTHREE_MAX_SEED} = compiler;
+  compilePreviewTargets,buildPreviewJob,applyPreviewInputs,RGTHREE_MAX_SEED,
+  sanitizeTaskFilename} = compiler;
 const W={
  nodes:[
   {id:77,type:"SeedNode",inputs:[{name:"seed",link:null}],outputs:[{name:"seed",links:[1,2]}]},
@@ -23,7 +24,7 @@ const api={
  "11":{class_type:"SamplerCustom",inputs:{noise_seed:["77",0]}},
  "13":{class_type:"TerryDirectorSelfLiftPauseResume",inputs:{
    seed:["77",0],mode:"暂停并保存",checkpoint_id:"",name:"Test"}},
- "22":{class_type:"SaveVideo",inputs:{video:["13",0]}},
+ "22":{class_type:"SaveVideo",inputs:{video:["13",0],filename_prefix:"video/TerryDirector/old"}},
 };
 const defs={
  SeedNode:{input:{required:{seed:["INT",{min:0,max:1125899906842624}]}}},
@@ -53,6 +54,13 @@ const job=buildPreviewJob(template,[{node_id:77,widget_name:"seed",value:1234}],
 assert.deepEqual(job.targets,["13"]);
 assert.equal(job.output["77"].inputs.seed,1234);
 assert.equal(api["77"].inputs.seed,8); // input node never mutated
+assert.equal(job.output["22"].inputs.filename_prefix,"video/TerryDirector/Test");
+const named=buildPreviewJob(template,[
+ {node_id:13,widget_name:"name",value:"批次01｜测试/镜头: A"},
+],"continue","a".repeat(32));
+assert.equal(named.output["22"].inputs.filename_prefix,"video/TerryDirector/批次01_测试_镜头_A");
+assert.equal(sanitizeTaskFilename("CON"),"_CON");
+assert.equal(sanitizeTaskFilename("  "), "TerryDirector");
 assert.equal(job.output["11"].inputs.noise_seed[0],"77"); // sampler still linked
 assert.throws(()=>applyPreviewInputs(job.output,[{node_id:11,widget_name:"noise_seed",value:7}]),/不能覆盖连线终点/);
 assert.deepEqual(buildPreviewJob(template,[],"continue","a".repeat(32)).targets,["22"]);

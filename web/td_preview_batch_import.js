@@ -1,0 +1,39 @@
+/** Parse Markdown shot batches for Preview Stage. The batch body is kept intact. */
+const BATCH_HEADING = /^##\s*(批次\s*\d+(?:\s*[｜|:：、.-]\s*.*)?)\s*$/gm;
+const IMAGE_FILE = /^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg))\s*(?:[：:]|$)/i;
+function referenceAssets(body) {
+  const lines=String(body||"").split(/\r?\n/),references=[],generatedAssets=[];
+  let inside=false;
+  for(const line of lines){
+    if(/^\s*\[全局参考\]\s*$/.test(line)){inside=true;continue;}
+    if(inside && /^\s*\[[^\]]+\]\s*$/.test(line))break;
+    if(!inside)continue;
+    const item=line.match(/^\s*-\s+(.+?)\s*$/);
+    if(!item)continue;
+    const value=item[1].trim();
+    if(/^待生成资产\s*[｜|]/.test(value)){
+      generatedAssets.push(value.replace(/^待生成资产\s*[｜|]\s*/,"").trim());continue;
+    }
+    const match=value.match(IMAGE_FILE);
+    if(match){
+      const name=match[1].trim();
+      if(!references.some(asset=>asset.name.toLowerCase()===name.toLowerCase()))
+        references.push({name,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});
+    }
+  }
+  return {references,generatedAssets};
+}
+export function parsePreviewBatches(value) {
+  const text=String(value||"").replace(/\r\n?/g,"\n");
+  const headings=[...text.matchAll(BATCH_HEADING)];
+  if(!headings.length)return {preamble:"",batches:[],error:"未识别到批次标题。请使用二级标题，例如：## 批次01｜镜头名称"};
+  const preamble=text.slice(0,headings[0].index).replace(/^\s*#\s+[^\n]*\n?/,"").trim();
+  const batches=headings.map((match,index)=>{
+    const start=match.index+match[0].length,end=index+1<headings.length?headings[index+1].index:text.length;
+    const body=text.slice(start,end).trim(),name=match[1].trim();
+    const assets=referenceAssets(body),durationMatch=name.match(/建议\s*(\d+)\s*秒/);
+    return {name,body,duration_seconds:durationMatch?Math.max(4,Math.min(20,Number(durationMatch[1]))):15,
+      references:assets.references,generatedAssets:assets.generatedAssets};
+  }).filter(batch=>batch.body.length>0);
+  return {preamble,batches,error:batches.length?"":"已识别标题，但没有找到包含正文的批次"};
+}
