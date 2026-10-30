@@ -56,5 +56,8 @@ assert.ok(source.includes('data-action="delete-config"'));
 assert.ok(source.includes('data-action="config-name"'));
 assert.ok(source.includes("STRING 输出节点"));
 assert.ok(source.includes("INT 输出节点"));
+assert.ok(source.includes("自动绑定 H3 节点的 prompt 输入"));
+assert.ok(source.includes("原工作流中的媒体加载节点会被忽略"));
+assert.ok(source.includes("h3_media_bindings"));
 assert.ok(!source.includes("traceH3PromptInputs"));
 console.log("Preview Stage typed source dropdowns: PASS");

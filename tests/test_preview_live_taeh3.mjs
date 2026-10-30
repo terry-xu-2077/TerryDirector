@@ -33,9 +33,11 @@ const state={
   }},
 };
 const uiCode=between("function effectivePreviewKind(task) {","function details(task) {");
-const tools=new Function("state","URL","Blob","atob","esc","selectedTask",
+const tools=new Function("state","URL","Blob","atob","esc","samplingPreviewEnabled","selectedTask",
   uiCode+"return {previewJobMatchesTask,updateLivePreview,livePreviewMarkup,releasePreviewBlobUrls};")
-  (state,fakeURL,Blob,globalThis.atob,esc,()=>state.tasks.find(t=>t.id===state.focused));
+  (state,fakeURL,Blob,globalThis.atob,esc,
+    value=>typeof value?.sampling_preview_enabled==="boolean"?value.sampling_preview_enabled:value?.preview_type!=="decoded",
+    ()=>state.tasks.find(t=>t.id===state.focused));
 const payload=(value)=>Buffer.from(value).toString("base64");
 const A={draftId:left.id,preview_type:"sampling",mode:"pause",busy:true,
   preview:{image:payload("video-step-1"),mime:"video/mp4",step:1,total:4},previewVersion:1};
@@ -43,7 +45,7 @@ const B={draftId:right.id,preview_type:"sampling",mode:"pause",busy:false,
   preview:{image:payload("video-step-1-B"),mime:"video/mp4",step:1,total:2},previewVersion:1};
 state.jobs.set("prompt-A",A);state.jobs.set("prompt-B",B);
 tools.updateLivePreview(A);
-assert.match(host.innerHTML,/TAEH3 实时采样/);
+assert.match(host.innerHTML,/采样预览/);
 assert.match(host.innerHTML,/第 1 \/ 4 步/);
 const first=host.innerHTML;
 tools.updateLivePreview(B);

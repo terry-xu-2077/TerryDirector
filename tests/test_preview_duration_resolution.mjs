@@ -7,6 +7,7 @@ const compilerSrc=await readFile(new URL("../web/td_preview_job_compiler.js",imp
 const mod=await import("data:text/javascript;base64,"+Buffer.from(src).toString("base64"));
 const {taskVideoFrameCount,taskResolutionInfo,applyTaskVideoParameters}=mod;
 assert.equal(mod.PREVIEW_DURATION_DEFAULT,15);
+assert.equal(mod.PREVIEW_RESOLUTION_DEFAULT,2.0);
 assert.deepEqual([mod.PREVIEW_DURATION_MIN,mod.PREVIEW_DURATION_MAX],[4,20]);
 assert.equal(taskVideoFrameCount(15),362);
 assert.ok(taskVideoFrameCount(4)<taskVideoFrameCount(15));
@@ -51,7 +52,7 @@ const prefix=manager.slice(manager.indexOf("function createMarkup() {"),
 const create=new Function("state","esc","assetCard","PREVIEW_RESOLUTION_OPTIONS",
  "taskAspectRatio","taskResolutionInfo",prefix+";return createMarkup;")(
  {createDraft:{source:"template",name:"S01",seed:"42",prompt:"",previewType:"sampling",
-   duration_seconds:15,highres_megapixels:.8,assets:[],api_prompt:original},
+   duration_seconds:15,highres_megapixels:2.0,assets:[],api_prompt:original},
   template:{workflow_name:"Default"},tasks:[],editDraftId:null},
  x=>String(x),()=>"<asset/>",mod.PREVIEW_RESOLUTION_OPTIONS,
  mod.taskAspectRatio,taskResolutionInfo);
@@ -59,9 +60,9 @@ const html=create();
 assert.match(html,/type="range" id="tdm-task-duration" min="4" max="20" step="1"/);
 assert.match(html,/value="15"/);
 assert.ok(html.includes('data-action="task-resolution"'));
-assert.ok(html.includes("0.80 MP 高清 (1216×672)"));
-assert.ok(html.includes("0.20 MP 低清 (608×352)"));
-assert.ok(html.indexOf("预览视频")>html.indexOf("高清分辨率"));
+assert.ok(html.includes("2.00 MP 高清 (1888×1088)"));
+assert.ok(html.includes("0.50 MP 低清 (960×544)"));
+assert.ok(html.indexOf("预览输出")>html.indexOf("高清分辨率"));
 assert.equal((html.match(/tdm-inline-field/g)||[]).length,6);
 assert.ok(manager.includes("state.createDraft.duration_seconds=seconds;"));
 assert.ok(manager.includes("state.createDraft.highres_megapixels=Number(control.value);"));

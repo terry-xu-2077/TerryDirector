@@ -19,7 +19,7 @@ assert.equal(job.preview.step,3);
 assert.deepEqual(mod.finalSamplingCandidates(job).map(x=>x.step),[3,2,1]);
 assert.equal(mod.previewFallbackWarning(mod.finalSamplingCandidates(job)[1],
   mod.finalSamplingCandidates(job)),
-  "最后一轮 TAEH3 视频编码异常，已回退保存第 2 / 3 步的可播放预览");
+  "最后一轮采样预览视频编码异常，已回退保存第 2 / 3 步的可播放预览");
 assert.equal(mod.rememberSamplingPreview(job,preview(1,"too-late")),false);
 for(let i=4;i<=10;i++)mod.rememberSamplingPreview(job,preview(i,"ok"+i,10));
 assert.deepEqual(mod.finalSamplingCandidates(job).map(x=>x.step),[10,9,8,1],
@@ -50,11 +50,12 @@ const request=async (path,opts)=>{
 };
 const messages=[];
 const persist=new Function("api","URL_BASE","atob","request","console",
- "finalSamplingCandidates","previewFallbackWarning",
+ "finalSamplingCandidates","previewFallbackWarning","samplingPreviewEnabled",
  source+"return persistPreview;")(
  api,"/terrydirector/api/selflift",globalThis.atob,request,
  {warn:(...args)=>messages.push(args),error:(...args)=>messages.push(args)},
- mod.finalSamplingCandidates,mod.previewFallbackWarning);
+ mod.finalSamplingCandidates,mod.previewFallbackWarning,
+ value=>typeof value?.sampling_preview_enabled==="boolean"?value.sampling_preview_enabled:value?.preview_type!=="decoded");
 const task={checkpointId:"a".repeat(32),preview_type:"sampling",
  duration_seconds:15};
 for(let i=1;i<=3;i++)mod.rememberSamplingPreview(task,preview(i,
@@ -84,11 +85,12 @@ const bad={checkpointId:"c".repeat(32),preview_type:"sampling",duration_seconds:
 mod.rememberSamplingPreview(bad,preview(2,"invalid-final",3));
 const failedApi={fetchApi:async ()=>response(false)};
 const failPersist=new Function("api","URL_BASE","atob","request","console",
- "finalSamplingCandidates","previewFallbackWarning",
+ "finalSamplingCandidates","previewFallbackWarning","samplingPreviewEnabled",
  source+"return persistPreview;")(
  failedApi,"/terrydirector/api/selflift",globalThis.atob,request,
  {warn:()=>{},error:()=>{}},
- mod.finalSamplingCandidates,mod.previewFallbackWarning);
+ mod.finalSamplingCandidates,mod.previewFallbackWarning,
+ value=>typeof value?.sampling_preview_enabled==="boolean"?value.sampling_preview_enabled:value?.preview_type!=="decoded");
 assert.equal(await failPersist(bad),false);
 assert.equal(bad.previewSaved,undefined);
 assert.match(bad.previewSaveError,/已尝试 1 轮/);

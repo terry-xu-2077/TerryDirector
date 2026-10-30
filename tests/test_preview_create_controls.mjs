@@ -9,38 +9,41 @@ const begin=source.indexOf("function createMarkup() {"),end=source.indexOf("func
 assert.ok(begin>=0 && end>begin);
 const create=new Function("state","esc","assetCard","PREVIEW_RESOLUTION_OPTIONS",
   "taskAspectRatio","taskResolutionInfo",source.slice(begin,end)+";return createMarkup;");
+assert.equal(mod.PREVIEW_RESOLUTION_DEFAULT,2.0);
 const state={template:{workflow_name:"预演工作流"},tasks:[],
- createDraft:{source:"template",name:"S1_E1",seed:"42",prompt:"",previewType:"sampling",
- duration_seconds:15,highres_megapixels:0.8,assets:[],api_prompt:{}}};
+ createDraft:{source:"template",name:"S1_E1",seed:"42",prompt:"",previewType:"decoded",
+ sampling_preview_enabled:false,vae_decode_enabled:true,decoded_target:"100",
+ duration_seconds:15,highres_megapixels:2.0,assets:[],api_prompt:{}}};
 const html=()=>create(state,x=>String(x),()=>"<asset/>",mod.PREVIEW_RESOLUTION_OPTIONS,
  mod.taskAspectRatio,mod.taskResolutionInfo)();
 let rendered=html();
 assert.ok(rendered.indexOf("新建任务名称")<rendered.indexOf("基于"));
 assert.ok(rendered.includes('id="tdm-new-task-name"'));
 assert.equal((rendered.match(/tdm-inline-field/g)||[]).length,6);
-assert.equal((rendered.match(/type="radio"/g)||[]).length,2);
-assert.match(rendered,/value="sampling" checked/);
-assert.ok(!rendered.includes('value="decoded" checked'));
+assert.equal((rendered.match(/type="radio"/g)||[]).length,0);
+assert.equal((rendered.match(/type="checkbox"/g)||[]).length,2);
+assert.match(rendered,/data-field="vae_decode_enabled" checked/);
+assert.ok(!rendered.match(/data-field="sampling_preview_enabled" checked/));
 assert.ok(rendered.includes('id="tdm-new-task-duration"') || rendered.includes('id="tdm-task-duration"'));
 assert.ok(rendered.includes('min="4" max="20" step="1"'));
 assert.ok(rendered.includes('value="15"'));
 assert.ok(rendered.includes('data-action="task-resolution"'));
 assert.ok(rendered.includes("0.20 MP 低清"));
-assert.ok(rendered.indexOf("预览视频")>rendered.indexOf("高清分辨率"));
-state.createDraft.previewType="decoded";
+assert.ok(rendered.indexOf("预览输出")>rendered.indexOf("高清分辨率"));
+state.createDraft.sampling_preview_enabled=true;
+state.createDraft.vae_decode_enabled=false;
 rendered=html();
-assert.match(rendered,/value="decoded" checked/);
-assert.ok(!rendered.includes('value="sampling" checked'));
+assert.match(rendered,/data-field="sampling_preview_enabled" checked/);
+assert.ok(!rendered.match(/data-field="vae_decode_enabled" checked/));
 assert.ok(rendered.includes('data-action="random-seed"'));
 assert.ok(source.includes('data-action="batch-create"'));
 assert.ok(source.includes('data-action="batch-submit"'));
 assert.ok(source.includes("function batchImportMarkup()"));
-assert.ok(source.includes("matchingAssets(state.template.workflow)"));
-const matcherStart=source.indexOf("function matchingAssets(workflow) {");
+assert.ok(source.includes("matchingAssets(state.template.workflow,state.template.h3_node_id)"));
+const matcherStart=source.indexOf("const H3_REFERENCE_CLASS =");
 const matcherEnd=source.indexOf("const bindingKey",matcherStart);
 assert.ok(matcherStart>=0&&matcherEnd>matcherStart);
-const matchingAssets=new Function("nodeValue",source.slice(matcherStart,matcherEnd)+";return matchingAssets;")(
-  (node,name)=>node.widgets_values_named?.[name]??node.widgets_values?.[0]);
+const matchingAssets=new Function(source.slice(matcherStart,matcherEnd)+";return matchingAssets;")();
 const mediaSlots=matchingAssets({nodes:[
   {id:1,type:"LoadImage",widgets_values_named:{image:"person.png"}},
   {id:2,type:"LoadAudio",widgets_values_named:{audio:"dialogue.wav"}},
@@ -49,6 +52,21 @@ const mediaSlots=matchingAssets({nodes:[
 ]});
 assert.deepEqual(mediaSlots.map(x=>x.kind),["image","audio","video"]);
 assert.deepEqual(mediaSlots.map(x=>x.value),["person.png","dialogue.wav","motion.mp4"]);
+const h3Slots=matchingAssets({nodes:[
+ {id:6,type:"MiniMaxH3ReferenceToVideo",inputs:[
+  {name:"ref_images.ref_image_0",type:"IMAGE",label:"ref_image_0"},
+  {name:"ref_videos.ref_video_0",type:"IMAGE",label:"ref_video_0"},
+  {name:"ref_video_audios.ref_video_audio_0",type:"AUDIO",label:"ref_video_audio_0"},
+  {name:"ref_audios.ref_audio_0",type:"AUDIO",label:"ref_audio_0"},
+ ]},
+ {id:1,type:"LoadImage",widgets_values_named:{image:"ignored.png"}},
+]},6);
+assert.deepEqual(h3Slots.map(x=>x.widget_name),[
+ "ref_images.ref_image_0","ref_videos.ref_video_0","ref_audios.ref_audio_0"
+]);
+assert.deepEqual(h3Slots.map(x=>x.kind),["image","video","audio"]);
+assert.ok(h3Slots.every(x=>x.h3_media&&x.value===""));
+assert.ok(h3Slots.every(x=>x.node_id===6));
 const promptTokenStart=source.indexOf("function batchPromptWithMediaTokens(body,references) {");
 const promptTokenEnd=source.indexOf("async function createBatchTasks()",promptTokenStart);
 assert.ok(promptTokenStart>=0&&promptTokenEnd>promptTokenStart);
@@ -172,6 +190,8 @@ const assetCardStub=(path,title,attrs,selected,kind,incompatible)=>
 const batchMarkupState={
   batchImport:{
     text:"# 批量提示词",importText:"",importFileName:"",importError:"",promptImportOpen:false,
+    template:{decoded_target:"100"},highres_megapixels:2.0,
+    sampling_preview_enabled:false,vae_decode_enabled:true,
     preamble:"全局风格规则",includePreamble:true,
     batches:[{name:"批次01｜场景一",body:"导演说明\n分镜",duration_seconds:15,
       references:[{name:"特瑞.jpg",kind:"image",path:"特瑞.jpg"}],generatedAssets:[]}],
@@ -179,9 +199,9 @@ const batchMarkupState={
   },
   inputFiles:[{kind:"image",name:"特瑞.jpg",path:"特瑞.jpg"}],
 };
-const batchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup",
+const batchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup","PREVIEW_RESOLUTION_OPTIONS",
   source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};")(
-    batchMarkupState,value=>String(value),assetCardStub,kindLabel,preview);
+    batchMarkupState,value=>String(value),assetCardStub,kindLabel,preview,[0.4,0.6,0.8,1,1.2,1.5,2,3,4]);
 const batchMarkup=batchRenderers.batchImportMarkup();
 assert.ok(batchMarkup.includes("批量添加任务"));
 assert.ok(batchMarkup.includes("当前批次提示词原文"));
@@ -195,6 +215,21 @@ assert.ok(!batchMarkup.includes('data-action="batch-text"'));
 assert.ok(!batchMarkup.includes("导入提示词"));
 assert.ok(!batchMarkup.includes('data-action="batch-import-prompt"'));
 assert.ok(batchMarkup.includes('data-action="batch-cancel"'));
+assert.ok(batchMarkup.includes('data-action="batch-resolution"'));
+assert.ok(batchMarkup.includes('data-field="sampling_preview_enabled"'));
+assert.ok(batchMarkup.includes('data-field="vae_decode_enabled"'));
+assert.ok(batchMarkup.includes("对本次创建的所有批次生效"));
+const settingsStart=source.indexOf("function settingsMarkup() {");
+const settingsEnd=source.indexOf("function configMarkup()",settingsStart);
+assert.ok(settingsStart>=0&&settingsEnd>settingsStart);
+const settingsHtml=new Function("state","PREVIEW_RESOLUTION_OPTIONS",
+  source.slice(settingsStart,settingsEnd)+";return settingsMarkup;")({
+    settingsDraft:{highres_megapixels:2.0,default_preview_mode:"decoded"},
+  },[0.4,0.6,0.8,1,1.2,1.5,2,3,4])();
+assert.match(settingsHtml,/value="2" selected/);
+assert.match(settingsHtml,/value="decoded" checked/);
+assert.match(settingsHtml,/value="sampling"/);
+assert.ok(source.includes("PREVIEW_SETTINGS_KEY"));
 batchMarkupState.batchImport.promptImportOpen=true;
 batchMarkupState.batchImport.importText="批次01｜测试\n[分镜脚本]\n镜头";
 batchMarkupState.batchImport.importFileName="test.md";
