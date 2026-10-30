@@ -17,8 +17,7 @@ function referenceAssets(body) {
     const match=value.match(IMAGE_FILE);
     if(match){
       const name=match[1].trim();
-      if(!references.some(asset=>asset.name.toLowerCase()===name.toLowerCase()))
-        references.push({name,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});
+      references.push({name,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});
     }
   }
   return {references,generatedAssets};

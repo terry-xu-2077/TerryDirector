@@ -22,6 +22,8 @@ assert.match(parsed.batches[0].body,/镜头01｜/);
 assert.deepEqual(parsed.batches[0].references.map(x=>x.name),["00_特瑞_Terry.jpg","蚂蚱载具.jpg"]);
 assert.deepEqual(parsed.batches[0].generatedAssets,["干燥菌伞峡道母图"]);
 assert.deepEqual(parsed.batches[1].references.map(x=>x.name),["开场遗迹.jpg"]);
+const repeated=parsePreviewBatches("## 批次03｜重复引用\n[全局参考]\n- a.jpg：正面\n- a.jpg：侧面\n[分镜脚本]\n镜头");
+assert.equal(repeated.batches[0].references.length,2);
 assert.equal(parsePreviewBatches("没有批次标题").batches.length,0);
 assert.match(parsePreviewBatches("没有批次标题").error,/未识别到批次标题/);
 console.log("Preview Stage Markdown batch parser: PASS");

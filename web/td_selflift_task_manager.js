@@ -1693,14 +1693,16 @@ function findBatchPoolAsset(name) {
 function parseBatchImportText() {
   const batch=state.batchImport;if(!batch)return;
   const previous=new Map((batch.batches||[]).map(item=>[
-    item.name,new Map((item.references||[]).map(ref=>[ref.name,ref.path]))
+    item.name,(item.references||[]).map(ref=>({name:ref.name,path:ref.path}))
   ]));
   const parsed=parsePreviewBatches(batch.text);
   batch.preamble=parsed.preamble;batch.error=parsed.error;
   batch.batches=parsed.batches.map(item=>({
     ...item,
-    references:item.references.map(ref=>{
-      const saved=previous.get(item.name)?.get(ref.name);
+    references:item.references.map((ref,index)=>{
+      const oldRefs=previous.get(item.name)||[];
+      const saved=oldRefs[index]?.name===ref.name?oldRefs[index].path:
+        oldRefs.find(old=>old.name===ref.name)?.path;
       const savedExists=saved&&state.inputFiles.some(file=>file.kind==="image"&&file.path===saved);
       return {...ref,path:savedExists?saved:findBatchPoolAsset(ref.name)};
     }),
