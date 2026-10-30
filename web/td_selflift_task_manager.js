@@ -1153,11 +1153,10 @@ async function handleAction(action, data) {
     if (action === "close") return close();
     if (action === "refresh") return refresh();
     if (action === "batch-create") return await openBatchImport();
-    if (action === "batch-import-prompt") return importBatchPrompt();
     if (action === "batch-import-browse") return browseBatchPromptFile();
     if (action === "batch-import-apply") return applyBatchPromptImport();
     if (action === "batch-import-cancel") {
-      if(state.batchImport)state.batchImport.promptImportOpen=false;
+      state.batchImport=null;
       return render();
     }
     if (action === "batch-cancel") { state.batchImport=null; return render(); }
@@ -1667,7 +1666,7 @@ async function openBatchImport() {
   state.editDraftId=null;
   state.batchImport={
     template:structuredClone(state.template),assetSlots:matchingAssets(state.template.workflow),
-    text:"",importText:"",importFileName:"",importError:"",promptImportOpen:false,
+    text:"",importText:"",importFileName:"",importError:"",promptImportOpen:true,
     preamble:"",batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
     includePreamble:true,search:"",saving:false,uploading:false,
   };
@@ -1943,17 +1942,17 @@ function batchImportWarning() {
 }
 function batchImportMarkup() {
   const batch=state.batchImport;if(!batch)return "";
+  if(batch.promptImportOpen)return batchPromptImportMarkup();
   const stats=batchImportStats(),current=batch.batches[batch.activeIndex],disabled=stats.valid===0||batch.saving;
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
     '<div class="tdm-small">自动识别「批次01｜名称」独占行；支持 Markdown 和复制后丢失 #、粗体、列表符号的纯文本</div></div>'+
-    '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-prompt" '+(batch.saving?'disabled':'')+'>导入提示词</button>'+
-    '<button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
+    '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>当前批次提示词原文</strong>'+
     '<span>'+(current?esc(current.name):"尚未导入批次")+'</span></div>'+
     '<textarea class="tdm-batch-text" readonly spellcheck="false" aria-label="当前批次提示词原文" '+
-    'placeholder="点击右上角「导入提示词」，解析后这里会显示当前选中批次的完整提示词原文">'+
+    'placeholder="这里显示当前选中批次的完整提示词原文">'+
     esc(current?.body||"")+'</textarea>'+
     '<label class="tdm-batch-note"><input type="checkbox" data-action="batch-preamble" '+
       (batch.includePreamble?'checked ':'')+(!batch.preamble||batch.saving?'disabled ':'')+
@@ -1978,8 +1977,7 @@ function batchImportMarkup() {
     '<div class="tdm-batch-note">缺少媒体或超出对应类型的工作流槽位时，该批次不会创建；未引用的输入槽保留工作流模板默认值。</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-cancel" '+(batch.saving?'disabled':'')+'>取消</button>'+
     '<button class="tdm-btn primary" data-action="batch-submit" '+(disabled?'disabled':'')+'>'+
-    (batch.saving?'正在创建…':'创建 '+stats.valid+' 个任务')+'</button></footer></div></div>'+
-    (batch.promptImportOpen?batchPromptImportMarkup():"");
+    (batch.saving?'正在创建…':'创建 '+stats.valid+' 个任务')+'</button></footer></div></div>';
 }
 function batchPromptImportMarkup() {
   const batch=state.batchImport;if(!batch?.promptImportOpen)return "";
@@ -1996,7 +1994,7 @@ function batchPromptImportMarkup() {
     '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-browse">浏览文件</button></div>'+
     (batch.importError?'<div class="tdm-batch-import-error">'+esc(batch.importError)+'</div>':'')+
     '<footer class="tdm-form-actions"><button class="tdm-btn" data-action="batch-import-cancel">取消</button>'+
-    '<button class="tdm-btn primary" data-action="batch-import-apply">解析批次</button></footer>'+
+    '<button class="tdm-btn primary" data-action="batch-import-apply">确定</button></footer>'+
     '</section></div>';
 }
 function bindBatchDynamicActions(holder) {
@@ -2074,14 +2072,6 @@ function syncBatchAssetToOtherBatches(index) {
   }
   toast(synced?"已同步到其他批次的 "+synced+" 个相同引用槽位":"其他批次没有相同媒体类型和引用名称的槽位",
     synced?"success":"info");
-}
-function importBatchPrompt() {
-  const batch=state.batchImport;if(!batch)return;
-  batch.importText=batch.text||"";
-  batch.importFileName="";
-  batch.importError="";
-  batch.promptImportOpen=true;
-  render();
 }
 function isBatchPromptFile(file) {
   return !!file&&(/\.(?:md|markdown|txt)$/i.test(String(file.name||""))||
