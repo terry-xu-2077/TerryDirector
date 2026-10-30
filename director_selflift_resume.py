@@ -105,16 +105,20 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
     model = backend.mask_model(model, source, masks)
     sigmas = saved["sigmas"].to(backend.device)
     total_steps = sigmas.numel() - 1
-    preview = backend.preview(model, total_steps)
+    remaining_steps = total_steps - k
+    # ComfyUI's latent_preview callback owns the native ProgressBar and emits
+    # progress events for the executing SelfLiftHighres node. Track only the
+    # remaining high-resolution Euler steps (1/N, 2/N...) rather than 7/9.
+    preview = backend.preview(model, remaining_steps)
     high_calls = 0
 
     def callback(step, clean, state, total):
         nonlocal high_calls
         high_calls += 1
-        if high_calls > total_steps - k:
+        if high_calls > remaining_steps:
             raise RuntimeError("SelfLift: 高清采样超过预期步数")
         if preview is not None:
-            preview(k + high_calls - 1, clean, state, total_steps)
+            preview(high_calls - 1, clean, state, remaining_steps)
 
     logging.info(
         "[TerryDirector SelfLift split] 进入高清 Euler 采样 %d 步（初始化已用 %.1fs）",
