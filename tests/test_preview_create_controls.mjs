@@ -49,6 +49,34 @@ const mediaSlots=matchingAssets({nodes:[
 ]});
 assert.deepEqual(mediaSlots.map(x=>x.kind),["image","audio","video"]);
 assert.deepEqual(mediaSlots.map(x=>x.value),["person.png","dialogue.wav","motion.mp4"]);
+const promptTokenStart=source.indexOf("function batchPromptWithMediaTokens(body,references) {");
+const promptTokenEnd=source.indexOf("async function createBatchTasks()",promptTokenStart);
+assert.ok(promptTokenStart>=0&&promptTokenEnd>promptTokenStart);
+const promptWithTokens=new Function(source.slice(promptTokenStart,promptTokenEnd)+";return batchPromptWithMediaTokens;")();
+const convertedPrompt=promptWithTokens([
+  "[全局参考]",
+  "- 00_特瑞_Terry.jpg：特瑞面容、沙棕旧披覆外层及深灰工装",
+  "- 对白.wav：角色对白",
+  "- 运镜参考.mp4：动作节奏",
+  "[连续性状态]",
+  "00_特瑞_Terry.jpg 在这里不应被替换",
+].join("\n"),[
+  {name:"00_特瑞_Terry.jpg",kind:"image"},
+  {name:"对白.wav",kind:"audio"},
+  {name:"运镜参考.mp4",kind:"video"},
+]);
+assert.equal(convertedPrompt,[
+  "[全局参考]",
+  "<Picture 1>：特瑞面容、沙棕旧披覆外层及深灰工装",
+  "<Audio 1>：角色对白",
+  "<Video 1>：动作节奏",
+  "[连续性状态]",
+  "00_特瑞_Terry.jpg 在这里不应被替换",
+].join("\n"));
+assert.equal(promptWithTokens("[全局参考]\n- A.jpg：A\n- B.jpg：B",[
+  {name:"A.jpg",kind:"image"},{name:"B.jpg",kind:"image"},
+]),"[全局参考]\n<Picture 1>：A\n<Picture 2>：B");
+
 const mediaStart=source.indexOf("function mediaKindLabel(kind) {");
 const mediaEnd=source.indexOf("function assetCard(",mediaStart);
 const mediaHelpers=new Function("state","esc","assetUrl",
@@ -82,7 +110,11 @@ assert.ok(batchMarkup.includes('data-action="batch-upload-assets"'));
 assert.ok(batchMarkup.includes('data-action="batch-submit"'));
 assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任务"));
 assert.ok(batchMarkup.includes('class="tdm-batch-ref-card active"'));
-assert.ok(batchMarkup.includes('data-kind="image"'));
+assert.ok(batchMarkup.includes('data-action="batch-sync-asset"'));
+assert.ok(batchMarkup.includes("图片 1"));
+assert.ok(!batchMarkup.includes("特瑞.jpg") || batchMarkup.includes("特瑞.jpg"));
+assert.ok(source.includes("function syncBatchAssetToOtherBatches(index) {"));
+assert.ok(source.includes('action === "batch-sync-asset"'));
 const typedBatchMarkup=renderBatch({
   batchImport:{
     text:"多媒体",preamble:"",includePreamble:false,
@@ -140,12 +172,19 @@ const draftWithMediaSlots=()=>({assets:[
   {kind:"image",node_id:4,widget_name:"image",value:"default-b.jpg"},
 ]});
 const createBatch=new Function("state","batchTaskStatus","randomizeNewTaskSeed","buildDraft",
-  "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window",
+  "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window","batchPromptWithMediaTokens",
   source.slice(createBatchStart,createBatchEnd)+";return createBatchTasks;")(
   batchState,()=>({valid:true}),draft=>draft,draftWithMediaSlots,15,draft=>draft,
   async(_url,options)=>{savedBatch=JSON.parse(options.body);return {id:"draft_test"};},
-  async()=>{},()=>{},()=>{},{confirm:()=>true});
+  async()=>{},()=>{},()=>{},{confirm:()=>true},promptWithTokens);
+batchState.batchImport.batches[0].body=[
+  "[全局参考]","- a.jpg：人物","- b.wav：对白","- c.mp4：动作","[分镜脚本]","正文"
+].join("\n");
 await createBatch();
+assert.equal(savedBatch.prompt,[
+  "全局规则","",
+  "[全局参考]","<Picture 1>：人物","<Audio 1>：对白","<Video 1>：动作","[分镜脚本]","正文"
+].join("\n"));
 assert.deepEqual(savedBatch.assets.map(asset=>asset.value),[
   "a.jpg","b.wav","c.mp4","default-b.jpg"
 ]);

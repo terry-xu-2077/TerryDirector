@@ -339,9 +339,9 @@ function styles() {
 .tdm-batch-ref-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px;border:1px solid #363d48;border-radius:8px;background:#1b2027}
 .tdm-batch-ref-card.active{border-color:#6394d1;background:#253449;box-shadow:inset 0 0 0 1px #45688f}
 .tdm-batch-ref-select{display:flex;flex-direction:column;gap:3px;width:100%;padding:0;border:0;background:transparent;color:#dce4ef;text-align:left;cursor:pointer}
-.tdm-batch-ref-select strong{font-size:11px;line-height:1.4;overflow-wrap:anywhere}
-.tdm-batch-ref-select small,.tdm-batch-ref-path{font-size:10px;color:#98a4b4;line-height:1.45;overflow-wrap:anywhere}
-.tdm-batch-ref-type{font-size:9px;color:#9fb9d8}
+.tdm-batch-ref-select{min-height:18px}
+.tdm-batch-ref-type{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:650;color:#c7d8ee}
+.tdm-batch-ref-sync{width:100%;padding:5px 7px;font-size:10px;line-height:1.35}
 .tdm-batch-ref-preview{display:flex;align-items:center;justify-content:center;min-height:74px;max-height:116px;overflow:hidden;border-radius:5px;background:#11151b}
 .tdm-batch-ref-preview img,.tdm-batch-ref-preview video{display:block;width:100%;max-height:116px;object-fit:contain;background:#11151b}
 .tdm-batch-ref-preview audio{display:block;width:100%;height:38px}
@@ -1129,6 +1129,10 @@ async function handleAction(action, data) {
       return render();
     }
     if (action === "batch-assign-asset") { assignBatchAsset(data.path); return render(); }
+    if (action === "batch-sync-asset") {
+      syncBatchAssetToOtherBatches(Number(data.index));
+      return renderBatchImportViews();
+    }
     if (action === "batch-refresh-assets") {
       await loadInputFiles();syncBatchAssetMatches();return render();
     }
@@ -1824,6 +1828,13 @@ function batchSlotPreviewMarkup(ref) {
     '<strong>待绑定'+mediaKindLabel(ref.kind)+'</strong><small>从下方资产池选择或上传</small></div>';
   return mediaPreviewMarkup(file,{controls:true});
 }
+function batchReferenceLabel(item,index) {
+  const ref=item?.references?.[index];
+  const kind=ref?.kind||"image";
+  const number=(item?.references||[]).slice(0,index+1)
+    .filter(entry=>(entry.kind||"image")===kind).length;
+  return mediaKindLabel(kind)+" "+number;
+}
 function batchReferencesMarkup() {
   const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
   if(!item)return '<div class="tdm-batch-empty">选择左侧批次查看引用资产</div>';
@@ -1833,11 +1844,11 @@ function batchReferencesMarkup() {
     const file=state.inputFiles.find(entry=>entry.path===ref.path&&entry.kind===(ref.kind||"image"));
     return '<article class="tdm-batch-ref-card '+(selected?"active":"")+'">'+
       '<button type="button" class="tdm-batch-ref-select" data-action="batch-select-ref" data-index="'+index+'">'+
-      '<span class="tdm-batch-ref-type">'+mediaKindLabel(ref.kind)+'</span><strong>'+esc(ref.name)+'</strong>'+
-      (ref.description?'<small>'+esc(ref.description)+'</small>':'')+
-      '<small>'+(file?'已绑定':'待绑定 · 选择此槽位后从资产池绑定')+'</small></button>'+
+      '<span class="tdm-batch-ref-type">'+esc(batchReferenceLabel(item,index))+'</span></button>'+
       '<div class="tdm-batch-ref-preview">'+batchSlotPreviewMarkup(ref)+'</div>'+
-      '<div class="tdm-batch-ref-path">'+esc(file?file.path:"尚未选择资产")+'</div></article>';
+      '<button type="button" class="tdm-btn tdm-batch-ref-sync" data-action="batch-sync-asset" data-index="'+index+'" '+
+      (file?'':'disabled ')+'title="将相同媒体类型、相同引用名称的绑定同步到其他批次">同步到其他批次</button>'+
+      '</article>';
   }).join("");
 }
 function batchGeneratedMarkup() {
@@ -1978,6 +1989,24 @@ function assignBatchAsset(path) {
   const next=item.references.findIndex((ref,i)=>i>index&&!ref.path&&(ref.kind||"image")===file.kind);
   batch.selectedRefIndex=next>=0?next:index;
 }
+function syncBatchAssetToOtherBatches(index) {
+  const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
+  const source=item?.references?.[index];
+  if(!source?.path)throw Error("请先绑定当前媒体槽位");
+  const kind=source.kind||"image",name=String(source.name||"").trim().toLowerCase();
+  if(!name)throw Error("当前媒体引用缺少名称，无法同步");
+  let synced=0;
+  for(let batchIndex=0;batchIndex<batch.batches.length;batchIndex++){
+    if(batchIndex===batch.activeIndex)continue;
+    for(const target of batch.batches[batchIndex].references||[]){
+      if((target.kind||"image")===kind&&String(target.name||"").trim().toLowerCase()===name){
+        target.path=source.path;synced++;
+      }
+    }
+  }
+  toast(synced?"已同步到其他批次的 "+synced+" 个相同引用槽位":"其他批次没有相同媒体类型和引用名称的槽位",
+    synced?"success":"info");
+}
 async function importBatchPrompt() {
   const picker=document.createElement("input");
   picker.type="file";picker.accept=".md,.markdown,.txt,text/markdown,text/plain";
@@ -2025,6 +2054,32 @@ async function uploadBatchAssets() {
   };
   picker.click();
 }
+function batchPromptWithMediaTokens(body,references) {
+  const refs=Array.isArray(references)?references:[];
+  if(!refs.length)return String(body??"");
+  const counts={image:0,audio:0,video:0};
+  let referenceIndex=0,insideGlobalReferences=false;
+  return String(body??"").split(/\r?\n/).map(line=>{
+    if(/^\s*\[全局参考\]\s*$/.test(line)){
+      insideGlobalReferences=true;return line;
+    }
+    if(insideGlobalReferences&&/^\s*\[[^\]]+\]\s*$/.test(line)){
+      insideGlobalReferences=false;return line;
+    }
+    if(!insideGlobalReferences||referenceIndex>=refs.length)return line;
+    const ref=refs[referenceIndex],name=String(ref?.name||"");
+    if(!name)return line;
+    const content=line.trim().replace(/^(?:[-*+•]\s+|\d+[.)、]\s*)/,"");
+    if(!content.startsWith(name))return line;
+    const suffix=content.slice(name.length);
+    if(suffix&&!/^(?:\s*[:：]|\s+)/.test(suffix))return line;
+    const kind=ref.kind||"image";
+    const tokenType=kind==="audio"?"Audio":kind==="video"?"Video":"Picture";
+    counts[kind]=(counts[kind]||0)+1;
+    referenceIndex++;
+    return "<"+tokenType+" "+counts[kind]+">"+suffix;
+  }).join("\n");
+}
 async function createBatchTasks() {
   const batch=state.batchImport;if(!batch||batch.saving)return;
   const ready=batch.batches.filter(item=>batchTaskStatus(item).valid);
@@ -2037,7 +2092,7 @@ async function createBatchTasks() {
   for(const item of ready){
     try{
       const draft=randomizeNewTaskSeed(buildDraft(batch.template,[],item.name,"sampling"));
-      draft.prompt=[batch.includePreamble?batch.preamble:"",item.body].filter(Boolean).join("\n\n");
+      draft.prompt=[batch.includePreamble?batch.preamble:"",batchPromptWithMediaTokens(item.body,item.references)].filter(Boolean).join("\n\n");
       draft.duration_seconds=Number(item.duration_seconds||PREVIEW_DURATION_DEFAULT);
       const slotsByKind=new Map();
       for(const slot of draft.assets){
