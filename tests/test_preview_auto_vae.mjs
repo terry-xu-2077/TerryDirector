@@ -22,7 +22,7 @@ const workflow={nodes:[
   node(99,"VAEDecode",[["samples",193]],[[195]]),
   node(98,"VAEDecodeAudio",[["samples",194]],[[196]]),
   node(100,"VHS_VideoCombine",[["images",195],["audio",196]],[[]]),
-  node(18,"TerryDirectorSelfLiftHighres",[["checkpoint",98]],[[94]]),
+  node(18,"TerryDirectorSelfLiftHighres",[["checkpoint",98]],[[92,93]]),
   node(19,"VAEDecode",[["samples",92]],[[59]]),
   node(20,"VAEDecodeAudio",[["samples",93]],[[60]]),
   node(42,"VHS_VideoCombine",[["images",59],["audio",60]],[[]]),
@@ -30,7 +30,7 @@ const workflow={nodes:[
   [15,11,1,13,1,"LATENT"],
   [193,11,1,99,0,"LATENT"],[194,11,1,98,0,"LATENT"],
   [195,99,0,100,0,"IMAGE"],[196,98,0,100,1,"AUDIO"],
-  [98,13,0,18,0,"CHECKPOINT"],[94,18,0,19,0,"LATENT"],
+  [98,13,0,18,0,"CHECKPOINT"],
   [92,18,0,19,0,"LATENT"],[93,18,0,20,0,"LATENT"],
   [59,19,0,42,0,"IMAGE"],[60,20,0,42,1,"AUDIO"],
 ]};
