@@ -329,6 +329,20 @@ function styles() {
 .tdm-create .tdm-asset label{font-size:11px}
 .tdm-create .tdm-asset .tdm-media-icon{height:auto;min-height:0;aspect-ratio:4/3;box-sizing:border-box;gap:8px;font-size:26px}
 .tdm-create .tdm-asset .tdm-media-icon small{font-size:12px;line-height:1.2;color:#91a5bd}
+.tdm-create .tdm-asset label{display:flex;align-items:center;gap:4px;min-width:0}
+.tdm-create .tdm-asset .tdm-asset-index{display:inline-flex;align-items:center;flex:none;
+ padding:1px 6px;border-radius:4px;font-size:11px;font-weight:700;line-height:1.45}
+.tdm-create .tdm-asset .tdm-asset-status{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap;color:#c4ccd7;font-size:11px;font-weight:400}
+.tdm-create .tdm-asset[data-kind="image"]{border-color:#607fa5}
+.tdm-create .tdm-asset[data-kind="image"]:hover{border-color:#8db5e8;background:#222b37}
+.tdm-create .tdm-asset[data-kind="image"] .tdm-asset-index{color:#d9ebff;background:rgba(103,154,220,.22)}
+.tdm-create .tdm-asset[data-kind="video"]{border-color:#648b73}
+.tdm-create .tdm-asset[data-kind="video"]:hover{border-color:#91c5a0;background:#243129}
+.tdm-create .tdm-asset[data-kind="video"] .tdm-asset-index{color:#e0f6e7;background:rgba(104,168,123,.22)}
+.tdm-create .tdm-asset[data-kind="audio"]{border-color:#8071a5}
+.tdm-create .tdm-asset[data-kind="audio"]:hover{border-color:#ad9add;background:#2a2635}
+.tdm-create .tdm-asset[data-kind="audio"] .tdm-asset-index{color:#efe7ff;background:rgba(141,112,201,.24)}
 .tdm-create-foot{display:flex;align-items:center;gap:12px;padding:12px 22px 14px;
  border-top:1px solid #353a43;flex:none}
 .tdm-create-foot .tdm-small{max-width:65%}
@@ -1968,13 +1982,18 @@ function mediaPreviewMarkup(file,options={}) {
     return '<audio class="tdm-media-thumb" src="'+esc(url)+'" controls preload="metadata"></audio>';
   return '<span class="tdm-media-icon">'+mediaKindIcon(kind)+'<small>'+mediaKindLabel(kind)+'</small></span>';
 }
-function assetCard(path, title, attrs, selected = false, kind = "image", incompatible = false) {
+function assetCard(path, title, attrs, selected = false, kind = "image", incompatible = false, slotLabel = false) {
   const file=state.inputFiles.find(item=>item.path===path)||{path,kind,preview_url:path?assetUrl(path):""};
   const preview=mediaPreviewMarkup(file,{kind});
+  const labelText=String(title || path || ("添加"+mediaKindLabel(kind)));
+  const separator=slotLabel?labelText.indexOf(" · "):-1;
+  const labelMarkup=separator>=0
+    ? '<span class="tdm-asset-index">'+esc(labelText.slice(0,separator))+'</span>'+
+      '<span class="tdm-asset-status">'+esc(labelText.slice(separator))+'</span>'
+    : esc(labelText);
   return '<button type="button" class="tdm-asset' + (selected ? ' selected' : '')+
-    (incompatible?' incompatible':'')+'" '+attrs+'>'+preview+
-    '<label title="' + esc(path || "未选择") + '">' +
-    esc(title || path || ("添加"+mediaKindLabel(kind))) + '</label></button>';
+    (incompatible?' incompatible':'')+'" data-kind="'+esc(kind)+'" '+attrs+'>'+preview+
+    '<label title="' + esc(path || "未选择") + '">' + labelMarkup + '</label></button>';
 }
 function createMarkup() {
   const draft = state.createDraft;
@@ -2046,7 +2065,7 @@ function createMarkup() {
     '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
     (draft.h3_node_id?'<div class="tdm-small">H3 上限：图片 9 · 视频 3 · 独立音频 3；视频音轨自动配对</div>':'') +'<div class="tdm-assets">' + draft.assets.map((asset,i) =>
       assetCard(asset.value, (asset.label||mediaKindLabel(asset.kind)+" "+(i+1))+" · "+(asset.value||"未设置"),
-        'data-action="open-assets" data-index="' + i + '"',false,asset.kind||"image")).join("") + '</div>' +
+        'data-action="open-assets" data-index="' + i + '"',false,asset.kind||"image",false,true)).join("") + '</div>' +
     (draft.assets.length ? '' : '<div class="tdm-small">'+
       (draft.h3_node_id?'当前 H3 节点没有可用的参考输入槽位':'当前模板没有可识别的图片、视频或音频输入')+'</div>') +
     '</aside></div></div>' +
