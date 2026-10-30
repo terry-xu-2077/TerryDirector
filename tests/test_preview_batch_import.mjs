@@ -139,6 +139,7 @@ const tbpmSource = [
   "\x60\x60\x60text",
   "生成一张旧施工路的电影级实景参考图。",
   "\x60\x60\x60",
+  "备注：这条资产还需要补一张俯视构图。",
   "",
   "### 连续性状态",
   "866在干燥旧路行驶，四轮完好，翼膜收拢。",
@@ -169,6 +170,7 @@ assert.equal(tbpm.batches[0].generatedAssets[0].name,"干燥菌伞峡道母图")
 assert.equal(tbpm.batches[0].generatedAssets[0].aspect_ratio,"2.39:1");
 assert.match(tbpm.batches[0].generatedAssets[0].prompt,/蓝灰岩壁/);
 assert.equal(tbpm.batches[0].generatedAssets[1].aspect_ratio,"16:9");
+assert.match(tbpm.batches[0].unparsedGeneratedAssets[0],/还需要补一张俯视构图/);
 assert.doesNotMatch(tbpm.batches[0].body,/干燥菌伞峡道母图|请生成一张2\.39:1|旧施工路的电影级实景/);
 assert.match(tbpm.batches[0].body,/\[导演说明\]/);
 assert.match(tbpm.batches[0].body,/\[连续性状态\]/);

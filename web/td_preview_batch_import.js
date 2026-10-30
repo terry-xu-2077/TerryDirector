@@ -64,10 +64,10 @@ function readFencedPrompt(lines,startIndex){
   const marker=opening[1][0],length=opening[1].length,content=[];
   for(let j=i+1;j<lines.length;j++){
    const closing=lines[j].match(/^\s*(`{3,}|~{3,})\s*$/);
-   if(closing&&closing[1][0]===marker&&closing[1].length>=length)return {prompt:content.join("\n").trim(),endIndex:j};
+   if(closing&&closing[1][0]===marker&&closing[1].length>=length)return {prompt:content.join("\n").trim(),startIndex:i,endIndex:j};
    content.push(lines[j]);
   }
-  return {prompt:content.join("\n").trim(),endIndex:lines.length-1,unclosed:true};
+  return {prompt:content.join("\n").trim(),startIndex:i,endIndex:lines.length-1,unclosed:true};
  }
  return null;
 }
@@ -99,7 +99,17 @@ function parseGeneratedAssetSection(lines){
   const promptLabel=content.findIndex(line=>/^\s*提示词\s*[:：]/.test(line)),promptStart=promptLabel>=0?promptLabel:0;
   const fenced=readFencedPrompt(content,promptStart);
   let prompt="";
-  if(fenced){prompt=fenced.prompt;if(fenced.unclosed)warnings.push(name+"：提示词代码块没有闭合。");}
+  if(fenced){
+   const inlinePrompt=promptLabel>=0?content[promptLabel].replace(/^\s*提示词\s*[:：]\s*/,"").trim():"";
+   prompt=[inlinePrompt,fenced.prompt].filter(Boolean).join("\n");
+   if(fenced.unclosed)warnings.push(name+"：提示词代码块没有闭合。");
+   const extras=content.filter((line,index)=>line.trim()&&index!==promptLabel&&
+     !(index>=fenced.startIndex&&index<=fenced.endIndex));
+   if(extras.length){
+    unparsed.push(name+" 的附加内容：\n"+extras.join("\n"));
+    warnings.push(name+"：存在提示词代码块之外的附加内容，已单独保留。");
+   }
+  }
   else if(promptLabel>=0){
    const labelLine=content[promptLabel].replace(/^\s*提示词\s*[:：]\s*/,"");
    prompt=[labelLine,...content.slice(promptLabel+1)].join("\n").trim();
