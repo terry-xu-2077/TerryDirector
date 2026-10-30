@@ -21,6 +21,8 @@ import {
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
+const NATIVE_PREVIEW_CLASS = "TerryDirectorH3Preview";
+const isPreviewNode = n => [KJ_CLASS,NATIVE_PREVIEW_CLASS].includes(nodeType(n));
 const URL_BASE = "/terrydirector/api/selflift";
 // Same mark URL as the TerryDirector timeline node and timeline editor.
 const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
@@ -39,7 +41,7 @@ const nodeType = n => n?.comfyClass || n?.type;
 const nodes = () => app.graph?._nodes || [];
 const widget = (n, name) => n?.widgets?.find(w => w.name === name);
 const getPauseNodes = () => nodes().filter(n => nodeType(n) === START_CLASS);
-const getPreviewNodes = () => nodes().filter(n => nodeType(n) === KJ_CLASS);
+const getPreviewNodes = () => nodes().filter(isPreviewNode);
 function previewForPause(pause) {
   const links = app.graph?.links || {};
   const clean = pause?.inputs?.find(x => x.name === "low_clean");
@@ -49,7 +51,7 @@ function previewForPause(pause) {
   function find(node, depth = 0) {
     if (!node || depth > 8 || visited.has(String(node.id))) return null;
     visited.add(String(node.id));
-    if (nodeType(node) === KJ_CLASS) return node;
+    if (isPreviewNode(node)) return node;
     for (const input of node.inputs || []) {
       if (!/model/i.test(input.name) || input.link == null) continue;
       const link = links[input.link];
@@ -1847,6 +1849,9 @@ async function persistJob(job) {
   void refresh();
 }
 async function persistPreview(job) {
+  // The native final clip already lives in its checkpoint folder.
+  // Never overwrite it with an incomplete browser-owned KJ preview.
+  if(job?.nativePreviewSaved)return true;
   // Each KJ step is its own encoded clip. Try newest first; only a verified
   // candidate ever reaches sampling_preview.mp4. A broken last H.264 packet
   // must not prevent using a decodable earlier step.
@@ -2000,7 +2005,7 @@ function bindEvents() {
   // concise format, with elapsed/ETA derived from the prompt's clock.
   api.addEventListener("progress",e=>handleSamplerProgress(e));
   api.addEventListener("progress_state",e=>handleSamplerProgress(e,true));
-  api.addEventListener("kj_preview_override",e=>{
+  const onPreviewPacket = e=>{
     const p=e.detail||{};
     // Prefer the event's prompt identity; for KJ versions without it, only
     // the currently executing ComfyUI prompt can receive the preview.
@@ -2021,7 +2026,9 @@ function bindEvents() {
     // Update the selected task's player only: no network request, no disk
     // writes, no full-window re-render, no interference with queued tasks.
     updateLivePreview(job);
-  });
+  };
+  api.addEventListener("kj_preview_override",onPreviewPacket);
+  api.addEventListener("terrydirector_preview",onPreviewPacket);
   api.addEventListener("executed",e=>{
     const p=e.detail||{},info=p.output?.terrydirector_selflift_checkpoint?.[0];
     const promptId=String(p.prompt_id||state.activePromptId||"");
@@ -2047,6 +2054,7 @@ function bindEvents() {
     if(!info?.checkpoint_id||info.mode!=="paused")return;
     if(!job||job.mode!=="pause"||String(p.node)!==String(job.pause_node_id))return;
     job.checkpointId=String(info.checkpoint_id);
+    job.nativePreviewSaved=info.native_preview_saved===true;
     job.persistPromise=persistJob(job);
     if(job.draftId)
       job.checkpointPromise=draftTransition(job.draftId,"checkpoint",{
@@ -2092,7 +2100,8 @@ function bindEvents() {
         }
         // KJ sends the final animated frame asynchronously. Drain only this
         // job's in-memory preview; do not block newer queued tasks.
-        if(event==="execution_success")await waitForFinalTAEH3(job,promptId);
+        if(event==="execution_success" && !job.nativePreviewSaved)
+          await waitForFinalTAEH3(job,promptId);
         let saved=false;
         if(job.mode==="pause" && job.preview_type!=="decoded"){
           saved=await persistPreview(job);

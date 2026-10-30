@@ -100,6 +100,7 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
 
     @classmethod
     def define_schema(cls):
+        from .director_preview_native import default_tiny_vae, tiny_vae_choices
         return io.Schema(
             node_id="TerryDirectorSelfLiftPauseResume",
             display_name="TerryDirector SelfLift 暂停/继续",
@@ -118,6 +119,12 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                 io.Int.Input("transition_step", default=6, min=1, max=10000),
                 io.Int.Input("seed", default=8, min=0, max=0xffffffffffffffff),
                 io.Float.Input("cfg", default=1.0, min=0.0, max=100.0),
+                io.Combo.Input("preview_tiny_vae", options=tiny_vae_choices(),
+                               default=default_tiny_vae(), optional=True,
+                               tooltip="由 TerryDirector 从低清 latent 保存完整 MP4；none 则保留旧预览回退"),
+                io.Float.Input("preview_duration", default=15.0, min=4.0,
+                               max=20.0, optional=True,
+                               tooltip="低清预览影片时长（秒），预演台按任务时长自动传入"),
                 io.Latent.Input("low_state", display_name="低清 output", optional=True, lazy=True),
                 io.Latent.Input("low_clean", display_name="低清 denoised_output", optional=True, lazy=True),
                 io.Latent.Input("source", display_name="目标分辨率原始 Latent", optional=True, lazy=True),
@@ -156,7 +163,8 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
 
     @classmethod
     def execute(cls, mode, checkpoint_id, name, transition_step, seed, cfg,
-                low_state=None, low_clean=None, source=None, sigmas=None):
+                low_state=None, low_clean=None, source=None, sigmas=None,
+                preview_tiny_vae=None, preview_duration=15.0):
         from comfy_execution.graph_utils import ExecutionBlocker
 
         if mode == "暂停并保存":
@@ -171,10 +179,34 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                 sigmas=sigmas, transition_step=transition_step, seed=seed,
                 cfg=cfg, name=name,
             )
+            # The native encoder reads the final x0 directly; it never parses
+            # a fragmented websocket MP4 and never needs the browser alive.
+            # Preview failure must not invalidate the expensive checkpoint.
+            native_saved = False
+            if preview_tiny_vae and preview_tiny_vae != "none":
+                try:
+                    from .director_preview_native import save_native_preview
+                    from .director_selflift_task_store import save_metadata
+                    save_native_preview(
+                        saved_id, low_clean, tiny_vae=preview_tiny_vae,
+                        duration_seconds=float(preview_duration),
+                    )
+                    save_metadata(saved_id, {
+                        "preview_error": None,
+                        "preview_warning": "TerryDirector 原生预览，使用低清最终 latent 生成（无音轨）",
+                    })
+                    native_saved = True
+                except Exception as exc:
+                    logging.exception("[TerryDirector] 原生低清预览生成失败，检查点保留")
+                    try:
+                        from .director_selflift_task_store import save_metadata
+                        save_metadata(saved_id, {"preview_error": "原生预览失败：" + str(exc)[:900]})
+                    except Exception:
+                        logging.exception("[TerryDirector] 无法写入原生预览错误元数据")
             logging.info(
                 "[TerryDirector SelfLift] 暂停保存成功：镜头=%s checkpoint=%s "
-                "transition_step=%d (高清被阻断)",
-                name, saved_id, int(transition_step),
+                "transition_step=%d native_preview=%s (高清被阻断)",
+                name, saved_id, int(transition_step), native_saved,
             )
             # A soft execution blocker on ONLY the checkpoint output prevents
             # every downstream high-res consumer from executing in pause mode.
@@ -183,6 +215,7 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                 ExecutionBlocker(None), saved_id,
                 ui={"terrydirector_selflift_checkpoint": [{
                     "checkpoint_id": saved_id, "mode": "paused",
+                    "native_preview_saved": native_saved,
                     "name": str(name).strip()[:120] or "未命名低清镜头",
                 }]},
             )

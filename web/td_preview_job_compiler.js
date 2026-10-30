@@ -197,6 +197,8 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
   if(template.duration_seconds!=null && template.highres_megapixels!=null)
     applyTaskVideoParameters(api,template);
   pause.inputs.mode=mode==="pause"?"暂停并保存":"继续高清";
+  if(mode==="pause" && Number.isFinite(Number(template.duration_seconds)))
+    pause.inputs.preview_duration=Number(template.duration_seconds);
   pause.inputs.checkpoint_id=mode==="pause"?"":checkpointId;
   const target = mode==="continue" ? template.highres_target : template.pause_target;
   const targets=[id(target)];

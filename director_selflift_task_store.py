@@ -192,6 +192,16 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
                "preview_warning", "preview_saved_step", "preview_total_steps",
                "highres_video", "highres_prompt_id"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
+    # The pause node may have written native preview status before the frontend
+    # posts workflow metadata. Preserve that status across subsequent writes.
+    try:
+        previous = json.loads((folder / "task.json").read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        previous = {}
+    for key in ("preview_error", "preview_warning", "preview_saved_step",
+                "preview_total_steps"):
+        if key not in safe and key in previous:
+            safe[key] = previous[key]
     if not isinstance(safe.get("overrides", []), list):
         raise ValueError("无效的输入覆盖配置")
     value = json.dumps(safe, ensure_ascii=False)

@@ -20,6 +20,7 @@ from fractions import Fraction
 from pathlib import Path
 
 import torch
+from comfy_api.latest import io
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
@@ -268,7 +269,7 @@ class _LivePreviewWrapper:
             del decoder
 
 
-class TerryDirectorH3Preview:
+class TerryDirectorH3Preview(io.ComfyNode):
     """Registered as a ComfyUI V3 node by TerryDirectorExtension."""
 
     @classmethod
