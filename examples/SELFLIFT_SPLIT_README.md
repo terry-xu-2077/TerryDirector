@@ -37,7 +37,7 @@
 3. 工作流中的 LoadImage 节点示例指向 `黄昏盐滩独行宇航员镜头首帧图片生成.jpg`。若本机没有该图片，请替换为自己的参考图，或断开该参考图输入。
 4. 工作流①和②可以分开使用，但保存与读取必须对应同一组兼容参数；切换模型、参考条件、分辨率或 Sigma 日程时，请重新生成检查点。
 
-**自定义工作流**：低清视频保存支路从原生 `SamplerCustom` 的 `denoised_output`（干净 x0）出发，经过 `VAEDecode` 与 `VAEDecodeAudio`，最后接 `TerryDirector 保存低清审片视频`（同时把「暂停/继续」的「检查点 ID」接到保存节点），才能自动在检查点目录中形成 `review.mp4`。仍可使用普通 `SaveVideo` 或 `VHS_VideoCombine`，但这两种节点按其自身路径保存、不会自动归档到检查点目录。蓝色按钮执行唯一的低清视频保存终点，绿色按钮不触发这条支路。
+**自定义工作流**：配置时自动检查 SelfLift 暂停节点的 `low_clean` 是否与 `VAEDecode` / `VAEDecodeAudio` 共用同一段低清 `SamplerCustom.denoised_output`。若这两路接入 `VHS_VideoCombine`，预演台自动识别该节点为低清 VAE 终点，配置界面显示节点编号。选择「VAE 解码预览」提交时，**只在本次独立 API 任务快照内**将该 VHS 输出转换为 `TerryDirectorLowresReviewSave`（使用原有解码画面、音频与暂停节点的检查点 ID），直接写入 `review.mp4`；原画布的 VHS 节点和高清保存线路不改变，也不会重复保存两个视频。已有 `TerryDirectorLowresReviewSave` 的工作流继续照旧使用。之前配置但未识别低清 VHS 的草稿任务也会在启动前自动重新识别，无需重新连接节点。
 
 ## 预演台（侧边栏入口）
 
