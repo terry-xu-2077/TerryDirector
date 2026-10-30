@@ -1755,16 +1755,16 @@ function createMarkup() {
     '</div></div>' +
     (state.assetPicker ? assetPickerMarkup() : "");
 }
-function findBatchPoolAsset(name) {
+function findBatchPoolAsset(name,kind="image") {
   const wanted=String(name||"").replace(/\\/g,"/").split("/").pop().toLowerCase();
-  return state.inputFiles.find(file=>file.kind==="image" &&
-    (String(file.name||"").toLowerCase()===wanted ||
-     String(file.path||"").toLowerCase().endsWith("/"+wanted)))?.path || null;
+  return state.inputFiles.find(file=>file.kind===kind&&
+    (String(file.name||"").toLowerCase()===wanted||
+     String(file.path||"").toLowerCase().endsWith("/"+wanted)))?.path||null;
 }
 function parseBatchImportText() {
   const batch=state.batchImport;if(!batch)return;
   const previous=new Map((batch.batches||[]).map(item=>[
-    item.name,(item.references||[]).map(ref=>({name:ref.name,path:ref.path}))
+    item.name,(item.references||[]).map(ref=>({name:ref.name,path:ref.path,kind:ref.kind||"image"}))
   ]));
   const parsed=parsePreviewBatches(batch.text);
   batch.preamble=parsed.preamble;batch.error=parsed.error;
@@ -1772,10 +1772,10 @@ function parseBatchImportText() {
     ...item,
     references:item.references.map((ref,index)=>{
       const oldRefs=previous.get(item.name)||[];
-      const saved=oldRefs[index]?.name===ref.name?oldRefs[index].path:
-        oldRefs.find(old=>old.name===ref.name)?.path;
-      const savedExists=saved&&state.inputFiles.some(file=>file.kind==="image"&&file.path===saved);
-      return {...ref,path:savedExists?saved:findBatchPoolAsset(ref.name)};
+      const saved=oldRefs[index]?.name===ref.name&&oldRefs[index]?.kind===ref.kind?
+        oldRefs[index].path:oldRefs.find(old=>old.name===ref.name&&old.kind===ref.kind)?.path;
+      const savedExists=saved&&state.inputFiles.some(file=>file.kind===ref.kind&&file.path===saved);
+      return {...ref,path:savedExists?saved:findBatchPoolAsset(ref.name,ref.kind)};
     }),
   }));
   batch.activeIndex=Math.min(batch.activeIndex,Math.max(0,batch.batches.length-1));
@@ -1786,10 +1786,15 @@ function parseBatchImportText() {
   }
 }
 function batchTaskStatus(item) {
-  const slots=state.batchImport?.assetSlots?.length||0,references=item.references||[];
-  const overflow=Math.max(0,references.length-slots);
+  const slots=state.batchImport?.assetSlots||[],references=item.references||[];
+  const kinds=["image","audio","video"];
+  const overflowByKind=Object.fromEntries(kinds.map(kind=>[
+    kind,Math.max(0,references.filter(ref=>(ref.kind||"image")===kind).length-
+      slots.filter(slot=>(slot.kind||"image")===kind).length)
+  ]));
+  const overflow=Object.values(overflowByKind).reduce((sum,value)=>sum+value,0);
   const missing=references.filter(ref=>!ref.path).length,empty=!String(item.body||"").trim();
-  return {overflow,missing,empty,valid:!overflow&&!missing&&!empty};
+  return {overflow,overflowByKind,missing,empty,valid:!overflow&&!missing&&!empty};
 }
 function batchImportStats() {
   const items=state.batchImport?.batches||[];
@@ -1801,57 +1806,80 @@ function batchListMarkup() {
   if(!batch?.batches.length)return '<div class="tdm-batch-empty">'+esc(batch?.error||"粘贴或导入 Markdown 后，将在这里显示识别出的批次。")+'</div>';
   return batch.batches.map((item,index)=>{
     const status=batchTaskStatus(item);
-    const label=status.overflow?"超出图片槽位 "+status.overflow+" 项":
+    const label=status.overflow?"超出媒体槽位 "+status.overflow+" 项":
       status.missing?"缺少资产 "+status.missing+" 项":status.empty?"正文为空":"可创建";
     return '<button type="button" class="tdm-batch-item '+(index===batch.activeIndex?"active":"")+
       '" data-action="batch-select" data-index="'+index+'"><span class="tdm-batch-item-main">'+
       '<strong>'+esc(item.name)+'</strong><small>'+item.duration_seconds+' 秒 · '+item.body.length+' 字 · '+
-      item.references.length+' 项参考图'+(item.generatedAssets.length?' · '+item.generatedAssets.length+' 项待生成资产':'')+
+      item.references.length+' 项引用资产'+(item.generatedAssets.length?' · '+item.generatedAssets.length+' 项待生成资产':'')+
       '</small></span><span class="tdm-batch-item-status '+(status.valid?"":"warn")+'">'+esc(label)+'</span></button>';
   }).join("");
+}
+function batchSlotPreviewMarkup(ref) {
+  const file=state.inputFiles.find(item=>item.path===ref.path&&item.kind===(ref.kind||"image"));
+  if(!file)return '<div class="tdm-batch-ref-empty"><span>'+mediaKindIcon(ref.kind)+'</span>'+
+    '<strong>待绑定'+mediaKindLabel(ref.kind)+'</strong><small>从下方资产池选择或上传</small></div>';
+  return mediaPreviewMarkup(file,{controls:true});
 }
 function batchReferencesMarkup() {
   const batch=state.batchImport,item=batch?.batches?.[batch.activeIndex];
   if(!item)return '<div class="tdm-batch-empty">选择左侧批次查看引用资产</div>';
-  if(!item.references.length)return '<div class="tdm-batch-empty">本批次没有声明现成图片引用。工作流原有图片输入将保持默认值。</div>';
-  return item.references.map((ref,index)=>
-    '<button type="button" class="tdm-batch-ref '+(index===batch.selectedRefIndex?"active":"")+
-    '" data-action="batch-select-ref" data-index="'+index+'"><strong>'+esc(ref.name)+'</strong>'+
-    (ref.description?'<small>'+esc(ref.description)+'</small>':'')+
-    '<small>'+(ref.path?'已绑定：'+esc(ref.path):'未在资产池中找到，请从下方选择或上传')+'</small></button>'
-  ).join("");
+  if(!item.references.length)return '<div class="tdm-batch-empty">本批次没有声明现成图片、音频或视频引用。工作流媒体输入将保持默认值。</div>';
+  return item.references.map((ref,index)=>{
+    const selected=index===batch.selectedRefIndex;
+    const file=state.inputFiles.find(entry=>entry.path===ref.path&&entry.kind===(ref.kind||"image"));
+    return '<article class="tdm-batch-ref-card '+(selected?"active":"")+'">'+
+      '<button type="button" class="tdm-batch-ref-select" data-action="batch-select-ref" data-index="'+index+'">'+
+      '<span class="tdm-batch-ref-type">'+mediaKindLabel(ref.kind)+'</span><strong>'+esc(ref.name)+'</strong>'+
+      (ref.description?'<small>'+esc(ref.description)+'</small>':'')+
+      '<small>'+(file?'已绑定':'待绑定 · 选择此槽位后从资产池绑定')+'</small></button>'+
+      '<div class="tdm-batch-ref-preview">'+batchSlotPreviewMarkup(ref)+'</div>'+
+      '<div class="tdm-batch-ref-path">'+esc(file?file.path:"尚未选择资产")+'</div></article>';
+  }).join("");
 }
 function batchGeneratedMarkup() {
   const item=state.batchImport?.batches?.[state.batchImport.activeIndex];
   if(!item?.generatedAssets?.length)return "";
-  return '待生成资产占位（不会占用图片输入槽位）：'+item.generatedAssets.join("、");
+  return '待生成资产占位（不会占用媒体输入槽位）：'+esc(item.generatedAssets.join("、"));
 }
 function batchAssetPoolMarkup() {
   const batch=state.batchImport;if(!batch)return "";
   const query=String(batch.search||"").trim().toLowerCase();
-  const matches=state.inputFiles.filter(file=>file.kind==="image" &&
+  const matches=state.inputFiles.filter(file=>["image","audio","video"].includes(file.kind)&&
     (!query||String(file.path||file.name||"").toLowerCase().includes(query))).slice(0,300);
-  if(!matches.length)return '<div class="tdm-batch-empty">资产池中没有匹配的图片。可刷新 ComfyUI 输入目录，或上传图片。</div>';
-  const item=batch.batches[batch.activeIndex];
+  if(!matches.length)return '<div class="tdm-batch-empty">资产池中没有匹配的图片、音频或视频。可扫描 ComfyUI 输入目录，或上传媒体文件。</div>';
+  const item=batch.batches[batch.activeIndex],selectedRef=item?.references?.[batch.selectedRefIndex];
   return matches.map(file=>{
     const selected=!!item?.references?.some(ref=>ref.path===file.path);
-    return assetCard(file.path,file.name,'data-action="batch-assign-asset" data-path="'+esc(file.path)+'"',selected);
+    const compatible=!selectedRef||selectedRef.kind===file.kind;
+    const title=compatible?file.name:file.name+" · 类型不匹配";
+    return assetCard(file.path,title,
+      'data-action="batch-assign-asset" data-path="'+esc(file.path)+'"'+
+      (compatible?'':' disabled title="当前槽位需要'+mediaKindLabel(selectedRef.kind)+'，不能绑定'+mediaKindLabel(file.kind)+'"'),
+      selected,file.kind,!compatible);
   }).join("");
 }
 function batchImportSummary() {
-  const stats=batchImportStats();
+  const stats=batchImportStats(),slots=state.batchImport?.assetSlots||[];
+  const capacities=["image","audio","video"].filter(kind=>slots.some(slot=>(slot.kind||"image")===kind))
+    .map(kind=>mediaKindLabel(kind)+" "+slots.filter(slot=>(slot.kind||"image")===kind).length);
   return stats.total+' 个批次 · '+stats.valid+' 个可创建 · '+stats.invalid+
-    ' 个需处理 · 当前工作流支持 '+stats.slots+' 张参考图/批次';
+    ' 个需处理 · 工作流媒体槽位：'+(capacities.join(" / ")||"未识别");
 }
 function batchImportWarning() {
-  const items=state.batchImport?.batches||[];
+  const items=state.batchImport?.batches||[],slots=state.batchImport?.assetSlots||[];
+  const kinds=["image","audio","video"],overflowKinds=[];
+  for(const kind of kinds){
+    const capacity=slots.filter(slot=>(slot.kind||"image")===kind).length;
+    const required=Math.max(0,...items.map(item=>item.references.filter(ref=>(ref.kind||"image")===kind).length));
+    if(required>capacity)overflowKinds.push(mediaKindLabel(kind)+" "+required+"/"+capacity);
+  }
   const overflow=items.filter(item=>batchTaskStatus(item).overflow>0).length;
   const missing=items.filter(item=>batchTaskStatus(item).missing>0).length;
   const warnings=[];
-  if(overflow)warnings.push('当前工作流每批次最多支持 '+(state.batchImport?.assetSlots?.length||0)+
-    ' 张参考图；'+overflow+' 个批次超出输入数量，将不会创建。');
-  if(missing)warnings.push(missing+' 个批次仍有未绑定图片，请先从右侧资产池补齐。');
-  return warnings.join(' ');
+  if(overflow)warnings.push('工作流媒体输入槽位不足：'+overflowKinds.join("、")+'；'+overflow+' 个批次超出容量，不会创建。');
+  if(missing)warnings.push(missing+' 个批次仍有未绑定媒体，请先从右侧资产池补齐。');
+  return warnings.join(" ");
 }
 function batchImportMarkup() {
   const batch=state.batchImport;if(!batch)return "";
@@ -1874,17 +1902,17 @@ function batchImportMarkup() {
     '<div class="tdm-batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
     '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
-    '<div class="tdm-batch-note">右侧是所有批次共用的资产池：可扫描 ComfyUI 输入目录或上传本地图片；文件名相同的引用会自动匹配。点选引用后，再点图片即可绑定。</div>'+
+    '<div class="tdm-batch-note">右侧是所有批次共用的媒体资产池：支持图片、音频和视频。先选择一个媒体槽位，再点选同类型资产完成绑定；文件名相同的引用会自动匹配。</div>'+
     '<div class="tdm-batch-ref-list">'+batchReferencesMarkup()+'</div>'+
     '<div class="tdm-batch-generated">'+esc(batchGeneratedMarkup())+'</div>'+
     '<div class="tdm-batch-pool"><div class="tdm-batch-pool-head">'+
     '<input data-action="batch-search" placeholder="搜索资产池文件名" value="'+esc(batch.search)+'" '+(batch.saving?'disabled':'')+'>'+
     '<button class="tdm-btn" data-action="batch-refresh-assets" '+(batch.uploading||batch.saving?'disabled':'')+'>扫描目录</button>'+
     '<button class="tdm-btn" data-action="batch-upload-assets" '+(batch.uploading||batch.saving?'disabled':'')+'>'+
-      (batch.uploading?'上传中…':'上传图片')+'</button></div>'+
+      (batch.uploading?'上传中…':'上传媒体')+'</button></div>'+
     '<div class="tdm-batch-pool-grid">'+batchAssetPoolMarkup()+'</div></div></aside></div>'+
     '<footer class="tdm-batch-foot"><div><div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
-    '<div class="tdm-batch-note">缺少图片或超出工作流图片槽位的批次不会创建；未列出的输入槽保留工作流模板默认值。</div></div>'+
+    '<div class="tdm-batch-note">缺少媒体或超出对应类型的工作流槽位时，该批次不会创建；未引用的输入槽保留工作流模板默认值。</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-cancel" '+(batch.saving?'disabled':'')+'>取消</button>'+
     '<button class="tdm-btn primary" data-action="batch-submit" '+(disabled?'disabled':'')+'>'+
     (batch.saving?'正在创建…':'创建 '+stats.valid+' 个任务')+'</button></footer></div></div>';
