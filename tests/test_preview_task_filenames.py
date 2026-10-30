@@ -76,6 +76,14 @@ class PreviewTaskFilenameTests(unittest.TestCase):
         self.assertEqual(self.store.media_path(self.checkpoint_id, "sampling"), self.folder / sampling)
         self.assertEqual(self.store.media_path(self.checkpoint_id, "decoded"), self.folder / decoded)
 
+    def test_legacy_fixed_media_names_work_without_task_metadata(self):
+        sampling = self.folder / "sampling_preview.mp4"
+        decoded = self.folder / "review.mp4"
+        sampling.write_bytes(b"video")
+        decoded.write_bytes(b"video")
+        self.assertEqual(self.store.media_path(self.checkpoint_id, "sampling"), sampling)
+        self.assertEqual(self.store.media_path(self.checkpoint_id, "decoded"), decoded)
+
 
 if __name__ == "__main__":
     unittest.main()
