@@ -77,4 +77,22 @@ assert.deepEqual(plain.batches[1].references.map(x=>x.name),[
 ]);
 assert.deepEqual(plain.batches[1].generatedAssets,["干燥菌伞峡道母图"]);
 assert.equal(parsePreviewBatches("## **批次03｜测试标题（建议12秒）**\n[分镜脚本]\n镜头").batches[0].duration_seconds,12);
-console.log("Preview Stage Markdown + plain-text batch parser: PASS");
+
+// Image, audio and video references are typed independently for H3 media slots.
+const media = parsePreviewBatches([
+  "批次04｜多媒体引用（建议15秒）",
+  "[全局参考]",
+  "角色.jpg：人物外观",
+  "环境.webp：环境",
+  "对白.wav：角色对白",
+  "环境声.mp3：风声",
+  "运动参考.mp4：动作节奏",
+  "镜头参考.mov：运镜参考",
+  "[分镜脚本]",
+  "镜头01｜测试",
+].join("\n"));
+assert.deepEqual(media.batches[0].references.map(x=>[x.name,x.kind]),[
+  ["角色.jpg","image"],["环境.webp","image"],["对白.wav","audio"],
+  ["环境声.mp3","audio"],["运动参考.mp4","video"],["镜头参考.mov","video"]
+]);
+console.log("Preview Stage Markdown + plain-text + H3 media batch parser: PASS");

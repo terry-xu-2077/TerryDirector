@@ -1,6 +1,15 @@
 /** Parse Markdown or copied plain-text shot batches. The batch body is kept intact. */
 const BATCH_HEADING = /^\s*(?:#{1,6}\s*)?(?:\*\*|__)?(批次\s*\d+.*?)(?:\*\*|__)?\s*$/gm;
-const IMAGE_FILE = /^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg))\s*(?:[：:]|$)/i;
+const MEDIA_FILE = /^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg|mp4|mov|mkv|webm|avi|m4v|wav|mp3|flac|ogg|m4a|aac|opus))\s*(?:[：:]|$)/i;
+const MEDIA_EXTENSIONS = {
+  image: new Set([".png",".jpg",".jpeg",".webp",".bmp",".gif",".tif",".tiff",".svg"]),
+  video: new Set([".mp4",".mov",".mkv",".webm",".avi",".m4v"]),
+  audio: new Set([".wav",".mp3",".flac",".ogg",".m4a",".aac",".opus"]),
+};
+function mediaKind(name) {
+  const ext=(String(name||"").match(/\.[^.\\/]+$/)||[])[0]?.toLowerCase();
+  return Object.keys(MEDIA_EXTENSIONS).find(kind=>MEDIA_EXTENSIONS[kind].has(ext))||null;
+}
 function referenceAssets(body) {
   const lines=String(body||"").split(/\r?\n/),references=[],generatedAssets=[];
   let inside=false;
@@ -15,10 +24,10 @@ function referenceAssets(body) {
       const label=generated[1].split(/\s+生图提示词\s*[：:]/)[0].trim();
       generatedAssets.push(label||"未命名资产");continue;
     }
-    const match=value.match(IMAGE_FILE);
+    const match=value.match(MEDIA_FILE);
     if(match){
-      const name=match[1].trim();
-      references.push({name,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});
+      const name=match[1].trim(),kind=mediaKind(name);
+      if(kind)references.push({name,kind,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});
     }
   }
   return {references,generatedAssets};
