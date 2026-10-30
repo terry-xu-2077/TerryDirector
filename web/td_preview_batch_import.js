@@ -30,9 +30,11 @@ export function parsePreviewBatches(value) {
   const preamble=text.slice(0,headings[0].index).replace(/^\s*#\s+[^\n]*\n?/,"").trim();
   const batches=headings.map((match,index)=>{
     const start=match.index+match[0].length,end=index+1<headings.length?headings[index+1].index:text.length;
-    const body=text.slice(start,end).trim(),name=match[1].trim();
-    const assets=referenceAssets(body),durationMatch=name.match(/建议\s*(\d+)\s*秒/);
-    return {name,body,duration_seconds:durationMatch?Math.max(4,Math.min(20,Number(durationMatch[1]))):15,
+    const body=text.slice(start,end).trim(),heading=match[1].trim();
+    const durationMatch=heading.match(/[（(]?\s*建议\s*(\d+)\s*秒\s*[）)]?\s*$/);
+    const name=durationMatch?heading.slice(0,durationMatch.index).trim():heading;
+    const assets=referenceAssets(body);
+    return {name,heading,body,duration_seconds:durationMatch?Math.max(4,Math.min(20,Number(durationMatch[1]))):15,
       references:assets.references,generatedAssets:assets.generatedAssets};
   }).filter(batch=>batch.body.length>0);
   return {preamble,batches,error:batches.length?"":"已识别标题，但没有找到包含正文的批次"};

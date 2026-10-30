@@ -1732,7 +1732,7 @@ function batchListMarkup() {
       status.missing?"缺少资产 "+status.missing+" 项":status.empty?"正文为空":"可创建";
     return '<button type="button" class="tdm-batch-item '+(index===batch.activeIndex?"active":"")+
       '" data-action="batch-select" data-index="'+index+'"><span class="tdm-batch-item-main">'+
-      '<strong>'+esc(item.name)+'</strong><small>'+item.body.length+' 字 · '+
+      '<strong>'+esc(item.name)+'</strong><small>'+item.duration_seconds+' 秒 · '+item.body.length+' 字 · '+
       item.references.length+' 项参考图'+(item.generatedAssets.length?' · '+item.generatedAssets.length+' 项待生成资产':'')+
       '</small></span><span class="tdm-batch-item-status '+(status.valid?"":"warn")+'">'+esc(label)+'</span></button>';
   }).join("");
