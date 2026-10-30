@@ -34,6 +34,7 @@ const state = {
   assetPicker: null, inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
   sidebarRoot: null, sidebarPoll: null, sidebarFetching: false,
+  mediaRevisions: new Map(),
 };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -63,7 +64,8 @@ function previewForPause(pause) {
   }
   return find(sampler) || (getPreviewNodes().length === 1 ? getPreviewNodes()[0] : null);
 }
-const mediaUrl = (id, kind) => URL_BASE + "/tasks/" + encodeURIComponent(id) + "/media/" + kind;
+const mediaUrl = (id, kind) => URL_BASE + "/tasks/" + encodeURIComponent(id) +
+  "/media/" + kind + "?rev=" + (state.mediaRevisions.get(id)||0);
 function toast(message, severity = "info") {
   if (app.extensionManager?.toast?.add) app.extensionManager.toast.add({
     severity, summary: "TerryDirector · 预演台", detail: message, life: 5500,
@@ -675,7 +677,8 @@ function details(task) {
         '</div>'
       : /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(file)
         ? '<video class="tdm-player" data-saved-video data-media-key="'+
-          esc("saved:"+cid+":"+kind+":"+file)+'" src="'+mediaUrl(cid,kind)+
+          esc("saved:"+cid+":"+kind+":"+file+":"+(state.mediaRevisions.get(cid)||0))+
+          '" src="'+mediaUrl(cid,kind)+
           '" controls loop playsinline preload="auto"></video>'
         : '<img class="tdm-player" src="'+mediaUrl(cid,kind)+'" alt="采样预览">';
   const previewDiagnostic=kind==="sampling" && !file && task.metadata?.preview_error
@@ -992,6 +995,8 @@ async function handleAction(action, data) {
         await request("/tasks/"+encodeURIComponent(id)+"/rebuild-native-preview",{
           method:"POST",
         });
+        // Same filename, different bytes: force Chromium to fetch fresh video.
+        state.mediaRevisions.set(id,(state.mediaRevisions.get(id)||0)+1);
         toast("低清预览已从检查点重新生成，无需再次采样","success");
       }finally{
         state.busy=false;
