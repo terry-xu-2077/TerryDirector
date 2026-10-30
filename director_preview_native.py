@@ -204,8 +204,16 @@ def _encode_final(frames: list[Image.Image], destination: Path, seconds: float) 
 def save_native_video(checkpoint_id: str, video: torch.Tensor, *,
                       tiny_vae: str, duration_seconds: float, max_resolution=768):
     """Write from original video latents; accepts live and disk-restored x0."""
-    from .director_selflift_task_store import checkpoint_dir
+    from .director_selflift_task_store import (
+        checkpoint_dir, safe_task_filename, save_metadata, load_metadata,
+    )
+    from .director_selflift_checkpoint import read_manifest
     folder = checkpoint_dir(checkpoint_id)
+    filename = safe_task_filename(read_manifest(checkpoint_id).get("name")) + "_低清预览.mp4"
+    try:
+        previous = load_metadata(checkpoint_id)
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        previous = {}
     decoder = _decoder(tiny_vae)
     try:
         frames = _frames(video, decoder, max_frames=72,
@@ -215,10 +223,16 @@ def save_native_video(checkpoint_id: str, video: torch.Tensor, *,
     with tempfile.TemporaryDirectory(prefix=".td_native_preview_", dir=folder) as tmp:
         staged = Path(tmp) / "complete.mp4"
         _encode_final(frames, staged, float(duration_seconds))
-        staged.replace(folder / "sampling_preview.mp4")
+        target = folder / filename
+        staged.replace(target)
+    old_filename = previous.get("sampling_video_filename")
+    if isinstance(old_filename, str) and Path(old_filename).name == old_filename and old_filename != filename:
+        (folder / old_filename).unlink(missing_ok=True)
+    (folder / "sampling_preview.mp4").unlink(missing_ok=True)
+    save_metadata(checkpoint_id, {"sampling_video_filename": filename})
     LOG.info("[TerryDirector] 原生低清预览已保存：%s, %.1fs, %d sampled frames",
              checkpoint_id, duration_seconds, len(frames))
-    return "sampling_preview.mp4"
+    return filename
 
 
 def save_native_preview(checkpoint_id: str, low_clean: dict, *,

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import shutil
+import unicodedata
 from pathlib import Path
 
 import folder_paths
@@ -15,6 +16,27 @@ _ID = re.compile(r"^[0-9a-f]{32}$")
 _PREVIEW_EXT = {"video/mp4": ".mp4", "image/webp": ".webp", "image/jpeg": ".jpg"}
 _MAX_PREVIEW = 48 * 1024 * 1024
 _MAX_METADATA = 5 * 1024 * 1024
+
+
+def safe_task_filename(value: object, fallback: str = "TerryDirector") -> str:
+    """Return a Windows-safe, readable filename stem while preserving CJK text."""
+    name = unicodedata.normalize("NFC", str(value or "").strip())
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', "_", name)
+    name = re.sub(r"[：／＼｜？＊]", "_", name)
+    name = re.sub(r"\s+", "_", name)
+    name = re.sub(r"_+", "_", name)
+    name = name.strip(" ._")[:100].rstrip(" .")
+    if re.fullmatch(r"(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])", name, re.IGNORECASE):
+        name = "_" + name
+    return name or fallback
+
+
+def _safe_media_filename(value, fallback: str, extensions: set[str]) -> str:
+    if not isinstance(value, str) or not value or Path(value).name != value:
+        return fallback
+    if Path(value).suffix.lower() not in extensions:
+        return fallback
+    return value
 
 
 _PREVIEW_STAGE_DIR = "preview_stage"
@@ -129,10 +151,16 @@ def list_tasks() -> list[dict]:
             pass
         from .director_preview_highres import validated_video_result
         highres = validated_video_result(details.get("highres_video"))
+        review_name = _safe_media_filename(
+            details.get("review_video_filename"), "review.mp4", {".mp4"})
+        sampling_name = _safe_media_filename(
+            details.get("sampling_video_filename"), "", {".mp4"})
+        sampling_candidates = ([sampling_name] if sampling_name else []) + [
+            "sampling_preview.mp4", "sampling_preview.webp", "sampling_preview.jpg"]
         media = {
-            "decoded": "review.mp4" if (folder / "review.mp4").is_file() else None,
-            "sampling": next((f"sampling_preview{ext}" for ext in (".mp4", ".webp", ".jpg")
-                              if (folder / f"sampling_preview{ext}").is_file()), None),
+            "decoded": review_name if (folder / review_name).is_file() else None,
+            "sampling": next((name for name in sampling_candidates
+                              if (folder / name).is_file()), None),
             "highres": highres["filename"] if highres else None,
         }
         if cid in by_checkpoint:
@@ -190,7 +218,8 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
                "high_started_at", "high_finished_at", "error", "preview_error",
                "preview_warning", "preview_saved_step", "preview_total_steps",
-               "highres_video", "highres_prompt_id"}
+               "highres_video", "highres_prompt_id", "sampling_video_filename",
+                "review_video_filename"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     # The pause node may have written native preview status before the frontend
     # posts workflow metadata. Preserve that status across subsequent writes.
@@ -199,7 +228,8 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
     except (FileNotFoundError, OSError, ValueError, TypeError):
         previous = {}
     for key in ("preview_error", "preview_warning", "preview_saved_step",
-                "preview_total_steps"):
+                "preview_total_steps", "sampling_video_filename",
+                "review_video_filename"):
         if key not in safe and key in previous:
             safe[key] = previous[key]
     if not isinstance(safe.get("overrides", []), list):
@@ -222,6 +252,10 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
     ext = _PREVIEW_EXT.get(mime)
     if ext is None or not raw or len(raw) > _MAX_PREVIEW:
         raise ValueError("不支持的预览媒体或文件过大（最大 48 MB）")
+    try:
+        previous = load_metadata(checkpoint_id)
+    except (FileNotFoundError, OSError, ValueError, TypeError):
+        previous = {}
     if mime == "video/mp4":
         if len(raw) < 12 or raw[4:8] != b"ftyp":
             raise ValueError("采样预览不是 MP4 文件")
@@ -230,6 +264,13 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
         from .director_preview_mp4 import finalize_preview_mp4
         try:
             path = finalize_preview_mp4(raw, folder, duration_seconds)
+            filename = safe_task_filename(read_manifest(checkpoint_id).get("name")) + "_低清预览.mp4"
+            target = folder / filename
+            if path != target:
+                target.unlink(missing_ok=True)
+                path.replace(target)
+                path = target
+            preview_metadata = {"sampling_video_filename": filename}
         except ValueError:
             # Do not lose the raw upstream KJ payload after an expensive run.
             # Save only the first failing candidate (newest sampling step),
@@ -252,6 +293,12 @@ def save_sampling_preview(checkpoint_id: str, mime: str, raw: bytes, duration_se
         stage = folder / ("sampling_preview.partial" + ext)
         stage.write_bytes(raw)
         stage.replace(path)
+        preview_metadata = {"sampling_video_filename": None}
+    old_sampling = _safe_media_filename(
+        previous.get("sampling_video_filename"), "", {".mp4"})
+    if old_sampling and old_sampling != path.name:
+        (folder / old_sampling).unlink(missing_ok=True)
+    save_metadata(checkpoint_id, preview_metadata)
     (folder / "sampling_preview_failed.bin").unlink(missing_ok=True)
     for old in folder.glob("sampling_preview.*"):
         if old != path and old.suffix in {".mp4", ".webp", ".jpg"}:
@@ -266,11 +313,18 @@ def media_path(checkpoint_id: str, kind: str) -> Path:
         metadata = load_metadata(checkpoint_id)
         return highres_video_path(metadata.get("highres_video"))
     if kind == "decoded":
-        path = folder / "review.mp4"
+        metadata = load_metadata(checkpoint_id)
+        filename = _safe_media_filename(
+            metadata.get("review_video_filename"), "review.mp4", {".mp4"})
+        path = folder / filename
     elif kind == "sampling":
-        path = next((folder / ("sampling_preview" + ext)
-                     for ext in (".mp4", ".webp", ".jpg")
-                     if (folder / ("sampling_preview" + ext)).is_file()), None)
+        metadata = load_metadata(checkpoint_id)
+        saved = _safe_media_filename(
+            metadata.get("sampling_video_filename"), "", {".mp4"})
+        candidates = ([saved] if saved else []) + [
+            "sampling_preview.mp4", "sampling_preview.webp", "sampling_preview.jpg"]
+        path = next((folder / name for name in candidates
+                     if (folder / name).is_file()), None)
     else:
         raise ValueError("未知的预览类型")
     if path is None or not path.is_file():
