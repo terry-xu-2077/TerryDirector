@@ -11,6 +11,7 @@ function mediaKind(name){
 
 function splitMarkdownSections(body,headingLevel=3){
  const lines=String(body||"").split("\n"),sections=[];
+ const plainHeadings=["引用资产","待生成资产","导演说明","连续性状态","视觉基调","色彩光影","分镜脚本"];
  let current={heading:null,lines:[]},fence=null;
  for(const line of lines){
   const fm=line.match(/^\s*(`{3,}|~{3,})/);
@@ -21,13 +22,14 @@ function splitMarkdownSections(body,headingLevel=3){
    current.lines.push(line);continue;
   }
   const re=new RegExp("^\\s*#{"+headingLevel+"}\\s+(.+?)\\s*$");
-  const match=!fence&&line.match(re);
-  if(match){sections.push(current);current={heading:match[1].replace(/^(?:\*\*|__)(.*?)(?:\*\*|__)$/,"$1").trim(),lines:[]};}
+  const markdownMatch=!fence&&line.match(re);
+  const plainMatch=!fence&&headingLevel===3&&plainHeadings.includes(line.trim())?line.trim():null;
+  const heading=markdownMatch?markdownMatch[1].replace(/^(?:\*\*|__)(.*?)(?:\*\*|__)$/,"$1").trim():plainMatch;
+  if(heading){sections.push(current);current={heading,lines:[]};}
   else current.lines.push(line);
  }
  sections.push(current);return sections;
 }
-
 function cleanHeadingMarkers(lines){
  const output=[];let fence=null;
  for(const line of lines){
@@ -45,18 +47,23 @@ function cleanHeadingMarkers(lines){
 
 function parseReferenceSection(lines){
  const references=[],errors=[];
- const pattern=/^\s*[-*+]\s*(图片|音频|视频)\s*[:：]\s*`([^`]+)`\s*(?:[—–-]\s*(.*))?$/;
  for(const line of lines){
   if(!line.trim())continue;
-  const match=line.match(pattern);
+  const entry=line.trim().replace(/^[-*+]\s+/,"");
+  const match=entry.match(/^(图片|音频|视频)\s*[:：]\s*(.+)$/);
   if(!match){errors.push("引用资产格式无法识别："+line.trim());continue;}
-  const kind=MEDIA_TYPE_NAMES[match[1]],name=match[2].trim(),extensionKind=mediaKind(name);
+  const kind=MEDIA_TYPE_NAMES[match[1]],payload=match[2].trim();
+  const separator=/\s+[—–]\s+|\s+-\s+/;
+  const splitIndex=payload.search(separator);
+  const rawName=(splitIndex<0?payload:payload.slice(0,splitIndex)).trim();
+  const description=splitIndex<0?"":payload.slice(splitIndex).replace(/^\s+[—–-]\s+/,"").trim();
+  const name=rawName.replace(/^`|`$/g,"").trim(),extensionKind=mediaKind(name);
+  if(!name){errors.push("引用资产缺少文件名："+line.trim());continue;}
   if(extensionKind&&extensionKind!==kind)errors.push("引用资产类型与文件扩展名不匹配："+name+"（声明为"+match[1]+"）");
-  references.push({name,kind,description:String(match[3]||"").trim()});
+  references.push({name,kind,description});
  }
  return {references,errors};
 }
-
 function readFencedPrompt(lines,startIndex){
  for(let i=startIndex;i<lines.length;i++){
   const opening=lines[i].match(/^\s*(`{3,}|~{3,})(?:[a-zA-Z0-9_-]+)?\s*$/);
@@ -83,11 +90,12 @@ function parseGeneratedAssetSection(lines){
    else if(marker===fence.marker&&fm[1].length>=fence.length)fence=null;
    continue;
   }
-  const match=!fence&&lines[i].match(/^\s*####\s+(.+?)\s*$/);
-  if(match)headings.push({index:i,value:match[1].trim()});
+  const raw=!fence?lines[i].trim():"";
+  const value=raw.replace(/^####\s+/,"");
+  if(!fence&&/^(图片|音频|视频)\s*[｜|]\s*.+$/.test(value))headings.push({index:i,value});
  }
  if(!headings.length){
-  if(lines.some(line=>line.trim())){warnings.push("待生成资产章节中没有识别到“#### 类型｜名称｜比例”标题。");unparsed.push(lines.join("\n").trim());}
+  if(lines.some(line=>line.trim())){warnings.push("待生成资产章节中没有识别到“图片｜名称｜比例”标题。");unparsed.push(lines.join("\n").trim());}
   return {assets,warnings,unparsed};
  }
  if(lines.slice(0,headings[0].index).some(line=>line.trim()))unparsed.push(lines.slice(0,headings[0].index).join("\n").trim());
@@ -104,13 +112,9 @@ function parseGeneratedAssetSection(lines){
    prompt=[inlinePrompt,fenced.prompt].filter(Boolean).join("\n");
    if(fenced.unclosed)warnings.push(name+"：提示词代码块没有闭合。");
    const extras=content.filter((line,index)=>line.trim()&&index!==promptLabel&&
-     !(index>=fenced.startIndex&&index<=fenced.endIndex));
-   if(extras.length){
-    unparsed.push(name+" 的附加内容：\n"+extras.join("\n"));
-    warnings.push(name+"：存在提示词代码块之外的附加内容，已单独保留。");
-   }
-  }
-  else if(promptLabel>=0){
+    !(index>=fenced.startIndex&&index<=fenced.endIndex));
+   if(extras.length){unparsed.push(name+" 的附加内容：\n"+extras.join("\n"));warnings.push(name+"：存在提示词代码块之外的附加内容，已单独保留。");}
+  }else if(promptLabel>=0){
    const labelLine=content[promptLabel].replace(/^\s*提示词\s*[:：]\s*/,"");
    prompt=[labelLine,...content.slice(promptLabel+1)].join("\n").trim();
    if(prompt)warnings.push(name+"：提示词未使用代码块，已按普通文本提取。");
@@ -124,7 +128,6 @@ function parseGeneratedAssetSection(lines){
  }
  return {assets,warnings,unparsed};
 }
-
 function parseLegacyReferences(body){
  const lines=String(body||"").split(/\r?\n/),references=[],generatedAssets=[];let inside=false;
  for(const line of lines){
@@ -172,13 +175,15 @@ function parseStructuredBatchBody(rawBody){
 }
 
 function extractGlobalRules(text){
- const lines=String(text||"").split("\n"),start=lines.findIndex(line=>/^\s*#\s+全局规则\s*$/.test(line));
+ const lines=String(text||"").split("\n");
+ const firstBatch=lines.findIndex(line=>/^\s*(?:#{1,6}\s*)?(?:\*\*|__)?批次\s*\d+/.test(line));
+ const limit=firstBatch<0?lines.length:firstBatch;
+ const start=lines.findIndex((line,index)=>index<limit&&/^(?:#\s+)?全局规则\s*$/.test(line.trim()));
  if(start<0)return null;
- let end=lines.length;
- for(let i=start+1;i<lines.length;i++)if(/^\s*#\s+/.test(lines[i])||/^\s*##\s*批次\s*\d+/.test(lines[i])){end=i;break;}
- return lines.slice(start+1,end).join("\n").trim();
+ const section=lines.slice(start+1,limit);
+ while(section.length&&/^[-*_]{3,}$/.test(section[section.length-1].trim()))section.pop();
+ return section.join("\n").trim();
 }
-
 function legacyPreamble(text,firstBatchIndex){return String(text||"").slice(0,firstBatchIndex).replace(/^\s*#\s+[^\n]*\n?/,"").trim();}
 
 export function parsePreviewBatches(value){

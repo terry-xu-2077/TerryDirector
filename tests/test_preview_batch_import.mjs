@@ -34,6 +34,41 @@ const screenshotFormat=parsePreviewBatches([
 ].join("\n"));
 assert.equal(screenshotFormat.batches.length,1);
 assert.equal(screenshotFormat.batches[0].name,"批次01｜场景一-菌伞峡道／赛车穿越机");
+
+// Plain-text copy fallback: Markdown hashes, list bullets, backticks and code fences may be stripped.
+const plainTbpm = parsePreviewBatches([
+  "全局规则",
+  "整集统一视觉风格。",
+  "",
+  "批次02｜纯文本复制测试（建议12秒）",
+  "导演说明",
+  "通过独占机位标题保持结构。",
+  "",
+  "引用资产",
+  "图片：角色.jpg — 人物外观",
+  "音频：对白.wav — 角色对白",
+  "",
+  "待生成资产",
+  "图片｜峡道母图｜2.39:1",
+  "提示词：",
+  "请生成峡道母图，保持真人实拍质感。",
+  "",
+  "连续性状态",
+  "载具保持四轮完好。",
+  "分镜脚本",
+  "镜头01｜[0–12s] 一镜到底。"
+].join("\n"));
+assert.equal(plainTbpm.preamble,"整集统一视觉风格。");
+assert.equal(plainTbpm.batches.length,1);
+assert.equal(plainTbpm.batches[0].duration_seconds,12);
+assert.deepEqual(plainTbpm.batches[0].references.map(x=>[x.name,x.kind]),[
+  ["角色.jpg","image"],["对白.wav","audio"]
+]);
+assert.equal(plainTbpm.batches[0].generatedAssets[0].name,"峡道母图");
+assert.match(plainTbpm.batches[0].generatedAssets[0].prompt,/真人实拍质感/);
+assert.doesNotMatch(plainTbpm.batches[0].body,/峡道母图|生成峡道母图/);
+assert.match(plainTbpm.batches[0].body,/\[导演说明\]/);
+
 const repeated=parsePreviewBatches("## 批次03｜重复引用\n[全局参考]\n- a.jpg：正面\n- a.jpg：侧面\n[分镜脚本]\n镜头");
 assert.equal(repeated.batches[0].references.length,2);
 assert.equal(parsePreviewBatches("没有批次标题").batches.length,0);
