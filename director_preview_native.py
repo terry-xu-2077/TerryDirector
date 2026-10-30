@@ -218,6 +218,27 @@ def save_native_preview(checkpoint_id: str, low_clean: dict, *,
     return "sampling_preview.mp4"
 
 
+def save_checkpoint_preview(checkpoint_id: str, low_clean: dict, tiny_vae: str | None,
+                            duration_seconds: float) -> bool:
+    """Best effort: a failed thumbnail must never erase a valid checkpoint."""
+    if not tiny_vae or tiny_vae == "none":
+        return False
+    try:
+        from .director_selflift_task_store import save_metadata
+        save_native_preview(checkpoint_id, low_clean, tiny_vae=tiny_vae,
+                            duration_seconds=duration_seconds)
+        save_metadata(checkpoint_id, {"preview_error": None, "preview_warning": None})
+        return True
+    except Exception as exc:
+        LOG.exception("[TerryDirector] 原生低清预览生成失败，检查点保留")
+        try:
+            from .director_selflift_task_store import save_metadata
+            save_metadata(checkpoint_id, {"preview_error": "原生预览失败：" + str(exc)[:900]})
+        except Exception:
+            LOG.exception("[TerryDirector] 无法记录原生预览错误")
+        return False
+
+
 class _LivePreviewWrapper:
     def __init__(self, node_id, tiny_vae, frame_limit, fps, max_resolution):
         self.node_id = str(node_id)

@@ -2,7 +2,7 @@
 
 Low-resolution *sampling* stays native ComfyUI:
 BasicScheduler -> SplitSigmas -> SamplerCustom/Advanced, using standard
-Euler, with KJ Model Preview Override optionally attached to the MODEL.
+Euler, with TerryDirector's own tiny-VAE preview MODEL wrapper.
 Connect BOTH sampler outputs to Save Checkpoint.
 """
 from __future__ import annotations
@@ -24,6 +24,7 @@ def _choice(manifest):
 class TerryDirectorSaveLowresCheckpoint(io.ComfyNode):
     @classmethod
     def define_schema(cls):
+        from .director_preview_native import default_tiny_vae, tiny_vae_choices
         return io.Schema(
             node_id="TerryDirectorSaveLowresCheckpoint",
             display_name="TerryDirector 保存低清检查点",
@@ -41,6 +42,10 @@ class TerryDirectorSaveLowresCheckpoint(io.ComfyNode):
                 io.Int.Input("seed", default=8, min=0, max=0xffffffffffffffff),
                 io.Float.Input("cfg", default=1.0, min=0.0, max=100.0),
                 io.String.Input("name", default="未命名低清镜头"),
+                io.Combo.Input("preview_tiny_vae", options=tiny_vae_choices(),
+                               default=default_tiny_vae(), optional=True),
+                io.Float.Input("preview_duration", default=15, min=4, max=20,
+                               optional=True),
             ],
             outputs=[
                 CheckpointData.Output("checkpoint", display_name="检查点引用"),
@@ -49,11 +54,15 @@ class TerryDirectorSaveLowresCheckpoint(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, low_state, low_clean, source, sigmas, transition_step, seed, cfg, name):
+    def execute(cls, low_state, low_clean, source, sigmas, transition_step, seed, cfg,
+                name, preview_tiny_vae=None, preview_duration=15):
+        from .director_preview_native import save_checkpoint_preview
         checkpoint_id = save_checkpoint(
             low_state=low_state, low_clean=low_clean, source=source,
             sigmas=sigmas, transition_step=transition_step, seed=seed,
             cfg=cfg, name=name)
+        save_checkpoint_preview(checkpoint_id, low_clean, preview_tiny_vae,
+                                float(preview_duration))
         return io.NodeOutput({"checkpoint_id": checkpoint_id}, checkpoint_id)
 
     @classmethod
@@ -179,30 +188,10 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                 sigmas=sigmas, transition_step=transition_step, seed=seed,
                 cfg=cfg, name=name,
             )
-            # The native encoder reads the final x0 directly; it never parses
-            # a fragmented websocket MP4 and never needs the browser alive.
-            # Preview failure must not invalidate the expensive checkpoint.
-            native_saved = False
-            if preview_tiny_vae and preview_tiny_vae != "none":
-                try:
-                    from .director_preview_native import save_native_preview
-                    from .director_selflift_task_store import save_metadata
-                    save_native_preview(
-                        saved_id, low_clean, tiny_vae=preview_tiny_vae,
-                        duration_seconds=float(preview_duration),
-                    )
-                    save_metadata(saved_id, {
-                        "preview_error": None,
-                        "preview_warning": None,
-                    })
-                    native_saved = True
-                except Exception as exc:
-                    logging.exception("[TerryDirector] 原生低清预览生成失败，检查点保留")
-                    try:
-                        from .director_selflift_task_store import save_metadata
-                        save_metadata(saved_id, {"preview_error": "原生预览失败：" + str(exc)[:900]})
-                    except Exception:
-                        logging.exception("[TerryDirector] 无法写入原生预览错误元数据")
+            from .director_preview_native import save_checkpoint_preview
+            native_saved = save_checkpoint_preview(
+                saved_id, low_clean, preview_tiny_vae, float(preview_duration)
+            )
             logging.info(
                 "[TerryDirector SelfLift] 暂停保存成功：镜头=%s checkpoint=%s "
                 "transition_step=%d native_preview=%s (高清被阻断)",
