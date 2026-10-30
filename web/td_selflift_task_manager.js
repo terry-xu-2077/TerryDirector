@@ -1890,7 +1890,7 @@ function batchImportMarkup() {
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
     '<div class="tdm-small">自动识别「批次01｜名称」独占行；支持 Markdown 和复制后丢失 #、粗体、列表符号的纯文本</div></div>'+
-    '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-prompt" '+(batch.saving?'disabled':'')+'>导入 Markdown</button>'+
+    '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-prompt" '+(batch.saving?'disabled':'')+'>导入提示词文件</button>'+
     '<button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>多批次提示词</strong><span>支持 Markdown / 纯文本 · .md / .txt</span></div>'+
