@@ -18,6 +18,7 @@ import {
   PREVIEW_RESOLUTION_OPTIONS,PREVIEW_RESOLUTION_DEFAULT,
   taskVideoFrameCount,taskResolutionInfo,taskAspectRatio,
 } from "./td_preview_task_parameters.js";
+import { parsePreviewBatches } from "./td_preview_batch_import.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
 const KJ_CLASS = "ModelPreviewOverrideKJ";
@@ -31,7 +32,7 @@ const state = {
   busy: false, root: null, creating: false, configuring: false, deleting: null,
   template: null, templates: [], defaultTemplateId: null, configSelectedId: null,
   configError: "", configSaving: false, configDraft: null, createDraft: null, editDraftId: null,
-  assetPicker: null, inputFiles: [],
+  assetPicker: null, inputFiles: [], batchImport: null,
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
   sidebarRoot: null, sidebarPoll: null, sidebarFetching: false,
   mediaRevisions: new Map(), elapsedTimer: null,
@@ -296,6 +297,48 @@ function styles() {
 .tdm-sidebar-empty{padding:28px 8px;color:#838e9e;font-size:12px;
  text-align:center;line-height:1.8}
 
+/* Batch prompt import: prompt parsing on the left, one shared image pool on the right. */
+.tdm-form.tdm-batch{width:min(1480px,97vw);height:min(930px,95vh);max-height:95vh;padding:0;display:flex;flex-direction:column;overflow:hidden}
+.tdm-batch-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #353a43;flex:none}
+.tdm-batch-head h2{font-size:17px;margin:0 0 4px}
+.tdm-batch-head .tdm-small{font-size:11px;color:#929eae}
+.tdm-batch-columns{display:grid;grid-template-columns:minmax(460px,1.25fr) minmax(340px,.9fr);flex:1;min-height:0;gap:18px;padding:16px 20px}
+.tdm-batch-left{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.tdm-batch-text{width:100%;height:34%;min-height:170px;max-height:44%;resize:vertical;box-sizing:border-box;background:#14171c;color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:12px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto}
+.tdm-batch-text:focus{outline:none;border-color:#6394d1}
+.tdm-batch-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px}
+.tdm-batch-item{display:flex;align-items:flex-start;gap:10px;text-align:left;width:100%;padding:10px 11px;border:1px solid #343b46;border-radius:7px;background:#1c2027;color:#dce4ef;cursor:pointer}
+.tdm-batch-item:hover{background:#242c37}
+.tdm-batch-item.active{background:#26364a;border-color:#5b86b9}
+.tdm-batch-item-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.tdm-batch-item strong{font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.tdm-batch-item small{font-size:10px;color:#98a4b4;line-height:1.5}
+.tdm-batch-item-status{font-size:10px;white-space:nowrap;color:#a9d7b3}
+.tdm-batch-item-status.warn{color:#e6b77e}
+.tdm-batch-right{display:flex;flex-direction:column;gap:9px;min-width:0;min-height:0;border-left:1px solid #353a43;padding-left:17px}
+.tdm-batch-section-head{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.tdm-batch-section-head strong{font-size:12px;color:#e1e8f2}
+.tdm-batch-section-head span{font-size:10px;color:#929eae}
+.tdm-batch-ref-list{display:flex;flex-direction:column;gap:5px;max-height:230px;overflow:auto}
+.tdm-batch-ref{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:7px 9px;border:1px solid #363d48;border-radius:6px;background:#1b2027;color:#dce4ef;cursor:pointer}
+.tdm-batch-ref.active{border-color:#6394d1;background:#253449}
+.tdm-batch-ref strong{font-size:11px;overflow-wrap:anywhere}
+.tdm-batch-ref small{font-size:10px;color:#98a4b4;overflow-wrap:anywhere}
+.tdm-batch-generated{font-size:10px;line-height:1.5;color:#c5a77f;padding:5px 0}
+.tdm-batch-pool{display:flex;flex-direction:column;gap:8px;flex:1;min-height:0}
+.tdm-batch-pool-head{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.tdm-batch-pool-head input{flex:1;min-width:110px}
+.tdm-batch-pool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:8px;overflow:auto;align-content:start;min-height:0;padding:2px}
+.tdm-batch .tdm-asset{padding:5px;min-width:0}
+.tdm-batch .tdm-asset img{width:100%;height:74px;object-fit:contain;background:#11151b}
+.tdm-batch .tdm-asset label{font-size:10px;overflow-wrap:anywhere}
+.tdm-batch-summary{font-size:11px;color:#a9c7e7;line-height:1.5}
+.tdm-batch-note{font-size:10px;color:#8f9cac;line-height:1.5}
+.tdm-batch-foot{display:flex;align-items:center;gap:12px;padding:11px 20px 13px;border-top:1px solid #353a43;flex:none}
+.tdm-batch-foot>div{min-width:0;display:flex;flex-direction:column;gap:3px}
+.tdm-batch-empty{padding:16px;color:#8995a5;text-align:center;font-size:11px;line-height:1.6}
+@media(max-width:850px){.tdm-form.tdm-batch{height:94vh}.tdm-batch-columns{grid-template-columns:1fr;overflow:auto}.tdm-batch-left{min-height:480px}.tdm-batch-right{border-left:0;border-top:1px solid #353a43;padding:14px 0 0;min-height:450px}}
+
 @media(max-width:850px){.tdm-form.tdm-create{height:94vh}
  .tdm-create-content{overflow:auto}.tdm-create-columns{grid-template-columns:1fr;gap:22px;height:auto}
  .tdm-create .tdm-prompt-editor{height:40vh;min-height:260px;flex:none}
@@ -328,10 +371,18 @@ function open() {
     state.elapsedTimer=setInterval(updateVisibleElapsed,1000);
   void Promise.all([refresh(),loadTemplate()]);
 }
+function stopPreviewPlayback() {
+  const players=state.root?.querySelectorAll?.("video") || [];
+  for(const player of players){
+    try{player.pause();player.removeAttribute?.("autoplay");}
+    catch{/* closing the preview must not be blocked by a media element */}
+  }
+}
 function close() {
+  stopPreviewPlayback();
   if(state.elapsedTimer!=null){clearInterval(state.elapsedTimer);state.elapsedTimer=null;}
   closePreviewRichEditor(); state.creating = false; state.configuring = false;
-  state.assetPicker = null; state.deleting = null;
+  state.assetPicker = null; state.batchImport = null; state.deleting = null;
   if (state.root) state.root.style.display = "none";
 }
 async function refresh() {
@@ -814,6 +865,7 @@ function render() {
     '<h2>TerryDirector · 预演台</h2><span class="tdm-tag">' + state.tasks.length + ' 个任务</span>' +
     '<div class="tdm-space"></div><button class="tdm-btn" data-action="config">配置工作流</button>' +
     '<button class="tdm-btn primary" data-action="create">＋ 新建预演</button>' +
+    '<button class="tdm-btn" data-action="batch-create">批量添加</button>' +
     '<button class="tdm-btn" data-action="refresh">刷新</button><button class="tdm-btn close" data-action="close">×</button></header>' +
     '<div class="tdm-main"><section class="tdm-left"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
@@ -851,7 +903,8 @@ function render() {
     '>'+esc(batch.label)+'</button></footer></div>' +
     (state.creating ? createMarkup() : "") +
     (state.configuring ? configMarkup() : "") +
-    (state.deleting ? deleteMarkup() : "");
+    (state.deleting ? deleteMarkup() : "") +
+    (state.batchImport ? batchImportMarkup() : "");
   if(oldPlayer && oldKey){
     const replacement=state.root.querySelector('[data-live-preview-host] video[data-media-key]');
     if(replacement?.dataset.mediaKey===oldKey){
@@ -866,6 +919,7 @@ function render() {
   bindControls();
   bindPreviewPlaybackErrors();
   wireImageFallback(state.root.querySelector(".tdm-assets"));
+  wireImageFallback(state.root.querySelector(".tdm-batch-pool-grid"));
   renderAssetChoices();
   installCreatePromptEditor();
 }
@@ -956,6 +1010,20 @@ function bindControls() {
         if(!ids.has(state.focused))state.focused=visible[0]?.id||null;
         render();
       });
+    } else if (action === "batch-text") {
+      control.addEventListener("input",()=>{
+        if(!state.batchImport)return;
+        state.batchImport.text=control.value;parseBatchImportText();renderBatchImportViews();
+      });
+    } else if (action === "batch-search") {
+      control.addEventListener("input",()=>{
+        if(!state.batchImport)return;
+        state.batchImport.search=control.value;renderBatchAssetPool();
+      });
+    } else if (action === "batch-preamble") {
+      control.addEventListener("change",()=>{
+        if(state.batchImport)state.batchImport.includePreamble=control.checked;
+      });
     } else if (action === "task-duration") {
       control.addEventListener("input",()=>{
         if(!state.createDraft)return;
@@ -1016,6 +1084,27 @@ async function handleAction(action, data) {
   try {
     if (action === "close") return close();
     if (action === "refresh") return refresh();
+    if (action === "batch-create") return await openBatchImport();
+    if (action === "batch-import-prompt") return importBatchPrompt();
+    if (action === "batch-cancel") { state.batchImport=null; return render(); }
+    if (action === "batch-select") {
+      const batch=state.batchImport;
+      if(batch){batch.activeIndex=Number(data.index)||0;
+        const refs=batch.batches[batch.activeIndex]?.references||[];
+        const missing=refs.findIndex(ref=>!ref.path);
+        batch.selectedRefIndex=missing>=0?missing:(refs.length?0:-1);}
+      return render();
+    }
+    if (action === "batch-select-ref") {
+      if(state.batchImport)state.batchImport.selectedRefIndex=Number(data.index);
+      return render();
+    }
+    if (action === "batch-assign-asset") { assignBatchAsset(data.path); return render(); }
+    if (action === "batch-refresh-assets") {
+      await loadInputFiles();syncBatchAssetMatches();return render();
+    }
+    if (action === "batch-upload-assets") return uploadBatchAssets();
+    if (action === "batch-submit") return await createBatchTasks();
     if (action === "focus") { state.focused = data.id; state.preview="auto"; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
     if (action === "rebuild-preview") {
@@ -1471,6 +1560,24 @@ async function openCreate() {
       return;
     }
   }
+  render();
+}
+async function openBatchImport() {
+  if(!state.template)await loadTemplate();
+  if(!state.template){
+    state.creating=false;state.batchImport=null;
+    await openConfig();
+    toast("请先配置并保存预演工作流，再批量添加任务","warning");
+    return;
+  }
+  await loadInputFiles();
+  state.creating=false;state.configuring=false;state.assetPicker=null;
+  state.editDraftId=null;
+  state.batchImport={
+    template:structuredClone(state.template),assetSlots:matchingAssets(state.template.workflow),
+    text:"",preamble:"",batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
+    includePreamble:true,search:"",saving:false,uploading:false,
+  };
   render();
 }
 function wireImageFallback(holder) {
