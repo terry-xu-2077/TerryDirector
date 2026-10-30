@@ -297,7 +297,7 @@ function styles() {
 .tdm-sidebar-empty{padding:28px 8px;color:#838e9e;font-size:12px;
  text-align:center;line-height:1.8}
 
-/* Batch prompt import: prompt parsing on the left, one shared image pool on the right. */
+/* Batch prompt import: prompt parsing on the left, one shared media pool on the right. */
 .tdm-form.tdm-batch{width:min(1480px,97vw);height:min(930px,95vh);max-height:95vh;padding:0;display:flex;flex-direction:column;overflow:hidden}
 .tdm-batch-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #353a43;flex:none}
 .tdm-batch-head h2{font-size:17px;margin:0 0 4px}
@@ -946,9 +946,9 @@ function render() {
   }
   bindControls();
   bindPreviewPlaybackErrors();
-  wireImageFallback(state.root.querySelector(".tdm-assets"));
-  wireImageFallback(state.root.querySelector(".tdm-batch-ref-list"));
-  wireImageFallback(state.root.querySelector(".tdm-batch-pool-grid"));
+  wireMediaFallback(state.root.querySelector(".tdm-assets"));
+  wireMediaFallback(state.root.querySelector(".tdm-batch-ref-list"));
+  wireMediaFallback(state.root.querySelector(".tdm-batch-pool-grid"));
   renderAssetChoices();
   installCreatePromptEditor();
 }
@@ -1623,7 +1623,7 @@ async function openBatchImport() {
   };
   render();
 }
-function wireImageFallback(holder) {
+function wireMediaFallback(holder) {
   if (!holder) return;
   holder.querySelectorAll(".tdm-media-thumb").forEach(media => {
     const fallback = () => {
@@ -1929,14 +1929,14 @@ function bindBatchDynamicActions(holder) {
 }
 function renderBatchAssetPool() {
   const holder=state.root?.querySelector(".tdm-batch-pool-grid");
-  if(holder){holder.innerHTML=batchAssetPoolMarkup();wireImageFallback(holder);bindBatchDynamicActions(holder);}
+  if(holder){holder.innerHTML=batchAssetPoolMarkup();wireMediaFallback(holder);bindBatchDynamicActions(holder);}
 }
 function renderBatchImportViews() {
   const batch=state.batchImport;if(!batch)return;
   const list=state.root?.querySelector(".tdm-batch-list");
   if(list){list.innerHTML=batchListMarkup();bindBatchDynamicActions(list);}
   const refs=state.root?.querySelector(".tdm-batch-ref-list");
-  if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);wireImageFallback(refs);}
+  if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);wireMediaFallback(refs);}
   const generated=state.root?.querySelector(".tdm-batch-generated");
   if(generated)generated.textContent=batchGeneratedMarkup();
   const preambleControl=state.root?.querySelector('[data-action="batch-preamble"]');
@@ -2096,7 +2096,7 @@ function renderAssetChoices() {
   holder.innerHTML=matches.map(f=>assetCard(f.path,f.name,
     'data-action="choose-asset" data-path="'+esc(f.path)+'"',false,kind)).join("")||
     '<div class="tdm-small">没有匹配的'+mediaKindLabel(kind)+'资产</div>';
-  wireImageFallback(holder);
+  wireMediaFallback(holder);
   holder.querySelectorAll('[data-action="choose-asset"]').forEach(button =>
     button.addEventListener("click", e => {
       e.preventDefault(); e.stopPropagation();
