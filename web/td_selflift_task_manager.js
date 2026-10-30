@@ -2113,6 +2113,7 @@ function applyBatchPromptImport() {
     render();return;
   }
   batch.text=candidate;
+  batch.activeIndex=0;batch.selectedRefIndex=-1;
   parseBatchImportText();
   batch.promptImportOpen=false;
   batch.importError="";
