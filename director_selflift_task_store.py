@@ -32,7 +32,8 @@ def safe_task_filename(value: object, fallback: str = "TerryDirector") -> str:
 
 
 def _safe_media_filename(value, fallback: str, extensions: set[str]) -> str:
-    if not isinstance(value, str) or not value or Path(value).name != value:
+    if (not isinstance(value, str) or not value or value in {".", ".."} or
+            "/" in value or "\\" in value or Path(value).name != value):
         return fallback
     if Path(value).suffix.lower() not in extensions:
         return fallback

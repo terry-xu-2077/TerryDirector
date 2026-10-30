@@ -52,6 +52,8 @@ class PreviewTaskFilenameTests(unittest.TestCase):
         self.assertEqual(safe, "批次01_场景_镜头_A")
         self.assertEqual(self.store.safe_task_filename("CON"), "_CON")
         self.assertEqual(self.store.safe_task_filename("/batch/"), "batch")
+        self.assertEqual(self.store._safe_media_filename("../outside.mp4", "review.mp4", {".mp4"}), "review.mp4")
+        self.assertEqual(self.store._safe_media_filename(r"..\\outside.mp4", "review.mp4", {".mp4"}), "review.mp4")
         self.assertEqual(self.store.safe_task_filename("  "), "TerryDirector")
 
     def test_metadata_keeps_named_media_pointers_across_task_updates(self):
