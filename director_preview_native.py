@@ -54,15 +54,22 @@ def _decoder(name: str):
     if not path:
         raise FileNotFoundError("找不到预览 VAE：" + name)
     source = comfy.utils.load_torch_file(path, safe_load=True)
-    indexed = {}
+    # Keep one decoder namespace only. Some checkpoints also contain an
+    # encoder with overlapping numeric layers; combining them corrupts the
+    # reconstructed network even though the individual keys look valid.
+    groups = {}
     for original, tensor in source.items():
         parts = original.split(".")
-        if not parts[0].isdigit():
-            parts = parts[1:]
-        if parts and parts[0].isdigit():
-            indexed[".".join(parts)] = tensor
-    if not indexed:
+        first = next((i for i, part in enumerate(parts) if part.isdigit()), None)
+        if first is None:
+            continue
+        namespace = ".".join(parts[:first])
+        groups.setdefault(namespace, {})[".".join(parts[first:])] = tensor
+    if not groups:
         raise ValueError("预览 VAE 不包含支持的 2-D TAESD 解码器参数")
+    namespace = next((n for n in ("taesd_decoder", "decoder", "")
+                      if n in groups), max(groups, key=lambda n: len(groups[n])))
+    indexed = groups[namespace]
 
     numbered = {}
     for key in indexed:
