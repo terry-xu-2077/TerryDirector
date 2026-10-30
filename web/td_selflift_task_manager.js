@@ -335,6 +335,31 @@ function styles() {
 .tdm-batch-summary{font-size:11px;color:#a9c7e7;line-height:1.5}
 .tdm-batch-warning{font-size:10px;line-height:1.5;color:#e7b77e;background:#30271f;border:1px solid #624a31;border-radius:6px;padding:8px 10px}
 .tdm-batch-warning:empty,.tdm-batch-generated:empty{display:none}
+.tdm-batch-ref-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:8px;max-height:min(42vh,350px);overflow:auto;align-content:start;padding:2px}
+.tdm-batch-ref-card{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px;border:1px solid #363d48;border-radius:8px;background:#1b2027}
+.tdm-batch-ref-card.active{border-color:#6394d1;background:#253449;box-shadow:inset 0 0 0 1px #45688f}
+.tdm-batch-ref-select{display:flex;flex-direction:column;gap:3px;width:100%;padding:0;border:0;background:transparent;color:#dce4ef;text-align:left;cursor:pointer}
+.tdm-batch-ref-select strong{font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+.tdm-batch-ref-select small,.tdm-batch-ref-path{font-size:10px;color:#98a4b4;line-height:1.45;overflow-wrap:anywhere}
+.tdm-batch-ref-type{font-size:9px;color:#9fb9d8}
+.tdm-batch-ref-preview{display:flex;align-items:center;justify-content:center;min-height:74px;max-height:116px;overflow:hidden;border-radius:5px;background:#11151b}
+.tdm-batch-ref-preview img,.tdm-batch-ref-preview video{display:block;width:100%;max-height:116px;object-fit:contain;background:#11151b}
+.tdm-batch-ref-preview audio{display:block;width:100%;height:38px}
+.tdm-batch-ref-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:74px;color:#8491a2;text-align:center;font-size:10px}
+.tdm-batch-ref-empty>span,.tdm-media-icon{font-size:24px;line-height:1;color:#91a5bd}
+.tdm-batch-ref-empty small{font-size:9px;color:#748194}
+.tdm-batch-pool-card{display:flex;flex-direction:column;gap:5px;min-width:0;padding:5px;border:1px solid #343b46;border-radius:7px;background:#1b2027}
+.tdm-batch-pool-card.selected{border-color:#6394d1;background:#253449}
+.tdm-batch-pool-card.incompatible{opacity:.42}
+.tdm-batch-pool-preview{display:flex;align-items:center;justify-content:center;height:74px;overflow:hidden;background:#11151b;border-radius:4px}
+.tdm-batch-pool-preview img{width:100%;height:100%;object-fit:contain}
+.tdm-batch-pool-card>button{border:0;background:transparent;color:#dce4ef;text-align:left;padding:2px;cursor:pointer;min-width:0}
+.tdm-batch-pool-card>button strong{display:block;font-size:10px;overflow-wrap:anywhere}
+.tdm-batch-pool-card>button small{display:block;font-size:9px;color:#98a4b4;margin-top:3px}
+.tdm-batch-pool-card>button:disabled{cursor:not-allowed}
+.tdm-batch .tdm-asset video{width:100%;height:74px;object-fit:contain;background:#11151b}
+.tdm-batch .tdm-asset .tdm-media-icon{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:74px;background:#11151b}
+.tdm-batch .tdm-asset:disabled{opacity:.35;cursor:not-allowed}
 .tdm-batch-note{font-size:10px;color:#8f9cac;line-height:1.5}
 .tdm-batch-foot{display:flex;align-items:center;gap:12px;padding:11px 20px 13px;border-top:1px solid #353a43;flex:none}
 .tdm-batch-foot>div{min-width:0;display:flex;flex-direction:column;gap:3px}
@@ -1171,7 +1196,10 @@ async function handleAction(action, data) {
     if (action === "cancel-config") { state.configuring = false; return render(); }
     if (action === "save-config") return await saveConfig();
     if (action === "use-canvas") return useCurrentWorkflow();
-    if (action === "open-assets") { state.assetPicker = { index: Number(data.index), search: "" }; return render(); }
+    if (action === "open-assets") {
+      const index=Number(data.index),kind=state.createDraft?.assets?.[index]?.kind||"image";
+      state.assetPicker={index,kind,search:""};return render();
+    }
     if (action === "close-assets") { state.assetPicker = null; return render(); }
     if (action === "choose-asset") return chooseAsset(data);
     if (action === "cancel-delete") { state.deleting = null; return render(); }
@@ -1185,7 +1213,7 @@ async function handleAction(action, data) {
       return await changeCreateSource({}, "task:"+state.focused);
     }
     if (action === "import-workflow") return importWorkflow();
-    if (action === "upload-image") return uploadImage(Number(data.index));
+    if (action === "upload-asset") return uploadAsset(Number(data.index));
     if (action === "submit") return await submitCreate();
     if (action === "run-draft") return await runDraft(state.focused);
     if (action === "edit-draft") return await editDraft(state.focused);
@@ -1241,11 +1269,22 @@ function fieldsOf(workflow,type) {
   return listPreviewInputCandidates(workflow,type);
 }
 function matchingAssets(workflow) {
-  return (workflow?.nodes || []).filter(node =>
-    /^(LoadImage|LoadImageMask)$/.test(node.type) &&
-    typeof nodeValue(node, "image") === "string").map(node => ({
-      node_id: node.id, widget_name: "image", value: nodeValue(node, "image"),
-    }));
+  const loaders=[
+    {kind:"image",pattern:/^(LoadImage|LoadImageMask)$/i,widgets:["image"]},
+    {kind:"audio",pattern:/^(?:(?:VHS_)?LoadAudio(?:Path|Upload)?|AudioLoader)$/i,
+      widgets:["audio","audio_file","audio_path","file","path"]},
+    {kind:"video",pattern:/^(?:(?:VHS_)?LoadVideo(?:Path|Upload)?|VideoLoader)$/i,
+      widgets:["video","video_path","file","path"]},
+  ];
+  const assets=[];
+  for(const node of workflow?.nodes||[]){
+    const loader=loaders.find(item=>item.pattern.test(String(node.type||"")));
+    if(!loader)continue;
+    const widget_name=loader.widgets.find(name=>typeof nodeValue(node,name)==="string");
+    if(!widget_name)continue;
+    assets.push({node_id:node.id,widget_name,value:nodeValue(node,widget_name),kind:loader.kind});
+  }
+  return assets;
 }
 const bindingKey = obj => JSON.stringify({ node_id: obj.node_id, widget_name: obj.widget_name });
 function bindingNode(graph, binding) {
@@ -1584,27 +1623,57 @@ async function openBatchImport() {
 }
 function wireImageFallback(holder) {
   if (!holder) return;
-  holder.querySelectorAll(".tdm-asset img").forEach(image => {
+  holder.querySelectorAll(".tdm-media-thumb").forEach(media => {
     const fallback = () => {
       const placeholder = document.createElement("span");
       placeholder.className = "tdm-noimg";
-      placeholder.textContent = "图片未找到";
-      image.replaceWith(placeholder);
+      placeholder.textContent = media.tagName==="VIDEO"?"视频无法预览":
+        media.tagName==="AUDIO"?"音频无法播放":"图片未找到";
+      media.replaceWith(placeholder);
     };
-    if (image.complete && image.naturalWidth === 0) fallback();
-    else image.addEventListener("error", fallback, { once: true });
+    if(media.tagName==="IMG"){
+      if(media.complete && media.naturalWidth===0)fallback();
+      else media.addEventListener("error",fallback,{once:true});
+    }else if(media.tagName==="VIDEO"){
+      const seekFirstFrame=()=>{
+        if(!Number.isFinite(media.duration)&&media.duration!==Infinity)return;
+        try{media.currentTime=Math.min(0.12,Math.max(0,(media.duration||0.12)/2));}catch{}
+      };
+      media.addEventListener("loadedmetadata",seekFirstFrame,{once:true});
+      media.addEventListener("seeked",()=>media.pause(),{once:true});
+      if(media.readyState>=1)seekFirstFrame();
+      media.addEventListener("error",fallback,{once:true});
+    }else media.addEventListener("error",fallback,{once:true});
   });
 }
 function assetUrl(path) {
   if (!path) return "";
   return "/view?filename=" + encodeURIComponent(path) + "&type=input";
 }
-function assetCard(path, title, attrs, selected = false) {
-  const image = path ? '<img loading="lazy" src="' + esc(assetUrl(path)) + '" alt="">' :
-    '<span class="tdm-noimg">＋</span>';
-  return '<button type="button" class="tdm-asset' + (selected ? ' selected' : '') +
-    '" ' + attrs + '>' + image + '<label title="' + esc(path || "未选择") + '">' +
-    esc(title || path || "添加图片") + '</label></button>';
+function mediaKindLabel(kind) {
+  return kind==="video"?"视频":kind==="audio"?"音频":"图片";
+}
+function mediaKindIcon(kind) {
+  return kind==="video"?"▶":kind==="audio"?"♫":"▧";
+}
+function mediaPreviewMarkup(file,options={}) {
+  const kind=file?.kind||options.kind||"image",path=file?.path||"";
+  if(!path)return '<span class="tdm-noimg">＋</span>';
+  const url=file?.preview_url||assetUrl(path);
+  if(kind==="image")return '<img class="tdm-media-thumb" loading="lazy" src="'+esc(url)+'" alt="">';
+  if(kind==="video"&&options.controls)
+    return '<video class="tdm-media-thumb" src="'+esc(url)+'" controls muted playsinline preload="metadata"></video>';
+  if(kind==="audio"&&options.controls)
+    return '<audio class="tdm-media-thumb" src="'+esc(url)+'" controls preload="metadata"></audio>';
+  return '<span class="tdm-media-icon">'+mediaKindIcon(kind)+'<small>'+mediaKindLabel(kind)+'</small></span>';
+}
+function assetCard(path, title, attrs, selected = false, kind = "image", incompatible = false) {
+  const file=state.inputFiles.find(item=>item.path===path)||{path,kind,preview_url:path?assetUrl(path):""};
+  const preview=mediaPreviewMarkup(file,{kind});
+  return '<button type="button" class="tdm-asset' + (selected ? ' selected' : '')+
+    (incompatible?' incompatible':'')+'" '+attrs+'>'+preview+
+    '<label title="' + esc(path || "未选择") + '">' +
+    esc(title || path || ("添加"+mediaKindLabel(kind))) + '</label></button>';
 }
 function createMarkup() {
   const draft = state.createDraft;
@@ -1674,9 +1743,9 @@ function createMarkup() {
     '<aside class="tdm-create-right">' +
     '<div class="tdm-section">参考资产 <span class="tdm-small">· 点击缩略图替换</span></div>' +
     '<div class="tdm-assets">' + draft.assets.map((asset,i) =>
-      assetCard(asset.value, "图片 " + (i + 1) + " · " + (asset.value || "未设置"),
-        'data-action="open-assets" data-index="' + i + '"')).join("") + '</div>' +
-    (draft.assets.length ? '' : '<div class="tdm-small">当前模板没有 LoadImage 参考资产</div>') +
+      assetCard(asset.value, mediaKindLabel(asset.kind)+" "+(i+1)+" · "+(asset.value||"未设置"),
+        'data-action="open-assets" data-index="' + i + '"',false,asset.kind||"image")).join("") + '</div>' +
+    (draft.assets.length ? '' : '<div class="tdm-small">当前模板没有可识别的图片、音频或视频加载节点</div>') +
     '</aside></div></div>' +
     '<footer class="tdm-create-foot"><span class="tdm-small">创建任务只保存配置，不会启动 ComfyUI 生成。</span>' +
     '<span class="tdm-space"></span>' +
@@ -1959,25 +2028,26 @@ function installCreatePromptEditor() {
   });
 }
 function assetPickerMarkup() {
-  const picker = state.assetPicker;
-  if (!picker) return "";
-  return '<div class="tdm-dialog" style="z-index:100040"><div class="tdm-form" role="dialog" aria-modal="true">' +
-    '<div class="tdm-modal-top"><h2>选择参考资产</h2><span class="tdm-space"></span>' +
-    '<button class="tdm-btn" data-action="close-assets">×</button></div>' +
-    '<div class="tdm-actions"><input style="flex:1" data-action="asset-search" placeholder="按文件名搜索图片" value="' +
-    esc(picker.search) + '"><button class="tdm-btn" data-action="upload-image" data-index="' +
-    picker.index + '">上传图片</button></div>' +
+  const picker=state.assetPicker;if(!picker)return "";
+  const label=mediaKindLabel(picker.kind||"image");
+  return '<div class="tdm-dialog" style="z-index:100040"><div class="tdm-form" role="dialog" aria-modal="true">'+
+    '<div class="tdm-modal-top"><h2>选择'+label+'资产</h2><span class="tdm-space"></span>'+
+    '<button class="tdm-btn" data-action="close-assets">×</button></div>'+
+    '<div class="tdm-actions"><input style="flex:1" data-action="asset-search" placeholder="按文件名搜索'+label+'" value="'+
+    esc(picker.search)+'"><button class="tdm-btn" data-action="upload-asset" data-index="'+
+    picker.index+'">上传'+label+'</button></div>'+
     '<div class="tdm-asset-picker"></div></div></div>';
 }
 function renderAssetChoices() {
   if (!state.assetPicker) return;
   const holder = state.root?.querySelector(".tdm-asset-picker");
   if (!holder) return;
-  const matches = state.inputFiles.filter(f => f.kind === "image" &&
-    f.path.toLowerCase().includes(state.assetPicker.search.toLowerCase())).slice(0, 150);
-  holder.innerHTML = matches.map(f => assetCard(f.path, f.name,
-    'data-action="choose-asset" data-path="' + esc(f.path) + '"')).join("") ||
-    '<div class="tdm-small">没有匹配的图片</div>';
+  const kind=state.assetPicker.kind||"image";
+  const matches=state.inputFiles.filter(f=>f.kind===kind&&
+    f.path.toLowerCase().includes(state.assetPicker.search.toLowerCase())).slice(0,150);
+  holder.innerHTML=matches.map(f=>assetCard(f.path,f.name,
+    'data-action="choose-asset" data-path="'+esc(f.path)+'"',false,kind)).join("")||
+    '<div class="tdm-small">没有匹配的'+mediaKindLabel(kind)+'资产</div>';
   wireImageFallback(holder);
   holder.querySelectorAll('[data-action="choose-asset"]').forEach(button =>
     button.addEventListener("click", e => {
@@ -1986,37 +2056,32 @@ function renderAssetChoices() {
     }));
 }
 function chooseAsset(data) {
-  const index = state.assetPicker?.index;
-  if (index == null || !state.createDraft?.assets[index]) return;
-  state.createDraft.assets[index].value = data.path;
-  state.assetPicker = null;
-  render();
+  const index=state.assetPicker?.index,slot=state.createDraft?.assets?.[index];
+  if(index==null||!slot)return;
+  const file=state.inputFiles.find(item=>item.path===data.path);
+  if(!file||file.kind!==(slot.kind||"image"))throw Error("资产类型不匹配，需要"+mediaKindLabel(slot.kind||"image"));
+  slot.value=data.path;state.assetPicker=null;render();
 }
-async function uploadImage(index) {
-  const fileInput = document.createElement("input");
-  fileInput.type = "file";
-  fileInput.accept = "image/png,image/jpeg,image/webp,image/bmp,image/tiff";
-  fileInput.onchange = async () => {
-    const file = fileInput.files?.[0];
-    if (!file) return;
-    try {
-      const form = new FormData();
-      form.append("file", file, file.name);
-      const response = await api.fetchApi("/terrydirector/api/upload", {
-        method: "POST", body: form,
-      });
-      const data = await response.json();
-      if (!response.ok || !data.path || data.kind !== "image") {
-        throw Error(data.error || "图片上传失败");
-      }
-      state.inputFiles.push(data);
-      if (state.createDraft?.assets[index]) {
-        state.createDraft.assets[index].value = data.path;
-      }
-      state.assetPicker = null;
-      render();
-      toast("图片已导入：" + data.name);
-    } catch (e) { toast(e.message, "error"); }
+async function uploadAsset(index) {
+  const slot=state.createDraft?.assets?.[index];if(!slot)return;
+  const kind=slot.kind||"image",fileInput=document.createElement("input");
+  fileInput.type="file";
+  fileInput.accept={
+    image:".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg",
+    video:".mp4,.mov,.mkv,.webm,.avi,.m4v",
+    audio:".wav,.mp3,.flac,.ogg,.m4a,.aac,.opus",
+  }[kind]||"";
+  fileInput.onchange=async()=>{
+    const file=fileInput.files?.[0];if(!file)return;
+    try{
+      const form=new FormData();form.append("file",file,file.name);
+      const response=await api.fetchApi("/terrydirector/api/upload",{method:"POST",body:form});
+      const data=await response.json();
+      if(!response.ok||!data.path||data.kind!==kind)
+        throw Error(data.error||"上传失败，文件类型与"+mediaKindLabel(kind)+"槽位不匹配");
+      state.inputFiles.push(data);slot.value=data.path;state.assetPicker=null;render();
+      toast(mediaKindLabel(kind)+"已导入："+data.name);
+    }catch(error){toast(error.message,"error");}
   };
   fileInput.click();
 }
