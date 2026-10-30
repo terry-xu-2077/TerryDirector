@@ -86,6 +86,29 @@ assert.match(mediaHelpers.mediaPreviewMarkup({kind:"image",path:"person.png"}),/
 assert.match(mediaHelpers.mediaPreviewMarkup({kind:"video",path:"motion.mp4"},{controls:true}),/<video[^>]+controls/);
 assert.match(mediaHelpers.mediaPreviewMarkup({kind:"audio",path:"dialogue.wav"},{controls:true}),/<audio[^>]+controls/);
 assert.match(mediaHelpers.mediaPreviewMarkup({kind:"audio",path:""},{kind:"audio"}),/未绑定音频/);
+const slotStart=source.indexOf("function batchSlotPreviewMarkup(ref) {");
+const slotEnd=source.indexOf("function batchReferenceLabel(item,index)",slotStart);
+assert.ok(slotStart>=0&&slotEnd>slotStart);
+const renderSlot=new Function("state","mediaKindIcon","mediaPreviewMarkup","esc",
+  source.slice(slotStart,slotEnd)+";return batchSlotPreviewMarkup;");
+const slotState={inputFiles:[]};
+const slotPreview=renderSlot(slotState,mediaHelpers.mediaKindIcon,mediaHelpers.mediaPreviewMarkup,
+  value=>String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])));
+const unboundImage=slotPreview({kind:"image",name:"private-name.jpg",
+  description:"特瑞面容、沙棕旧披覆外层及深灰工装"});
+assert.ok(unboundImage.includes("特瑞面容、沙棕旧披覆外层及深灰工装"));
+assert.ok(unboundImage.includes(mediaHelpers.mediaKindIcon("image")));
+assert.ok(!unboundImage.includes("待绑定图片"));
+assert.ok(!unboundImage.includes("从下方资产池选择或上传"));
+assert.ok(!unboundImage.includes("private-name.jpg"));
+const iconOnly=slotPreview({kind:"video",name:"motion.mp4",description:""});
+assert.ok(iconOnly.includes(mediaHelpers.mediaKindIcon("video")));
+assert.ok(!iconOnly.includes("<small"));
+assert.ok(!iconOnly.includes("待绑定视频"));
+const escapedDescription=slotPreview({kind:"audio",description:"对白 <环境声> & 旁白"});
+assert.ok(escapedDescription.includes("对白 &lt;环境声&gt; &amp; 旁白"));
+assert.ok(!escapedDescription.includes("对白 <环境声> & 旁白"));
+
 const batchStart=source.indexOf("function findBatchPoolAsset(");
 const batchEnd=source.indexOf("function installCreatePromptEditor()",batchStart);
 assert.ok(batchStart>=0 && batchEnd>batchStart);

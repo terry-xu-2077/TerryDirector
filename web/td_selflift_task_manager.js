@@ -345,9 +345,11 @@ function styles() {
 .tdm-batch-ref-preview{display:flex;align-items:center;justify-content:center;min-height:74px;max-height:116px;overflow:hidden;border-radius:5px;background:#11151b}
 .tdm-batch-ref-preview img,.tdm-batch-ref-preview video{display:block;width:100%;max-height:116px;object-fit:contain;background:#11151b}
 .tdm-batch-ref-preview audio{display:block;width:100%;height:38px}
-.tdm-batch-ref-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:74px;color:#8491a2;text-align:center;font-size:10px}
-.tdm-batch-ref-empty>span,.tdm-media-icon{font-size:24px;line-height:1;color:#91a5bd}
-.tdm-batch-ref-empty small{font-size:9px;color:#748194}
+.tdm-batch-ref-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+ min-height:74px;max-height:116px;width:100%;box-sizing:border-box;padding:8px 10px;
+ overflow:auto;color:#8491a2;text-align:center;font-size:10px}
+.tdm-batch-ref-empty>span,.tdm-media-icon{font-size:24px;line-height:1;color:#91a5bd;flex:none}
+.tdm-batch-ref-description{font-size:10px;line-height:1.45;color:#b5c0ce;overflow-wrap:anywhere;white-space:normal}
 .tdm-batch-pool-card{display:flex;flex-direction:column;gap:5px;min-width:0;padding:5px;border:1px solid #343b46;border-radius:7px;background:#1b2027}
 .tdm-batch-pool-card.selected{border-color:#6394d1;background:#253449}
 .tdm-batch-pool-card.incompatible{opacity:.42}
@@ -1825,7 +1827,7 @@ function batchListMarkup() {
 function batchSlotPreviewMarkup(ref) {
   const file=state.inputFiles.find(item=>item.path===ref.path&&item.kind===(ref.kind||"image"));
   if(!file)return '<div class="tdm-batch-ref-empty"><span>'+mediaKindIcon(ref.kind)+'</span>'+
-    '<strong>待绑定'+mediaKindLabel(ref.kind)+'</strong><small>从下方资产池选择或上传</small></div>';
+    (ref.description?'<small class="tdm-batch-ref-description">'+esc(ref.description)+'</small>':'')+'</div>';
   return mediaPreviewMarkup(file,{controls:true});
 }
 function batchReferenceLabel(item,index) {
