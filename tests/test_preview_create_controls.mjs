@@ -36,6 +36,24 @@ assert.ok(source.includes('data-action="batch-create"'));
 assert.ok(source.includes('data-action="batch-submit"'));
 assert.ok(source.includes("function batchImportMarkup()"));
 assert.ok(source.includes("matchingAssets(state.template.workflow)"));
+const batchStart=source.indexOf("function findBatchPoolAsset(");
+const batchEnd=source.indexOf("function installCreatePromptEditor()",batchStart);
+assert.ok(batchStart>=0 && batchEnd>batchStart);
+const batchMarkup=new Function("state","esc","assetCard",
+  source.slice(batchStart,batchEnd)+";return batchImportMarkup;")({
+    batchImport:{
+      text:"# 批量提示词",preamble:"全局风格规则",includePreamble:true,
+      batches:[{name:"批次01｜场景一",body:"导演说明\n分镜",duration_seconds:15,
+        references:[{name:"特瑞.jpg",path:"特瑞.jpg"}],generatedAssets:[]}],
+      assetSlots:[{}],activeIndex:0,selectedRefIndex:0,search:"",saving:false,uploading:false,
+    },
+    inputFiles:[{kind:"image",name:"特瑞.jpg",path:"特瑞.jpg"}],
+  },value=>String(value),()=>"<asset/>")();
+assert.ok(batchMarkup.includes("批量添加任务"));
+assert.ok(batchMarkup.includes("批次01｜场景一"));
+assert.ok(batchMarkup.includes('data-action="batch-upload-assets"'));
+assert.ok(batchMarkup.includes('data-action="batch-submit"'));
+assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任务"));
 assert.ok(rendered.includes('aria-label="生成随机种子"'));
 assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));
 assert.ok(source.includes('state.createDraft.highres_megapixels=Number(control.value);'));
