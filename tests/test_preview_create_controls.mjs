@@ -77,6 +77,32 @@ assert.equal(promptWithTokens("[全局参考]\n- A.jpg：A\n- B.jpg：B",[
   {name:"A.jpg",kind:"image"},{name:"B.jpg",kind:"image"},
 ]),"[全局参考]\n<Picture 1>：A\n<Picture 2>：B");
 
+const typedConverted = promptWithTokens([
+  "[全局参考]",
+  "<Picture 特瑞>：特瑞面容与服装",
+  "<Audio 特瑞音色>：成年男性、轻沙哑",
+  "<Video 穿越机参考>：赛车式飞行",
+  "<Picture 菌伞峡道>：正常图片描述",
+  "<Prompt 菌伞峡道>：请生成菌伞峡道母图。",
+  "这里是多行生图提示词的续行。",
+  "[连续性状态]",
+  "特瑞继续驾驶。",
+].join("\n"),[
+  {name:"特瑞",kind:"image"},
+  {name:"特瑞音色",kind:"audio"},
+  {name:"穿越机参考",kind:"video"},
+  {name:"菌伞峡道",kind:"image"},
+]);
+assert.equal(typedConverted,[
+  "[全局参考]",
+  "<Picture 1>：特瑞面容与服装",
+  "<Audio 1>：成年男性、轻沙哑",
+  "<Video 1>：赛车式飞行",
+  "<Picture 2>：正常图片描述",
+  "[连续性状态]",
+  "特瑞继续驾驶。",
+].join("\n"));
+
 const mediaStart=source.indexOf("function mediaKindLabel(kind) {");
 const mediaEnd=source.indexOf("function assetCard(",mediaStart);
 const mediaHelpers=new Function("state","esc","assetUrl",

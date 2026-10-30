@@ -226,4 +226,40 @@ const malformedTbpm = parsePreviewBatches([
 assert.equal(malformedTbpm.batches[0].references.length,0);
 assert.equal(malformedTbpm.batches[0].parseErrors.length,1);
 
+
+// Typed [全局参考] tags use logical names instead of source filenames.
+const typedReferences = parsePreviewBatches([
+  "批次05｜标签引用测试（建议15秒）",
+  "[全局参考]",
+  "<Picture 特瑞>：特瑞面容与服装",
+  "<Picture 蚂蚱载具> : 866载具结构",
+  "<Audio 特瑞音色>：成年男性、轻沙哑、克制自然",
+  "<Video 穿越机参考>：赛车式低空高速跟拍节奏",
+  "<Picture 菌伞峡道>：正常图片描述",
+  "<Prompt 菌伞峡道>：请生成一张2.39:1横幅的干燥菌伞峡道电影母图。",
+  "两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。",
+  "[连续性状态]",
+  "866四轮完好，翼膜收拢。",
+].join("\n"));
+assert.deepEqual(typedReferences.batches[0].references.map(x=>[x.name,x.kind,x.description]),[
+  ["特瑞","image","特瑞面容与服装"],
+  ["蚂蚱载具","image","866载具结构"],
+  ["特瑞音色","audio","成年男性、轻沙哑、克制自然"],
+  ["穿越机参考","video","赛车式低空高速跟拍节奏"],
+  ["菌伞峡道","image","正常图片描述"],
+]);
+assert.deepEqual(typedReferences.batches[0].generatedAssets,[
+  {type:"image",name:"菌伞峡道",prompt:"请生成一张2.39:1横幅的干燥菌伞峡道电影母图。\n两侧蓝灰风蚀岩壁长出大型紫灰蘑菇状植物。"}
+]);
+assert.deepEqual(typedReferences.batches[0].parseErrors,[]);
+
+const malformedTyped = parsePreviewBatches([
+  "批次06｜格式错误",
+  "[全局参考]",
+  "<Picture>：缺少名字",
+  "[分镜脚本]",
+  "镜头。"
+].join("\n"));
+assert.equal(malformedTyped.batches[0].parseErrors.length,1);
+
 console.log("Preview Stage Markdown + plain-text + H3 media batch parser: PASS");

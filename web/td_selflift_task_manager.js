@@ -1815,10 +1815,22 @@ function createMarkup() {
     (state.assetPicker ? assetPickerMarkup() : "");
 }
 function findBatchPoolAsset(name,kind="image") {
-  const wanted=String(name||"").replace(/\\/g,"/").split("/").pop().toLowerCase();
-  return state.inputFiles.find(file=>file.kind===kind&&
-    (String(file.name||"").toLowerCase()===wanted||
-     String(file.path||"").toLowerCase().endsWith("/"+wanted)))?.path||null;
+  const wanted=String(name||"").replace(/\\/g,"/").split("/").pop().trim().toLowerCase();
+  if(!wanted)return null;
+  const candidates=state.inputFiles.filter(file=>file.kind===kind);
+  const exact=candidates.find(file=>{
+    const fileName=String(file.name||"").toLowerCase();
+    const pathName=String(file.path||"").replace(/\\/g,"/").split("/").pop().toLowerCase();
+    return fileName===wanted||pathName===wanted||String(file.path||"").toLowerCase().endsWith("/"+wanted);
+  });
+  if(exact)return exact.path;
+  if(wanted.length<2)return null;
+  const partial=candidates.filter(file=>{
+    const fileName=String(file.name||"").toLowerCase();
+    const pathName=String(file.path||"").replace(/\\/g,"/").split("/").pop().toLowerCase();
+    return fileName.includes(wanted)||pathName.includes(wanted);
+  });
+  return partial.length===1?partial[0].path:null;
 }
 function parseBatchImportText() {
   const batch=state.batchImport;if(!batch)return;
@@ -1969,7 +1981,7 @@ function batchImportMarkup() {
   const stats=batchImportStats(),current=batch.batches[batch.activeIndex],disabled=stats.valid===0||batch.saving;
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
-    '<div class="tdm-small">使用 TBPM Markdown 规范；兼容旧版批次提示词和纯文本</div></div>'+
+    '<div class="tdm-small">识别批次标题与 [全局参考] 媒体标签；其他正文保持原样</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>当前批次提示词原文</strong>'+
@@ -2007,7 +2019,7 @@ function batchPromptImportMarkup() {
   return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
-    '<div class="tdm-small">支持 TBPM Markdown；复制后格式标记丢失也可识别纯文本结构</div></div>'+
+    '<div class="tdm-small">识别「批次NN｜名称」标题和 [全局参考] 媒体标签</div></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
     '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
     'placeholder="在这里粘贴完整提示词；每个「批次01｜名称」标题单独占一行">'+esc(batch.importText||"")+'</textarea>'+
@@ -2174,29 +2186,49 @@ async function uploadBatchAssets() {
 }
 function batchPromptWithMediaTokens(body,references) {
   const refs=Array.isArray(references)?references:[];
-  if(!refs.length)return String(body??"");
   const counts={image:0,audio:0,video:0};
-  let referenceIndex=0,insideGlobalReferences=false;
-  return String(body??"").split(/\r?\n/).map(line=>{
+  const tokens=refs.map(ref=>{
+    const kind=ref.kind||"image";
+    counts[kind]=(counts[kind]||0)+1;
+    const tokenType=kind==="audio"?"Audio":kind==="video"?"Video":"Picture";
+    return {...ref,kind,token:"<"+tokenType+" "+counts[kind]+">",used:false};
+  });
+  let insideGlobalReferences=false,skippingPrompt=false;
+  const output=[];
+  for(const line of String(body??"").split(/\r?\n/)){
     if(/^\s*\[全局参考\]\s*$/.test(line)){
-      insideGlobalReferences=true;return line;
+      insideGlobalReferences=true;skippingPrompt=false;output.push(line);continue;
     }
     if(insideGlobalReferences&&/^\s*\[[^\]]+\]\s*$/.test(line)){
-      insideGlobalReferences=false;return line;
+      insideGlobalReferences=false;skippingPrompt=false;output.push(line);continue;
     }
-    if(!insideGlobalReferences||referenceIndex>=refs.length)return line;
-    const ref=refs[referenceIndex],name=String(ref?.name||"");
-    if(!name)return line;
+    if(!insideGlobalReferences){output.push(line);continue;}
     const content=line.trim().replace(/^(?:[-*+•]\s+|\d+[.)、]\s*)/,"");
-    if(!content.startsWith(name))return line;
-    const suffix=content.slice(name.length);
-    if(suffix&&!/^(?:\s*[:：]|\s+)/.test(suffix))return line;
-    const kind=ref.kind||"image";
-    const tokenType=kind==="audio"?"Audio":kind==="video"?"Video":"Picture";
-    counts[kind]=(counts[kind]||0)+1;
-    referenceIndex++;
-    return "<"+tokenType+" "+counts[kind]+">"+suffix;
-  }).join("\n");
+    const tag=content.match(/^<\s*(Picture|Audio|Video|Prompt)\s+([^>]+?)\s*>\s*[:：]\s*(.*)$/i);
+    const legacyGenerated=/^待生成资产\s*[｜|:：]/.test(content);
+    const legacyReference=content.match(/^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg|mp4|mov|mkv|webm|avi|m4v|wav|mp3|flac|ogg|m4a|aac|opus))\s*(?:[：:]|$)/i);
+    if(skippingPrompt&&!tag&&!legacyGenerated&&!legacyReference)continue;
+    skippingPrompt=false;
+    if(tag){
+      const type=tag[1].toLowerCase(),name=tag[2].trim(),suffix=tag[3]||"";
+      if(type==="prompt"){skippingPrompt=true;continue;}
+      const kind=type==="picture"?"image":type==="audio"?"audio":"video";
+      const matched=tokens.find(entry=>!entry.used&&entry.kind===kind&&entry.name===name);
+      if(!matched){output.push(line);continue;}
+      matched.used=true;output.push(matched.token+(suffix.trim()?"："+suffix.trim():""));continue;
+    }
+    if(legacyGenerated){skippingPrompt=/生图提示词/.test(content);continue;}
+    let matched=null,suffix="";
+    for(const entry of tokens){
+      if(entry.used||!content.startsWith(entry.name))continue;
+      const rest=content.slice(entry.name.length);
+      if(rest&&!/^(?:\s*[:：]|\s+)/.test(rest))continue;
+      matched=entry;suffix=rest;break;
+    }
+    if(matched){matched.used=true;output.push(matched.token+suffix);}
+    else output.push(line);
+  }
+  return output.join("\n");
 }
 async function createBatchTasks() {
   const batch=state.batchImport;if(!batch||batch.saving)return;

@@ -129,19 +129,54 @@ function parseGeneratedAssetSection(lines){
  return {assets,warnings,unparsed};
 }
 function parseLegacyReferences(body){
- const lines=String(body||"").split(/\r?\n/),references=[],generatedAssets=[];let inside=false;
+ const lines=String(body||"").split(/\r?\n/),references=[],generatedAssets=[],parseErrors=[],parseWarnings=[];
+ const promptEntries=[];
+ let inside=false,activePrompt=null;
+ const mediaFilePattern=/^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg|mp4|mov|mkv|webm|avi|m4v|wav|mp3|flac|ogg|m4a|aac|opus))\s*(?:[：:]|$)/i;
  for(const line of lines){
-  if(/^\s*\[全局参考\]\s*$/.test(line)){inside=true;continue;}
-  if(inside&&/^\s*\[[^\]]+\]\s*$/.test(line))break;
+  if(/^\s*\[全局参考\]\s*$/.test(line)){inside=true;activePrompt=null;continue;}
+  if(inside&&/^\s*\[[^\]]+\]\s*$/.test(line)){inside=false;activePrompt=null;continue;}
   if(!inside)continue;
   const value=line.trim().replace(/^(?:[-*+•]\s+|\d+[.)、]\s*)/,"");
-  if(!value)continue;
-  const generated=value.match(/^待生成资产\s*[｜|:：]\s*(.*)$/);
-  if(generated){const label=generated[1].split(/\s+生图提示词\s*[:：]/)[0].trim();generatedAssets.push(label||"未命名资产");continue;}
-  const match=value.match(/^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg|mp4|mov|mkv|webm|avi|m4v|wav|mp3|flac|ogg|m4a|aac|opus))\s*(?:[：:]|$)/i);
-  if(match){const name=match[1].trim(),kind=mediaKind(name);if(kind)references.push({name,kind,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});}
+  if(!value){if(activePrompt&&activePrompt.parts.length)activePrompt.parts.push("");continue;}
+  const tag=value.match(/^<\s*(Picture|Audio|Video|Prompt)\s+([^>]+?)\s*>\s*[:：]\s*(.*)$/i);
+  if(tag){
+   const type=tag[1].toLowerCase(),name=tag[2].trim(),content=tag[3]||"";
+   activePrompt=null;
+   if(type==="prompt"){
+    activePrompt={name,parts:[content]};promptEntries.push(activePrompt);
+   }else{
+    const kind=type==="picture"?"image":type==="audio"?"audio":"video";
+    references.push({name,kind,description:content.trim()});
+   }
+   continue;
+  }
+  if(/^<\s*(?:Picture|Audio|Video|Prompt)\b/i.test(value)){
+   activePrompt=null;parseErrors.push("全局参考标签格式无法识别："+value);continue;
+  }
+  const oldGenerated=value.match(/^待生成资产\s*[｜|:：]\s*(.*)$/);
+  if(oldGenerated){
+   activePrompt=null;
+   const payload=oldGenerated[1].trim(),promptMatch=payload.match(/^(.+?)\s+生图提示词\s*[:：]\s*(.*)$/);
+   if(promptMatch)generatedAssets.push({type:"image",name:promptMatch[1].trim(),prompt:promptMatch[2].trim()});
+   else generatedAssets.push(payload||"未命名资产");
+   continue;
+  }
+  const legacyMedia=value.match(mediaFilePattern);
+  if(legacyMedia){
+   activePrompt=null;
+   const name=legacyMedia[1].trim(),kind=mediaKind(name);
+   if(kind)references.push({name,kind,description:value.slice(name.length).replace(/^[：:]\s*/,"").trim()});
+   continue;
+  }
+  if(activePrompt)activePrompt.parts.push(line.trimEnd());
  }
- return {references,generatedAssets};
+ for(const entry of promptEntries){
+  const prompt=entry.parts.join("\n").trim(),pairedReference=references.find(ref=>ref.name===entry.name);
+  generatedAssets.push({type:pairedReference?.kind||"image",name:entry.name,prompt});
+  if(!prompt)parseWarnings.push("待生成资产「"+entry.name+"」缺少提示词内容。");
+ }
+ return {references,generatedAssets,parseErrors,parseWarnings,unparsedGeneratedAssets:[]};
 }
 
 function parseStructuredBatchBody(rawBody){
@@ -151,9 +186,13 @@ function parseStructuredBatchBody(rawBody){
  if(!hasReferenceSection&&!hasGeneratedSection){
   const legacy=parseLegacyReferences(rawBody);
   return {body:String(rawBody||"").trim(),sourceBody:String(rawBody||"").trim(),references:legacy.references,
-   generatedAssets:legacy.generatedAssets,parseErrors:[],parseWarnings:[],unparsedGeneratedAssets:[]};
+   generatedAssets:legacy.generatedAssets,parseErrors:legacy.parseErrors||[],parseWarnings:legacy.parseWarnings||[],
+   unparsedGeneratedAssets:legacy.unparsedGeneratedAssets||[]};
  }
- const references=[],generatedAssets=[],parseErrors=[],parseWarnings=[],unparsedGeneratedAssets=[],bodyParts=[];
+ const globalReferences=parseLegacyReferences(rawBody);
+ const references=[...globalReferences.references],generatedAssets=[...globalReferences.generatedAssets],
+  parseErrors=[...(globalReferences.parseErrors||[])],parseWarnings=[...(globalReferences.parseWarnings||[])],
+  unparsedGeneratedAssets=[...(globalReferences.unparsedGeneratedAssets||[])],bodyParts=[];
  for(const section of sections){
   if(section.heading==="引用资产"){
    const parsed=parseReferenceSection(section.lines);references.push(...parsed.references);parseErrors.push(...parsed.errors);
