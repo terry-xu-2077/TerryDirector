@@ -221,6 +221,13 @@ export function buildPreviewJob(template, overrides=[], mode="pause", checkpoint
        Object.values(api).some(n=>n?.class_type==="TerryDirectorH3Preview"))
       pause.inputs.preview_tiny_vae=Object.values(api).find(
         n=>n?.class_type==="TerryDirectorH3Preview")?.inputs?.tiny_vae||"none";
+    if(previewType==="decoded"){
+      // The dedicated full-VAE branch already saves the user's decoded video.
+      // Disable both quick preview decoders rather than consuming more VRAM.
+      pause.inputs.preview_tiny_vae="none";
+      for(const n of Object.values(api))
+        if(n?.class_type==="TerryDirectorH3Preview")n.inputs.tiny_vae="none";
+    }
   }
   pause.inputs.checkpoint_id=mode==="pause"?"":checkpointId;
   const target = mode==="continue" ? template.highres_target : template.pause_target;

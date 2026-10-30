@@ -193,7 +193,7 @@ class TerryDirectorSelfLiftPauseResume(io.ComfyNode):
                     )
                     save_metadata(saved_id, {
                         "preview_error": None,
-                        "preview_warning": "TerryDirector 原生预览，使用低清最终 latent 生成（无音轨）",
+                        "preview_warning": None,
                     })
                     native_saved = True
                 except Exception as exc:
