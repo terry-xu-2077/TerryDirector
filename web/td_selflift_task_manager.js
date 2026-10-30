@@ -2193,25 +2193,25 @@ function batchPromptWithMediaTokens(body,references) {
     const tokenType=kind==="audio"?"Audio":kind==="video"?"Video":"Picture";
     return {...ref,kind,token:"<"+tokenType+" "+counts[kind]+">",used:false};
   });
-  let insideGlobalReferences=false,skippingPrompt=false;
+  let insideGlobalReferences=false,skippingPrompt=false,skippingTypedPrompt=false;
   const output=[];
   for(const line of String(body??"").split(/\r?\n/)){
     if(/^\s*\[全局参考\]\s*$/.test(line)){
-      insideGlobalReferences=true;skippingPrompt=false;output.push(line);continue;
+      insideGlobalReferences=true;skippingPrompt=false;skippingTypedPrompt=false;output.push(line);continue;
     }
     if(insideGlobalReferences&&/^\s*\[[^\]]+\]\s*$/.test(line)){
-      insideGlobalReferences=false;skippingPrompt=false;output.push(line);continue;
+      insideGlobalReferences=false;skippingPrompt=false;skippingTypedPrompt=false;output.push(line);continue;
     }
     if(!insideGlobalReferences){output.push(line);continue;}
     const content=line.trim().replace(/^(?:[-*+•]\s+|\d+[.)、]\s*)/,"");
     const tag=content.match(/^<\s*(Picture|Audio|Video|Prompt)\s+([^>]+?)\s*>\s*[:：]\s*(.*)$/i);
     const legacyGenerated=/^待生成资产\s*[｜|:：]/.test(content);
     const legacyReference=content.match(/^(.+?\.(?:png|jpe?g|webp|bmp|gif|tif|tiff|svg|mp4|mov|mkv|webm|avi|m4v|wav|mp3|flac|ogg|m4a|aac|opus))\s*(?:[：:]|$)/i);
-    if(skippingPrompt&&!tag&&!legacyGenerated&&!legacyReference)continue;
-    skippingPrompt=false;
+    if(skippingPrompt&&!tag&&!legacyGenerated&&(skippingTypedPrompt||!legacyReference))continue;
+    skippingPrompt=false;skippingTypedPrompt=false;
     if(tag){
       const type=tag[1].toLowerCase(),name=tag[2].trim(),suffix=tag[3]||"";
-      if(type==="prompt"){skippingPrompt=true;continue;}
+      if(type==="prompt"){skippingPrompt=true;skippingTypedPrompt=true;continue;}
       const kind=type==="picture"?"image":type==="audio"?"audio":"video";
       const matched=tokens.find(entry=>!entry.used&&entry.kind===kind&&entry.name===name);
       if(!matched){output.push(line);continue;}

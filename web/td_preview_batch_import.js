@@ -52,7 +52,7 @@ function parseGlobalReferences(body) {
         continue;
       }
       if (type === "prompt") {
-        activePrompt = { name, type: "image", parts: [content] };
+        activePrompt = { name, type: "image", source: "tag", parts: [content] };
         promptEntries.push(activePrompt);
       } else {
         const kind = MEDIA_TYPE_NAMES[type];
@@ -67,7 +67,9 @@ function parseGlobalReferences(body) {
       continue;
     }
 
-    const oldGenerated = value.match(/^待生成资产\s*[｜|:：]\s*(.*)$/);
+    const oldGenerated = activePrompt?.source === "tag"
+      ? null
+      : value.match(/^待生成资产\s*[｜|:：]\s*(.*)$/);
     if (oldGenerated) {
       const payload = oldGenerated[1].trim();
       const split = payload.match(/^(.*?)\s+生图提示词\s*[:：]\s*(.*)$/);
@@ -80,7 +82,9 @@ function parseGlobalReferences(body) {
       continue;
     }
 
-    const legacyMedia = value.match(mediaFilePattern);
+    const legacyMedia = activePrompt?.source === "tag"
+      ? null
+      : value.match(mediaFilePattern);
     if (legacyMedia) {
       activePrompt = null;
       const name = legacyMedia[1].trim();
