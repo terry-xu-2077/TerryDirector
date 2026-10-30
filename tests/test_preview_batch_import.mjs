@@ -218,7 +218,7 @@ assert.match(tbpm.batches[0].parseWarnings.join(" "),/附加内容，已单独�
 const malformedTbpm = parsePreviewBatches([
   "## 批次02｜错误引用格式",
   "### 引用资产",
-  "- 图片：角色.jpg — 缺少反引号",
+  "- 图片： — 缺少文件名",
   "### 分镜脚本",
   "镜头。",
 ].join("\n"));
