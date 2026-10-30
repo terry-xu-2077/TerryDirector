@@ -19,7 +19,8 @@ assert.ok(playback.includes("player.pause()"));
 assert.ok(playback.includes("showPreviewPlaybackError("));
 assert.ok(html.includes("data-saved-video data-media-key"));
 assert.ok(html.includes("controls loop playsinline preload"));
-assert.ok(html.includes('data-action="toggle-preview-playback"'));
+assert.ok(!html.includes('data-action="toggle-preview-playback"'));
+assert.ok(!html.includes('播放 / 暂停'));
 
 // This test directly exercises the actual playback helper without a browser.
 let plays=0,pauses=0,lastLabel=null;

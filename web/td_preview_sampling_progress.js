@@ -6,7 +6,8 @@
  */
 export function isSamplingProgressNode(node) {
   const name=String(node?.class_type||node?.type||"");
-  return name==="SamplerCustom" || name==="SamplerCustomAdvanced" ||
+  return name==="TerryDirectorSelfLiftHighres" ||
+    name==="SamplerCustom" || name==="SamplerCustomAdvanced" ||
     name==="KSampler" || name==="KSamplerAdvanced" ||
     name==="TerryDirectorSelfLiftSampler" ||
     (/sampler/i.test(name) && !/select|scheduler|config|loader/i.test(name));

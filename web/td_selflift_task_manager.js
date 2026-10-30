@@ -34,7 +34,7 @@ const state = {
   assetPicker: null, inputFiles: [],
   templateName: "当前画布", jobs: new Map(), activePromptId: null,
   sidebarRoot: null, sidebarPoll: null, sidebarFetching: false,
-  mediaRevisions: new Map(),
+  mediaRevisions: new Map(), elapsedTimer: null,
 };
 const esc = x => String(x ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -127,8 +127,9 @@ function styles() {
 .tdm-status.low_complete .tdm-status-icon,.tdm-status.high_complete .tdm-status-icon{color:#a9dfb2}
 .tdm-status.high_pending .tdm-status-icon{color:#e6c792}
 .tdm-sidebar-entry-status .tdm-status-icon{font-size:11px;min-width:11px;margin-right:3px;vertical-align:-1px}
-.tdm-timing{font-size:11px;color:#a5b0be;line-height:1.8}
+.tdm-timing{font-size:11px;color:#a5b0be;line-height:1.8;font-variant-numeric:tabular-nums}
 .tdm-timing strong{color:#d6dce6;font-weight:500}
+.tdm-timing .tdm-elapsed{font-weight:650;color:#eda660;margin-left:14px}
 .tdm-detail-pending{padding:18px;background:#11151b;border:1px dashed #414a57;border-radius:8px;
  color:#a4b1c1;line-height:1.7;min-height:140px}
 .tdm-right{min-width:0;min-height:0;display:flex;flex-direction:column;padding:16px;gap:12px}
@@ -139,7 +140,6 @@ function styles() {
 .tdm-live-caption{font-size:11px;color:#9ccaff;margin:4px 2px 0;line-height:1.6}
 .tdm-live-media video{display:block}
 .tdm-playback-message{font-size:11px;color:#e4b0a5;margin:6px 2px 0}
-.tdm-replay-control{font-size:11px;padding:5px 10px;margin-left:auto}
 .tdm-no-media{height:100%;display:grid;place-items:center;color:#78818f;text-align:center;padding:20px}
 .tdm-detail{font-size:12px;color:#a7afbb;line-height:1.9}.tdm-actions{display:flex;gap:8px;flex-wrap:wrap}
 .tdm-foot{padding:12px 20px;border-top:1px solid #30343b;display:flex;align-items:center;gap:12px}
@@ -322,8 +322,18 @@ function root() {
   state.root = div;
   return div;
 }
-function open() { root().style.display = "flex"; render(); void Promise.all([refresh(),loadTemplate()]); }
-function close() { closePreviewRichEditor(); state.creating = false; state.configuring = false; state.assetPicker = null; state.deleting = null; if (state.root) state.root.style.display = "none"; }
+function open() {
+  root().style.display = "flex"; render();
+  if(state.elapsedTimer==null)
+    state.elapsedTimer=setInterval(updateVisibleElapsed,1000);
+  void Promise.all([refresh(),loadTemplate()]);
+}
+function close() {
+  if(state.elapsedTimer!=null){clearInterval(state.elapsedTimer);state.elapsedTimer=null;}
+  closePreviewRichEditor(); state.creating = false; state.configuring = false;
+  state.assetPicker = null; state.deleting = null;
+  if (state.root) state.root.style.display = "none";
+}
 async function refresh() {
   try {
     const result = await request("/tasks");
@@ -512,6 +522,24 @@ function duration(start,end) {
   const h=Math.floor(diff/3600),m=Math.floor(diff%3600/60),sec=diff%60;
   return (h ? h+"时" : "")+(m || h ? m+"分":"")+sec+"秒";
 }
+function stageElapsed(task,stage) {
+  const high=stage==="high";
+  const start=high?task?.high_started_at:task?.low_started_at;
+  const end=high?task?.high_finished_at:task?.low_finished_at;
+  if(!start)return "—";
+  const running=high?task?.status==="high_running":task?.status==="low_running";
+  return duration(start,end||(running?new Date().toISOString():null));
+}
+// Refresh just the elapsed labels, without replacing the browser's video element.
+function updateVisibleElapsed() {
+  if(!state.root || state.root.style.display==="none")return;
+  const task=selectedTask();
+  if(!task)return;
+  for(const stage of ["low","high"]){
+    const el=state.root.querySelector('[data-elapsed-stage="'+stage+'"]');
+    if(el)el.textContent=stageElapsed(task,stage);
+  }
+}
 function statusMarkup(task) {
   const status=task.status || "low_complete";
   const queued=task.queued_stage && /pending$/.test(status);
@@ -574,13 +602,21 @@ function thumb(task) {
     ? '<video class="tdm-thumb" src="'+url+'#t=0.5" muted preload="metadata"></video>'
     : '<img class="tdm-thumb" src="'+url+'" alt="">';
 }
-/** Live TAEH3 media is attached to a single queued prompt, never globally. */
-function effectivePreviewKind(task) {
+/** Only real media sources get tabs: missing videos must never show an empty tab. */
+function availablePreviewKinds(task) {
   const media=task?.media||{};
-  return state.preview==="auto"
-    ? task?.status==="high_complete"?"highres":media.sampling?"sampling":
-      media.decoded?"decoded":"sampling"
-    : state.preview;
+  const available=[];
+  if(media.sampling || livePreviewJobForTask(task))available.push("sampling");
+  if(media.decoded)available.push("decoded");
+  if(media.highres)available.push("highres");
+  return available;
+}
+function effectivePreviewKind(task) {
+  const choices=availablePreviewKinds(task);
+  if(state.preview!=="auto" && choices.includes(state.preview))return state.preview;
+  if(choices.includes("highres") && task?.status==="high_complete")return "highres";
+  if(choices.includes("decoded"))return "decoded";
+  return choices[0]||null;
 }
 function previewJobMatchesTask(job,task) {
   if(!job || !task || job.mode!=="pause" || job.preview_type==="decoded")return false;
@@ -668,12 +704,11 @@ function details(task) {
     ? livePreviewMarkup(live)
     : !file || !cid
       ? '<div class="tdm-player tdm-detail-pending">'+
-        (kind==="highres"
+        (task.status==="high_complete" && !media.highres
           ? "高清已完成，但未找到关联的成片文件。请刷新预演台；若 ComfyUI 历史已清除，需要重新关联原始输出。"
-          : cid?"暂无"+(kind==="decoded"?"VAE 解码":"TAEH3")+"预览":
-            task.status==="low_running"?"正在生成低清，等待首轮 TAEH3 预览":
+          : task.status==="low_running"?"正在生成低清，等待实时采样预览":
             task.queued_stage?"已加入生成队列，等待开始执行":
-            "尚未生成低清视频，请点击「开始预演」")+
+            "尚未生成可用视频，请点击「开始预演」")+
         '</div>'
       : /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(file)
         ? '<video class="tdm-player" data-saved-video data-media-key="'+
@@ -687,10 +722,10 @@ function details(task) {
       ? '<div class="tdm-warning">'+esc(task.metadata.preview_warning)+'</div>'
       : '';
   const timing='<div class="tdm-timing"><div>任务创建：<strong>'+formatTime(task.created_at)+'</strong></div>'+
-    '<div>低清生成：'+formatTime(task.low_started_at)+' → '+formatTime(task.low_finished_at)+
-    '　用时 '+duration(task.low_started_at,task.low_finished_at)+'</div>'+
-    '<div>高清生成：'+formatTime(task.high_started_at)+' → '+formatTime(task.high_finished_at)+
-    '　用时 '+duration(task.high_started_at,task.high_finished_at)+'</div></div>';
+    '<div>低清开始：<strong>'+formatTime(task.low_started_at)+'</strong>'+
+    '<span class="tdm-elapsed">用时：<span data-elapsed-stage="low">'+esc(stageElapsed(task,"low"))+'</span></span></div>'+
+    '<div>高清开始：<strong>'+formatTime(task.high_started_at)+'</strong>'+
+    '<span class="tdm-elapsed">用时：<span data-elapsed-stage="high">'+esc(stageElapsed(task,"high"))+'</span></span></div></div>';
   const pending=task.kind==="draft" && task.status==="low_pending" && !task.queued_stage;
   const canHigh=task.status==="low_complete" && !!cid && !task.queued_stage;
   const duplicate=task.kind==="draft" || task.metadata?.has_workflow;
@@ -704,19 +739,13 @@ function details(task) {
       '>重建预览</button>';
   if(task.kind==="checkpoint" && task.status==="low_complete")
     actions+='<button class="tdm-btn" data-action="load">载入任务工作流</button>';
-  if(task.status==="low_running" || task.status==="high_running")
-    actions+='<span class="tdm-small">生成中 · 可在 ComfyUI 队列查看进度</span>';
+  const labels={sampling:"采样预览",decoded:"低清视频",highres:"高清视频"};
+  const tabs=availablePreviewKinds(task);
   return '<h3 style="margin:0;font-size:15px">'+esc(task.name||"未命名任务")+'</h3>'+
     statusMarkup(task)+
-    '<div class="tdm-tabs">'+
-    ((task.status==="high_complete" || media.highres)
-      ? '<button data-action="preview" data-kind="highres" class="'+(kind==="highres"?"on":"")+
-        '">高清成片</button>' : '')+
-    '<button data-action="preview" data-kind="sampling" class="'+(kind==="sampling"?"on":"")+'">TAEH3 采样预览</button>'+
-    '<button data-action="preview" data-kind="decoded" class="'+(kind==="decoded"?"on":"")+'">VAE 解码</button>'+
-    ((live?.preview?.mime==="video/mp4" || /\.(mp4|webm|mkv|mov|avi|m4v)$/i.test(file||"")) ?
-      '<button class="tdm-btn tdm-replay-control" data-action="toggle-preview-playback" '+
-      'type="button">播放 / 暂停</button>' : '')+'</div>'+
+    (tabs.length?'<div class="tdm-tabs">'+
+      tabs.map(tab=>'<button data-action="preview" data-kind="'+tab+'" class="'+
+        (kind===tab?"on":"")+'">'+labels[tab]+'</button>').join("")+'</div>':"")+
     '<div data-live-preview-host data-task-id="'+esc(task.id)+'">'+preview+'</div>'+
     previewDiagnostic+
     '<div class="tdm-detail">Seed：'+esc(task.seed||"—")+
@@ -983,7 +1012,6 @@ async function handleAction(action, data) {
     if (action === "refresh") return refresh();
     if (action === "focus") { state.focused = data.id; state.preview="auto"; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
-    if (action === "toggle-preview-playback") return await togglePreviewPlayback();
     if (action === "rebuild-preview") {
       if(state.busy)return;
       const task=selectedTask();

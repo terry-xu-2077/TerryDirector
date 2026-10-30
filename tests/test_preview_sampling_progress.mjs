@@ -9,12 +9,15 @@ const manager=await readFile(new URL("../web/td_selflift_task_manager.js",import
 
 const low={mode:"pause",api_prompt:{"11":{class_type:"SamplerCustom",inputs:{}}},
   progressStartedAt:1000,busy:true};
-const high={mode:"continue",api_prompt:{"22":{class_type:"SamplerCustomAdvanced",inputs:{}}},
+const high={mode:"continue",api_prompt:{"22":{class_type:"SamplerCustomAdvanced",inputs:{}},
+  "18":{class_type:"TerryDirectorSelfLiftHighres",inputs:{}}},
   progressStartedAt:1000,busy:true};
 const sample=m.progressFromEvent({node:"11",value:1,max:3},low);
 assert.deepEqual(sample,{nodeId:"11",value:1,max:3});
 assert.deepEqual(m.progressFromEvent({node:"22",value:1,max:3},low),null);
 assert.deepEqual(m.progressFromEvent({node:"11",value:1,max:3},high),null);
+assert.deepEqual(m.progressFromEvent({node:"18",value:1,max:3},high),
+ {nodeId:"18",value:1,max:3},"SelfLift highres node must show native sampler progress");
 const manual={mode:"pause",workflow:{nodes:[{id:44,type:"SamplerCustom"}]}};
 assert.deepEqual(m.progressFromEvent({node:"44",value:1,max:3},manual),
   {nodeId:"44",value:1,max:3});
