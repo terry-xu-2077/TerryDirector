@@ -93,7 +93,7 @@ function parseGeneratedAssetSection(lines){
  if(lines.slice(0,headings[0].index).some(line=>line.trim()))unparsed.push(lines.slice(0,headings[0].index).join("\n").trim());
  for(let h=0;h<headings.length;h++){
   const entry=headings[h],end=h+1<headings.length?headings[h+1].index:lines.length,content=lines.slice(entry.index+1,end);
-  const header=entry.value.match(/^(图片|音频|视频)\s*[｜|]\s*(.+?)(?:\s*[｜|]\s*(\d+(?:\.\d+)?\s*:\s*1))?\s*$/);
+  const header=entry.value.match(/^(图片|音频|视频)\s*[｜|]\s*(.+?)(?:\s*[｜|]\s*(\d+(?:\.\d+)?\s*:\s*\d+(?:\.\d+)?))?\s*$/);
   if(!header){warnings.push("待生成资产标题格式无法识别："+entry.value);unparsed.push([lines[entry.index],...content].join("\n").trim());continue;}
   const type=MEDIA_TYPE_NAMES[header[1]],name=header[2].trim(),aspectRatio=String(header[3]||"").replace(/\s+/g,"");
   const promptLabel=content.findIndex(line=>/^\s*提示词\s*[:：]/.test(line)),promptStart=promptLabel>=0?promptLabel:0;
