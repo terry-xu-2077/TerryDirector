@@ -312,13 +312,16 @@ def media_path(checkpoint_id: str, kind: str) -> Path:
         from .director_preview_highres import highres_video_path
         metadata = load_metadata(checkpoint_id)
         return highres_video_path(metadata.get("highres_video"))
+    if kind in {"decoded", "sampling"}:
+        try:
+            metadata = load_metadata(checkpoint_id)
+        except (FileNotFoundError, OSError, ValueError, TypeError):
+            metadata = {}
     if kind == "decoded":
-        metadata = load_metadata(checkpoint_id)
         filename = _safe_media_filename(
             metadata.get("review_video_filename"), "review.mp4", {".mp4"})
         path = folder / filename
     elif kind == "sampling":
-        metadata = load_metadata(checkpoint_id)
         saved = _safe_media_filename(
             metadata.get("sampling_video_filename"), "", {".mp4"})
         candidates = ([saved] if saved else []) + [
