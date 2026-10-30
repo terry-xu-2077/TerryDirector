@@ -13,6 +13,17 @@ assert.doesNotThrow(()=>new Function(
   code.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 
 const playback=section("function bindPreviewPlaybackErrors() {","function render() {");
+const closeSection=section("function close() {","async function refresh() {");
+assert.ok(closeSection.includes("stopPreviewPlayback()"));
+const stopSection=section("function stopPreviewPlayback() {","function close() {");
+let pausedOnClose=0,autoplayRemoved=0;
+const fakeVideo={pause(){pausedOnClose++;},removeAttribute(name){if(name==="autoplay")autoplayRemoved++;}};
+const stop=new Function("state",stopSection+";return stopPreviewPlayback;")({
+  root:{querySelectorAll(selector){assert.equal(selector,"video");return [fakeVideo];}}
+});
+stop();
+assert.equal(pausedOnClose,1);
+assert.equal(autoplayRemoved,1);
 const html=section("function details(task) {","function bindPreviewPlaybackErrors() {");
 assert.ok(playback.includes("await player.play()"));
 assert.ok(playback.includes("player.pause()"));
