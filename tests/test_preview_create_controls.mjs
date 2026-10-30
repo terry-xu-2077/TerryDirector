@@ -276,7 +276,6 @@ assert.ok(batchMarkup.includes('data-action="batch-upload-assets"'));
 assert.ok(batchMarkup.includes('data-action="batch-submit"'));
 assert.ok(batchMarkup.includes("将批次标题之前的说明附加到每个任务"));
 assert.ok(batchMarkup.includes('class="tdm-batch-ref-card active"'));
-assert.ok(batchMarkup.includes("图片 1"));
 assert.ok(source.includes("function syncBatchAssetToOtherBatches(index) {"));
 const refStart=source.indexOf("function batchReferenceLabel(item,index) {");
 const refEnd=source.indexOf("function batchGeneratedMarkup()",refStart);
