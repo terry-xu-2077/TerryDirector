@@ -49,11 +49,22 @@ const mediaSlots=matchingAssets({nodes:[
 ]});
 assert.deepEqual(mediaSlots.map(x=>x.kind),["image","audio","video"]);
 assert.deepEqual(mediaSlots.map(x=>x.value),["person.png","dialogue.wav","motion.mp4"]);
+const mediaStart=source.indexOf("function mediaKindLabel(kind) {");
+const mediaEnd=source.indexOf("function assetCard(",mediaStart);
+const mediaHelpers=new Function("state","esc","assetUrl",
+  source.slice(mediaStart,mediaEnd)+";return {mediaKindLabel,mediaKindIcon,mediaPreviewMarkup};")(
+  {},value=>String(value),path=>"/view?filename="+encodeURIComponent(path));
+assert.match(mediaHelpers.mediaPreviewMarkup({kind:"image",path:"person.png"}),/<img/);
+assert.match(mediaHelpers.mediaPreviewMarkup({kind:"video",path:"motion.mp4"},{controls:true}),/<video[^>]+controls/);
+assert.match(mediaHelpers.mediaPreviewMarkup({kind:"audio",path:"dialogue.wav"},{controls:true}),/<audio[^>]+controls/);
+assert.match(mediaHelpers.mediaPreviewMarkup({kind:"audio",path:""},{kind:"audio"}),/未绑定音频/);
 const batchStart=source.indexOf("function findBatchPoolAsset(");
 const batchEnd=source.indexOf("function installCreatePromptEditor()",batchStart);
 assert.ok(batchStart>=0 && batchEnd>batchStart);
 const kindLabel=kind=>kind==="video"?"视频":kind==="audio"?"音频":"图片";
 const preview=(file,options={})=>'<media-preview data-kind="'+(file?.kind||options.kind||"image")+'"/>';
+const assetCardStub=(path,title,attrs,selected,kind,incompatible)=>
+  '<asset data-kind="'+kind+'" '+attrs+' data-incompatible="'+!!incompatible+'"/>';
 const renderBatch=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup",
   source.slice(batchStart,batchEnd)+";return batchImportMarkup;");
 const batchMarkup=renderBatch({
@@ -64,7 +75,7 @@ const batchMarkup=renderBatch({
       assetSlots:[{kind:"image"}],activeIndex:0,selectedRefIndex:0,search:"",saving:false,uploading:false,
     },
     inputFiles:[{kind:"image",name:"特瑞.jpg",path:"特瑞.jpg"}],
-  },value=>String(value),()=>"<asset/>",kindLabel,preview)();
+  },value=>String(value),assetCardStub,kindLabel,preview)();
 assert.ok(batchMarkup.includes("批量添加任务"));
 assert.ok(batchMarkup.includes("批次01｜场景一"));
 assert.ok(batchMarkup.includes('data-action="batch-upload-assets"'));
@@ -88,12 +99,30 @@ const typedBatchMarkup=renderBatch({
     {kind:"audio",name:"对白.wav",path:"对白.wav"},
     {kind:"video",name:"动作.mp4",path:"动作.mp4"},
   ],
-},value=>String(value),()=>" <asset/>",kindLabel,preview)();
+},value=>String(value),assetCardStub,kindLabel,preview)();
 assert.ok(typedBatchMarkup.includes('data-kind="image"'));
 assert.ok(typedBatchMarkup.includes('data-kind="audio"'));
 assert.ok(typedBatchMarkup.includes('data-kind="video"'));
 assert.ok(typedBatchMarkup.includes("工作流媒体槽位：图片 1 / 音频 1 / 视频 1"));
 assert.ok(typedBatchMarkup.includes("当前批次引用资产"));
+assert.ok(typedBatchMarkup.includes('data-kind="video" disabled title="当前槽位需要图片，不能绑定视频"'));
+const overflowMarkup=renderBatch({
+  batchImport:{
+    text:"多媒体",preamble:"",includePreamble:false,
+    batches:[{name:"批次03",body:"正文",duration_seconds:15,references:[
+      {name:"A.jpg",kind:"image",path:"A.jpg"},{name:"B.jpg",kind:"image",path:"B.jpg"},
+      {name:"C.wav",kind:"audio",path:"C.wav"},{name:"D.mp4",kind:"video",path:"D.mp4"},
+    ],generatedAssets:[]}],
+    assetSlots:[{kind:"image"},{kind:"audio"},{kind:"video"}],
+    activeIndex:0,selectedRefIndex:0,search:"",saving:false,uploading:false,
+  },
+  inputFiles:[
+    {kind:"image",name:"A.jpg",path:"A.jpg"},{kind:"image",name:"B.jpg",path:"B.jpg"},
+    {kind:"audio",name:"C.wav",path:"C.wav"},{kind:"video",name:"D.mp4",path:"D.mp4"},
+  ],
+},value=>String(value),assetCardStub,kindLabel,preview)();
+assert.ok(overflowMarkup.includes("工作流媒体输入槽位不足：图片 2/1"));
+assert.ok(overflowMarkup.includes("1 个批次超出容量，不会创建"));
 assert.ok(rendered.includes('aria-label="生成随机种子"'));
 assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));
 assert.ok(source.includes('state.createDraft.highres_megapixels=Number(control.value);'));
