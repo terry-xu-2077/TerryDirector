@@ -138,6 +138,48 @@ function samplingPreviewEnabled(value) {
   if(typeof value?.samplingPreviewEnabled==="boolean")return value.samplingPreviewEnabled;
   return value?.preview_type!=="decoded" && value?.previewType!=="decoded";
 }
+// 预演台独立标签页：侧边栏按钮在新标签页打开 ComfyUI?td_preview=1，
+// 该标签页只全屏显示预演台，原 ComfyUI 标签页可以继续生图。
+const STANDALONE = new URLSearchParams(location.search).get("td_preview") === "1";
+const PREVIEW_TAB_NAME = "terrydirector-preview";
+// 「使用当前画布」需要用户正在编辑的那个标签页的画布：通过 BroadcastChannel 向其它 ComfyUI 标签页索取。
+const graphChannel = typeof BroadcastChannel === "function" ? new BroadcastChannel("terrydirector-preview") : null;
+let lastFocusedAt = document.hasFocus() ? Date.now() : 0;
+window.addEventListener("focus", () => { lastFocusedAt = Date.now(); });
+if (graphChannel && !STANDALONE) {
+  graphChannel.onmessage = ({ data }) => {
+    if (data?.type !== "request-graph") return;
+    try {
+      graphChannel.postMessage({ type: "graph", id: data.id, focusedAt: lastFocusedAt,
+        workflow: (app.rootGraph || app.graph).serialize() });
+    } catch (error) { console.warn("[TerryDirector 预演台] 读取画布失败", error); }
+  };
+}
+function openPreviewTab() {
+  const url = location.origin + location.pathname + "?td_preview=1";
+  const win = window.open(url, PREVIEW_TAB_NAME);
+  if (win) win.focus();
+  else open();  // 浏览器拦截了新窗口时退回到页面内弹窗
+}
+async function liveCanvasWorkflow() {
+  const local = () => (app.rootGraph || app.graph).serialize();
+  if (!STANDALONE || !graphChannel) return local();
+  const id = Math.random().toString(36).slice(2);
+  const replies = [];
+  const onReply = ({ data }) => { if (data?.type === "graph" && data.id === id && data.workflow) replies.push(data); };
+  graphChannel.addEventListener("message", onReply);
+  graphChannel.postMessage({ type: "request-graph", id });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  graphChannel.removeEventListener("message", onReply);
+  if (!replies.length) {
+    toast("没有找到打开着的 ComfyUI 标签页，已使用本页加载的工作流", "warning");
+    return local();
+  }
+  // 多个 ComfyUI 标签页时，取最近获得焦点的那个
+  replies.sort((a, b) => (b.focusedAt || 0) - (a.focusedAt || 0));
+  return replies[0].workflow;
+}
+
 const state = {
   tasks: [], selected: new Set(), focused: null, preview: "auto", statusFilter: "all",
   busy: false, root: null, creating: false, configuring: false, deleting: null,
@@ -196,6 +238,8 @@ function styles() {
   const st = document.createElement("style");
   st.id = "td-selflift-tasks-style";
   st.textContent = `
+.tdm-back.tdm-standalone{background:#111317}
+.tdm-standalone .tdm-shell{width:100vw;height:100vh;border:0;border-radius:0;box-shadow:none}
 .tdm-back{position:fixed;inset:0;background:rgba(0,0,0,.73);z-index:100020;
  display:flex;align-items:center;justify-content:center;font:13px system-ui,sans-serif;color:#e4e7ee}
 .tdm-shell{width:min(1190px,94vw);height:min(830px,90vh);background:#191b20;border:1px solid #373b43;
@@ -562,10 +606,15 @@ function root() {
   div.className = "tdm-back";
   div.hidden = true;
   div.style.display = "none";
-  div.addEventListener("click", e => { if (e.target === div) close(); });
+  if (STANDALONE) {
+    div.classList.add("tdm-standalone");
+    // 独立页里按键不要传给后面的 ComfyUI（例如 Ctrl+Enter 会把本页画布加入队列）
+    div.addEventListener("keydown", e => e.stopPropagation());
+  } else div.addEventListener("click", e => { if (e.target === div) close(); });
   div.addEventListener("pointerdown", e => e.stopPropagation());
   div.addEventListener("wheel", e => e.stopPropagation(), { passive: true });
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && state.root?.style.display !== "none") close(); });
+  if (!STANDALONE)
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && state.root?.style.display !== "none") close(); });
   document.body.append(div);
   state.root = div;
   return div;
@@ -584,6 +633,7 @@ function stopPreviewPlayback() {
   }
 }
 function close() {
+  if (STANDALONE) return;  // 独立标签页里预演台就是整个页面，直接关标签页即可
   if(state.batchImport?.saving){
     toast("批量任务正在创建，请等待完成后再关闭","warning");return;
   }
@@ -692,14 +742,16 @@ function mountPreviewSidebar(el) {
         '<div class="tdm-sidebar-identity"><strong>TerryDirector</strong>' +
           '<span>导演节点包</span></div></header>' +
       '<button class="tdm-btn primary tdm-sidebar-open" type="button" ' +
-        'data-preview-open>打开预演台</button>' +
-      '<div class="tdm-sidebar-description">镜头预演、任务重跑与批量高清续采</div>' +
+        'data-preview-open title="在新标签页打开；按住 Shift 点击则在当前页弹窗打开">打开预演台 ↗</button>' +
+      '<div class="tdm-sidebar-description">镜头预演、任务重跑与批量高清续采 · 新标签页打开</div>' +
       '<section class="tdm-sidebar-overview" aria-label="只读预演任务列表">' +
         '<div class="tdm-sidebar-overview-head">任务列表' +
           '<span class="tdm-sidebar-count" data-preview-sidebar-count></span></div>' +
         '<div class="tdm-sidebar-list" data-preview-sidebar-list></div>' +
       '</section></div>';
-  el.querySelector('[data-preview-open]').addEventListener("click", open);
+  el.querySelector('[data-preview-open]').addEventListener("click", e => {
+    if (e.shiftKey || STANDALONE) open(); else openPreviewTab();
+  });
   renderSidebarTaskList();
   void refreshSidebarTasks();
   // Sidebar tabs may remain mounted while hidden. Refresh only when visible.
@@ -1096,7 +1148,8 @@ function render() {
     '<button class="tdm-btn" data-action="settings">设置</button>' +
     '<button class="tdm-btn primary" data-action="create">＋ 新建预演</button>' +
     '<button class="tdm-btn" data-action="batch-create">批量添加</button>' +
-    '<button class="tdm-btn" data-action="refresh">刷新</button><button class="tdm-btn close" data-action="close">×</button></header>' +
+    '<button class="tdm-btn" data-action="refresh">刷新</button>' +
+    (STANDALONE ? '' : '<button class="tdm-btn close" data-action="close">×</button>') + '</header>' +
     '<div class="tdm-main"><section class="tdm-left" data-scroll-preserve="task-list"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
     (visible.length && visible.every(t=>state.selected.has(t.id)) ? "checked" : "") +
@@ -1498,7 +1551,7 @@ async function handleAction(action, data) {
     }
     if (action === "cancel-config") { state.configuring = false; return render(); }
     if (action === "save-config") return await saveConfig();
-    if (action === "use-canvas") return useCurrentWorkflow();
+    if (action === "use-canvas") return await useCurrentWorkflow();
     if (action === "open-assets") {
       const index=Number(data.index),kind=state.createDraft?.assets?.[index]?.kind||"image";
       state.assetPicker={index,kind,search:""};return render();
@@ -1665,7 +1718,7 @@ function templateFromGraph(workflow, name) {
 }
 async function loadConfigDraft(templateId) {
   if(!templateId) {
-    const fresh=templateFromGraph(app.graph.serialize(),"新预演工作流");
+    const fresh=templateFromGraph(await liveCanvasWorkflow(),"新预演工作流");
     state.configSelectedId=null;state.configDraft=fresh;
   } else {
     const result=await request("/template?id="+encodeURIComponent(templateId));
@@ -1703,9 +1756,9 @@ async function openConfig() {
   await loadTemplate();
   await loadConfigDraft(state.defaultTemplateId);
 }
-function useCurrentWorkflow() {
+async function useCurrentWorkflow() {
   const retained=state.configDraft?.workflow_name || "新预演工作流";
-  state.configDraft = templateFromGraph(app.graph.serialize(), retained);
+  state.configDraft = templateFromGraph(await liveCanvasWorkflow(), retained);
   state.configDraft.source_name="当前画布";
   state.configDraft.template_id=state.configSelectedId;
   state.configError="";
@@ -3423,6 +3476,13 @@ app.registerExtension({
         type: "custom",
         render: el => mountPreviewSidebar(el),
       });
+    }
+    if (STANDALONE) {
+      // ComfyUI 会按工作流名不断改标题，这里固定住，方便和生图标签页区分
+      const pinTitle = () => { if (document.title !== "TerryDirector · 预演台") document.title = "TerryDirector · 预演台"; };
+      pinTitle();
+      new MutationObserver(pinTitle).observe(document.head, { subtree: true, childList: true, characterData: true });
+      setTimeout(() => open(), 300);
     }
   },
 });
