@@ -99,6 +99,8 @@ const markup=new Function("state","esc","readBatchImportDraft","batchDraftDateLa
     {batchImport:{promptImportOpen:true,importText:""}},String,
     ()=>({savedAt:"2026-10-30T23:41:00+08:00"}),()=>"2026/10/30 23:41")();
 assert.ok(markup.includes('data-action="batch-import-recover"'));
+assert.ok(markup.includes("关闭后自动暂存，下次批量添加时可继续编辑"));
+assert.ok(source.includes(".tdm-batch-autosave-hint{font-size:11px;"));
 assert.ok(markup.includes("继续编辑上次的批量任务（2026/10/30 23:41）"));
 const footerStart=markup.indexOf("<footer");
 assert.ok(markup.indexOf('data-action="batch-import-recover"',footerStart)<
@@ -107,6 +109,11 @@ const noDraftMarkup=new Function("state","esc","readBatchImportDraft","batchDraf
   source.slice(markupStart,markupEnd)+";return batchPromptImportMarkup;")(
     {batchImport:{promptImportOpen:true,importText:""}},String,()=>null,()=>"")();
 assert.ok(!noDraftMarkup.includes('data-action="batch-import-recover"'));
+assert.ok(noDraftMarkup.includes("关闭后自动暂存，下次批量添加时可继续编辑"));
+const batchWindowStart=source.indexOf("function batchImportMarkup() {");
+const batchWindowEnd=source.indexOf("function batchPromptImportMarkup()",batchWindowStart);
+assert.ok(batchWindowStart>=0&&batchWindowEnd>batchWindowStart);
+assert.ok(source.slice(batchWindowStart,batchWindowEnd).includes("关闭后自动暂存，下次批量添加时可继续编辑"));
 
 const closeStart=source.indexOf("function close() {");
 const closeEnd=source.indexOf("async function refresh()",closeStart);

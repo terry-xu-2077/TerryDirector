@@ -514,6 +514,7 @@ function styles() {
 .tdm-batch-ref-description{font-size:10px;line-height:1.45;color:#b5c0ce;overflow-wrap:anywhere;white-space:normal}
 .tdm-asset .tdm-media-icon{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:74px;background:#11151b}
 .tdm-batch-note{font-size:10px;color:#8f9cac;line-height:1.5}
+.tdm-batch-autosave-hint{font-size:11px;line-height:1.4;color:#94a0b0;white-space:normal;text-align:right;max-width:260px}
 .tdm-batch-foot{display:flex;align-items:center;gap:12px;padding:11px 20px 13px;border-top:1px solid #353a43;flex:none}
 .tdm-batch-foot>div{min-width:0;display:flex;flex-direction:column;gap:3px}
 .tdm-batch-empty{padding:16px;color:#8995a5;text-align:center;font-size:11px;line-height:1.6}
@@ -2361,7 +2362,8 @@ function batchImportMarkup() {
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
     '<div class="tdm-small">识别 [全局参考] 中的 &lt;Picture 名字&gt; / &lt;Audio 名字&gt; / &lt;Video 名字&gt; / &lt;Prompt 名字&gt;</div></div>'+
-    '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
+    '<span class="tdm-space"></span><span class="tdm-batch-autosave-hint">关闭后自动暂存，下次批量添加时可继续编辑</span>'+
+    '<button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-options">'+
     '<div class="tdm-batch-option"><label>高清分辨率</label><select data-action="batch-resolution">'+
     resolutionOptionsMarkup(batch.highres_megapixels,ratio)+'</select></div>'+
@@ -2405,7 +2407,8 @@ function batchPromptImportMarkup() {
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
     '<div class="tdm-small">识别「批次NN｜名称」和 [全局参考] 中的四种媒体 / 提示词标签</div></div>'+
-    '<span class="tdm-space"></span><button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
+    '<span class="tdm-space"></span><span class="tdm-batch-autosave-hint">关闭后自动暂存，下次批量添加时可继续编辑</span>'+
+    '<button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
     '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
     'placeholder="在这里粘贴完整提示词；每个「批次01｜名称」标题单独占一行">'+esc(batch.importText||"")+'</textarea>'+
     '<div class="tdm-batch-import-drop" data-batch-prompt-dropzone>'+
