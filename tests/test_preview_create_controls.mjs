@@ -256,14 +256,19 @@ const batchMarkupState={
 };
 const createBatchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup","PREVIEW_RESOLUTION_OPTIONS",
   "taskAspectRatio","taskResolutionInfo","resolutionOptionsMarkup",
+  "readBatchImportDraft","batchDraftDateLabel",
   source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};");
 const batchRendererArgs=[value=>String(value),assetCardStub,kindLabel,preview,[0.4,0.6,0.8,1,1.2,1.5,2,3,4],
-  mod.taskAspectRatio,mod.taskResolutionInfo,resolutionOptionsMarkup];
+  mod.taskAspectRatio,mod.taskResolutionInfo,resolutionOptionsMarkup,
+  ()=>null,()=>"" ];
 const batchRenderers=createBatchRenderers(batchMarkupState,...batchRendererArgs);
 const renderBatch=batchState=>createBatchRenderers(batchState,...batchRendererArgs).batchImportMarkup;
 const batchMarkup=batchRenderers.batchImportMarkup();
 assert.ok(batchMarkup.includes("批量添加任务"));
 assert.ok(batchMarkup.includes("当前批次提示词原文"));
+assert.ok(batchMarkup.includes('data-action="batch-generated-open"'));
+assert.ok(batchMarkup.includes("查看待生成资产提示词"));
+assert.ok(!batchMarkup.includes('data-batch-current-name'));
 assert.ok(batchMarkup.includes("&lt;Picture 名字&gt;"));
 assert.ok(batchMarkup.includes("&lt;Audio 名字&gt;"));
 assert.ok(batchMarkup.includes("&lt;Video 名字&gt;"));
@@ -311,7 +316,7 @@ assert.ok(source.includes("function applyBatchPromptImport() {"));
 assert.match(source,/action === "batch-import-text"[\s\S]*?state\.batchImport\.importText=control\.value/);
 assert.match(source,/const editor=state\.root\?\.querySelector\('\[data-action="batch-import-text"\]'\)/);
 assert.ok(source.includes("if(batch.promptImportOpen)return batchPromptImportMarkup();"));
-assert.ok(source.includes('if (action === "batch-import-cancel") {\n      state.batchImport=null;state.assetPicker=null;'));
+assert.ok(source.includes('if (action === "batch-import-cancel") {\n      saveBatchImportDraft(state.batchImport);'));
 assert.ok(batchMarkup.includes("批次01｜场景一"));
 assert.ok(batchMarkup.includes('data-action="batch-open-assets"'));
 assert.ok(!batchMarkup.includes('data-action="batch-upload-assets"'));
@@ -542,6 +547,6 @@ assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));
 assert.ok(source.includes('state.createDraft.highres_megapixels=Number(control.value);'));
 console.log("Preview Stage inline create controls, duration/resolution and preview selection: PASS");
 
-assert.ok(source.includes("asset.prompt||\"尚未提供生成提示词\""));
+assert.ok(source.includes("entry.prompt||\"尚未提供生成提示词\""));
 assert.ok(source.includes("current?.sourceBody||current?.body||\"\""));
 assert.ok(source.includes("item.parseErrors||[]"));

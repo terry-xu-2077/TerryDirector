@@ -481,7 +481,28 @@ function styles() {
 .tdm-batch-ref.active{border-color:#6394d1;background:#253449}
 .tdm-batch-ref strong{font-size:11px;overflow-wrap:anywhere}
 .tdm-batch-ref small{font-size:10px;color:#98a4b4;overflow-wrap:anywhere}
-.tdm-batch-generated{font-size:10px;line-height:1.5;color:#c5a77f;padding:5px 0}.tdm-batch-generated details{margin:4px 0;padding:6px 8px;border:1px solid #343c47;border-radius:5px;background:#171c23;color:#cbd5e1}.tdm-batch-generated summary{cursor:pointer;color:#d6b47e;overflow-wrap:anywhere}.tdm-batch-generated pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;margin:6px 0 0;padding:7px;border-radius:4px;background:#10141a;color:#d6deea;font:10px/1.55 inherit}.tdm-batch-generated-warning{color:#e0a96e}
+.tdm-batch-generated{font-size:10px;line-height:1.5;color:#c5a77f;padding:5px 0}
+.tdm-batch-generated details{margin:4px 0;padding:6px 8px;border:1px solid #343c47;border-radius:5px;background:#171c23;color:#cbd5e1}
+.tdm-batch-generated summary{cursor:pointer;color:#d6b47e;overflow-wrap:anywhere}
+.tdm-batch-generated pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;margin:6px 0 0;padding:7px;border-radius:4px;background:#10141a;color:#d6deea;font:10px/1.55 inherit}
+.tdm-batch-generated-warning{color:#e0a96e}
+.tdm-batch-generated-open{padding:5px 9px;border:1px solid #455365;border-radius:6px;background:#252c36;color:#c6daef;font:11px system-ui;white-space:nowrap;cursor:pointer}
+.tdm-batch-generated-open:hover{border-color:#7297c7;background:#2d3949;color:#eef6ff}
+.tdm-batch-prompts-overlay{z-index:100060}
+.tdm-form.tdm-batch-prompts{width:min(880px,92vw);max-height:min(84vh,820px);padding:0;overflow:hidden;display:flex;flex-direction:column}
+.tdm-batch-prompts-head{padding:18px 20px 14px;border-bottom:1px solid #353c47;display:flex;align-items:center;gap:12px;flex:none}
+.tdm-batch-prompts-head h2{margin:0;font-size:16px}
+.tdm-batch-prompts-body{padding:16px 20px 20px;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.tdm-batch-prompt-item{border:1px solid #3a4655;border-radius:8px;background:#1b2027;padding:11px;min-width:0}
+.tdm-batch-prompt-info{display:flex;flex-wrap:wrap;gap:5px 10px;margin:0 0 9px;align-items:center}
+.tdm-batch-prompt-info strong{font-size:12px;color:#dbe8fa}
+.tdm-batch-prompt-info span{font-size:11px;color:#95a6bb}
+.tdm-batch-prompt-editor{position:relative}
+.tdm-batch-prompts .tdm-batch-prompt-text{display:block;width:100%;min-height:125px;height:150px;max-height:40vh;padding:13px 43px 12px 12px;resize:vertical;box-sizing:border-box;background:#141920;color:#dce3ed;border:1px solid #394555;border-radius:6px;font:12px/1.7 ui-monospace,Consolas,monospace}
+.tdm-batch-prompt-copy{position:absolute;top:9px;right:9px;width:27px;height:27px;display:grid;place-items:center;padding:0;border:1px solid #485567;border-radius:5px;background:#26303d;color:#aebed3;cursor:pointer}
+.tdm-batch-prompt-copy:hover{border-color:#83a9d9;color:#e3f1ff;background:#314257}
+.tdm-batch-prompt-copy:disabled{opacity:.35;cursor:not-allowed}
+.tdm-batch-prompt-empty{padding:28px 10px;text-align:center;font-size:12px;color:#9aa7b9}
 .tdm-batch-summary{font-size:11px;color:#a9c7e7;line-height:1.5}
 .tdm-batch-warning{font-size:10px;line-height:1.5;color:#e7b77e;background:#30271f;border:1px solid #624a31;border-radius:6px;padding:8px 10px}
 .tdm-batch-warning:empty,.tdm-batch-generated:empty{display:none}
@@ -1112,7 +1133,8 @@ function render() {
     (state.settingsOpen ? settingsMarkup() : "") +
     (state.deleting ? deleteMarkup() : "") +
     (state.batchImport ? batchImportMarkup() : "") +
-    (state.batchImport && state.assetPicker ? assetPickerMarkup() : "");
+    (state.batchImport && state.assetPicker ? assetPickerMarkup() : "") +
+    (state.batchImport?.generatedPromptsOpen ? batchGeneratedPromptModalMarkup() : "");
   restoreRenderScrollPositions(state.root,scrollPositions);
   if(oldPlayer && oldKey){
     const replacement=state.root.querySelector('[data-live-preview-host] video[data-media-key]');
@@ -1387,6 +1409,15 @@ async function handleAction(action, data) {
       syncBatchAssetToOtherBatches(Number(data.index));
       return renderBatchImportViews();
     }
+    if (action === "batch-generated-open") {
+      if(state.batchImport)state.batchImport.generatedPromptsOpen=true;
+      return render();
+    }
+    if (action === "batch-generated-close") {
+      if(state.batchImport)state.batchImport.generatedPromptsOpen=false;
+      return render();
+    }
+    if (action === "batch-generated-copy") return await copyBatchGeneratedPrompt(Number(data.index));
     if (action === "batch-submit") return await createBatchTasks();
     if (action === "focus") { state.focused = data.id; state.preview="auto"; return render(); }
     if (action === "preview") { state.preview = data.kind; return render(); }
@@ -2313,22 +2344,85 @@ function batchReferencesMarkup() {
       '</article>';
   }).join("");
 }
+function batchGeneratedPromptEntries() {
+  const batches=state.batchImport?.batches||[];
+  return batches.flatMap((batch,batchIndex)=>(batch.generatedAssets||[]).map(asset=>{
+    if(typeof asset==="string")return {
+      batchName:batch.name||"批次 "+(batchIndex+1),
+      name:asset,type:"image",prompt:"",
+    };
+    return {
+      batchName:batch.name||"批次 "+(batchIndex+1),
+      name:String(asset.name||"未命名资产"),
+      type:asset.type||"image",
+      prompt:String(asset.prompt||""),
+    };
+  }));
+}
+function batchGeneratedPromptModalMarkup() {
+  const entries=batchGeneratedPromptEntries();
+  const blocks=entries.map((entry,index)=>{
+    const typeLabel=({image:"图片",audio:"音频",video:"视频"})[entry.type]||"资产";
+    return '<section class="tdm-batch-prompt-item">'+
+      '<div class="tdm-batch-prompt-info"><strong>'+esc(entry.name)+'</strong>'+
+      '<span>'+esc(typeLabel)+' · '+esc(entry.batchName)+'</span></div>'+
+      '<div class="tdm-batch-prompt-editor">'+
+      '<textarea class="tdm-batch-prompt-text" readonly spellcheck="false" aria-label="'+
+      esc(entry.name)+'的生成提示词">'+esc(entry.prompt||"尚未提供生成提示词")+'</textarea>'+
+      '<button type="button" class="tdm-batch-prompt-copy" data-action="batch-generated-copy" data-index="'+index+'" '+
+      (!entry.prompt.trim()?'disabled ':'')+'title="复制提示词" aria-label="复制'+esc(entry.name)+'的提示词">'+
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" '+
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+
+      '<rect x="8" y="8" width="12" height="12" rx="2"/>'+
+      '<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></div></section>';
+  }).join("");
+  return '<div class="tdm-dialog tdm-batch-prompts-overlay">'+
+    '<section class="tdm-form tdm-batch-prompts" role="dialog" aria-modal="true" aria-label="待生成资产提示词">'+
+    '<header class="tdm-batch-prompts-head"><h2>待生成资产提示词</h2>'+
+    '<span class="tdm-small">'+entries.length+' 项 · 按批次顺序排列</span>'+
+    '<span class="tdm-space"></span>'+
+    '<button class="tdm-btn close" data-action="batch-generated-close" aria-label="关闭">×</button></header>'+
+    '<div class="tdm-batch-prompts-body" data-scroll-preserve="generated-prompts">'+
+    (blocks||'<div class="tdm-batch-prompt-empty">当前批量任务没有待生成资产提示词</div>')+
+    '</div></section></div>';
+}
+async function copyBatchGeneratedPrompt(index) {
+  const entry=batchGeneratedPromptEntries()[index];
+  if(!entry?.prompt?.trim())return false;
+  let copied=false;
+  try {
+    if(typeof navigator!=="undefined"&&navigator.clipboard?.writeText){
+      try{await navigator.clipboard.writeText(entry.prompt);copied=true;}catch{/* Fallback below */ }
+    }
+    if(!copied){
+      const textarea=document.createElement("textarea");
+      textarea.value=entry.prompt;
+      textarea.style.position="fixed";
+      textarea.style.opacity="0";
+      document.body.appendChild(textarea);
+      try{
+        textarea.focus();textarea.select();
+        copied=!!document.execCommand("copy");
+      }finally{textarea.remove();}
+    }
+    if(!copied)throw Error("剪贴板不可用");
+    toast("已复制："+entry.name,"success");
+    return true;
+  }catch(error){
+    toast("复制失败："+(error?.message||error),"error");
+    return false;
+  }
+}
 function batchGeneratedMarkup() {
   const item=state.batchImport?.batches?.[state.batchImport.activeIndex];
-  if(!item?.generatedAssets?.length&&!item?.parseErrors?.length&&!item?.parseWarnings?.length&&!item?.unparsedGeneratedAssets?.length)return "";
-  const assets=(item.generatedAssets||[]).map(asset=>{
-    if(typeof asset==="string")return '<div class="tdm-small">待生成资产：'+esc(asset)+'</div>';
-    const typeLabel=({image:"图片",audio:"音频",video:"视频"})[asset.type]||"资产";
-    const meta=typeLabel+"｜"+asset.name+(asset.aspect_ratio?"｜"+asset.aspect_ratio:"");
-    return '<details class="tdm-batch-generated-item"><summary>'+esc(meta)+'</summary>'+
-      '<pre>'+esc(asset.prompt||"尚未提供生成提示词")+'</pre></details>';
-  }).join("");
-  const warnings=(item.parseWarnings||[]).map(warning=>'<div class="tdm-small tdm-batch-generated-warning">'+esc(warning)+'</div>').join("");
-  const errors=(item.parseErrors||[]).map(error=>'<div class="tdm-small tdm-batch-generated-warning">引用格式错误：'+esc(error)+'</div>').join("");
+  if(!item)return "";
+  const warnings=(item.parseWarnings||[]).map(warning=>
+    '<div class="tdm-small tdm-batch-generated-warning">'+esc(warning)+'</div>').join("");
+  const errors=(item.parseErrors||[]).map(error=>
+    '<div class="tdm-small tdm-batch-generated-warning">引用格式错误：'+esc(error)+'</div>').join("");
   const unparsed=(item.unparsedGeneratedAssets||[]).map(value=>
     '<details><summary>未识别的待生成资产内容</summary><pre>'+esc(value)+'</pre></details>').join("");
-  return (item.generatedAssets?.length?'<div class="tdm-small">待生成资产（不会占用媒体输入槽位）</div>':"")+
-    assets+errors+warnings+unparsed;
+  return warnings+errors+unparsed;
 }
 function batchImportSummary() {
   const stats=batchImportStats(),slots=state.batchImport?.assetSlots||[];
@@ -2386,7 +2480,7 @@ function batchImportMarkup() {
     '<div class="tdm-batch-warning" data-batch-warning>'+esc(batchImportWarning())+'</div>'+
     '<div class="tdm-batch-list" data-scroll-preserve="batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
-    '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
+    '<button type="button" class="tdm-batch-generated-open" data-action="batch-generated-open">查看待生成资产提示词</button></div>'+
     '<div class="tdm-batch-note">点击资产预览区域选择或替换对应类型媒体；绑定后可同步到其他批次。文件名相同的引用会自动匹配。</div>'+
     '<div class="tdm-batch-ref-list">'+batchReferencesMarkup()+'</div>'+
     '<div class="tdm-batch-generated">'+batchGeneratedMarkup()+'</div>'+
@@ -2452,8 +2546,6 @@ function renderBatchImportViews() {
   if(refs){refs.innerHTML=batchReferencesMarkup();bindBatchDynamicActions(refs);wireMediaFallback(refs);}
   const generated=state.root?.querySelector(".tdm-batch-generated");
   if(generated)generated.innerHTML=batchGeneratedMarkup();
-  const currentName=state.root?.querySelector("[data-batch-current-name]");
-  if(currentName)currentName.textContent=batch.batches[batch.activeIndex]?.name||"等待解析";
   const warning=state.root?.querySelector("[data-batch-warning]");
   if(warning)warning.textContent=batchImportWarning();
   const summary=batchImportSummary();
