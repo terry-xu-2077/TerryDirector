@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 from .director_selflift_node import TerryDirectorSelfLiftSampler
+from .director_selflift_split_node import (
+    TerryDirectorSaveLowresCheckpoint,
+    TerryDirectorReadLowresCheckpoint,
+    TerryDirectorSelfLiftHighres,
+    TerryDirectorSelfLiftPauseResume,
+)
+from .director_selflift_review_node import TerryDirectorLowresReviewSave
+from .director_preview_native import TerryDirectorH3Preview
 from .director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
 from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
+from .director_dual_resolution_selector import TerryDirectorDualSamplingResolutionSelector
 
 from typing_extensions import override
 
@@ -28,7 +37,14 @@ class TerryDirectorExtension(ComfyExtension):
         node_classes = [
             TerryDirectorLlamaConfig,
             TerryDirectorPromptEnhancer,
+            TerryDirectorDualSamplingResolutionSelector,
             TerryDirectorSelfLiftSampler,
+            TerryDirectorSaveLowresCheckpoint,
+            TerryDirectorReadLowresCheckpoint,
+            TerryDirectorSelfLiftHighres,
+            TerryDirectorSelfLiftPauseResume,
+            TerryDirectorLowresReviewSave,
+            TerryDirectorH3Preview,
             TerryDirectorH3X2LowRAMDecode,
             TerryDirectorLooper,
             TerryDirectorLoopInfo,

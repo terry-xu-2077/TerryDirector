@@ -29,7 +29,7 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 
 重启 ComfyUI，并在节点搜索中输入 **TerryDirector**。已有安装可在仓库内执行 `git switch main`、`git pull --ff-only` 后重启，浏览器缓存未更新时可按 `Ctrl+F5`。
 
-**环境与模型**：已验证的环境为 ComfyUI **0.39.0**（Windows、RTX 3090）；需自行提供 MiniMax H3 模型、文本编码器、视频／音频 VAE。Self-Lift 高清放大还需相应的 H3 latent upscaler 权重。外部模型加载、LoRA 和注意力优化节点是否需要安装，由你的实际工作流决定；本项目不会替你安装模型权重。
+**环境与模型**：建议使用最新版 ComfyUI（Windows、RTX 3090 实测环境）；需自行提供 MiniMax H3 模型、文本编码器、视频／音频 VAE。Self-Lift 高清放大还需相应的 H3 latent upscaler 权重。外部模型加载、LoRA 和注意力优化节点是否需要安装，由你的实际工作流决定；本项目不会替你安装模型权重。
 
 ## 节点一览
 
@@ -43,9 +43,15 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector 循环结束** | 每轮保存 MOV/MP4，按需组合 Final，输出执行报告和片段目录 |
 | **TerryDirector Llama** | 共享本地 Llama/VLM 的提示词增强能力 |
 | **TerryDirector 提示词增强编辑器** | 连接 Llama 后增强 STRING 提示词 |
+| **TerryDirector 双采样分辨率选择器** | 只输入高清目标 MP，低清自动取 1/4；共用宽高比并实时预览两组分辨率 |
+| **TerryDirector 保存低清审片视频** | 把低清 VAE 解码结果以 MP4 保存到对应 SelfLift 检查点文件夹 |
 | **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
 
 独立 SelfLift 内部节点仍可被现有工作流按节点 ID 使用，但不再提供 Base / Advanced 的封装式二采配置。
+
+### 分阶段 SelfLift 示例工作流
+
+推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。**左侧边栏「预演台」** 打开任务浮窗；「配置工作流」独立设置工作流模板；识别 H3 时自动绑定 H3 的 prompt 与媒体输入端，普通工作流可手动选择提示词源，并选择种子输入节点。新建预演只需填写提示词、参考资产、种子和预览输出；采样预览与 VAE 解码为独立开关，参考资产显示为紧凑缩略图网格；支持从已有任务继承配置、重跑、批量高清续采和批量删除。高清分辨率默认 2.0 MP、默认启用 VAE 解码；采样预览可独立开关，也可与 VAE 解码同时启用。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
 
 ## 怎样连接
 
@@ -88,6 +94,7 @@ TerryDirector 当前以 24 fps 编排视频；不同生成链对帧数和参考�
 ## 文档
 
 - [使用指南与常见问题](docs/USAGE.md)
+- [双采样分辨率选择器](docs/DUAL_SAMPLING_RESOLUTION_SELECTOR.md)
 - [当前节点与执行架构](docs/ARCHITECTURE.md)
 - [已验收环境、参数与测试基线](docs/STABLE_BASELINES.md)
 

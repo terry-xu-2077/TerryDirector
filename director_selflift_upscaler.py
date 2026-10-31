@@ -10,6 +10,7 @@ import os
 from pathlib import PurePosixPath
 import re
 import threading
+from time import perf_counter
 
 import torch
 from torch import nn
@@ -132,17 +133,32 @@ class H3LatentUpscaler(nn.Module):
         frames, chunk, halo = value.shape[2], 32, self.halo
         if frames <= chunk:
             interrupt()
-            return self._window(value, target, scale)
+            logging.info("[TerryDirector SelfLift upscaler] 开始单窗口 3D 推理 frames=%d", frames)
+            window_at = perf_counter()
+            result = self._window(value, target, scale)
+            if result.is_cuda:
+                torch.cuda.synchronize(result.device)
+            logging.info("[TerryDirector SelfLift upscaler] 单窗口 3D 推理完成 %.1fs",
+                         perf_counter() - window_at)
+            return result
         # Temporal windows keep output length unchanged. Overlapping predictions
         # are feathered; this is not claimed to equal an unchunked forward pass.
         padded = F.pad(value, (0, 0, 0, 0, halo, halo), mode="replicate") if halo else value
         output = value.new_zeros((*value.shape[:3], *target))
         weight_sum = value.new_zeros((1, 1, frames, 1, 1))
-        for start in range(0, frames, chunk):
+        window_count = (frames + chunk - 1) // chunk
+        for window_index, start in enumerate(range(0, frames, chunk), 1):
             interrupt()
             stop = min(frames, start + chunk)
+            logging.info("[TerryDirector SelfLift upscaler] 开始 3D 推理窗口 %d/%d frames=%d:%d",
+                         window_index, window_count, start, stop)
+            window_at = perf_counter()
             left, right = max(0, start - halo), min(frames, stop + halo)
             prediction = self._window(padded[:, :, left:right + 2 * halo].contiguous(), target, scale)
+            if prediction.is_cuda:
+                torch.cuda.synchronize(prediction.device)
+            logging.info("[TerryDirector SelfLift upscaler] 完成 3D 推理窗口 %d/%d %.1fs",
+                         window_index, window_count, perf_counter() - window_at)
             prediction = prediction[:, :, halo:halo + right - left]
             weights = value.new_ones(right - left)
             before, after = start - left, right - stop
@@ -189,12 +205,18 @@ def _load(model_name, device):
     stat = os.stat(path)
     key = (path, stat.st_mtime_ns, stat.st_size, str(device))
     if _CACHE is not None and _CACHE[0] == key:
+        logging.info("[TerryDirector SelfLift upscaler] 命中放大器权重缓存")
         return _CACHE[1]
+    logging.info("[TerryDirector SelfLift upscaler] 开始从磁盘读取放大器权重：%s", name)
+    load_at = perf_counter()
     state = _state_dict(comfy.utils.load_torch_file(path, safe_load=True), device)
+    logging.info("[TerryDirector SelfLift upscaler] 磁盘读取完成 %.1fs；权重项=%d",
+                 perf_counter() - load_at, len(state))
     with torch.device("meta"):
         network = H3LatentUpscaler(state)
     network.load_state_dict(state, strict=True, assign=True)
     network.eval().requires_grad_(False)
+    logging.info("[TerryDirector SelfLift upscaler] 网络实例化完成；开始创建 CoreModelPatcher")
     patcher = comfy.model_patcher.CoreModelPatcher(network, load_device=device, offload_device=torch.device("cpu"))
     _CACHE = key, patcher
     return patcher
@@ -233,13 +255,35 @@ def learned_lift(video, target, model_name):
         workspace = video.shape[0] * network.conv_in.out_channels * temporal_work * target[0] * target[1] * network.conv_in.weight.element_size() * 8
         logging.info("[TerryDirector SelfLift] upscaler=%s low=%s target=%s workspace_estimate=%.1f MiB", model_name, tuple(video.shape), target, workspace / 2**20)
         try:
+            if device.type == "cuda":
+                available, total = torch.cuda.mem_get_info(device)
+                logging.info("[TerryDirector SelfLift upscaler] 准备加载模型 GPU free=%.1f GiB total=%.1f GiB "
+                             "torch_allocated=%.1f GiB torch_reserved=%.1f GiB",
+                             available / 2**30, total / 2**30,
+                             torch.cuda.memory_allocated(device) / 2**30,
+                             torch.cuda.memory_reserved(device) / 2**30)
+            logging.info("[TerryDirector SelfLift upscaler] 开始 ComfyUI 动态显存加载；"
+                         "需要工作空间 %.1f MiB", workspace / 2**20)
+            load_at = perf_counter()
             mm.load_models_gpu([patcher], memory_required=workspace)
+            logging.info("[TerryDirector SelfLift upscaler] 动态显存加载完成 %.1fs",
+                         perf_counter() - load_at)
             dtype = network.conv_in.weight.dtype
             mean = torch.tensor(LATENTS_MEAN, device=device, dtype=dtype)[None, :, None, None, None]
             std = torch.tensor(LATENTS_STD, device=device, dtype=dtype)[None, :, None, None, None]
             normalized = (video.to(device=device, dtype=dtype) - mean) / std
+            logging.info("[TerryDirector SelfLift upscaler] 开始 3D 网络推理 input=%s dtype=%s",
+                         tuple(normalized.shape), dtype)
+            infer_at = perf_counter()
             lifted = network(normalized, target, interrupt=mm.throw_exception_if_processing_interrupted)
-            return (lifted * std + mean).float().to(mm.intermediate_device())
+            result = (lifted * std + mean).float().to(mm.intermediate_device())
+            logging.info("[TerryDirector SelfLift upscaler] 3D 推理和输出转移完成 %.1fs",
+                         perf_counter() - infer_at)
+            return result
         finally:
             # Only our lifter is offloaded. Never unload the user's entire model set.
+            logging.info("[TerryDirector SelfLift upscaler] 开始释放自身模型权重")
+            offload_at = perf_counter()
             _offload_owned(patcher)
+            logging.info("[TerryDirector SelfLift upscaler] 权重卸载完成 %.1fs",
+                         perf_counter() - offload_at)
