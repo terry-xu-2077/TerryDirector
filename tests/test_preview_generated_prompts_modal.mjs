@@ -46,7 +46,7 @@ assert.deepEqual(entries.map(item=>item.batchName),
  ["批次01｜场景一","批次01｜场景一","批次02｜场景二","批次02｜场景二"]);
 const markup=ui.batchGeneratedPromptModalMarkup();
 assert.ok(markup.includes('role="dialog" aria-modal="true"'));
-assert.ok(markup.includes("4 项 · 按批次顺序排列"));
+assert.ok(markup.includes("4 项 · 按文档与批次顺序排列"));
 assert.equal((markup.match(/class="tdm-batch-prompt-item"/g)||[]).length,4);
 assert.equal((markup.match(/data-action="batch-generated-copy"/g)||[]).length,4);
 assert.ok(markup.includes('data-action="batch-generated-copy" data-index="3" disabled'));
@@ -60,6 +60,20 @@ assert.ok(markup.indexOf("批次01｜场景一")<markup.indexOf("批次02｜场�
 assert.ok(markup.indexOf("峡道母图")<markup.indexOf("载具运动"));
 assert.ok(!ui.batchGeneratedMarkup().includes("峡道母图"),
  "prompts should only appear in the modal, not as duplicate inline cards");
+
+// Global definitions come before batch-local prompts and shared definitions appear once.
+state.batchImport.generatedAssets=[
+ {type:"image",name:"全局菌伞峡道",prompt:"一张巨型菌伞峡道空间母图"},
+ {type:"image",name:"峡道母图",prompt:"一张 2.39:1 宽银幕镜头。\n阴影 <岩壁> & 远景。"},
+];
+const mixed=ui.batchGeneratedPromptEntries();
+assert.equal(mixed.length,5);
+assert.deepEqual(mixed.map(entry=>entry.name),[
+ "全局菌伞峡道","峡道母图","载具运动","环境声","待补充",
+]);
+assert.equal(mixed[0].batchName,"文档全局");
+assert.ok(ui.batchGeneratedPromptModalMarkup().includes("5 项 · 按文档与批次顺序排列"));
+state.batchImport.generatedAssets=[];
 
 assert.equal(await ui.copyBatchGeneratedPrompt(0),true);
 assert.equal(copiedText,entries[0].prompt);
