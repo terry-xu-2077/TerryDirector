@@ -122,6 +122,53 @@ function parseGlobalReferences(body) {
   };
 }
 
+// Document-level [待生成资产] prompts must be kept out of the video prompt.
+function parseDocumentGeneratedAssets(preamble) {
+  const lines = String(preamble || "").split("\n");
+  const cleanLines = [], generatedAssets = [], parseWarnings = [], parseErrors = [];
+  let inSection = false, activePrompt = null;
+  const finishPrompt = () => {
+    if (!activePrompt) return;
+    const prompt = activePrompt.parts.join("\n").trim();
+    if (!prompt) parseWarnings.push("待生成资产「" + activePrompt.name + "」缺少提示词内容。");
+    generatedAssets.push({ type: "image", name: activePrompt.name, prompt });
+    activePrompt = null;
+  };
+  for (const line of lines) {
+    const value = line.trim();
+    if (!inSection) {
+      if (/^\s*(?:#{1,6}\s*)?\[待生成资产\]\s*$/.test(line)) inSection = true;
+      else cleanLines.push(line);
+      continue;
+    }
+    if (/^(?:-{3,}|_{3,}|\*{3,})$/.test(value) ||
+        /^#{1,6}\s+/.test(value) ||
+        /^\[[^\]]+\]$/.test(value)) {
+      finishPrompt();
+      inSection = false;
+      cleanLines.push(line);
+      continue;
+    }
+    const match = value.match(/^<\s*Prompt\s+([^>]+?)\s*>\s*[:：]\s*(.*)$/i);
+    if (match) {
+      finishPrompt();
+      const name = match[1].trim();
+      if (!name) parseErrors.push("待生成资产标签缺少名称：" + value);
+      else activePrompt = { name, parts: [match[2] || ""] };
+      continue;
+    }
+    if (/^<\s*Prompt\b/i.test(value)) {
+      finishPrompt();
+      parseErrors.push("待生成资产标签格式无法识别：" + value);
+      continue;
+    }
+    if (activePrompt) activePrompt.parts.push(line.trimEnd());
+    else if (value) parseWarnings.push("待生成资产区域含未归属的文字：" + value);
+  }
+  finishPrompt();
+  return { preamble: cleanLines.join("\n").trim(), generatedAssets, parseWarnings, parseErrors };
+}
+
 function extractGlobalRules(text) {
   const lines = String(text || "").split("\n");
   const firstBatch = lines.findIndex(line =>
@@ -152,9 +199,10 @@ export function parsePreviewBatches(value) {
   }
 
   const globalRules = extractGlobalRules(text);
+  const documentAssets = parseDocumentGeneratedAssets(legacyPreamble(text, headings[0].index));
   const preamble = globalRules === null
-    ? legacyPreamble(text, headings[0].index)
-    : globalRules;
+    ? documentAssets.preamble
+    : parseDocumentGeneratedAssets(globalRules).preamble;
 
   const batches = headings.map((match, index) => {
     const start = match.index + match[0].length;
@@ -183,6 +231,9 @@ export function parsePreviewBatches(value) {
 
   return {
     preamble,
+    generatedAssets: documentAssets.generatedAssets,
+    parseWarnings: documentAssets.parseWarnings,
+    parseErrors: documentAssets.parseErrors,
     batches,
     error: batches.length ? "" : "已识别标题，但没有找到包含正文的批次",
   };
