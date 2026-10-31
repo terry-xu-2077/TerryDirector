@@ -160,6 +160,58 @@ const typedAudioPrompt = parsePreviewBatches([
 ].join("\n"));
 assert.equal(typedAudioPrompt.batches[0].generatedAssets[0].type, "audio");
 
+// New document-level format: define every asset prompt once before all batches.
+const globalDocument=parsePreviewBatches([
+  "# 《异星边境》第一集",
+  "> 全集统一的高预算实拍真人科幻剧集。",
+  "",
+  "[待生成资产]",
+  "<Prompt 干燥菌伞峡道>：请生成一张2.39:1真人电影母图。",
+  "蓝灰风蚀岩壁，紫灰色菌伞植物。",
+  "<Prompt 废弃运输舰货舱>：请生成一张旧舰货舱空间母图。",
+  "<Prompt 旧机件接口>：请生成一张旧工业接口道具图。",
+  "<Prompt 旧施工便道断缝>：请生成一张深不见底的地缝地形母图。",
+  "",
+  "---",
+  "",
+  "## 批次01｜菌伞峡道（建议15秒）",
+  "[全局参考]",
+  "<Picture 干燥菌伞峡道>：道路、菌伞形态",
+  "<Picture 特瑞>：主角",
+  "[分镜脚本]",
+  "镜头01：自由FPV超车。",
+  "",
+  "## 批次02｜废舰（建议15秒）",
+  "[全局参考]",
+  "<Picture 废弃运输舰货舱>：船舱结构",
+  "<Picture 旧机件接口>：固定机件",
+  "[分镜脚本]",
+  "镜头01：照亮机件。",
+].join("\n"));
+assert.equal(globalDocument.batches.length,2);
+assert.deepEqual(globalDocument.generatedAssets.map(asset=>asset.name),[
+  "干燥菌伞峡道","废弃运输舰货舱","旧机件接口","旧施工便道断缝",
+]);
+assert.match(globalDocument.generatedAssets[0].prompt,/蓝灰风蚀岩壁/);
+assert.ok(globalDocument.generatedAssets.every(asset=>asset.prompt.startsWith("请生成")));
+assert.ok(!/^\s*<Prompt\s/m.test(globalDocument.preamble),"generation prompts must not leak into video prompt");
+assert.ok(!/^\s*\[待生成资产\]\s*$/m.test(globalDocument.preamble));
+assert.match(globalDocument.preamble,/高预算实拍真人科幻剧集/);
+assert.ok(globalDocument.batches.every(batch=>batch.generatedAssets.length===0),
+  "shared prompt definitions must not be duplicated into every batch");
+assert.deepEqual(globalDocument.batches[0].references.map(ref=>ref.name),[
+  "干燥菌伞峡道","特瑞",
+]);
+// Also strip this section when a separate [全局规则] is provided.
+const withRules=parsePreviewBatches([
+  "[全局规则]","保持相同影像风格。",
+  "[待生成资产]","<Prompt 共用资产>：需要生成的图片。",
+  "## 批次01｜测试","[全局参考]","<Picture 共用资产>：空间","[分镜脚本]","镜头",
+].join("\n"));
+assert.equal(withRules.generatedAssets[0].name,"共用资产");
+assert.ok(!/^\s*<Prompt\s/m.test(withRules.preamble));
+assert.match(withRules.preamble,/保持相同影像风格/);
+
 const malformed = parsePreviewBatches([
   "批次07｜格式错误",
   "[全局参考]",
