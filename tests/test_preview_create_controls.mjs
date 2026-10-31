@@ -509,13 +509,16 @@ const draftWithMediaSlots=()=>({assets:[
   {kind:"video",node_id:3,widget_name:"video",value:"default.mp4"},
   {kind:"image",node_id:4,widget_name:"image",value:"default-b.jpg"},
 ]});
+let clearedBatchDrafts=0,savedRemainingBatchDraft=null;
 const createBatch=new Function("state","batchTaskStatus","randomizeNewTaskSeed","buildDraft",
   "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window","batchPromptWithMediaTokens","legacyPreviewType",
+  "saveBatchImportDraft","clearBatchImportDraft",
   source.slice(createBatchStart,createBatchEnd)+";return createBatchTasks;")(
   batchState,()=>({valid:true}),draft=>draft,draftWithMediaSlots,15,draft=>draft,
   async(_url,options)=>{savedBatch=JSON.parse(options.body);return {id:"draft_test"};},
   async()=>{},()=>{},()=>{},{confirm:()=>true},promptWithTokens,
-  options=>options.vae_decode_enabled&&!options.sampling_preview_enabled?"decoded":"sampling");
+  options=>options.vae_decode_enabled&&!options.sampling_preview_enabled?"decoded":"sampling",
+  draft=>{savedRemainingBatchDraft=draft;},()=>{clearedBatchDrafts++;});
 batchState.batchImport.batches[0].body=[
   "[全局参考]","- a.jpg：人物","- b.wav：对白","- c.mp4：动作","[分镜脚本]","正文"
 ].join("\n");
@@ -532,6 +535,8 @@ assert.equal(savedBatch.sampling_preview_enabled,false);
 assert.equal(savedBatch.vae_decode_enabled,true);
 assert.equal(savedBatch.previewType,"decoded");
 assert.equal(batchState.batchImport,null);
+assert.equal(clearedBatchDrafts,1);
+assert.equal(savedRemainingBatchDraft,null);
 assert.ok(rendered.includes('aria-label="生成随机种子"'));
 assert.ok(source.includes('state.createDraft.duration_seconds=seconds;'));
 assert.ok(source.includes('state.createDraft.highres_megapixels=Number(control.value);'));

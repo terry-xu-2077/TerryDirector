@@ -28,6 +28,7 @@ const URL_BASE = "/terrydirector/api/selflift";
 // Same mark URL as the TerryDirector timeline node and timeline editor.
 const BRAND_MARK_URL = "/terrydirector/static/assets/mark.svg";
 const PREVIEW_SETTINGS_KEY = "terrydirector.preview-stage.settings.v1";
+const BATCH_IMPORT_DRAFT_KEY = "terrydirector.preview-stage.batch-import-draft.v1";
 function normalizePreviewSettings(value) {
   const mp=Number(value?.highres_megapixels);
   return {
@@ -49,6 +50,59 @@ function writePreviewSettings(value) {
     if(typeof localStorage!=="undefined")
       localStorage.setItem(PREVIEW_SETTINGS_KEY,JSON.stringify(normalizePreviewSettings(value)));
   } catch(error) { console.warn("[TerryDirector 预演台] 保存默认设置失败",error); }
+}
+function readBatchImportDraft() {
+  try {
+    if(typeof localStorage==="undefined")return null;
+    const raw=localStorage.getItem(BATCH_IMPORT_DRAFT_KEY);
+    if(!raw)return null;
+    const draft=JSON.parse(raw);
+    if(draft?.version!==1||!Array.isArray(draft.batches)){
+      clearBatchImportDraft();return null;
+    }
+    return draft;
+  } catch(error) {
+    console.warn("[TerryDirector 预演台] 读取批量任务草稿失败",error);
+    clearBatchImportDraft();return null;
+  }
+}
+function clearBatchImportDraft() {
+  try {
+    if(typeof localStorage!=="undefined")localStorage.removeItem(BATCH_IMPORT_DRAFT_KEY);
+  } catch(error) { console.warn("[TerryDirector 预演台] 清除批量任务草稿失败",error); }
+}
+function saveBatchImportDraft(batch) {
+  if(!batch||batch.saving)return false;
+  const importText=String(batch.importText||""),text=String(batch.text||"");
+  const batches=Array.isArray(batch.batches)?batch.batches:[];
+  if(!importText.trim()&&!text.trim()&&!batches.length)return false;
+  const snapshot={
+    version:1,savedAt:new Date().toISOString(),
+    phase:batch.promptImportOpen?"import":"config",
+    text,importText,importFileName:String(batch.importFileName||""),
+    preamble:String(batch.preamble||""),error:String(batch.error||""),
+    batches:batches.map(item=>({
+      ...item,references:(item.references||[]).map(ref=>({...ref,path:String(ref.path||"")})),
+    })),
+    activeIndex:Number.isInteger(Number(batch.activeIndex))?Number(batch.activeIndex):0,
+    selectedRefIndex:Number.isInteger(Number(batch.selectedRefIndex))?Number(batch.selectedRefIndex):-1,
+    highres_megapixels:Number(batch.highres_megapixels),
+    sampling_preview_enabled:!!batch.sampling_preview_enabled,
+    vae_decode_enabled:!!batch.vae_decode_enabled,
+  };
+  try {
+    if(typeof localStorage==="undefined")return false;
+    localStorage.setItem(BATCH_IMPORT_DRAFT_KEY,JSON.stringify(snapshot));
+    return true;
+  } catch(error) {
+    console.warn("[TerryDirector 预演台] 暂存批量任务失败",error);
+    return false;
+  }
+}
+function batchDraftDateLabel(savedAt) {
+  const date=new Date(savedAt);
+  if(Number.isNaN(date.getTime()))return "上次暂存";
+  return date.toLocaleString(undefined,{year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"});
 }
 function defaultPreviewOptions(settings) {
   const mode=(settings||state.previewSettings)?.default_preview_mode==="sampling"?"sampling":"decoded";
@@ -505,6 +559,10 @@ function stopPreviewPlayback() {
   }
 }
 function close() {
+  if(state.batchImport?.saving){
+    toast("批量任务正在创建，请等待完成后再关闭","warning");return;
+  }
+  saveBatchImportDraft(state.batchImport);
   stopPreviewPlayback();
   if(state.elapsedTimer!=null){clearInterval(state.elapsedTimer);state.elapsedTimer=null;}
   closePreviewRichEditor(); state.creating = false; state.configuring = false;
@@ -1262,10 +1320,25 @@ async function handleAction(action, data) {
     if (action === "batch-import-browse") return browseBatchPromptFile();
     if (action === "batch-import-apply") return applyBatchPromptImport();
     if (action === "batch-import-cancel") {
+      saveBatchImportDraft(state.batchImport);
       state.batchImport=null;state.assetPicker=null;
       return render();
     }
-    if (action === "batch-cancel") { state.batchImport=null;state.assetPicker=null;return render(); }
+    if (action === "batch-import-recover") {
+      const saved=readBatchImportDraft();
+      if(!saved||!restoreBatchImportDraft(saved)){
+        toast("没有找到可恢复的批量任务草稿","warning");return render();
+      }
+      state.assetPicker=null;
+      render();
+      toast("已恢复上次暂存的批量任务","success");
+      return;
+    }
+    if (action === "batch-cancel") {
+      if(state.batchImport?.saving)return;
+      saveBatchImportDraft(state.batchImport);
+      state.batchImport=null;state.assetPicker=null;return render();
+    }
     if (action === "batch-select") {
       const batch=state.batchImport;
       if(batch){batch.activeIndex=Number(data.index)||0;
@@ -1925,6 +1998,45 @@ async function openBatchImport() {
   };
   render();
 }
+function restoreBatchImportDraft(draft) {
+  if(!draft||!state.template)return false;
+  const template=structuredClone(state.template);
+  const batches=(Array.isArray(draft.batches)?draft.batches:[]).map(item=>({
+    ...item,
+    references:(Array.isArray(item.references)?item.references:[]).map(ref=>{
+      const kind=ref.kind||"image",path=String(ref.path||"");
+      const available=path&&state.inputFiles.some(file=>file.kind===kind&&file.path===path);
+      return {...ref,kind,path:available?path:""};
+    }),
+    generatedAssets:Array.isArray(item.generatedAssets)?item.generatedAssets:[],
+  }));
+  const activeIndex=batches.length?Math.max(0,Math.min(Number(draft.activeIndex)||0,batches.length-1)):0;
+  const refs=batches[activeIndex]?.references||[];
+  let selectedRefIndex=Number.isInteger(Number(draft.selectedRefIndex))?Number(draft.selectedRefIndex):-1;
+  if(!refs.length)selectedRefIndex=-1;
+  else if(selectedRefIndex<0||selectedRefIndex>=refs.length){
+    const missing=refs.findIndex(ref=>!ref.path);
+    selectedRefIndex=missing>=0?missing:0;
+  }
+  const options=normalizeTaskPreviewOptions(draft,defaultPreviewOptions());
+  if(options.vae_decode_enabled&&!template.decoded_target){
+    options.vae_decode_enabled=false;
+    if(!options.sampling_preview_enabled)options.sampling_preview_enabled=true;
+  }
+  const mp=Number(draft.highres_megapixels);
+  state.batchImport={
+    template,assetSlots:matchingAssets(template.workflow,template.h3_node_id),
+    text:String(draft.text||""),importText:String(draft.importText||draft.text||""),
+    importFileName:String(draft.importFileName||""),importError:"",
+    promptImportOpen:draft.phase==="import"||!batches.length,
+    preamble:String(draft.preamble||""),batches,error:String(draft.error||""),
+    activeIndex,selectedRefIndex,saving:false,
+    highres_megapixels:PREVIEW_RESOLUTION_OPTIONS.includes(mp)?mp:state.previewSettings.highres_megapixels,
+    sampling_preview_enabled:options.sampling_preview_enabled,
+    vae_decode_enabled:options.vae_decode_enabled,
+  };
+  return true;
+}
 function wireMediaFallback(holder) {
   if (!holder) return;
   holder.querySelectorAll(".tdm-media-thumb").forEach(media => {
@@ -2217,7 +2329,7 @@ function batchImportWarning() {
   const malformed=items.filter(item=>(item.parseErrors||[]).length);
   const warnings=[];
   if(overflow)warnings.push('工作流媒体输入槽位不足：'+overflowKinds.join("、")+'；'+overflow+' 个批次超出容量，不会创建。');
-  if(missing)warnings.push(missing+' 个批次仍有未绑定媒体，请点击对应资产卡片上的「替换」完成绑定。');
+  if(missing)warnings.push(missing+' 个批次仍有未绑定媒体，请点击对应资产预览区域完成绑定。');
   if(malformed.length)warnings.push(malformed.length+' 个批次存在引用资产格式错误，需检查当前批次原文。');
   return warnings.join(" ");
 }
@@ -2265,6 +2377,10 @@ function batchImportMarkup() {
 }
 function batchPromptImportMarkup() {
   const batch=state.batchImport;if(!batch?.promptImportOpen)return "";
+  const savedDraft=readBatchImportDraft();
+  const recoveryButton=savedDraft?
+    '<button class="tdm-btn" data-action="batch-import-recover" title="恢复上次暂存的批量任务">继续编辑上次的批量任务（'+
+      esc(batchDraftDateLabel(savedDraft.savedAt))+'）</button>':"";
   return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
@@ -2277,7 +2393,8 @@ function batchPromptImportMarkup() {
     '<small>'+(batch.importFileName?"已读取："+esc(batch.importFileName):"也可以直接粘贴文本，或浏览文件选择")+'</small></div>'+
     '<span class="tdm-space"></span><button class="tdm-btn" data-action="batch-import-browse">浏览文件</button></div>'+
     (batch.importError?'<div class="tdm-batch-import-error">'+esc(batch.importError)+'</div>':'')+
-    '<footer class="tdm-form-actions"><button class="tdm-btn" data-action="batch-import-cancel">取消</button>'+
+    '<footer class="tdm-form-actions">'+recoveryButton+'<span class="tdm-space"></span>'+
+    '<button class="tdm-btn" data-action="batch-import-cancel">取消</button>'+
     '<button class="tdm-btn primary" data-action="batch-import-apply">确定</button></footer>'+
     '</section></div>';
 }
@@ -2442,7 +2559,7 @@ async function createBatchTasks() {
   if(skipped&&!window.confirm("共有 "+batch.batches.length+" 个批次，其中 "+skipped+
     " 个批次缺少媒体或超出对应类型的工作流输入槽位。本次只创建其余 "+ready.length+" 个有效批次，继续吗？"))return;
   batch.saving=true;render();
-  let created=0,firstId=null;const failures=[];
+  let created=0,firstId=null;const failures=[],completedItems=new Set();
   for(const item of ready){
     try{
       const draft=randomizeNewTaskSeed(buildDraft(batch.template,[],item.name,batch));
@@ -2466,10 +2583,22 @@ async function createBatchTasks() {
       const payload=draftSnapshot(draft);
       const saved=await request("/drafts",{method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify(payload)});
-      created++;if(!firstId)firstId=saved.id;
+      created++;completedItems.add(item);if(!firstId)firstId=saved.id;
     }catch(error){failures.push(item.name+"："+(error?.message||String(error)));}
   }
-  batch.saving=false;state.batchImport=null;state.statusFilter="all";
+  batch.saving=false;
+  const remaining=batch.batches.filter(item=>!completedItems.has(item));
+  if(remaining.length){
+    batch.batches=remaining;
+    batch.activeIndex=Math.min(batch.activeIndex,remaining.length-1);
+    const refs=batch.batches[batch.activeIndex]?.references||[];
+    if(batch.selectedRefIndex<0||batch.selectedRefIndex>=refs.length){
+      const missing=refs.findIndex(ref=>!ref.path);
+      batch.selectedRefIndex=missing>=0?missing:(refs.length?0:-1);
+    }
+    saveBatchImportDraft(batch);
+  }else clearBatchImportDraft();
+  state.batchImport=null;state.statusFilter="all";
   if(firstId)state.focused=firstId;
   await refresh();
   const message="已创建 "+created+" 个待生成任务"+
