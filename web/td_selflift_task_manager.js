@@ -1033,11 +1033,30 @@ async function togglePreviewPlayback() {
     throw Error("视频无法播放："+(error?.message || error));
   }
 }
+function captureRenderScrollPositions(root) {
+  if(!root?.querySelectorAll)return [];
+  return Array.from(root.querySelectorAll("[data-scroll-preserve]"),element=>({
+    key:element.dataset.scrollPreserve,
+    top:element.scrollTop,
+    left:element.scrollLeft,
+  })).filter(position=>position.key);
+}
+function restoreRenderScrollPositions(root,positions) {
+  if(!root?.querySelectorAll||!Array.isArray(positions))return;
+  const elements=Array.from(root.querySelectorAll("[data-scroll-preserve]"));
+  for(const position of positions){
+    const element=elements.find(item=>item.dataset.scrollPreserve===position.key);
+    if(!element)continue;
+    element.scrollTop=position.top;
+    element.scrollLeft=position.left;
+  }
+}
 function render() {
   if (!state.root || state.root.style.display === "none") return;
   const task = selectedTask();
   const visible=visibleTasks();
   const batch=batchActionInfo();
+  const scrollPositions=captureRenderScrollPositions(state.root);
   // Keep the same media element across regular task/status refreshes.
   // Reconstructing the whole dialog used to reset playback while the user
   // was clicking the controls (especially around task completion).
@@ -1053,7 +1072,7 @@ function render() {
     '<button class="tdm-btn primary" data-action="create">＋ 新建预演</button>' +
     '<button class="tdm-btn" data-action="batch-create">批量添加</button>' +
     '<button class="tdm-btn" data-action="refresh">刷新</button><button class="tdm-btn close" data-action="close">×</button></header>' +
-    '<div class="tdm-main"><section class="tdm-left"><div class="tdm-toolbar">' +
+    '<div class="tdm-main"><section class="tdm-left" data-scroll-preserve="task-list"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
     (visible.length && visible.every(t=>state.selected.has(t.id)) ? "checked" : "") +
     '> 全选</label>'+
@@ -1093,6 +1112,7 @@ function render() {
     (state.deleting ? deleteMarkup() : "") +
     (state.batchImport ? batchImportMarkup() : "") +
     (state.batchImport && state.assetPicker ? assetPickerMarkup() : "");
+  restoreRenderScrollPositions(state.root,scrollPositions);
   if(oldPlayer && oldKey){
     const replacement=state.root.querySelector('[data-live-preview-host] video[data-media-key]');
     if(replacement?.dataset.mediaKey===oldKey){
@@ -2362,7 +2382,7 @@ function batchImportMarkup() {
     esc(current?.sourceBody||current?.body||"")+'</textarea>'+
     '<div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
     '<div class="tdm-batch-warning" data-batch-warning>'+esc(batchImportWarning())+'</div>'+
-    '<div class="tdm-batch-list">'+batchListMarkup()+'</div></section>'+
+    '<div class="tdm-batch-list" data-scroll-preserve="batch-list">'+batchListMarkup()+'</div></section>'+
     '<aside class="tdm-batch-right"><div class="tdm-batch-section-head"><strong>当前批次引用资产</strong>'+
     '<span data-batch-current-name>'+(current?esc(current.name):"等待解析")+'</span></div>'+
     '<div class="tdm-batch-note">点击资产预览区域选择或替换对应类型媒体；绑定后可同步到其他批次。文件名相同的引用会自动匹配。</div>'+
