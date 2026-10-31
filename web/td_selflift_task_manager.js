@@ -81,6 +81,9 @@ function saveBatchImportDraft(batch) {
     phase:batch.promptImportOpen?"import":"config",
     text,importText,importFileName:String(batch.importFileName||""),
     preamble:String(batch.preamble||""),error:String(batch.error||""),
+    generatedAssets:Array.isArray(batch.generatedAssets)?batch.generatedAssets:[],
+    parseWarnings:Array.isArray(batch.parseWarnings)?batch.parseWarnings:[],
+    parseErrors:Array.isArray(batch.parseErrors)?batch.parseErrors:[],
     batches:batches.map(item=>({
       ...item,references:(item.references||[]).map(ref=>({...ref,path:String(ref.path||"")})),
     })),
@@ -2042,7 +2045,8 @@ async function openBatchImport() {
   state.batchImport={
     template:structuredClone(state.template),assetSlots:matchingAssets(state.template.workflow,state.template.h3_node_id),
     text:"",importText:"",importFileName:"",importError:"",promptImportOpen:true,
-    preamble:"",batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
+    preamble:"",generatedAssets:[],parseWarnings:[],parseErrors:[],
+    batches:[],error:"",activeIndex:0,selectedRefIndex:-1,
     saving:false,
     highres_megapixels:state.previewSettings.highres_megapixels,
     sampling_preview_enabled:batchOptions.sampling_preview_enabled,
@@ -2053,6 +2057,8 @@ async function openBatchImport() {
 function restoreBatchImportDraft(draft) {
   if(!draft||!state.template)return false;
   const template=structuredClone(state.template);
+  // Reparse old saved drafts: they predate document-level [待生成资产] support.
+  const parsedDraft=draft.text?parsePreviewBatches(draft.text):null;
   const batches=(Array.isArray(draft.batches)?draft.batches:[]).map(item=>({
     ...item,
     references:(Array.isArray(item.references)?item.references:[]).map(ref=>{
@@ -2081,7 +2087,11 @@ function restoreBatchImportDraft(draft) {
     text:String(draft.text||""),importText:String(draft.importText||draft.text||""),
     importFileName:String(draft.importFileName||""),importError:"",
     promptImportOpen:draft.phase==="import"||!batches.length,
-    preamble:String(draft.preamble||""),batches,error:String(draft.error||""),
+    preamble:parsedDraft?.batches?.length?parsedDraft.preamble:String(draft.preamble||""),
+    generatedAssets:Array.isArray(draft.generatedAssets)?draft.generatedAssets:(parsedDraft?.generatedAssets||[]),
+    parseWarnings:Array.isArray(draft.parseWarnings)?draft.parseWarnings:(parsedDraft?.parseWarnings||[]),
+    parseErrors:Array.isArray(draft.parseErrors)?draft.parseErrors:(parsedDraft?.parseErrors||[]),
+    batches,error:String(draft.error||""),
     activeIndex,selectedRefIndex,saving:false,
     highres_megapixels:PREVIEW_RESOLUTION_OPTIONS.includes(mp)?mp:state.previewSettings.highres_megapixels,
     sampling_preview_enabled:options.sampling_preview_enabled,
@@ -2258,6 +2268,9 @@ function parseBatchImportText() {
   ]));
   const parsed=parsePreviewBatches(batch.text);
   batch.preamble=parsed.preamble;batch.error=parsed.error;
+  batch.generatedAssets=parsed.generatedAssets||[];
+  batch.parseWarnings=parsed.parseWarnings||[];
+  batch.parseErrors=parsed.parseErrors||[];
   batch.batches=parsed.batches.map(item=>({
     ...item,
     references:item.references.map((ref,index)=>{
@@ -2345,19 +2358,34 @@ function batchReferencesMarkup() {
   }).join("");
 }
 function batchGeneratedPromptEntries() {
-  const batches=state.batchImport?.batches||[];
-  return batches.flatMap((batch,batchIndex)=>(batch.generatedAssets||[]).map(asset=>{
-    if(typeof asset==="string")return {
-      batchName:batch.name||"批次 "+(batchIndex+1),
-      name:asset,type:"image",prompt:"",
-    };
-    return {
-      batchName:batch.name||"批次 "+(batchIndex+1),
-      name:String(asset.name||"未命名资产"),
-      type:asset.type||"image",
-      prompt:String(asset.prompt||""),
-    };
+  const batch=state.batchImport||{};
+  const global=(batch.generatedAssets||[]).map(asset=>({
+    batchName:"文档全局",
+    name:String(asset.name||"未命名资产"),
+    type:asset.type||"image",
+    prompt:String(asset.prompt||""),
   }));
+  const local=(batch.batches||[]).flatMap((item,batchIndex)=>
+    (item.generatedAssets||[]).map(asset=>{
+      if(typeof asset==="string")return {
+        batchName:item.name||"批次 "+(batchIndex+1),
+        name:asset,type:"image",prompt:"",
+      };
+      return {
+        batchName:item.name||"批次 "+(batchIndex+1),
+        name:String(asset.name||"未命名资产"),
+        type:asset.type||"image",
+        prompt:String(asset.prompt||""),
+      };
+    }));
+  // A shared asset is generated once, even if several batches refer to it.
+  const seen=new Set();
+  return [...global,...local].filter(entry=>{
+    const key=entry.type+"\u0000"+entry.name+"\u0000"+entry.prompt;
+    if(seen.has(key))return false;
+    seen.add(key);
+    return true;
+  });
 }
 function batchGeneratedPromptModalMarkup() {
   const entries=batchGeneratedPromptEntries();
@@ -2379,11 +2407,13 @@ function batchGeneratedPromptModalMarkup() {
   return '<div class="tdm-dialog tdm-batch-prompts-overlay">'+
     '<section class="tdm-form tdm-batch-prompts" role="dialog" aria-modal="true" aria-label="待生成资产提示词">'+
     '<header class="tdm-batch-prompts-head"><h2>待生成资产提示词</h2>'+
-    '<span class="tdm-small">'+entries.length+' 项 · 按批次顺序排列</span>'+
+    '<span class="tdm-small">'+entries.length+' 项 · 按文档与批次顺序排列</span>'+
     '<span class="tdm-space"></span>'+
     '<button class="tdm-btn close" data-action="batch-generated-close" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-prompts-body" data-scroll-preserve="generated-prompts">'+
-    (blocks||'<div class="tdm-batch-prompt-empty">当前批量任务没有待生成资产提示词</div>')+
+    ((state.batchImport?.parseWarnings||[]).map(message=>'<div class="tdm-batch-generated-warning">'+esc(message)+'</div>').join("")+
+      (state.batchImport?.parseErrors||[]).map(message=>'<div class="tdm-batch-generated-warning">解析错误：'+esc(message)+'</div>').join("")+
+      (blocks||'<div class="tdm-batch-prompt-empty">当前批量任务没有待生成资产提示词</div>'))+
     '</div></section></div>';
 }
 async function copyBatchGeneratedPrompt(index) {
@@ -2455,7 +2485,7 @@ function batchImportMarkup() {
   const ratio=taskAspectRatio(batch.template?.api_prompt,batch.template?.workflow);
   return '<div class="tdm-dialog"><div class="tdm-form tdm-batch" role="dialog" aria-modal="true" aria-label="批量添加任务">'+
     '<header class="tdm-batch-head"><div><h2>批量添加任务</h2>'+
-    '<div class="tdm-small">识别 [全局参考] 中的 &lt;Picture 名字&gt; / &lt;Audio 名字&gt; / &lt;Video 名字&gt; / &lt;Prompt 名字&gt;</div></div>'+
+    '<div class="tdm-small">识别 [待生成资产] 中的 &lt;Prompt 名字&gt;，以及 [全局参考] 中的媒体引用</div></div>'+
     '<span class="tdm-space"></span><span class="tdm-batch-autosave-hint">关闭后自动暂存，下次批量添加时可继续编辑</span>'+
     '<button class="tdm-btn close" data-action="batch-cancel" aria-label="关闭">×</button></header>'+
     '<div class="tdm-batch-options">'+
@@ -2500,7 +2530,7 @@ function batchPromptImportMarkup() {
   return '<div class="tdm-dialog tdm-batch-import-overlay"><section class="tdm-form tdm-batch-import" '+
     'role="dialog" aria-modal="true" aria-label="导入多批次提示词">'+
     '<header class="tdm-batch-import-head"><div><h2>导入多批次提示词</h2>'+
-    '<div class="tdm-small">识别「批次NN｜名称」和 [全局参考] 中的四种媒体 / 提示词标签</div></div>'+
+    '<div class="tdm-small">识别「批次NN｜名称」、[待生成资产] 提示词及 [全局参考] 媒体引用</div></div>'+
     '<span class="tdm-space"></span><span class="tdm-batch-autosave-hint">关闭后自动暂存，下次批量添加时可继续编辑</span>'+
     '<button class="tdm-btn close" data-action="batch-import-cancel" aria-label="关闭">×</button></header>'+
     '<textarea class="tdm-batch-import-text" data-action="batch-import-text" spellcheck="false" '+
