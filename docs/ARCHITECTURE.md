@@ -82,6 +82,16 @@ Queue 自动模式先统一执行 `prepare_document_for_queue()`，冻结本次�
 
 TerryDirector 前端的静态上游追踪会识别 TerryTools `TerryWireBusUnpack` / `TerryWirelessBusUnpack` 的虚拟输出解析接口。分辨率等静态参数即使经过 TerryTools 总线，也应回溯到真实来源节点（例如 `ResolutionSelector`），而不是在 Bus-Out 处停止。TerryTools 对 Bus-Out 暴露版本化的 `__terryBusResolveOutput(slot)` 接口；TerryDirector 同时保留对通用 `resolveVirtualOutput(slot)` 的兼容。总线重新接线时会触发循环输出检查刷新。
 
+## 公共资产选择器
+
+`web/td_asset_picker.js` 导出 `openAssetPicker({fetchApi, kind, onSelect, onClose?, source?, parent?})`，返回可幂等调用的 `{close}`。窗口自带样式、input/output 来源切换、按媒体类型过滤、搜索、分页、上传及关闭期间的异步回调保护，不依赖预演台状态。`onSelect` 接收 `{path, name, kind, source, preview_url}`；调用方负责写入自己的节点或任务。预演台通过 `openPreviewAssetPicker()` 接入单任务与批量参考槽位。
+
+`director_assets.py` 统一媒体扩展名、目录约束、列表和导入，`server_routes.py` 提供 `GET /terrydirector/api/assets`（`source/kind/q/offset/limit`）及 `POST /terrydirector/api/assets/import`（`source/path/kind`）。列表按子目录相对路径搜索，默认每页 150 项；目录快照共享缓存 10 秒，搜索和分页复用快照，`refresh=1` 强制重扫，上传与导入立即使 input 快照失效。output 文件选中后以流式复制导入 `input/TerryDirector/imported`，使用唯一文件名，返回 input 相对路径，兼容只接受 input 的现有工作流加载器；原 output 文件保持原样。磁盘扫描及复制在线程中执行，不占用 HTTP 事件循环。原 `input-files` 与 `upload` 接口保留兼容。
+
+图片及视频记录额外返回 `thumbnail_url`，原始 `preview_url` 与绑定路径保持独立。`GET /terrydirector/api/assets/thumbnail` 按需生成最长边 384 像素的 WebP，保留比例、透明度及 EXIF 朝向；JPEG 优先 draft 降采样，动画取首帧，小图不放大。缓存位于 ComfyUI user 目录的 `TerryDirector/asset_thumbnails`，按源路径、修改时间与大小区分版本；磁盘命中不解码原图，最多同时生成两张，同一源并发请求合并，支持 ETag。视频通过 FFmpeg 仅提取第一帧并在解码端缩小，不读取整段帧序列，共享相同的 WebP 缓存、并发上限和源文件版本判定；提取有 25 秒超时，失败时前端退回播放图标，仍可打开播放器。SVG 沿用原图预览。
+
+`web/td_asset_grid.js` 提供纯 DOM 虚拟网格，只挂载可见区域及前后两行卡片，接近底部自动取下一页，保留手动「加载更多」。窗口关闭时清理滚动／尺寸监听和待执行绘制；快速搜索会取消旧列表请求。刷新按钮可立即读取外部新生成或改动的文件。视频列表卡片显示首帧缩略图，音频显示类型图标；点击后按需创建单个原生 `video/audio` 播放器（`controls`、`preload=metadata`）；预览使用原始 `preview_url`，确认「使用此资产」后才调用导入／选择回调。预览期间背景窗口 inert，关闭预览／窗口会暂停播放器、移除 src 并调用 load 释放资源，Esc 优先返回列表。播放错误保留选择入口，不强制转码。
+
 ## 兼容与维护
 
 已实测的环境、默认采样数值、原始工作流 SHA 与可信提交基线汇总在 [STABLE_BASELINES.md](STABLE_BASELINES.md)。已退休的 Base / Advanced 源码仍可通过 Git 历史的 `b751b93` 追溯；Self-Lift 通用节点保持可用。循环器是否兼容更多模型，以相应适配器的独立实测为准。

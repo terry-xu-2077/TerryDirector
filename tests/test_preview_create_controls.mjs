@@ -1,3 +1,4 @@
+import { renderPreviewPrompt } from "../web/td_preview_prompt_view.js";
 // Run: node tests/test_preview_create_controls.mjs
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
@@ -256,11 +257,11 @@ const batchMarkupState={
 };
 const createBatchRenderers=new Function("state","esc","assetCard","mediaKindLabel","mediaPreviewMarkup","PREVIEW_RESOLUTION_OPTIONS",
   "taskAspectRatio","taskResolutionInfo","resolutionOptionsMarkup",
-  "readBatchImportDraft","batchDraftDateLabel",
+  "readBatchImportDraft","batchDraftDateLabel","renderPreviewPrompt",
   source.slice(batchStart,batchEnd)+";return {batchImportMarkup,batchPromptImportMarkup};");
 const batchRendererArgs=[value=>String(value),assetCardStub,kindLabel,preview,[0.4,0.6,0.8,1,1.2,1.5,2,3,4],
   mod.taskAspectRatio,mod.taskResolutionInfo,resolutionOptionsMarkup,
-  ()=>null,()=>"" ];
+  ()=>null,()=>"",renderPreviewPrompt ];
 const batchRenderers=createBatchRenderers(batchMarkupState,...batchRendererArgs);
 const renderBatch=batchState=>createBatchRenderers(batchState,...batchRendererArgs).batchImportMarkup;
 const batchMarkup=batchRenderers.batchImportMarkup();
@@ -371,32 +372,8 @@ assert.ok(!compactRefs.includes("logical-reference.jpg"));
 assert.ok(!compactRefs.includes("人物说明不应显示"));
 assert.ok(!compactRefs.includes("physical-file-name.jpg"));
 
-const pickerStart=source.indexOf("function assetPickerMarkup() {");
-const pickerEnd=source.indexOf("function renderAssetChoices()",pickerStart);
-const renderPicker=new Function("state","esc","mediaKindLabel",
-  source.slice(pickerStart,pickerEnd)+";return assetPickerMarkup;")(
-    {assetPicker:{index:1,batchReferenceIndex:1,kind:"video",search:"motion"}},
-    value=>String(value),kind=>kind);
-const pickerMarkup=renderPicker();
-assert.ok(pickerMarkup.includes("选择video资产"));
-assert.ok(pickerMarkup.includes('data-action="upload-asset"'));
-assert.ok(pickerMarkup.includes('data-action="asset-search"'));
+await import("./test_asset_picker_integration.mjs");
 
-const chooseStart=source.indexOf("function chooseAsset(data) {");
-const chooseEnd=source.indexOf("async function uploadAsset(index)",chooseStart);
-const chooseState={assetPicker:{index:0,batchReferenceIndex:1,kind:"video"},
-  batchImport:{activeIndex:0,selectedRefIndex:0,batches:[{references:[
-    {kind:"image",path:"old.jpg"},{kind:"video",path:"old.mp4"}
-  ]}]},inputFiles:[{kind:"video",path:"new.mp4"}]};
-let chooseRenders=0;
-const choose=new Function("state","mediaKindLabel","render",
-  source.slice(chooseStart,chooseEnd)+";return chooseAsset;")(
-    chooseState,kind=>kind,()=>chooseRenders++);
-choose({path:"new.mp4"});
-assert.equal(chooseState.batchImport.batches[0].references[1].path,"new.mp4");
-assert.equal(chooseState.batchImport.selectedRefIndex,1);
-assert.equal(chooseState.assetPicker,null);
-assert.equal(chooseRenders,1);
 const removeStart=source.indexOf("function removeBatchAsset(index) {");
 const removeEnd=source.indexOf("function syncBatchAssetToOtherBatches(index) {",removeStart);
 const removeState={batchImport:{activeIndex:0,selectedRefIndex:0,batches:[{references:[

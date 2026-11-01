@@ -18,6 +18,8 @@ import {
   PREVIEW_RESOLUTION_OPTIONS,PREVIEW_RESOLUTION_DEFAULT,
   taskVideoFrameCount,taskResolutionInfo,taskAspectRatio,
 } from "./td_preview_task_parameters.js";
+import { openAssetPicker } from "./td_asset_picker.js";
+import { renderPreviewPrompt } from "./td_preview_prompt_view.js";
 import { parsePreviewBatches } from "./td_preview_batch_import.js";
 
 const START_CLASS = "TerryDirectorSelfLiftPauseResume";
@@ -319,7 +321,6 @@ function styles() {
 .tdm-create .tdm-asset .tdm-noimg small{font-size:12px;line-height:1.2;color:#8c96a5}
 .tdm-asset label{display:block;margin:5px 2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;cursor:pointer}
 .tdm-asset .tdm-chip{position:absolute;top:9px;left:9px;background:#13161bc9;color:#cfe4ff;padding:2px 5px;border-radius:4px;font-size:10px}
-.tdm-asset-picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;max-height:46vh;overflow:auto;padding:8px 0}
 .tdm-pillset{display:flex;gap:7px;margin-top:7px}
 .tdm-pillset button{flex:1;text-align:center;padding:12px 10px;border:1px solid #4c5360;border-radius:8px;
  background:#242931;color:#b7bfcb;cursor:pointer}
@@ -491,6 +492,15 @@ function styles() {
 .tdm-batch-columns{display:grid;grid-template-columns:minmax(460px,1.08fr) minmax(400px,1fr);flex:1;min-height:0;gap:18px;padding:16px 20px}
 .tdm-batch-left{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 .tdm-batch-text{width:100%;height:34%;min-height:170px;max-height:44%;resize:vertical;box-sizing:border-box;background:#14171c;color:#e4e9f1;border:1px solid #414955;border-radius:7px;padding:12px;font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto}
+.tdm-batch-text.tdm-prompt-visual{font:13px/1.85 system-ui,sans-serif;cursor:text}
+.tdm-prompt-tag{display:inline;padding:2px 7px;border:1px solid #414955;border-radius:5px;box-decoration-break:clone;-webkit-box-decoration-break:clone;font:600 12px/1.8 system-ui,sans-serif}
+.tdm-prompt-section{display:inline-block;margin:6px 0 4px;padding:0 0 0 8px;border:0;border-left:3px solid #f0b35d;border-radius:0;background:transparent;color:#f5c77e;font-size:13px}
+.tdm-prompt-shot{display:inline-block;margin:4px 0;padding:1px 0;border:0;border-bottom:1px solid #df8e7d;border-radius:0;background:transparent;color:#ffb4a1}
+.tdm-prompt-reference{background:rgba(103,154,220,.22);border-color:#607fa5;color:#d9ebff}
+.tdm-prompt-reference[data-media-kind=audio]{background:rgba(141,112,201,.24);border-color:#8071a5;color:#efe7ff}
+.tdm-prompt-reference[data-media-kind=video]{background:rgba(104,168,123,.22);border-color:#648b73;color:#e0f6e7}
+.tdm-prompt-reference[data-media-kind=prompt]{background:#44372a;border-color:#796449;color:#ffe6bf}
+.tdm-prompt-view-toggle{background:transparent;border:1px solid #414955;border-radius:5px;color:#c3d1e2;padding:3px 8px;cursor:pointer;font:inherit;white-space:nowrap}
 .tdm-batch-text:focus{outline:none;border-color:#6394d1}
 .tdm-batch-text[readonly]{resize:vertical;cursor:text;color:#d8e0eb}
 .tdm-batch-import-overlay{z-index:100040;background:rgba(0,0,0,.84)}
@@ -641,6 +651,7 @@ function close() {
   stopPreviewPlayback();
   if(state.elapsedTimer!=null){clearInterval(state.elapsedTimer);state.elapsedTimer=null;}
   closePreviewRichEditor(); state.creating = false; state.configuring = false;
+  state.assetPicker?.dialog?.close();
   state.assetPicker = null; state.batchImport = null; state.deleting = null;
   state.settingsOpen=false;state.settingsDraft=null;
   if (state.root) state.root.style.display = "none";
@@ -1189,7 +1200,6 @@ function render() {
     (state.settingsOpen ? settingsMarkup() : "") +
     (state.deleting ? deleteMarkup() : "") +
     (state.batchImport ? batchImportMarkup() : "") +
-    (state.batchImport && state.assetPicker ? assetPickerMarkup() : "") +
     (state.batchImport?.generatedPromptsOpen ? batchGeneratedPromptModalMarkup() : "");
   restoreRenderScrollPositions(state.root,scrollPositions);
   if(oldPlayer && oldKey){
@@ -1207,7 +1217,6 @@ function render() {
   bindPreviewPlaybackErrors();
   wireMediaFallback(state.root.querySelector(".tdm-assets"));
   wireMediaFallback(state.root.querySelector(".tdm-batch-ref-list"));
-  renderAssetChoices();
   installCreatePromptEditor();
 }
 function showDeleteConfirmation() {
@@ -1395,11 +1404,6 @@ function bindControls() {
         }
         state.configError="";
       });
-    } else if (action === "asset-search") {
-      control.addEventListener("input", () => {
-        if (state.assetPicker) state.assetPicker.search = control.value;
-        renderAssetChoices();
-      });
     } else if (action === "source-change") {
       control.addEventListener("change", e => {
         void changeCreateSource({}, e.target.value).catch(err => toast(err.message, "error"));
@@ -1438,6 +1442,10 @@ async function handleAction(action, data) {
       saveBatchImportDraft(state.batchImport);
       state.batchImport=null;state.assetPicker=null;return render();
     }
+    if (action === "batch-prompt-view") {
+      if(state.batchImport)state.batchImport.promptView=state.batchImport.promptView==="raw"?"visual":"raw";
+      return render();
+    }
     if (action === "batch-select") {
       const batch=state.batchImport;
       if(batch){batch.activeIndex=Number(data.index)||0;
@@ -1454,8 +1462,7 @@ async function handleAction(action, data) {
       const index=Number(data.index),ref=state.batchImport?.batches?.[state.batchImport.activeIndex]?.references?.[index];
       if(!ref)return;
       state.batchImport.selectedRefIndex=index;
-      state.assetPicker={index,batchReferenceIndex:index,kind:ref.kind||"image",search:""};
-      return render();
+      return openPreviewAssetPicker(index,true);
     }
     if (action === "batch-remove-asset") {
       removeBatchAsset(Number(data.index));
@@ -1553,11 +1560,8 @@ async function handleAction(action, data) {
     if (action === "save-config") return await saveConfig();
     if (action === "use-canvas") return await useCurrentWorkflow();
     if (action === "open-assets") {
-      const index=Number(data.index),kind=state.createDraft?.assets?.[index]?.kind||"image";
-      state.assetPicker={index,kind,search:""};return render();
+      return openPreviewAssetPicker(Number(data.index));
     }
-    if (action === "close-assets") { state.assetPicker = null; return render(); }
-    if (action === "choose-asset") return chooseAsset(data);
     if (action === "cancel-delete") { state.deleting = null; return render(); }
     if (action === "delete") return showDeleteConfirmation();
     if (action === "confirm-delete") return deleteSelectedTasks();
@@ -1569,7 +1573,6 @@ async function handleAction(action, data) {
       return await changeCreateSource({}, "task:"+state.focused);
     }
     if (action === "import-workflow") return importWorkflow();
-    if (action === "upload-asset") return uploadAsset(Number(data.index));
     if (action === "submit") return await submitCreate();
     if (action === "run-draft") return await runDraft(state.focused);
     if (action === "edit-draft") return await editDraft(state.focused);
@@ -2179,7 +2182,8 @@ function wireMediaFallback(holder) {
 }
 function assetUrl(path) {
   if (!path) return "";
-  return "/view?filename=" + encodeURIComponent(path) + "&type=input";
+  const parts=String(path).replace(/\\/g,"/").split("/"),filename=parts.pop();
+  return "/view?"+new URLSearchParams({filename,subfolder:parts.join("/"),type:"input"});
 }
 function mediaKindLabel(kind) {
   return kind==="video"?"视频":kind==="audio"?"音频":"图片";
@@ -2293,8 +2297,7 @@ function createMarkup() {
     '<button class="tdm-btn" data-action="cancel-create">取消</button>' +
     '<button class="tdm-btn primary" data-action="submit">'+
     (state.editDraftId?'保存修改':'创建任务')+'</button></footer>' +
-    '</div></div>' +
-    (state.assetPicker ? assetPickerMarkup() : "");
+    '</div></div>';
 }
 function findBatchPoolAsset(name,kind="image") {
   const wanted=String(name||"").replace(/\\/g,"/").split("/").pop().trim().toLowerCase();
@@ -2555,10 +2558,14 @@ function batchImportMarkup() {
     '<div class="tdm-batch-note">这组设置对本次创建的所有批次生效，不单独修改某个批次。</div></div>'+
     '<div class="tdm-batch-columns"><section class="tdm-batch-left">'+
     '<div class="tdm-batch-section-head"><strong>当前批次提示词原文</strong>'+
-    '<span>'+(current?esc(current.name):"尚未导入批次")+'</span></div>'+
-    '<textarea class="tdm-batch-text" readonly spellcheck="false" aria-label="当前批次提示词原文" '+
-    'placeholder="这里显示当前选中批次的完整提示词原文">'+
-    esc(current?.sourceBody||current?.body||"")+'</textarea>'+
+    '<span>'+(current?esc(current.name):"尚未导入批次")+'</span>'+
+    '<button type="button" class="tdm-prompt-view-toggle" data-action="batch-prompt-view" '+
+    'aria-label="切换提示词显示方式">'+(batch.promptView==="raw"?'可视化标签':'原文')+'</button></div>'+
+    (batch.promptView==="raw"?
+      '<textarea class="tdm-batch-text" readonly spellcheck="false" aria-label="当前批次提示词原文">'+
+      esc(current?.sourceBody||current?.body||"")+'</textarea>':
+      '<div class="tdm-batch-text tdm-prompt-visual" tabindex="0" role="document" aria-label="当前批次提示词可视化标签">'+
+      renderPreviewPrompt(current?.sourceBody||current?.body||"")+'</div>')+
     '<div class="tdm-batch-summary" data-batch-summary>'+esc(batchImportSummary())+'</div>'+
     '<div class="tdm-batch-warning" data-batch-warning>'+esc(batchImportWarning())+'</div>'+
     '<div class="tdm-batch-list" data-scroll-preserve="batch-list">'+batchListMarkup()+'</div></section>'+
@@ -2816,33 +2823,23 @@ function installCreatePromptEditor() {
     onChange:text=>{ draft.prompt=text; },
   });
 }
-function assetPickerMarkup() {
-  const picker=state.assetPicker;if(!picker)return "";
-  const label=mediaKindLabel(picker.kind||"image");
-  return '<div class="tdm-dialog" style="z-index:100040"><div class="tdm-form" role="dialog" aria-modal="true">'+
-    '<div class="tdm-modal-top"><h2>选择'+label+'资产</h2><span class="tdm-space"></span>'+
-    '<button class="tdm-btn" data-action="close-assets">×</button></div>'+
-    '<div class="tdm-actions"><input style="flex:1" data-action="asset-search" placeholder="按文件名搜索'+label+'" value="'+
-    esc(picker.search)+'"><button class="tdm-btn" data-action="upload-asset" data-index="'+
-    picker.index+'">上传'+label+'</button></div>'+
-    '<div class="tdm-asset-picker"></div></div></div>';
-}
-function renderAssetChoices() {
-  if (!state.assetPicker) return;
-  const holder = state.root?.querySelector(".tdm-asset-picker");
-  if (!holder) return;
-  const kind=state.assetPicker.kind||"image";
-  const matches=state.inputFiles.filter(f=>f.kind===kind&&
-    f.path.toLowerCase().includes(state.assetPicker.search.toLowerCase())).slice(0,150);
-  holder.innerHTML=matches.map(f=>assetCard(f.path,f.name,
-    'data-action="choose-asset" data-path="'+esc(f.path)+'"',false,kind)).join("")||
-    '<div class="tdm-small">没有匹配的'+mediaKindLabel(kind)+'资产</div>';
-  wireMediaFallback(holder);
-  holder.querySelectorAll('[data-action="choose-asset"]').forEach(button =>
-    button.addEventListener("click", e => {
-      e.preventDefault(); e.stopPropagation();
-      chooseAsset(button.dataset);
-    }));
+function openPreviewAssetPicker(index,batch=false) {
+  state.assetPicker?.dialog?.close();
+  const slot=batch?state.batchImport?.batches?.[state.batchImport.activeIndex]?.references?.[index]:
+    state.createDraft?.assets?.[index];
+  if(!slot)return;
+  const owner=batch?state.batchImport:state.createDraft;
+  const picker={index,kind:slot.kind||"image",...(batch?{batchReferenceIndex:index}:{})};
+  state.assetPicker=picker;
+  picker.dialog=openAssetPicker({
+    fetchApi:(...args)=>api.fetchApi(...args),kind:picker.kind,
+    onSelect:file=>{
+      if(state.assetPicker!==picker || owner!==(batch?state.batchImport:state.createDraft))return;
+      if(!state.inputFiles.some(item=>item.path===file.path))state.inputFiles.push(file);
+      chooseAsset(file);
+    },
+    onClose:()=>{if(state.assetPicker===picker)state.assetPicker=null;},
+  });
 }
 function chooseAsset(data) {
   const picker=state.assetPicker;
@@ -2862,41 +2859,6 @@ function chooseAsset(data) {
     slot.value=data.path;
   }
   state.assetPicker=null;render();
-}
-async function uploadAsset(index) {
-  const picker=state.assetPicker;
-  const batchReferenceIndex=Number.isInteger(picker?.batchReferenceIndex)?picker.batchReferenceIndex:null;
-  const batchRef=batchReferenceIndex==null?null:
-    state.batchImport?.batches?.[state.batchImport.activeIndex]?.references?.[batchReferenceIndex];
-  const slot=batchReferenceIndex==null?state.createDraft?.assets?.[index]:batchRef;
-  if(!slot)return;
-  const kind=slot.kind||"image",fileInput=document.createElement("input");
-  fileInput.type="file";
-  fileInput.accept={
-    image:".png,.jpg,.jpeg,.webp,.bmp,.gif,.tif,.tiff,.svg",
-    video:".mp4,.mov,.mkv,.webm,.avi,.m4v",
-    audio:".wav,.mp3,.flac,.ogg,.m4a,.aac,.opus",
-  }[kind]||"";
-  fileInput.onchange=async()=>{
-    const file=fileInput.files?.[0];if(!file)return;
-    try{
-      const form=new FormData();form.append("file",file,file.name);
-      const response=await api.fetchApi("/terrydirector/api/upload",{method:"POST",body:form});
-      const data=await response.json();
-      if(!response.ok||!data.path||data.kind!==kind)
-        throw Error(data.error||"上传失败，文件类型与"+mediaKindLabel(kind)+"槽位不匹配");
-      state.inputFiles.push(data);
-      if(batchReferenceIndex==null){
-        slot.value=data.path;
-      }else{
-        slot.path=data.path;
-        state.batchImport.selectedRefIndex=batchReferenceIndex;
-      }
-      state.assetPicker=null;render();
-      toast(mediaKindLabel(kind)+"已导入："+data.name);
-    }catch(error){toast(error.message,"error");}
-  };
-  fileInput.click();
 }
 async function importWorkflow() {
   const file = document.createElement("input");

@@ -12,14 +12,10 @@ import folder_paths
 from aiohttp import web
 from server import PromptServer
 
+from .director_assets import SUPPORTED, EXT_TO_KIND, asset_view_url
+
 PLUGIN_ROOT = Path(__file__).resolve().parent
 INPUT_ROOT = Path(folder_paths.get_input_directory()).resolve()
-SUPPORTED = {
-    "image": {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff", ".svg"},
-    "video": {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"},
-    "audio": {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".opus"},
-}
-EXT_TO_KIND = {ext: kind for kind, extensions in SUPPORTED.items() for ext in extensions}
 
 
 def _within(root: Path, candidate: Path) -> bool:
@@ -49,8 +45,7 @@ def _safe_input(relative: str) -> Path:
 
 
 def _view_url(relative: str) -> str:
-    from urllib.parse import quote
-    return f"/view?filename={quote(relative)}&type=input"
+    return asset_view_url(relative)
 
 
 @PromptServer.instance.routes.get("/terrydirector/editor")
@@ -436,6 +431,46 @@ async def terrydirector_input_files(request: web.Request) -> web.Response:
     return web.json_response({"files": rows})
 
 
+@PromptServer.instance.routes.get("/terrydirector/api/assets")
+async def terrydirector_assets(request: web.Request) -> web.Response:
+    from .director_assets import list_assets
+    try:
+        result = await asyncio.to_thread(
+            list_assets, request.query.get("source", "input"), request.query.get("kind", ""),
+            request.query.get("q", ""), int(request.query.get("offset", "0")),
+            int(request.query.get("limit", "150")), request.query.get("refresh") == "1")
+        return web.json_response(result, headers={"Cache-Control": "no-store"})
+    except (ValueError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/assets/import")
+async def terrydirector_asset_import(request: web.Request) -> web.Response:
+    from .director_assets import import_asset
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise ValueError("无效的资产参数")
+        result = await asyncio.to_thread(import_asset, str(data.get("source", "")),
+                                         str(data.get("path", "")), str(data.get("kind", "")))
+        return web.json_response(result)
+    except (ValueError, OSError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
+@PromptServer.instance.routes.get("/terrydirector/api/assets/thumbnail")
+async def terrydirector_asset_thumbnail(request: web.Request) -> web.StreamResponse:
+    from .director_assets import asset_thumbnail
+    from PIL import Image
+    try:
+        path = await asyncio.to_thread(asset_thumbnail, request.query.get("source", "input"),
+                                       request.query.get("path", ""))
+        return web.FileResponse(path, headers={"Content-Type": "image/webp",
+                                               "Cache-Control": "private, max-age=300"})
+    except (ValueError, OSError, Image.DecompressionBombError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+
+
 @PromptServer.instance.routes.get("/terrydirector/api/video-info")
 async def terrydirector_video_info(request: web.Request) -> web.Response:
     """Inspect a selected ComfyUI input video, without exposing other paths."""
@@ -650,6 +685,8 @@ async def terrydirector_upload(request: web.Request) -> web.Response:
             handle.write(chunk)
 
     relative = target.relative_to(INPUT_ROOT).as_posix()
+    from .director_assets import invalidate_asset_catalog
+    invalidate_asset_catalog("input")
     return web.json_response({
         "path": relative,
         "name": target.name,
