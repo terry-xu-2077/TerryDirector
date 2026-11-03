@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const source=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 assert.doesNotThrow(()=>new Function(source.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 
 const begin=source.indexOf("function batchGeneratedPromptEntries() {");

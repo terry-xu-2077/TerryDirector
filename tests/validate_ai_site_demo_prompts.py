@@ -9,10 +9,10 @@ import json
 import re
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parent
-ROOT = BASE.parent
-WORKFLOW = BASE / "TerryDirector_AI_3clips_0.2MP.json"
-DRAFTS = BASE / "TerryDirector_AI_3clips_demo_prompts.json"
+ROOT = Path(__file__).resolve().parents[1]
+BASE = ROOT / "src" / "demo"
+WORKFLOW = BASE / "ai_original_workflow.json"
+DRAFTS = BASE / "ai_enhanced_prompts.json"
 SKILL = ROOT / "ai_skills" / "h3-prompt-writing" / "SKILL.md"
 
 SECTIONS = (
@@ -42,7 +42,7 @@ def validate() -> dict:
     assert demo["version"] == 1
     assert demo["skill"] == "h3-prompt-writing" and demo["mode"] == "Ref2VA"
     assert "not an actual Qwen model output" in demo["provenance"]
-    assert demo["workflow"] == "examples/" + WORKFLOW.name
+    assert demo["workflow"] == WORKFLOW.relative_to(ROOT).as_posix()
     assert demo["globalMode"] == "global-constraints-only"
     global_ai = demo["globalAiPrompt"]
     assert all(key in global_ai for key in (

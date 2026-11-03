@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const source=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 assert.doesNotThrow(()=>new Function(source.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 
 const helperStart=source.indexOf("function captureRenderScrollPositions(root) {");
@@ -44,7 +44,7 @@ helpers.restoreRenderScrollPositions({querySelectorAll:()=>[]},saved);
 helpers.restoreRenderScrollPositions(null,saved);
 
 assert.ok(source.includes('class="tdm-left" data-scroll-preserve="task-list"'));
-assert.ok(source.includes('class="tdm-batch-list" data-scroll-preserve="batch-list"'));
+assert.ok(source.includes('data-scroll-preserve="batch-prompt-'));
 const renderStart=source.indexOf("function render() {");
 const renderEnd=source.indexOf("function showDeleteConfirmation()",renderStart);
 const renderSource=source.slice(renderStart,renderEnd);

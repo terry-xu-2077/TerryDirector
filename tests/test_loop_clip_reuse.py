@@ -17,7 +17,7 @@ PREFIX = "_terrydirector_clip_reuse_test"
 
 
 def load(path, target):
-    spec = importlib.util.spec_from_file_location(target, ROOT / path)
+    spec = importlib.util.spec_from_file_location(target, ROOT / "nodes" / path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[target] = module
     spec.loader.exec_module(module)
@@ -27,7 +27,7 @@ def load(path, target):
 class TestPhysicalClips(unittest.TestCase):
     def setUp(self):
         self._package = types.ModuleType(PREFIX)
-        self._package.__path__ = [str(ROOT)]
+        self._package.__path__ = [str(ROOT / "nodes")]
         sys.modules[PREFIX] = self._package
         self.core = load("director_core.py", PREFIX + ".director_core")
         load("director_ai_core.py", PREFIX + ".director_ai_core")
@@ -81,7 +81,7 @@ class TestPhysicalClips(unittest.TestCase):
         import uuid
         from types import SimpleNamespace
 
-        source = (ROOT / "director_loop.py").read_text("utf-8")
+        source = (ROOT / "nodes" / "director_loop.py").read_text("utf-8")
         tree = ast.parse(source)
         node = next(item for item in tree.body
                     if isinstance(item, ast.FunctionDef) and item.name == "_plan_items")
@@ -187,7 +187,7 @@ class TestSavedMovieDiscovery(unittest.TestCase):
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
         package = types.ModuleType(PREFIX + "_lookup")
-        package.__path__ = [str(ROOT)]
+        package.__path__ = [str(ROOT / "nodes")]
         sys.modules[package.__name__] = package
         self.module_name = package.__name__ + ".director_loop_reuse"
         self.reuse = load("director_loop_reuse.py", self.module_name)

@@ -1,4 +1,4 @@
-"""Disk-backed SelfLift review task inventory. Never reads tensors for the UI."""
+"""Disk-backed Preview Stage task inventory. Never reads tensors for the UI."""
 from __future__ import annotations
 
 import json
@@ -10,12 +10,53 @@ from pathlib import Path
 
 import folder_paths
 
-from .director_selflift_checkpoint import list_checkpoints, read_manifest
-
 _ID = re.compile(r"^[0-9a-f]{32}$")
 _PREVIEW_EXT = {"video/mp4": ".mp4", "image/webp": ".webp", "image/jpeg": ".jpg"}
 _MAX_PREVIEW = 48 * 1024 * 1024
 _MAX_METADATA = 5 * 1024 * 1024
+
+
+def _task_folder(checkpoint_id: str) -> Path:
+    if not isinstance(checkpoint_id, str) or not _ID.fullmatch(checkpoint_id):
+        raise ValueError("非法检查点 ID")
+    root = (Path(folder_paths.get_output_directory()) / "TerryDirector" / "checkpoints").resolve()
+    folder = root / checkpoint_id
+    if folder.is_symlink() or folder.resolve().parent != root:
+        raise ValueError("任务目录异常")
+    return folder
+
+
+def read_manifest(checkpoint_id: str) -> dict:
+    """Read task identity for inventory/media, without interpreting sampler state.
+
+    Execution validates LATENT format separately in director_latent_checkpoint.
+    Existing videos remain readable regardless of which engine created them.
+    """
+    path = _task_folder(checkpoint_id) / "manifest.json"
+    if path.is_symlink() or path.stat().st_size > 16 * 1024 * 1024:
+        raise ValueError("任务清单文件异常")
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("checkpoint_id") != checkpoint_id:
+        raise ValueError("任务清单 ID 不匹配")
+    return value
+
+
+def list_checkpoints() -> list[dict]:
+    """Index existing task files; never load or select a sampling engine."""
+    root = Path(folder_paths.get_output_directory()) / "TerryDirector" / "checkpoints"
+    if not root.is_dir():
+        return []
+    rows = []
+    for folder in root.iterdir():
+        if not folder.is_dir() or folder.is_symlink() or not _ID.fullmatch(folder.name):
+            continue
+        try:
+            value = read_manifest(folder.name)
+            if (folder / "state.safetensors").is_file():
+                rows.append(value)
+        except (OSError, ValueError, TypeError):
+            continue
+    return rows
 
 
 def safe_task_filename(value: object, fallback: str = "TerryDirector") -> str:
@@ -83,10 +124,10 @@ def save_preview_template(value: dict) -> None:
         raise ValueError("API 工作流节点数据不完整")
     pause = str(value.get("pause_node_id"))
     if not any(str(n.get("id")) == pause and
-               n.get("type") == "TerryDirectorSelfLiftPauseResume"
+               n.get("type") == "TerryDirectorPauseResume"
                for n in workflow["nodes"] if isinstance(n, dict)):
         raise ValueError("工作流未选择有效的暂停/继续节点")
-    if api_prompt.get(pause, {}).get("class_type") != "TerryDirectorSelfLiftPauseResume":
+    if api_prompt.get(pause, {}).get("class_type") != "TerryDirectorPauseResume":
         raise ValueError("可执行工作流缺少所选暂停节点")
     h3_id=value.get("h3_node_id")
     if h3_id is not None:
@@ -140,13 +181,10 @@ def save_preview_template(value: dict) -> None:
 
 
 def checkpoint_dir(checkpoint_id: str) -> Path:
-    if not isinstance(checkpoint_id, str) or not _ID.fullmatch(checkpoint_id):
-        raise ValueError("非法检查点 ID")
-    path = (Path(folder_paths.get_output_directory()) / "TerryDirector" /
-            "checkpoints" / checkpoint_id)
+    path = _task_folder(checkpoint_id)
     if not path.joinpath("state.safetensors").is_file():
         raise FileNotFoundError("检查点文件不存在")
-    # Confirm the ID matches a readable trusted checkpoint manifest.
+    # File management validates identity, not the private sampling format.
     read_manifest(checkpoint_id)
     return path
 
@@ -165,6 +203,7 @@ def list_tasks() -> list[dict]:
             pass
         from .director_preview_highres import validated_video_result
         highres = validated_video_result(details.get("highres_video"))
+        lowres = validated_video_result(details.get("lowres_video"))
         review_name = _safe_media_filename(
             details.get("review_video_filename"), "review.mp4", {".mp4"})
         sampling_name = _safe_media_filename(
@@ -172,7 +211,7 @@ def list_tasks() -> list[dict]:
         sampling_candidates = ([sampling_name] if sampling_name else []) + [
             "sampling_preview.mp4", "sampling_preview.webp", "sampling_preview.jpg"]
         media = {
-            "decoded": review_name if (folder / review_name).is_file() else None,
+            "decoded": lowres["filename"] if lowres else (review_name if (folder / review_name).is_file() else None),
             "sampling": next((name for name in sampling_candidates
                               if (folder / name).is_file()), None),
             "highres": highres["filename"] if highres else None,
@@ -180,9 +219,6 @@ def list_tasks() -> list[dict]:
         if cid in by_checkpoint:
             draft = by_checkpoint[cid]
             draft["media"] = media
-            draft["low_video_shape"] = item.get("low_video_shape")
-            draft["target_video_shape"] = item.get("target_video_shape")
-            draft["transition_step"] = item.get("transition_step")
             draft["metadata"]["has_workflow"] = True
             draft["metadata"]["preview_error"] = details.get("preview_error")
             draft["metadata"]["preview_warning"] = details.get("preview_warning")
@@ -194,6 +230,7 @@ def list_tasks() -> list[dict]:
         rows.append({
             "id": cid, "kind": "checkpoint", "status": details.get("lifecycle_status", "low_complete"),
             "name": item.get("name", ""), "created_at": item.get("created_at"),
+            "duration_seconds": details.get("duration_seconds"),
             "low_started_at": details.get("low_started_at"),
             "low_finished_at": details.get("low_finished_at") or item.get("created_at"),
             "high_started_at": details.get("high_started_at"),
@@ -201,8 +238,7 @@ def list_tasks() -> list[dict]:
             "queued_stage": details.get("queued_stage"),
             "error": details.get("error"), "checkpoint_id": cid,
             "prompt_id": details.get("highres_prompt_id"),
-            "seed": item.get("seed", ""), "transition_step": item.get("transition_step"),
-            "low_video_shape": item.get("low_video_shape"), "target_video_shape": item.get("target_video_shape"),
+            "seed": item.get("seed", ""),
             "media": media, "metadata": {
                 "workflow_name": details.get("workflow_name", ""),
                 "overrides": details.get("overrides", []),
@@ -232,12 +268,12 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
                "prompt_binding", "seed_binding", "preview_type", "sampling_preview_enabled",
                "vae_decode_enabled", "h3_node_id", "h3_properties", "api_prompt", "pause_target",
                "highres_target", "decoded_target", "seed_min", "seed_max", "draft_id",
-               "duration_seconds", "highres_megapixels",
+               "duration_seconds", "highres_megapixels", "video_parameter_overrides",
                "lifecycle_status", "queued_stage", "low_started_at", "low_finished_at",
                "high_started_at", "high_finished_at", "error", "preview_error",
                "preview_warning", "preview_saved_step", "preview_total_steps",
                "highres_video", "highres_prompt_id", "sampling_video_filename",
-                "review_video_filename"}
+                "review_video_filename", "lowres_video", "lowres_prompt_id"}
     safe = {k: v for k, v in metadata.items() if k in allowed}
     # The pause node may have written native preview status before the frontend
     # posts workflow metadata. Preserve that status across subsequent writes.
@@ -247,7 +283,7 @@ def save_metadata(checkpoint_id: str, metadata: dict) -> None:
         previous = {}
     for key in ("preview_error", "preview_warning", "preview_saved_step",
                 "preview_total_steps", "sampling_video_filename",
-                "review_video_filename"):
+                "review_video_filename", "lowres_video", "lowres_prompt_id"):
         if key not in safe and key in previous:
             safe[key] = previous[key]
     if not isinstance(safe.get("overrides", []), list):
@@ -336,6 +372,10 @@ def media_path(checkpoint_id: str, kind: str) -> Path:
         except (FileNotFoundError, OSError, ValueError, TypeError):
             metadata = {}
     if kind == "decoded":
+        from .director_preview_highres import validated_video_result, highres_video_path
+        lowres = validated_video_result(metadata.get("lowres_video"))
+        if lowres:
+            return highres_video_path(lowres)
         filename = _safe_media_filename(
             metadata.get("review_video_filename"), "review.mp4", {".mp4"})
         path = folder / filename
@@ -373,20 +413,24 @@ def checkpoint_ids_in_queue(queue_items: list, selected_ids: set[str], *,
             inputs = node.get("inputs", {})
             if not isinstance(inputs, dict):
                 continue
-            if running and kind in ("TerryDirectorSelfLiftPauseResume",
-                                    "TerryDirectorSaveLowresCheckpoint"):
-                mode = inputs.get("mode")
-                if mode == "暂停并保存" or kind == "TerryDirectorSaveLowresCheckpoint":
-                    occupied.add("*")
-            if kind == "TerryDirectorSelfLiftPauseResume":
-                checkpoint_id = inputs.get("checkpoint_id")
-                if isinstance(checkpoint_id, str) and checkpoint_id in selected_ids:
+            if running and kind == "TerryDirectorPauseResume" and inputs.get("mode") == "暂停并保存":
+                occupied.add("*")
+            # File ownership is independent of sampler classes. Protect IDs in
+            # ordinary inputs, custom checkpoint objects and task-choice labels.
+            def references(value):
+                if isinstance(value, str):
+                    return [value]
+                if isinstance(value, dict):
+                    return [text for item in value.values() for text in references(item)]
+                if isinstance(value, (tuple, list)):
+                    return [text for item in value for text in references(item)]
+                return []
+            values = references(inputs)
+            for checkpoint_id in selected_ids:
+                token = re.compile(r"(?<![0-9a-f])(?:" + re.escape(checkpoint_id) +
+                                   "|" + re.escape(checkpoint_id[:8]) + r")(?![0-9a-f])")
+                if any(token.search(value) for value in values):
                     occupied.add(checkpoint_id)
-            elif kind == "TerryDirectorReadLowresCheckpoint":
-                task_name = str(inputs.get("task") or "")
-                for cid in selected_ids:
-                    if cid[:8] in task_name:
-                        occupied.add(cid)
     return occupied
 
 
@@ -419,3 +463,93 @@ def delete_checkpoints(checkpoint_ids: list[str]) -> list[str]:
         shutil.rmtree(folder)
         deleted.append(checkpoint_id)
     return deleted
+
+
+def prepare_low_rerun(task_id: str, seed: str, *, queue,
+                      legacy_snapshot: dict | None = None) -> dict:
+    """Discard a completed low-res result and retain a durable task to rerun.
+
+    Queue and draft locks cover validation, deletion and snapshot replacement.
+    Remove the replaced low video as well; external high finals stay intact.
+    """
+    import uuid
+    from . import director_preview_draft_store as drafts
+
+    if queue is None or not hasattr(queue, "mutex"):
+        raise ValueError("无法读取 ComfyUI 任务队列，不能重跑")
+    with queue.mutex, drafts._LOCK:
+        is_draft = isinstance(task_id, str) and task_id.startswith("draft_")
+        if is_draft:
+            old = drafts.get_draft(task_id)
+            value = dict(old)
+            checkpoint_id = old.get("checkpoint_id")
+            draft_id = task_id
+        else:
+            old = load_metadata(task_id)
+            if not isinstance(legacy_snapshot, dict):
+                raise ValueError("旧任务缺少可执行的工作流快照")
+            value = dict(legacy_snapshot)
+            manifest = read_manifest(task_id)
+            value["name"] = manifest.get("name") or value.get("name")
+            value["created_at"] = manifest.get("created_at") or drafts._now()
+            checkpoint_id = task_id
+            draft_id = "draft_" + uuid.uuid4().hex
+        status = old.get("status") if is_draft else old.get("lifecycle_status", "low_complete")
+        if status not in ("low_complete", "high_complete") or old.get("queued_stage"):
+            raise ValueError("只有已完成且未排队的任务可以重跑低清")
+        if not checkpoint_id:
+            raise ValueError("任务没有可替换的低清检查点")
+        for row in drafts.list_drafts():
+            if row["id"] != draft_id and row.get("checkpoint_id") == checkpoint_id:
+                raise ValueError("检查点属于其他预演任务，请刷新后从对应任务重跑")
+        running, pending = queue.get_current_queue_volatile()
+        occupied = checkpoint_ids_in_queue(running, {checkpoint_id})
+        occupied.update(checkpoint_ids_in_queue(pending, {checkpoint_id}))
+        prompt_id = old.get("prompt_id") if is_draft else old.get("highres_prompt_id")
+        if occupied or any(isinstance(item, (tuple, list)) and len(item) > 1 and
+                           prompt_id and item[1] == prompt_id
+                           for item in [*running, *pending]):
+            raise ValueError("该任务正在运行或已加入队列，请等待结束后再重跑")
+        from .director_preview_highres import validated_video_result, highres_video_path
+        old_metadata = load_metadata(checkpoint_id)
+        low_video = validated_video_result(old_metadata.get("lowres_video"))
+        low_path = highres_video_path(low_video) if low_video else None
+        # Cached SaveVideo results can be shared. Do not remove another task's
+        # exact output, or a file also recorded as a final high-resolution video.
+        if low_video:
+            base = checkpoint_dir(checkpoint_id).parent
+            for task_file in base.glob("*/task.json"):
+                try:
+                    other = json.loads(task_file.read_text(encoding="utf-8"))
+                    shared_low = task_file.parent.name != checkpoint_id and (
+                        validated_video_result(other.get("lowres_video")) == low_video)
+                    if shared_low or validated_video_result(other.get("highres_video")) == low_video:
+                        low_path = None
+                        break
+                except (OSError, ValueError, TypeError):
+                    continue
+        value["seed"] = str(seed)
+        drafts._validate_content(value)
+        for field in ("error", "highres_video", "highres_prompt_id", "lowres_video", "lowres_prompt_id", "preview_error",
+                      "preview_warning", "sampling_preview", "decoded_preview"):
+            value.pop(field, None)
+        value.update(id=draft_id, status="low_pending", queued_stage=None,
+                     checkpoint_id=None, prompt_id=None, updated_at=drafts._now(),
+                     low_started_at=None, low_finished_at=None,
+                     high_started_at=None, high_finished_at=None)
+        raw = json.dumps(value, ensure_ascii=False)
+        if len(raw.encode("utf-8")) > drafts._MAX_DRAFT:
+            raise ValueError("预演任务快照超过 15 MB")
+        path = drafts._path(draft_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stage = path.with_suffix(".rerun-" + uuid.uuid4().hex + ".partial")
+        try:
+            # Finish validation and disk staging before removing any old result.
+            stage.write_text(raw, encoding="utf-8")
+            delete_checkpoints([checkpoint_id])
+            if low_path is not None:
+                low_path.unlink(missing_ok=True)
+            stage.replace(path)
+        finally:
+            stage.unlink(missing_ok=True)
+        return {"id": draft_id, "status": "low_pending"}

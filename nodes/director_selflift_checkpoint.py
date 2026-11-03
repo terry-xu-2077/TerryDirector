@@ -180,3 +180,50 @@ def load_checkpoint(checkpoint_id: str) -> dict:
              if "mask_0" in tensors and "mask_1" in tensors else None)
     return dict(manifest=manifest, sigmas=sigmas, state=pairs["state"],
                 clean=pairs["clean"], source=pairs["source"], masks=masks)
+
+
+def save_checkpoint_preview(checkpoint_id, low_clean, tiny_vae, duration_seconds):
+    """Best-effort preview belonging to the standalone transition checkpoint."""
+    if not tiny_vae or tiny_vae == "none":
+        return False
+    import logging
+    from types import SimpleNamespace
+    from .director_preview_native import save_native_video
+    from .director_preview_task_store import safe_task_filename
+    folder = _directory(checkpoint_id)
+
+    def load_metadata(_):
+        try:
+            value = json.loads((folder / "task.json").read_text(encoding="utf-8"))
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def save_metadata(_, patch):
+        value = {**load_metadata(checkpoint_id), **patch}
+        stage = folder / "task.partial"
+        stage.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+        stage.replace(folder / "task.json")
+
+    def checkpoint_dir(_):
+        read_manifest(checkpoint_id)
+        if not (folder / "state.safetensors").is_file():
+            raise FileNotFoundError("检查点文件不存在")
+        return folder
+
+    store = SimpleNamespace(checkpoint_dir=checkpoint_dir, read_manifest=read_manifest,
+                            load_metadata=load_metadata, save_metadata=save_metadata,
+                            safe_task_filename=safe_task_filename)
+    try:
+        video = _streams(low_clean, "预览")[0]
+        save_native_video(checkpoint_id, video, tiny_vae=tiny_vae,
+                          duration_seconds=duration_seconds, checkpoint_store=store)
+        save_metadata(checkpoint_id, {"preview_error": None, "preview_warning": None})
+        return True
+    except Exception as exc:
+        logging.exception("[TerryDirector] 检查点预览生成失败，缓存保留")
+        try:
+            save_metadata(checkpoint_id, {"preview_error": "原生预览失败：" + str(exc)[:900]})
+        except OSError:
+            logging.exception("[TerryDirector] 无法记录预览错误")
+        return False

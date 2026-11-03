@@ -135,7 +135,37 @@ git show a3348dc:tests/test_selflift_internal.py
 
 ## 分阶段 SelfLift 审片工作流基线（2026-10-22）
 
+当前示例③、④已改用独立低清／高清采样节点与通用 LATENT 暂停节点，低清和高清分别设置步数。下列耗时及用户确认属于改接前的历史工作流；新链路的 CPU 回归及 512×288 实际 GPU 数值对照见下方 2026-11-03 记录；尚未重做原分辨率的 GPU 画质／性能验收，不沿用历史耗时作为新链路的测量结果。
+
 - 默认示例：`examples/TerryDirector_SelfLift_03_Pause_Continue.json`；低清审片约 0.2 MP（608×352），高清目标约 0.8 MP（1216×672），124 帧。
 - 模型栈：`minimax_h3_fl2va_bf16.safetensors` + `qwen3vl_32b_minimax_h3_int8_convrot.safetensors`；视频 VAE INT8 ConvRot、音频 VAE FP32。
 - 采样：固定 seed=8、CFG=1；`BasicScheduler(simple,8)` → `H3SigmaRefiner(1,0.7,0,cosine)` → `SplitSigmas(step=6)`；H3 3D Latent Upscaler BF16；高清空间分块默认关闭。
 - 用户实测该对齐工作流一次高清任务显示 `Prompt executed in 160.42 seconds`，并确认画面正常、耗时较先前任务短。此为单次用户实测，不是受控基准，也不代表不同硬件或配置的速度承诺。
+
+## 分拆 SelfLift 与 Avatar 数值对照（2026-11-03）
+
+对照本机 fork `selflift-Avatar` 合并提交 `41289a62828d4fc6b87192a5b4711a8a139bfa37`。分拆节点现原样切分完整 SIGMAS：低清 K 次、高清 N−K 次，不对后段插值；末次低清 callback 的 x/x0 原样缓存，过渡保留低清音频缩放与 CONST noise_scale。v1 分拆过渡缓存须重新生成低清；通用暂停节点仍无种子控件或种子缓存职责。
+
+RTX 3090、Torch 2.11.0+cu130，Cobijada H3 Hybrid 精炼 INT8、32B INT8 ConvRot CLIP、BF16 3D Upscaler、512×288、seed=123456、CFG=1、simple 8 步、rho=0、关闭空间分块：22 帧（6+2）、124 帧（5+3，37 个 latent 时间帧，实际触发双时间窗口放大）及短片磁盘恢复续采，最终视频／音频 LATENT 均与 Avatar 逐值相同，最大绝对误差 0。短片开启手动 4 块空间分块（低清全幅参考、6 patch overlap）后也逐值相同；权重在 GPU 计算再转 CPU 拼接，避免跨设备舍入差异。CPU 原生 Euler 对照也逐值比较每步状态，覆盖不同切分、batch_index、软 mask、保留音频、不同高清音频 shift、磁盘恢复；放大器同权重短／长片、batch 1/2、注意力开关均逐值相同。
+
+机器可读结果、实际参数与 Tensor SHA256：`ComfyUI/output/TerryDirector/reports/selflift_avatar_parity_20261103.json`。这是本机相同配置下、VAE 解码之前的音画 LATENT 对照；不扩展为任意硬件／模型或 Avatar 像素 VAE 锚定或 global 实验模式的保证。历史 0.8／2 MP 性能与用户画质验收仍按上方原记录理解。
+
+### 高清直接接宽高（2026-11-03）
+
+分拆采样的 v3 接口改为低清按输入 LATENT 实际尺寸采样（不再使用 lowres_scale），高清接目标 width/height，继承低清时间／音频。示例③④移除独立 EmptyMiniMaxH3LatentAV，参考节点的 LATENT 直连低清，分辨率选择器高清输出直连高清；旧 v1/v2 分拆缓存需要重新生成低清。
+
+同上本机模型栈，124 帧、低清 256×128→高清 512×288、6+2 步、手动 4 块空间分块，最终视频／音频 LATENT 与 Avatar 再次逐值相同，最大误差 0。低清尺寸与参考实现一致是此对照的条件；低清 mask／原图向高清的保留内容按空间缩放定义，不能反推已丢失的高清原图细节。记录：`ComfyUI/output/TerryDirector/reports/selflift_explicit_size_20261103.json`。
+
+### 三份 SelfLift 示例重写（2026-11-03）
+
+仅保留低清、高清、暂停继续三份 SelfLift 示例，移除旧④。按当前控件顺序重建 JSON，种子和整数控件均保留前端固定值选项，浏览器实际导入三份后确认 CFG=1、目标宽高与放大器／分块下拉值无错位。此轮初版使用专用低清审片保存节点；随后改为原生 CreateVideo → SaveVideo，低清视频由预演台按确切执行编号与保存终点关联。继续执行通过部分执行目标排除低清支路。
+
+RTX 3090 小尺寸实机验证：22 帧，低清 256×128、高清 512×288；三条路径均成功，三个 MP4 均可解码画面并包含音轨。暂停继续测试将上游 low_steps 改成不可能执行的 10000，仍从已有缓存成功生成高清，证明该分支没有重跑低清。测试覆盖当前图结构；默认 BF16 模型及 0.8 MP 目标的性能未作为本轮测量。记录：`ComfyUI/output/TerryDirector/reports/selflift_examples_rewrite_20261103.json`。
+
+原生 SaveVideo 支路验收：22 帧低清 256×128、高清 512×288 均成功并含音轨，预演台媒体接口能直接读取原生输出。Windows 子目录分隔符归一化；低清引用在高清提交后保留。高清部分执行只产生暂停节点与高清 SaveVideo 输出，上游 low_steps=10000 未触发。记录：`ComfyUI/output/TerryDirector/reports/native_savevideo_acceptance_20261103.json`。
+
+### 预演台与原生工作流执行等价性（2026-11-03）
+
+RTX 3090、Cobijada H3 Hybrid 精炼 INT8，原生 SamplerCustom / Euler 两段各 2 步、seed=123456、CFG=1、256×128、22 帧。工作流不含 SelfLift 节点；分别实际重采样直接执行及预演台编译的暂停／磁盘恢复继续路径。两段音视频 LATENT 均逐值相同，最大绝对误差 0；原生 SaveVideo 文件解码后的 RGB 帧和 PCM 音轨逐字节相同。另行去掉 taeh3 实时预览模型包装再次执行，LATENT、画面及音轨仍完全相同。此为本机这一原生工作流的对照，不扩展为跨硬件或任意非确定性节点的保证；文件名及 MP4 容器元数据不作为像素一致性的判据。
+
+预演台保留工作流的预览实现、提示词处理、参考素材预处理及秒数转帧数表达式，仅覆盖明确编辑的输入源；任务存档使用实际提交的 API 图。数值哈希与执行编号：`ComfyUI/output/TerryDirector/reports/preview_workflow_parity_20261103.json`。测试缓存已归档到系统临时目录并从任务列表移除。

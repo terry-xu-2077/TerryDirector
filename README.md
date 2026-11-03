@@ -44,14 +44,15 @@ git clone https://github.com/terry-xu-2077/TerryDirector.git
 | **TerryDirector Llama** | 共享本地 Llama/VLM 的提示词增强能力 |
 | **TerryDirector 提示词增强编辑器** | 连接 Llama 后增强 STRING 提示词 |
 | **TerryDirector 双采样分辨率选择器** | 只输入高清目标 MP，低清自动取 1/4；共用宽高比并实时预览两组分辨率 |
-| **TerryDirector 保存低清审片视频** | 把低清 VAE 解码结果以 MP4 保存到对应 SelfLift 检查点文件夹 |
+| **TerryDirector 暂停/继续** | 缓存任意 LATENT，暂停时阻断下游，继续时跳过上游并恢复缓存 |
+| **TerryDirector SelfLift 低清采样 / 高清采样** | 低清与高清分别设置采样步数，可在两段之间插入通用暂停节点 |
 | **TerryDirector H3 2X 低内存解码** | 兼容已有 2X VAE 的可选显存／RAM 优化链 |
 
 独立 SelfLift 内部节点仍可被现有工作流按节点 ID 使用，但不再提供 Base / Advanced 的封装式二采配置。
 
 ### 分阶段 SelfLift 示例工作流
 
-推荐从 [工作流③：暂停/继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；蓝色按钮同时保存低清检查点和完整低清审片视频，确认后再用绿色按钮续采高清，不重跑低清。**左侧边栏「预演台」** 打开任务浮窗；「配置工作流」独立设置工作流模板；识别 H3 时自动绑定 H3 的 prompt 与媒体输入端，普通工作流可手动选择提示词源，并选择种子输入节点。新建预演只需填写提示词、参考资产、种子和预览输出；采样预览与 VAE 解码为独立开关，参考资产显示为紧凑缩略图网格；支持从已有任务继承配置、重跑、批量高清续采和批量删除。高清分辨率默认 2.0 MP、默认启用 VAE 解码；采样预览可独立开关，也可与 VAE 解码同时启用。完整参数和独立工作流见 [SelfLift 示例说明](examples/SELFLIFT_SPLIT_README.md)。
+examples 目录仅包含低清、高清、暂停继续三个工作流。推荐从 [工作流③：暂停继续 · 0.2→0.8 MP](examples/TerryDirector_SelfLift_03_Pause_Continue.json) 开始。它使用 FL2VA BF16、Qwen3VL INT8 ConvRot、CFG=1、seed=8 与 H3 Sigma Refiner；使用独立的低清／高清采样节点分别设置步数；中间的通用暂停节点只保存 LATENT，绿色按钮恢复缓存后执行高清。完整低清审片由预演台的 VAE 解码支路保存。**左侧边栏「预演台」** 打开任务浮窗；「配置工作流」独立设置工作流模板；识别 H3 时自动绑定 H3 的 prompt 与媒体输入端，普通工作流可手动选择提示词源，并选择种子输入节点。新建预演只需填写提示词、参考资产、种子和预览输出；采样预览与 VAE 解码为独立开关，参考资产显示为紧凑缩略图网格；支持从已有任务继承配置、重跑、批量高清续采和批量删除。高清分辨率默认 2.0 MP、默认启用 VAE 解码；采样预览可独立开关，也可与 VAE 解码同时启用。完整参数和独立工作流见 [SelfLift 示例说明](docs/USAGE.md#selflift-示例工作流)。
 
 ## 怎样连接
 
@@ -83,7 +84,7 @@ TerryDirector 循环开始 ─ 循环上下文 ─→ TerryDirector 循环信息
 
 点击节点内的迷你时间线，即可在当前 ComfyUI 页面打开导演编辑窗口；编辑片段、提示词与共享素材后「保存并退出」。挂起片段保留在创作时间线里，但不会提交采样。尾帧参考／续接／独立等行为可在片段接缝处调整，并可在 ComfyUI 的 TerryDirector 设置里配置默认衔接方式。
 
-[在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/main/index.html) 可直接查看最新编辑器布局：网站从 [AI 验收工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**（引用旧 Base 样本只为了保留既有 UI 演示数据，不能直接作为新版本循环工作流运行），不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。网站「AI 增强提示词」标签另加载 [H3 Skill 六段式英文增强示例](examples/TerryDirector_AI_3clips_demo_prompts.json)，可与未修改的三段中文原文切换对比；这些文字是**依据内置官方 Skill 手工编写的静态展示稿，不是实际 Qwen 推理输出**。示例仅注入网页显示层，不修改 [GPU 验收用工作流](examples/TerryDirector_AI_3clips_0.2MP.json) 中刻意保留为空的 `aiPrompt`。链接经只读静态代理预览当前主分支。
+[在线交互预览](https://raw.githack.com/terry-xu-2077/TerryDirector/main/index.html) 可直接查看最新编辑器布局：网站从 [静态演示数据](src/demo/ai_original_workflow.json) 读取三段真实提示词、全局提示词、尾帧参考与七项图片资产信息，并提供“适应／宽／中／窄”的界面宽度预设。**这是静态界面演示**（引用旧 Base 样本只为了保留既有 UI 演示数据，不能直接作为新版本循环工作流运行），不连接 ComfyUI、不运行 LLM；七张参考图片的原文件未公开，图片卡片显示注明的占位缩略图。网站「AI 增强提示词」标签另加载 [H3 Skill 六段式英文增强示例](src/demo/ai_enhanced_prompts.json)，可与未修改的三段中文原文切换对比；这些文字是**依据内置官方 Skill 手工编写的静态展示稿，不是实际 Qwen 推理输出**。示例仅注入网页显示层，不修改 [静态演示原始数据](src/demo/ai_original_workflow.json) 中刻意保留为空的 `aiPrompt`。链接经只读静态代理预览当前主分支。
 
 ## 使用边界
 

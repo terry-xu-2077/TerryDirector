@@ -1,3 +1,5 @@
+> 历史实现记录。当前只保留低清、高清、暂停继续三个示例，现行接法见 [使用说明与示例接法](USAGE.md#selflift-示例工作流)。文内旧接口和已移除的④号文件仅供 Git 历史追溯。
+
 # TerryDirector · Native Low-Res → SelfLift Hi-Res（最小开发版）
 
 日期：2026-10-21 · 分支：feature/selflift-native-lowres-checkpoints

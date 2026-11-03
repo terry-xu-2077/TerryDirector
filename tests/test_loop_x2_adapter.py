@@ -26,7 +26,7 @@ class TestLowRAMX2Adapter(unittest.TestCase):
     def test_unmodified_fastdecode_called_on_small_windows(self):
         pkg_name = "_terrydirector_x2_adapter_test"
         pkg = types.ModuleType(pkg_name)
-        pkg.__path__ = [str(ROOT)]
+        pkg.__path__ = [str(ROOT / "nodes")]
 
         class FakeNodeOutput:
             def __init__(self, *outputs):
@@ -64,7 +64,7 @@ class TestLowRAMX2Adapter(unittest.TestCase):
         with patch.dict(sys.modules, stubs):
             spec = importlib.util.spec_from_file_location(
                 f"{pkg_name}.director_loop_x2_decode",
-                ROOT / "director_loop_x2_decode.py",
+                ROOT / "nodes" / "director_loop_x2_decode.py",
             )
             module = importlib.util.module_from_spec(spec)
             with patch.dict(sys.modules, {spec.name: module}):

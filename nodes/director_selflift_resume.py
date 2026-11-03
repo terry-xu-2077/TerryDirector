@@ -1,8 +1,8 @@
-"""Resume a SelfLift H3 high-resolution pass from native ComfyUI sampler outputs.
+"""Resume H3 SelfLift from a raw stage boundary or a native-sampler checkpoint.
 
-Low resolution is performed by stock SamplerCustom / SamplerCustomAdvanced with
-a *prefix* of the original sigma schedule. The native output at sigma[k] gives
-the already-advanced audio state, while denoised_output supplies the last x0.
+Stage boundaries retain callback x/x0 before the final low Euler update. Older
+stock SamplerCustom checkpoints instead carry audio already advanced to sigma[k].
+Both paths consume the unchanged suffix of the complete sigma schedule.
 """
 from __future__ import annotations
 
@@ -19,13 +19,20 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
                    upscaler_model,
                    highres_tiling=False, tiling_mode="auto", tiling_tiles=2,
                    tiling_axis="auto",
-                   _backend=None, _lifter=None):
-    from .director_selflift_checkpoint import load_checkpoint
+                   _backend=None, _lifter=None, _saved=None, high_steps=None):
     if isinstance(checkpoint, dict):
         checkpoint = checkpoint.get("checkpoint_id")
     started = perf_counter()
-    saved = load_checkpoint(checkpoint)
+    if _saved is None:
+        from .director_selflift_checkpoint import load_checkpoint
+        saved = load_checkpoint(checkpoint)
+    else:
+        saved = _saved
     manifest = saved["manifest"]
+    remaining_steps = saved["sigmas"].numel() - 1 - int(manifest["transition_step"])
+    if high_steps is not None and (type(high_steps) is not int or high_steps != remaining_steps):
+        raise ValueError(f"SelfLift: 高清步数必须与完整 SIGMAS 的剩余 {remaining_steps} 步一致")
+    raw_boundary = saved.get("state_space") == "sampler"
     cfg = float(manifest["cfg"])
     seed = int(manifest["seed"])
     k = int(manifest["transition_step"])
@@ -57,10 +64,10 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
             raise ValueError("SelfLift: 空间分块仅支持视频全生成、音频全保留")
     target = tuple(source[0].shape[-2:])
     fmt = model.get_model_object("latent_format")
-    # Native SamplerCustom has already processed denoised_output into VAE
-    # latent space. Do not pass a bare video tensor through MiniMaxH3's
-    # AV process_latent_in/out (those methods also rescale packed audio).
-    clean_video_vae = low_clean[0].float()
+    # Raw callback video needs format conversion; native SamplerCustom
+    # denoised_output has already been converted to VAE latent space.
+    clean_video_vae = (fmt.process_out(low_clean[0].float()) if raw_boundary else low_clean[0].float())
+    spatial_anchor = clean_video_vae.detach().clone() if raw_boundary and highres_tiling else None
     logging.info("[TerryDirector SelfLift split] 开始 H3 3D Latent Upscaler")
     lifted_at = perf_counter()
     if _lifter is None:
@@ -77,6 +84,12 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
         clean_high = clean_high * mask + fmt.process_in(source[0].to(clean_high)) * (1 - mask)
     clean_high = clean_high.to(backend.device)
     flow = model.get_model_object("model_sampling")
+    if raw_boundary:
+        # The transition belongs to the low model, even when the high model uses
+        # a different audio/video shift. Only its CONST noise scale is needed.
+        import copy
+        flow = copy.copy(flow)
+        flow.noise_scale = saved["noise_scale"]
     sigma_old, sigma_resume = (s.to(backend.device) for s in
                                (saved["sigmas"][k-1], saved["sigmas"][k]))
     noise = backend.noise(clean_high, (seed + 1) % (1 << 64),
@@ -85,12 +98,20 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
     video_state = flow.noise_scaling(sigma_old, noise, clean_high)
     video_next = advance_euler(video_state, clean_high, sigma_old, sigma_resume)
     unscaled_video = flow.inverse_noise_scaling(sigma_resume, video_next)
-    # Native SamplerCustom's ordinary output already carries the audio stream
-    # through the final low-res Euler interval. Do NOT advance audio twice.
-    video_resume = fmt.process_out(unscaled_video)
-    resume = backend.pack([video_resume, low_state[1]])
-    zero_noise = backend.pack([torch.zeros_like(video_resume),
-                              torch.zeros_like(low_state[1])])
+    # Raw callbacks are before the final low Euler interval. Native checkpoint
+    # output has already completed it, so only raw audio needs that update.
+    if raw_boundary:
+        audio_next = advance_euler(low_state[1], low_clean[1], sigma_old, sigma_resume)
+        unscaled_audio = flow.inverse_noise_scaling(sigma_resume, audio_next)
+        # MiniMaxH3.process_latent_out with the LOW model's audio scale. The
+        # high model may not have latent_shapes initialized after a disk resume.
+        unscaled_audio = unscaled_audio * (1.0 / saved["audio_scale"])
+        resume = fmt.process_out(backend.pack([unscaled_video, unscaled_audio]))
+        zero_noise = backend.pack([torch.zeros_like(unscaled_video), torch.zeros_like(unscaled_audio)])
+    else:
+        video_resume = fmt.process_out(unscaled_video)
+        resume = backend.pack([video_resume, low_state[1]])
+        zero_noise = backend.pack([torch.zeros_like(video_resume), torch.zeros_like(low_state[1])])
     del low_clean, low_state, noise, clean_lift, clean_video_vae
     del clean_high, video_state, video_next, unscaled_video
     backend.interrupt()
@@ -99,13 +120,18 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
             "[TerryDirector SelfLift split] 高清 H3 空间分块：mode=%s tiles=%d axis=%s",
             tiling_mode, tiling_tiles, tiling_axis,
         )
+        options = {}
+        if spatial_anchor is not None:
+            from .director_selflift_tiling import append_spatial_reference, spatial_scores
+            positive = append_spatial_reference(positive, spatial_anchor)
+            options = {"overlap": 6, "scores": spatial_scores(spatial_anchor)}
         model = backend.tiled_model(
             model, [tuple(s.shape) for s in source],
-            tiling_mode, tiling_tiles, tiling_axis)
+            tiling_mode, tiling_tiles, tiling_axis, **options)
     model = backend.mask_model(model, source, masks)
     sigmas = saved["sigmas"].to(backend.device)
-    total_steps = sigmas.numel() - 1
-    remaining_steps = total_steps - k
+    remaining = sigmas[k:]
+    remaining_steps = remaining.numel() - 1
     # ComfyUI's latent_preview callback owns the native ProgressBar and emits
     # progress events for the executing SelfLiftHighres node. Track only the
     # remaining high-resolution Euler steps (1/N, 2/N...) rather than 7/9.
@@ -122,16 +148,16 @@ def resume_highres(*, checkpoint, model, positive, negative, sampler,
 
     logging.info(
         "[TerryDirector SelfLift split] 进入高清 Euler 采样 %d 步（初始化已用 %.1fs）",
-        total_steps - k, perf_counter() - started,
+        remaining_steps, perf_counter() - started,
     )
     sample_at = perf_counter()
     output = backend.sample(model, zero_noise, positive, negative, cfg,
-                            sampler, sigmas[k:], resume, callback, seed)
+                            sampler, remaining, resume, callback, seed)
     logging.info(
         "[TerryDirector SelfLift split] 高清 Euler 采样完成 %.1fs",
         perf_counter() - sample_at,
     )
-    if high_calls != total_steps - k:
+    if high_calls != remaining_steps:
         raise RuntimeError("SelfLift: 高清采样步数不符")
     streams = backend.split(output)
     if [tuple(s.shape) for s in streams] != [tuple(s.shape) for s in source]:

@@ -2,7 +2,7 @@
 // Browserless regression of per-step sampling preview display and one final upload.
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
-const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const source=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 const candidateSource=await readFile(new URL("../web/td_preview_candidate_buffer.js",import.meta.url),"utf8");
 const candidates=await import("data:text/javascript;base64,"+
   Buffer.from(candidateSource).toString("base64"));
@@ -32,7 +32,7 @@ const state={
     return selector==="[data-live-preview-host]"?host:null;
   }},
 };
-const uiCode=between("function effectivePreviewKind(task) {","function details(task) {");
+const uiCode=between("function availablePreviewKinds(task) {","function details(task) {");
 const tools=new Function("state","URL","Blob","atob","esc","samplingPreviewEnabled","selectedTask",
   uiCode+"return {previewJobMatchesTask,updateLivePreview,livePreviewMarkup,releasePreviewBlobUrls};")
   (state,fakeURL,Blob,globalThis.atob,esc,
@@ -75,8 +75,8 @@ const eventHandlers={};
 const queueApi={addEventListener(name,fn){eventHandlers[name]=fn;}};
 const onPreview=between('  const onPreviewPacket = e=>{','  api.addEventListener("executed",e=>{');
 let liveUpdates=0;
-new Function("api","state","updateLivePreview","rememberSamplingPreview",onPreview)
-  (queueApi,state,()=>{liveUpdates++;},candidates.rememberSamplingPreview);
+new Function("api","state","updateLivePreview","rememberSamplingPreview","samplingPreviewEnabled",onPreview)
+  (queueApi,state,()=>{liveUpdates++;},candidates.rememberSamplingPreview,()=>true);
 state.activePromptId="prompt-B";
 const originalA=A.preview.image;
 eventHandlers.kj_preview_override({detail:{
@@ -111,11 +111,11 @@ const uploadApi={fetchApi:async (path,options)=>{
 }};
 const persistCode=between("async function persistPreview(job) {","async function saveLegacyLifecycle(");
 const persist=new Function("api","URL_BASE","atob","request","console",
-  "finalSamplingCandidates","previewFallbackWarning",
+  "finalSamplingCandidates","previewFallbackWarning","samplingPreviewEnabled",
   persistCode+"return persistPreview;")
-  (uploadApi,"/terrydirector/api/selflift",globalThis.atob,
+  (uploadApi,"/terrydirector/api/preview",globalThis.atob,
     async(path,opts)=>opts?{ok:true}:{workflow_name:"Test"},
-    console,candidates.finalSamplingCandidates,candidates.previewFallbackWarning);
+    console,candidates.finalSamplingCandidates,candidates.previewFallbackWarning,()=>true);
 A.checkpointId="a".repeat(32);
 const two=await Promise.all([persist(A),persist(A)]);
 assert.deepEqual(two,[true,true]);

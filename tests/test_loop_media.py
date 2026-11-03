@@ -48,7 +48,7 @@ class TestLoopMedia(unittest.TestCase):
         sys.modules["folder_paths"] = paths
         root = Path(__file__).resolve().parents[1]
         spec = importlib.util.spec_from_file_location(
-            "_terry_loop_media_cpu_test", root / "director_loop_media.py"
+            "_terry_loop_media_cpu_test", root / "nodes" / "director_loop_media.py"
         )
         cls.media = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.media)

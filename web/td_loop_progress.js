@@ -22,7 +22,7 @@ function iterationFromExpandedId(nodeId) {
 
 function isGeneratingSampler(type, max) {
   const name = String(type || "");
-  if (["SamplerCustomAdvanced", "KSampler", "KSamplerAdvanced", "TerryDirectorSelfLiftSampler"].includes(name)) {
+  if (["SamplerCustomAdvanced", "KSampler", "KSamplerAdvanced", "TerryDirectorSelfLiftSampler", "TerryDirectorSelfLiftLowres", "TerryDirectorSelfLiftHighresSampler"].includes(name)) {
     return true;
   }
   // Extensible for custom samplers with real multi-step progress; exclude the

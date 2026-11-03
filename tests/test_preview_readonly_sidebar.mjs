@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const file = await readFile(new URL("../web/td_selflift_task_manager.js", import.meta.url),"utf8");
+const file = await readFile(new URL("../web/td_preview_task_manager.js", import.meta.url),"utf8");
 const slice = (begin,end) => {
   const start=file.indexOf(begin), stop=file.indexOf(end,start);
   assert.ok(start>=0 && stop>start, "Missing "+begin);
@@ -14,14 +14,14 @@ assert.ok(file.includes("render: el => mountPreviewSidebar(el)"));
 assert.ok(file.includes("void refreshSidebarTasks()"));
 assert.ok(file.includes('data-preview-sidebar-list'));
 assert.ok(file.includes('aria-label="只读预演任务列表"'));
-assert.ok(file.includes("renderSidebarTaskList();\n    state.selected ="));
+assert.ok(file.includes("renderSidebarTaskList();"));
 assert.doesNotThrow(()=>new Function(file.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 
 const esc = value => String(value??"").replace(/[&<>"']/g, char =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
-const count = {textContent:""}, holder = {innerHTML:""};
+const count = {textContent:""}, holder = {innerHTML:"",querySelectorAll(){return [];}};
 const state={
-  tasks:[],
+  tasks:[],expandedBatchGroups:new Set(),
   sidebarRoot:{querySelector(selector){
     return selector.includes("sidebar-count")?count:holder;
   }},

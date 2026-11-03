@@ -10,31 +10,31 @@ on:
       - feature/loop-resume-final-rebuild
       - cleanup/retire-base-advanced
     paths:
-      - director_loop.py
-      - director_loop_reuse.py
-      - director_loop_resume.py
+      - nodes/director_loop.py
+      - nodes/director_loop_reuse.py
+      - nodes/director_loop_resume.py
       - tests/test_loop_resume.py
       - tests/test_loop_only_registration.py
       - __init__.py
-      - director_selflift_node.py
-      - director_selflift.py
-      - director_compile.py
-      - director_core.py
+      - nodes/director_selflift_node.py
+      - nodes/director_selflift.py
+      - nodes/director_compile.py
+      - nodes/director_core.py
       - tests/test_loop_clip_reuse.py
       - src/timeline.js
       - src/app.css
-      - director_loop_media.py
-      - server_routes.py
+      - nodes/director_loop_media.py
+      - nodes/server_routes.py
       - tests/test_loop_media.py
       - tests/test_loop_media_ffmpeg_nomodel.py
       - web/td_loop_output_check.js
-      - director_loop_memory.py
-      - director_loop_x2_windows.py
-      - director_loop_x2_decode.py
+      - nodes/director_loop_memory.py
+      - nodes/director_loop_x2_windows.py
+      - nodes/director_loop_x2_decode.py
       - tests/test_loop_x2_windows.py
       - tests/test_loop_x2_adapter.py
-      - director_loop_report.py
-      - director_loop_logmetrics.py
+      - nodes/director_loop_report.py
+      - nodes/director_loop_logmetrics.py
       - tests/test_loop_report.py
       - src/core.js
       - src/app.js
@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax check
-        run: python -m py_compile __init__.py director_selflift_node.py director_selflift.py director_loop.py director_loop_resume.py director_loop_reuse.py director_compile.py director_core.py director_loop_media.py server_routes.py director_loop_report.py director_loop_logmetrics.py director_loop_memory.py director_loop_x2_windows.py director_loop_x2_decode.py tests/test_loop_clip_reuse.py tests/test_loop_resume.py tests/test_loop_media.py tests/test_loop_media_ffmpeg_nomodel.py tests/test_loop_report.py tests/test_loop_x2_windows.py tests/test_loop_x2_adapter.py
+        run: python -m compileall -q __init__.py nodes tests
       - name: Loop-only node registration after legacy removal
         run: python -m unittest discover -s tests -p test_loop_only_registration.py -v
       - name: Resume checkpoint and workflow fingerprint validity

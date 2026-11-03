@@ -37,7 +37,7 @@ class AssetPickerTests(unittest.TestCase):
         self.input.mkdir()
         self.output.mkdir()
         self.user = self.root / "user"
-        spec = importlib.util.spec_from_file_location("td_assets_test", ROOT / "director_assets.py")
+        spec = importlib.util.spec_from_file_location("td_assets_test", ROOT / "nodes" / "director_assets.py")
         self.assets = importlib.util.module_from_spec(spec)
         with patch.dict(sys.modules, {"folder_paths": types.SimpleNamespace(
             get_input_directory=lambda: str(self.input),
@@ -220,7 +220,7 @@ class AssetPickerHTTPTests(unittest.IsolatedAsyncioTestCase):
             (self.root / source).mkdir()
         routes = web.RouteTableDef()
         package = types.ModuleType("_td_asset_http_test")
-        package.__path__ = [str(ROOT)]
+        package.__path__ = [str(ROOT / "nodes")]
         self.modules = patch.dict(sys.modules, {
             "folder_paths": types.SimpleNamespace(
                 get_input_directory=lambda: str(self.root / "input"),

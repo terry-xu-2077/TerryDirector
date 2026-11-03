@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PKG = "td_split_checkpoint_testpkg"
 if PKG not in sys.modules:
     pkg = types.ModuleType(PKG)
-    pkg.__path__ = [str(ROOT)]
+    pkg.__path__ = [str(ROOT / "nodes")]
     sys.modules[PKG] = pkg
 
 
@@ -263,6 +263,26 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(len(backend.used_sigmas), 3)  # k=2 of 4
         self.assertEqual(tuple(result["samples"].unbind()[0].shape),
                          (1, 4, 3, 4, 8))
+
+    def test_standalone_preview_uses_its_own_checkpoint_store(self):
+        from unittest.mock import patch
+        cid=self.module.save_checkpoint(**self.inputs())
+        called=[]
+        def encode(checkpoint_id,video,**kwargs):
+            store=kwargs["checkpoint_store"]
+            self.assertEqual(store.read_manifest(checkpoint_id)["engine"],
+                             "terrydirector-selflift-transition")
+            self.assertEqual(store.checkpoint_dir(checkpoint_id).name,cid)
+            store.save_metadata(checkpoint_id,{"sampling_video_filename":"preview.mp4"})
+            called.append(checkpoint_id)
+        fake=types.SimpleNamespace(save_native_video=encode)
+        with patch.dict(sys.modules,{PKG+".director_preview_native":fake}):
+            self.assertTrue(self.module.save_checkpoint_preview(cid,
+                self.inputs()["low_clean"],"fake-tiny-vae",15))
+        self.assertEqual(called,[cid])
+        meta=json.loads((self.module._directory(cid)/"task.json").read_text(encoding="utf-8"))
+        self.assertEqual(meta["sampling_video_filename"],"preview.mp4")
+        self.assertIsNone(meta["preview_error"])
 
     def test_checkpoint_is_immutable_version(self):
         cid1 = self.module.save_checkpoint(**self.inputs())

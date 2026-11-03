@@ -1,8 +1,9 @@
 // Run: node tests/test_preview_batch_draft_recovery.mjs
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
+import {parsePreviewBatches} from "../web/td_preview_batch_import.js";
 
-const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const source=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 assert.doesNotThrow(()=>new Function(source.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 
 const helperStart=source.indexOf("const BATCH_IMPORT_DRAFT_KEY =");
@@ -22,8 +23,10 @@ const helpers=new Function("localStorage","console","Date",
 const batch={
   promptImportOpen:false,text:"# 本次批量任务",importText:"# 本次批量任务",
   importFileName:"第一集.md",preamble:"全局规则",error:"",
+  template:{workflow:{id:7},h3_node_id:12,decoded_target:"video"},
+  workflowTemplates:{second:{workflow_name:"第二预设",workflow:{id:8},api_prompt:{}}},syncFields:{seed:true},
   batches:[{
-    name:"批次01｜菌伞峡道",body:"镜头正文",sourceBody:"原始镜头正文",
+    name:"批次01｜菌伞峡道",body:"镜头正文",sourceBody:"原始镜头正文",workflow_template_id:"second",
     duration_seconds:15,references:[
       {name:"特瑞",kind:"image",path:"/input/terry.jpg",description:"人物外观"},
       {name:"环境声",kind:"audio",path:"/input/missing.wav",description:"声音参考"},
@@ -35,6 +38,8 @@ const batch={
 assert.equal(helpers.saveBatchImportDraft(batch),true);
 const saved=helpers.readBatchImportDraft();
 assert.equal(saved.version,1);
+assert.equal(saved.template.workflow.id,7);assert.equal(saved.workflowTemplates.second.workflow.id,8);
+assert.equal(saved.batches[0].workflow_template_id,"second");assert.equal(saved.syncFields,undefined);
 assert.equal(saved.phase,"config");
 assert.equal(saved.importFileName,"第一集.md");
 assert.equal(saved.preamble,"全局规则");
@@ -59,7 +64,7 @@ const restoreState={
   previewSettings:{highres_megapixels:1.5},
 };
 const restore=new Function("state","structuredClone","matchingAssets","PREVIEW_RESOLUTION_OPTIONS",
-  "defaultPreviewOptions","normalizeTaskPreviewOptions",
+  "defaultPreviewOptions","normalizeTaskPreviewOptions","parsePreviewBatches","initializeBatchParameters",
   source.slice(restoreStart,restoreEnd)+";return restoreBatchImportDraft;")(
     restoreState,structuredClone,()=>[{kind:"image",slot:1}],[1.0,2.0],
     ()=>({sampling_preview_enabled:false,vae_decode_enabled:true}),
@@ -68,9 +73,11 @@ const restore=new Function("state","structuredClone","matchingAssets","PREVIEW_R
         value.sampling_preview_enabled:fallback.sampling_preview_enabled,
       vae_decode_enabled:typeof value?.vae_decode_enabled==="boolean"?
         value.vae_decode_enabled:fallback.vae_decode_enabled,
-    }));
+    }),parsePreviewBatches,()=>{});
 assert.equal(restore(saved),true);
 assert.equal(restoreState.batchImport.promptImportOpen,false);
+assert.deepEqual(restoreState.batchImport.syncFields,{});
+assert.equal(restoreState.batchImport.workflowTemplates.second.workflow.id,8);
 assert.equal(restoreState.batchImport.template.workflow.id,7);
 assert.deepEqual(restoreState.batchImport.assetSlots,[{kind:"image",slot:1}]);
 assert.equal(restoreState.batchImport.batches[0].references[0].path,"/input/terry.jpg");
@@ -130,19 +137,19 @@ const closingBatch={text:"# 暂存",batches:[],saving:false};
 const closeStateRecovery={batchImport:closingBatch,elapsedTimer:null,root:null};
 let stashedBatchRecovery=null;
 const closePanelRecovery=new Function("state","saveBatchImportDraft","stopPreviewPlayback",
-  "closePreviewRichEditor","toast","clearInterval",
+  "closePreviewRichEditor","toast","clearInterval","STANDALONE",
   source.slice(closeStartRecovery,closeEndRecovery)+";return close;")(
-    closeStateRecovery,batch=>{stashedBatchRecovery=batch;},()=>{},()=>{},()=>{},()=>{});
+    closeStateRecovery,batch=>{stashedBatchRecovery=batch;},()=>{},()=>{},()=>{},()=>{},false);
 closePanelRecovery();
 assert.equal(stashedBatchRecovery,closingBatch);
 assert.equal(closeStateRecovery.batchImport,null);
 const savingStateRecovery={batchImport:{saving:true},root:{style:{display:"flex"}},elapsedTimer:null};
 let blockedCloseNoticeRecovery="";
 const blockedCloseRecovery=new Function("state","saveBatchImportDraft","stopPreviewPlayback",
-  "closePreviewRichEditor","toast","clearInterval",
+  "closePreviewRichEditor","toast","clearInterval","STANDALONE",
   source.slice(closeStartRecovery,closeEndRecovery)+";return close;")(
     savingStateRecovery,()=>{throw new Error("must not stash while creating");},()=>{},()=>{},
-    message=>{blockedCloseNoticeRecovery=message;},()=>{});
+    message=>{blockedCloseNoticeRecovery=message;},()=>{},false);
 blockedCloseRecovery();
 assert.equal(savingStateRecovery.root.style.display,"flex");
 assert.match(blockedCloseNoticeRecovery,/正在创建/);
@@ -158,12 +165,12 @@ async function runCreateRecovery(items) {
   let savedDraft=null,cleared=0,created=0;
   const create=new Function("state","batchTaskStatus","randomizeNewTaskSeed","buildDraft",
     "PREVIEW_DURATION_DEFAULT","draftSnapshot","request","refresh","toast","render","window",
-    "batchPromptWithMediaTokens","legacyPreviewType","saveBatchImportDraft","clearBatchImportDraft",
+    "batchPromptWithMediaTokens","legacyPreviewType","saveBatchImportDraft","clearBatchImportDraft","batchTemplateForItem",
     source.slice(createStartRecovery,createEndRecovery)+";return createBatchTasks;")(
       state,item=>({valid:!!item.valid}),draft=>draft,()=>({assets:[]}),15,draft=>draft,
       async()=>({id:"created-"+(++created)}),async()=>{},()=>{},()=>{},
       {confirm:()=>true},body=>body,()=>"decoded",
-      batch=>{savedDraft=JSON.parse(JSON.stringify(batch));},()=>{cleared++;});
+      batch=>{savedDraft=JSON.parse(JSON.stringify(batch));},()=>{cleared++;},(item,batch)=>item.workflow_template_id?batch.workflowTemplates[item.workflow_template_id]:batch.template);
   await create();
   return {savedDraft,cleared,created};
 }

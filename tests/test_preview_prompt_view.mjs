@@ -19,4 +19,8 @@ assert.ok(renderPreviewPrompt('<script>alert("x")</script> & <Picture A"B>').inc
 assert.ok(!renderPreviewPrompt('<Picture A" onclick="evil>').includes(' onclick="evil'));
 assert.equal(tokenizePreviewPrompt("正文中的[普通括号]和 <unknown 标签>")[0].kind, "text");
 assert.equal(renderPreviewPrompt(null), "");
+const editableHtml=renderPreviewPrompt(source,{editable:true});
+assert.ok(editableHtml.includes('data-raw="[导演说明]"'));
+assert.ok(editableHtml.includes('contenteditable="false"'));
+assert.ok(editableHtml.includes('data-raw="&lt;Picture ORC遗迹&gt;"'));
 console.log("Preview screenplay visual tags: PASS");

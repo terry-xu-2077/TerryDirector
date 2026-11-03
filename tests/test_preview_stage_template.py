@@ -14,7 +14,7 @@ class PreviewStageTemplateTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         pkg = types.ModuleType(PACKAGE)
-        pkg.__path__ = [str(ROOT)]
+        pkg.__path__ = [str(ROOT / "nodes")]
         cls.original_pkg = sys.modules.get(PACKAGE)
         cls.original_cp = sys.modules.get(PACKAGE + ".director_selflift_checkpoint")
         cls.original_paths = sys.modules.get("folder_paths")
@@ -24,7 +24,7 @@ class PreviewStageTemplateTests(unittest.TestCase):
         checkpoints.read_manifest = lambda _: {}
         sys.modules[PACKAGE + ".director_selflift_checkpoint"] = checkpoints
         sys.modules["folder_paths"] = types.SimpleNamespace(get_output_directory=lambda: "")
-        cls.store = importlib.import_module(PACKAGE + ".director_selflift_task_store")
+        cls.store = importlib.import_module(PACKAGE + ".director_preview_task_store")
 
     @classmethod
     def tearDownClass(cls):
@@ -46,7 +46,7 @@ class PreviewStageTemplateTests(unittest.TestCase):
             "schema": 2,
             "workflow_name": "首阶段工作流",
             "workflow": {"nodes": [
-                {"id": 13, "type": "TerryDirectorSelfLiftPauseResume"},
+                {"id": 13, "type": "TerryDirectorPauseResume"},
                 {"id": 6, "type": "MiniMaxH3ReferenceToVideo"},
                 {"id": 33, "type": "SeedNode"},
             ], "links": []},
@@ -54,7 +54,7 @@ class PreviewStageTemplateTests(unittest.TestCase):
             "prompt_binding": {"node_id": 6, "widget_name": "prompt"},
             "seed_binding": {"node_id": 33, "widget_name": "seed"},
             "api_prompt": {
-                "13": {"class_type": "TerryDirectorSelfLiftPauseResume",
+                "13": {"class_type": "TerryDirectorPauseResume",
                        "inputs": {"mode": "暂停并保存", "checkpoint_id": "", "name": "demo"}},
                 "6": {"class_type": "MiniMaxH3ReferenceToVideo",
                       "inputs": {"prompt": "example"}},

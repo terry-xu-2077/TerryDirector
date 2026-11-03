@@ -14,7 +14,7 @@ from server import PromptServer
 
 from .director_assets import SUPPORTED, EXT_TO_KIND, asset_view_url
 
-PLUGIN_ROOT = Path(__file__).resolve().parent
+PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 INPUT_ROOT = Path(folder_paths.get_input_directory()).resolve()
 
 
@@ -65,14 +65,14 @@ async def terrydirector_static(request: web.Request) -> web.StreamResponse:
     return web.FileResponse(path, headers={"Content-Type": content_type or "application/octet-stream"})
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/checkpoint-status")
-async def terrydirector_selflift_checkpoint_status(request: web.Request) -> web.Response:
-    """Existence check only: never deserialize a large SelfLift latent in HTTP."""
+@PromptServer.instance.routes.get("/terrydirector/api/checkpoints/status")
+async def terrydirector_checkpoint_status(request: web.Request) -> web.Response:
+    """Check the generic LATENT cache without deserializing any tensors."""
     checkpoint_id = str(request.query.get("id") or "").strip()
     if not checkpoint_id:
         return web.json_response({"exists": False}, headers={"Cache-Control": "no-store"})
     try:
-        from .director_selflift_checkpoint import read_manifest
+        from .director_latent_checkpoint import read_manifest
         # read_manifest strictly validates the 32-char hex ID before touching
         # any user-controlled filesystem component.
         manifest = read_manifest(checkpoint_id)
@@ -89,13 +89,13 @@ async def terrydirector_selflift_checkpoint_status(request: web.Request) -> web.
     )
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/templates")
+@PromptServer.instance.routes.get("/terrydirector/api/preview/templates")
 async def terrydirector_preview_templates(request: web.Request) -> web.Response:
     from .director_preview_template_catalog import list_preview_templates
     return web.json_response(list_preview_templates(),headers={"Cache-Control":"no-store"})
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/template")
+@PromptServer.instance.routes.get("/terrydirector/api/preview/template")
 async def terrydirector_preview_template_get(request: web.Request) -> web.Response:
     from .director_preview_template_catalog import load_preview_template
     try:
@@ -105,7 +105,7 @@ async def terrydirector_preview_template_get(request: web.Request) -> web.Respon
         return web.json_response({"error":str(exc)},status=400)
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/template")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/template")
 async def terrydirector_preview_template_set(request: web.Request) -> web.Response:
     from .director_preview_template_catalog import save_preview_template
     try:
@@ -116,7 +116,7 @@ async def terrydirector_preview_template_set(request: web.Request) -> web.Respon
         return web.json_response({"error":str(exc)},status=400)
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/templates/{template_id}/rename")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/templates/{template_id}/rename")
 async def terrydirector_preview_template_rename(request: web.Request) -> web.Response:
     from .director_preview_template_catalog import rename_preview_template
     try:
@@ -127,7 +127,7 @@ async def terrydirector_preview_template_rename(request: web.Request) -> web.Res
         return web.json_response({"error":str(exc)},status=400)
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/templates/{template_id}/default")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/templates/{template_id}/default")
 async def terrydirector_preview_template_default(request: web.Request) -> web.Response:
     from .director_preview_template_catalog import set_default_preview_template
     try:
@@ -137,7 +137,7 @@ async def terrydirector_preview_template_default(request: web.Request) -> web.Re
         return web.json_response({"error":str(exc)},status=400)
 
 
-@PromptServer.instance.routes.delete("/terrydirector/api/selflift/templates/{template_id}")
+@PromptServer.instance.routes.delete("/terrydirector/api/preview/templates/{template_id}")
 async def terrydirector_preview_template_delete(request: web.Request) -> web.Response:
     from .director_preview_template_catalog import delete_preview_template
     try:
@@ -147,13 +147,13 @@ async def terrydirector_preview_template_delete(request: web.Request) -> web.Res
         return web.json_response({"error":str(exc)},status=400)
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/drafts")
+@PromptServer.instance.routes.get("/terrydirector/api/preview/drafts")
 async def terrydirector_preview_drafts(request: web.Request) -> web.Response:
     from .director_preview_draft_store import list_drafts
     return web.json_response({"drafts": list_drafts()}, headers={"Cache-Control": "no-store"})
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/drafts")
 async def terrydirector_preview_draft_create(request: web.Request) -> web.Response:
     from .director_preview_draft_store import save_draft
     try:
@@ -163,7 +163,7 @@ async def terrydirector_preview_draft_create(request: web.Request) -> web.Respon
         return web.json_response({"error": str(exc)}, status=400)
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/drafts/{draft_id}")
+@PromptServer.instance.routes.get("/terrydirector/api/preview/drafts/{draft_id}")
 async def terrydirector_preview_draft_get(request: web.Request) -> web.Response:
     from .director_preview_draft_store import get_draft
     try:
@@ -173,7 +173,7 @@ async def terrydirector_preview_draft_get(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=404)
 
 
-@PromptServer.instance.routes.put("/terrydirector/api/selflift/drafts/{draft_id}")
+@PromptServer.instance.routes.put("/terrydirector/api/preview/drafts/{draft_id}")
 async def terrydirector_preview_draft_update(request: web.Request) -> web.Response:
     from .director_preview_draft_store import save_draft
     try:
@@ -182,7 +182,7 @@ async def terrydirector_preview_draft_update(request: web.Request) -> web.Respon
         return web.json_response({"error": str(exc)}, status=400)
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts/{draft_id}/status")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/drafts/{draft_id}/status")
 async def terrydirector_preview_draft_status(request: web.Request) -> web.Response:
     from .director_preview_draft_store import transition_draft
     try:
@@ -197,7 +197,7 @@ async def terrydirector_preview_draft_status(request: web.Request) -> web.Respon
         return web.json_response({"error": str(exc)}, status=400)
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/drafts/batch-delete")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/drafts/batch-delete")
 async def terrydirector_preview_draft_batch_delete(request: web.Request) -> web.Response:
     from .director_preview_draft_store import delete_drafts
     try:
@@ -208,21 +208,22 @@ async def terrydirector_preview_draft_batch_delete(request: web.Request) -> web.
         return web.json_response({"error": str(exc)}, status=400)
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks")
-async def terrydirector_selflift_tasks(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import list_tasks
-    from .director_preview_highres import recover_highres_videos
+@PromptServer.instance.routes.get("/terrydirector/api/preview/tasks")
+async def terrydirector_preview_tasks(request: web.Request) -> web.Response:
+    from .director_preview_task_store import list_tasks
+    from .director_preview_highres import recover_highres_videos, recover_lowres_videos
     tasks = list_tasks()
     # Recover older already-completed highres outputs from their exact
     # prompt history. No guessing filenames and no large video copies.
     recover_highres_videos(tasks, getattr(PromptServer.instance, "prompt_queue", None))
+    recover_lowres_videos(tasks, getattr(PromptServer.instance, "prompt_queue", None))
     return web.json_response({"tasks": tasks}, headers={"Cache-Control": "no-store"})
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/batch-delete")
-async def terrydirector_selflift_batch_delete(request: web.Request) -> web.Response:
+@PromptServer.instance.routes.post("/terrydirector/api/preview/tasks/batch-delete")
+async def terrydirector_preview_batch_delete(request: web.Request) -> web.Response:
     """Permanently remove selected checkpoint folders, not any external outputs."""
-    from .director_selflift_task_store import (
+    from .director_preview_task_store import (
         checkpoint_ids_in_queue, delete_checkpoints,
     )
     try:
@@ -256,10 +257,26 @@ async def terrydirector_selflift_batch_delete(request: web.Request) -> web.Respo
         return web.json_response({"error": "部分文件删除失败：" + str(exc)}, status=500)
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/highres-video")
-async def terrydirector_selflift_highres_video(request: web.Request) -> web.Response:
+@PromptServer.instance.routes.post("/terrydirector/api/preview/tasks/{task_id}/rerun-low")
+async def terrydirector_preview_rerun_low(request: web.Request) -> web.Response:
+    from .director_preview_task_store import prepare_low_rerun
+    try:
+        payload = await request.json()
+        result = prepare_low_rerun(
+            request.match_info["task_id"], payload["seed"],
+            queue=getattr(PromptServer.instance, "prompt_queue", None),
+            legacy_snapshot=payload.get("snapshot"))
+        return web.json_response(result, headers={"Cache-Control": "no-store"})
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except OSError as exc:
+        return web.json_response({"error": "清理旧低清结果失败：" + str(exc)}, status=500)
+
+
+@PromptServer.instance.routes.post("/terrydirector/api/preview/tasks/{checkpoint_id}/highres-video")
+async def terrydirector_preview_highres_video(request: web.Request) -> web.Response:
     """Persist the exact SaveVideo/VHS result reported by the running job."""
-    from .director_selflift_task_store import load_metadata, save_metadata
+    from .director_preview_task_store import load_metadata, save_metadata
     from .director_preview_highres import validated_video_result
     try:
         checkpoint_id = request.match_info["checkpoint_id"]
@@ -285,9 +302,9 @@ async def terrydirector_selflift_highres_video(request: web.Request) -> web.Resp
         return web.json_response({"error": str(exc)}, status=400)
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/media/{kind}")
-async def terrydirector_selflift_task_media(request: web.Request) -> web.StreamResponse:
-    from .director_selflift_task_store import media_path
+@PromptServer.instance.routes.get("/terrydirector/api/preview/tasks/{checkpoint_id}/media/{kind}")
+async def terrydirector_preview_task_media(request: web.Request) -> web.StreamResponse:
+    from .director_preview_task_store import media_path
     try:
         kind = request.match_info["kind"]
         path = media_path(request.match_info["checkpoint_id"], kind)
@@ -303,9 +320,9 @@ async def terrydirector_selflift_task_media(request: web.Request) -> web.StreamR
     return web.FileResponse(path, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/workflow")
-async def terrydirector_selflift_task_workflow(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import load_metadata
+@PromptServer.instance.routes.get("/terrydirector/api/preview/tasks/{checkpoint_id}/workflow")
+async def terrydirector_preview_task_workflow(request: web.Request) -> web.Response:
+    from .director_preview_task_store import load_metadata
     try:
         metadata = load_metadata(request.match_info["checkpoint_id"])
     except (FileNotFoundError, ValueError, OSError):
@@ -325,9 +342,9 @@ async def terrydirector_selflift_task_workflow(request: web.Request) -> web.Resp
                               "seed_max": metadata.get("seed_max")})
 
 
-@PromptServer.instance.routes.get("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
-async def terrydirector_selflift_task_metadata_get(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import load_metadata
+@PromptServer.instance.routes.get("/terrydirector/api/preview/tasks/{checkpoint_id}/metadata")
+async def terrydirector_preview_task_metadata_get(request: web.Request) -> web.Response:
+    from .director_preview_task_store import load_metadata
     try:
         meta = load_metadata(request.match_info["checkpoint_id"])
     except (FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
@@ -337,9 +354,9 @@ async def terrydirector_selflift_task_metadata_get(request: web.Request) -> web.
     return web.json_response(meta, headers={"Cache-Control": "no-store"})
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/metadata")
-async def terrydirector_selflift_task_metadata(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import save_metadata
+@PromptServer.instance.routes.post("/terrydirector/api/preview/tasks/{checkpoint_id}/metadata")
+async def terrydirector_preview_task_metadata(request: web.Request) -> web.Response:
+    from .director_preview_task_store import save_metadata
     try:
         data = await request.json()
         if not isinstance(data, dict):
@@ -350,19 +367,32 @@ async def terrydirector_selflift_task_metadata(request: web.Request) -> web.Resp
     return web.json_response({"ok": True})
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/rebuild-native-preview")
+@PromptServer.instance.routes.post("/terrydirector/api/preview/tasks/{checkpoint_id}/rebuild-native-preview")
 async def terrydirector_rebuild_native_preview(request: web.Request) -> web.Response:
     """Recover preview from the immutable low_clean checkpoint, no sampling."""
-    from .director_selflift_checkpoint import load_checkpoint
-    from .director_selflift_task_store import load_metadata, save_metadata
+    from .director_preview_task_store import load_metadata, save_metadata
     from .director_preview_native import save_native_video, default_tiny_vae
     checkpoint_id = request.match_info["checkpoint_id"]
     try:
-        saved = await asyncio.to_thread(load_checkpoint, checkpoint_id)
         try:
             metadata = load_metadata(checkpoint_id)
         except FileNotFoundError:
             metadata = {}
+        from .director_latent_checkpoint import load_checkpoint
+        saved = await asyncio.to_thread(load_checkpoint, checkpoint_id)
+        # This decoder is H3-specific; recognition comes from the configured
+        # model graph, never a particular sampler's private LATENT metadata.
+        api_nodes = (metadata.get("api_prompt") or {}).values()
+        ui_nodes = (metadata.get("workflow") or {}).get("nodes", [])
+        is_h3 = metadata.get("h3_node_id") is not None or any(
+            str(node.get("class_type", "")).startswith("MiniMaxH3") for node in api_nodes
+        ) or any(str(node.get("type", "")).startswith("MiniMaxH3") for node in ui_nodes)
+        if not is_h3:
+            raise ValueError("仅已识别的 H3 LATENT 支持此 H3 预览重建")
+        samples = saved["latent"]["samples"]
+        if not getattr(samples, "is_nested", False):
+            raise ValueError("H3 预览需要音视频 NestedTensor")
+        video = list(samples.unbind())[0]
         seconds = float(metadata.get("duration_seconds") or 15.0)
         if not math.isfinite(seconds) or not 4 <= seconds <= 20:
             raise ValueError("预览任务保存的时长无效")
@@ -370,7 +400,7 @@ async def terrydirector_rebuild_native_preview(request: web.Request) -> web.Resp
         if name == "none":
             raise ValueError("未找到 taeh3.safetensors，请放入 ComfyUI/models/vae_approx")
         filename = await asyncio.to_thread(
-            save_native_video, checkpoint_id, saved["clean"][0],
+            save_native_video, checkpoint_id, video,
             tiny_vae=name, duration_seconds=seconds,
         )
         save_metadata(checkpoint_id, {**metadata, "preview_error": None,
@@ -381,9 +411,9 @@ async def terrydirector_rebuild_native_preview(request: web.Request) -> web.Resp
     return web.json_response({"ok": True, "filename": filename})
 
 
-@PromptServer.instance.routes.post("/terrydirector/api/selflift/tasks/{checkpoint_id}/sampling-preview")
-async def terrydirector_selflift_sampling_preview(request: web.Request) -> web.Response:
-    from .director_selflift_task_store import save_sampling_preview
+@PromptServer.instance.routes.post("/terrydirector/api/preview/tasks/{checkpoint_id}/sampling-preview")
+async def terrydirector_preview_sampling_preview(request: web.Request) -> web.Response:
+    from .director_preview_task_store import save_sampling_preview
     mime = str(request.headers.get("Content-Type", "")).split(";")[0].strip()
     try:
         duration_param = request.query.get("duration")

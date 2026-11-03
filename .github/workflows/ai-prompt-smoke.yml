@@ -14,7 +14,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Python static compilation
         run: |
-          python -m py_compile director_ai_core.py director_ai.py director_ai_node.py director_ai_jobs.py director_core.py director_compile.py director_loop.py server_routes.py __init__.py
+          python -m compileall -q __init__.py nodes
       - name: AI seed policy tests
         run: |
           python - <<'PY'
@@ -35,14 +35,14 @@ jobs:
           PY
       - name: Website H3 Skill sample text contract
         run: |
-          python examples/validate_ai_site_demo_prompts.py
+          python tests/validate_ai_site_demo_prompts.py
       - name: JavaScript syntax
         run: |
           node --check src/app.js
           node --input-type=module --check < web/terry_director.js
       - name: Acceptance example workflow contract
         run: |
-          python examples/validate_ai_3clip_workflow.py
+          python tests/validate_ai_3clip_workflow.py
       - name: Verify website demo in headless browser
         run: |
           BROWSER="$(command -v google-chrome || command -v chromium || true)"
@@ -64,7 +64,7 @@ jobs:
               'data-demo-clip-count="3"',
               'data-demo-asset-count="7"',
               'data-demo-ai-version="skill-authored-demo"',
-              'data-demo-ai-source="examples/TerryDirector_AI_3clips_demo_prompts.json"',
+              'data-demo-ai-source="src/demo/ai_enhanced_prompts.json"',
               'data-demo-clip-count="3"',
               'subject_definitions:',
               'non_diegetic_music:',

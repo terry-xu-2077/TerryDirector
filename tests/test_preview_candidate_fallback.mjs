@@ -5,7 +5,7 @@ import {readFile} from "node:fs/promises";
 const moduleSource=await readFile(new URL("../web/td_preview_candidate_buffer.js",import.meta.url),"utf8");
 const mod=await import("data:text/javascript;base64,"+
  Buffer.from(moduleSource).toString("base64"));
-const src=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const src=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 assert.doesNotThrow(()=>new Function(
  src.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 const preview=(step,payload,total=3)=>({
@@ -52,7 +52,7 @@ const messages=[];
 const persist=new Function("api","URL_BASE","atob","request","console",
  "finalSamplingCandidates","previewFallbackWarning","samplingPreviewEnabled",
  source+"return persistPreview;")(
- api,"/terrydirector/api/selflift",globalThis.atob,request,
+ api,"/terrydirector/api/preview",globalThis.atob,request,
  {warn:(...args)=>messages.push(args),error:(...args)=>messages.push(args)},
  mod.finalSamplingCandidates,mod.previewFallbackWarning,
  value=>typeof value?.sampling_preview_enabled==="boolean"?value.sampling_preview_enabled:value?.preview_type!=="decoded");
@@ -87,7 +87,7 @@ const failedApi={fetchApi:async ()=>response(false)};
 const failPersist=new Function("api","URL_BASE","atob","request","console",
  "finalSamplingCandidates","previewFallbackWarning","samplingPreviewEnabled",
  source+"return persistPreview;")(
- failedApi,"/terrydirector/api/selflift",globalThis.atob,request,
+ failedApi,"/terrydirector/api/preview",globalThis.atob,request,
  {warn:()=>{},error:()=>{}},
  mod.finalSamplingCandidates,mod.previewFallbackWarning,
  value=>typeof value?.sampling_preview_enabled==="boolean"?value.sampling_preview_enabled:value?.preview_type!=="decoded");

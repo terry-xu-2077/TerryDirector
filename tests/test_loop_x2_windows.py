@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "_terrydirector_x2_windows_test", ROOT / "director_loop_x2_windows.py"
+    "_terrydirector_x2_windows_test", ROOT / "nodes" / "director_loop_x2_windows.py"
 )
 WINDOWS = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = WINDOWS

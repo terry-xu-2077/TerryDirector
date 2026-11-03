@@ -14,10 +14,10 @@ class HighresPreviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.names=(PKG,PKG+".director_preview_highres",
-                   PKG+".director_selflift_task_store","folder_paths")
+                   PKG+".director_preview_task_store","folder_paths")
         cls.previous={n:sys.modules.get(n) for n in cls.names}
         pkg=types.ModuleType(PKG)
-        pkg.__path__=[str(ROOT)]
+        pkg.__path__=[str(ROOT / "nodes")]
         sys.modules[PKG]=pkg
         sys.modules["folder_paths"]=types.SimpleNamespace(get_output_directory=lambda:"")
         cls.module=importlib.import_module(PKG+".director_preview_highres")
@@ -47,6 +47,16 @@ class HighresPreviewTests(unittest.TestCase):
         self.assertEqual(self.module.highres_video_path(self.result),
                          (self.root/"video"/"scene_00001_.mp4").resolve())
 
+    def test_native_windows_subfolder_is_normalized(self):
+        folder=self.root/"video"/"nested"
+        folder.mkdir()
+        (folder/self.result["filename"]).write_bytes(b"video")
+        windows={**self.result,"subfolder":r"video\nested"}
+        self.assertEqual(self.module.validated_video_result(windows),
+                         {**self.result,"subfolder":"video/nested"})
+        for bad in (r"..\video",r"C:\video",r"\\host\share"):
+            self.assertIsNone(self.module.validated_video_result({**self.result,"subfolder":bad}))
+
     def test_vhs_gifs_ui_output(self):
         history={"p02":{"outputs":{"42":{"gifs":[self.result]}}}}
         self.assertEqual(self.module.highres_from_history(history,"p02","42"),self.result)
@@ -71,7 +81,7 @@ class HighresPreviewTests(unittest.TestCase):
             return dict(saved[checkpoint_id])
         def save(checkpoint_id,meta):
             saved[checkpoint_id]=meta
-        sys.modules[PKG+".director_selflift_task_store"]=types.SimpleNamespace(
+        sys.modules[PKG+".director_preview_task_store"]=types.SimpleNamespace(
             load_metadata=load,save_metadata=save)
         rows=[{"id":"draft_1","status":"high_complete","checkpoint_id":"a"*32,
                "prompt_id":"p01","media":{"sampling":None},"metadata":{}}]
@@ -92,6 +102,41 @@ class HighresPreviewTests(unittest.TestCase):
     def test_never_match_other_completed_job(self):
         history={"p-other":{"outputs":{"42":{"images":[self.result]}}}}
         self.assertIsNone(self.module.highres_from_history(history,"p-current","42"))
+
+    def test_low_native_result_uses_low_prompt_after_high_submission(self):
+        saved={"a"*32:{"decoded_target":"39","lowres_prompt_id":"low-job",
+                        "highres_prompt_id":"high-job","workflow_name":"test"}}
+        sys.modules[PKG+".director_preview_task_store"]=types.SimpleNamespace(
+            load_metadata=lambda cid:dict(saved[cid]),
+            save_metadata=lambda cid,meta:saved.update({cid:meta}))
+        rows=[{"checkpoint_id":"a"*32,"status":"high_complete","prompt_id":"high-job","media":{},"metadata":{}}]
+        result=self.result
+        calls=[]
+        class Queue:
+            def get_history(self,prompt_id=None):
+                calls.append(prompt_id)
+                return {"low-job":{"outputs":{"39":{"images":[result]}}}}
+        self.module.recover_lowres_videos(rows,Queue())
+        self.assertEqual(calls,["low-job"])
+        self.assertEqual(saved["a"*32]["lowres_video"],result)
+        self.assertEqual(rows[0]["media"]["decoded"],result["filename"])
+        # No copy: the existing native SaveVideo output is the only media file.
+        self.assertEqual(list(self.root.rglob("*.mp4")),[self.root/"video"/result["filename"]])
+        self.module.recover_lowres_videos(rows,Queue())
+        self.assertEqual(calls,["low-job"])
+
+    def test_low_history_cannot_match_other_prompt_or_output(self):
+        sys.modules[PKG+".director_preview_task_store"]=types.SimpleNamespace(
+            load_metadata=lambda cid:{"decoded_target":"39","lowres_prompt_id":"low-job"},
+            save_metadata=lambda *args:self.fail("must not persist a different job's output"))
+        result=self.result
+        class Queue:
+            def get_history(self,prompt_id=None):
+                return {"other-job":{"outputs":{"39":{"images":[result]}}},
+                        "low-job":{"outputs":{"22":{"images":[result]}}}}
+        rows=[{"checkpoint_id":"a"*32,"media":{}}]
+        self.module.recover_lowres_videos(rows,Queue())
+        self.assertFalse(rows[0]["media"])
 
 
 if __name__=="__main__":

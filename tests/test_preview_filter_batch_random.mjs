@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const code=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const code=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 const compiler=await readFile(new URL("../web/td_preview_job_compiler.js",import.meta.url),"utf8");
 const section=(from,to)=>{
   const i=code.indexOf(from),j=code.indexOf(to,i);
@@ -13,14 +13,12 @@ const section=(from,to)=>{
 };
 assert.doesNotThrow(()=>new Function(
   code.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
-const {randomPreviewSeed,validatePreviewSeed}=await import(
-  "data:text/javascript;base64,"+Buffer.from(compiler).toString("base64")
-);
+const {randomPreviewSeed,validatePreviewSeed}=await import("../web/td_preview_job_compiler.js");
 
 const state={tasks:[],statusFilter:"all",selected:new Set(),busy:false,focused:null};
 const fns=new Function("state","randomPreviewSeed",
   section("const STATUS_NAMES=","const formatTime=")+
-  ";return {STATUS_NAMES,STATUS_ICONS,STATUS_FILTER_OPTIONS,visibleTasks,selectedTaskRows,batchActionInfo,randomizeNewTaskSeed};")
+  ";return {STATUS_NAMES,STATUS_ICONS,STATUS_FILTER_OPTIONS,visibleTasks,groupedTasks,selectedTaskRows,batchActionInfo,randomizeNewTaskSeed};")
  (state,randomPreviewSeed);
 
 const rows=[
@@ -42,13 +40,25 @@ for(const [machine,label] of Object.entries({
 })){
  assert.equal(fns.STATUS_NAMES[machine],label);
  assert.ok(fns.STATUS_ICONS[machine],machine+" should have an icon");
- assert.ok(fns.STATUS_FILTER_OPTIONS.some(x=>x.value===machine && x.icon===fns.STATUS_ICONS[machine]));
- state.statusFilter=machine;
- assert.deepEqual(fns.visibleTasks().map(x=>x.id),
-   rows.filter(x=>x.status===machine).map(x=>x.id));
+
 }
-state.statusFilter="low_pending";
-assert.deepEqual(fns.visibleTasks().map(x=>x.id),["a","b"]);
+assert.deepEqual(fns.STATUS_FILTER_OPTIONS.map(x=>x.value),["all","low","high"]);
+state.statusFilter="low";
+assert.deepEqual(fns.visibleTasks().map(x=>x.id),["a","b","c","d","f"]);
+state.statusFilter="high";
+assert.deepEqual(fns.visibleTasks().map(x=>x.id),["e","g","h"]);
+state.statusFilter="all";
+const grouped=fns.groupedTasks([
+ {id:"10",name:"批次10",batch_group_id:"episode",batch_group_name:"第一集",batch_index:10},
+ {id:"2",name:"批次2",batch_group_id:"episode",batch_group_name:"第一集",batch_index:2},
+ {id:"1",name:"批次01",batch_group_id:"episode",batch_group_name:"第一集",batch_index:1},
+ {id:"normal",name:"独立镜头"},
+]);
+const episode=grouped.find(row=>row.id==="episode");
+assert.equal(episode.id,"episode");
+assert.equal(episode.name,"第一集");
+assert.deepEqual(episode.tasks.map(t=>t.id),["1","2","10"]);
+assert.equal(grouped.find(row=>row.task)?.task.id,"normal");
 state.selected=new Set(["a","b"]);
 let info=fns.batchActionInfo();
 assert.deepEqual([info.label,info.disabled,info.action],["批量开始预演 · 2",false,"low"]);
@@ -102,9 +112,10 @@ const batchSelected=new Function(
  async (id,mode)=>{jobs.push([id,mode]);},
  async()=>{refreshes++;},()=>{},x=>output.push(x));
 
+rows[0].name="批次10";rows[1].name="批次02";
 state.selected=new Set(["a","b"]);
 await batchSelected();
-assert.deepEqual(jobs,[["a","pause"],["b","pause"]]);
+assert.deepEqual(jobs,[["b","pause"],["a","pause"]]);
 assert.equal(state.busy,false);
 jobs.length=0;
 state.selected=new Set(["c","d"]);
@@ -115,4 +126,4 @@ state.selected=new Set(["a","c"]);
 await batchSelected();
 assert.deepEqual(jobs,[]);
 assert.equal(refreshes,2);
-console.log("Preview Stage random seeds, six-state filters, scoped selection and dynamic batch: PASS");
+console.log("Preview Stage random seeds, resolution type filters, scoped selection and dynamic batch: PASS");

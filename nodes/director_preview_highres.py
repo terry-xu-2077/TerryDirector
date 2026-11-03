@@ -1,7 +1,7 @@
 """Resolve a Preview Stage high-resolution result from its exact ComfyUI job.
 
 The output is produced by SaveVideo/VHS_VideoCombine in the normal ComfyUI
-output directory, not inside the SelfLift checkpoint. Keep a small validated
+output directory, not inside the LATENT checkpoint. Keep a small validated
 file reference in task.json; never copy potentially multi-GB videos.
 """
 from __future__ import annotations
@@ -29,8 +29,11 @@ def validated_video_result(value: dict) -> dict | None:
         return None
     if Path(filename).suffix.lower() not in _VIDEO_EXT:
         return None
-    if "\\" in subfolder or len(subfolder) > 500:
+    if len(subfolder) > 500:
         return None
+    # Core SaveVideo returns Windows separators on Windows. Canonicalize them
+    # before the same absolute-path/traversal/output-root checks.
+    subfolder = subfolder.replace("\\", "/")
     root = Path(folder_paths.get_output_directory()).resolve()
     relative = Path(subfolder)
     if relative.is_absolute() or ".." in relative.parts or "." in relative.parts:
@@ -79,7 +82,7 @@ def recover_highres_videos(rows: list[dict], queue) -> None:
     """
     if queue is None:
         return
-    from .director_selflift_task_store import load_metadata, save_metadata
+    from .director_preview_task_store import load_metadata, save_metadata
     for row in rows:
         if row.get("status") != "high_complete" or not row.get("checkpoint_id"):
             continue
@@ -106,4 +109,33 @@ def recover_highres_videos(rows: list[dict], queue) -> None:
         except (FileNotFoundError, OSError, ValueError, TypeError, KeyError):
             # Old jobs may have had their history cleared; never associate a
             # different job's video based merely on matching a file name.
+            continue
+
+
+def recover_lowres_videos(rows: list[dict], queue) -> None:
+    """Associate native low videos by the original low prompt and saver ID.
+
+    Persist the reference without copying/re-encoding. This also works when
+    SaveVideo finishes before the pause node, or its executed event was missed.
+    The low prompt ID survives a subsequent high-resolution submission.
+    """
+    if queue is None:
+        return
+    from .director_preview_task_store import load_metadata, save_metadata
+    for row in rows:
+        cid = row.get("checkpoint_id")
+        if not cid or row.get("media", {}).get("decoded"):
+            continue
+        try:
+            metadata = load_metadata(cid)
+            prompt_id, target = metadata.get("lowres_prompt_id"), metadata.get("decoded_target")
+            if not isinstance(prompt_id, str) or not prompt_id or target is None:
+                continue
+            video = highres_from_history(queue.get_history(prompt_id=prompt_id), prompt_id, str(target))
+            if video is None:
+                continue
+            save_metadata(cid, {**metadata, "lowres_video": video})
+            row.setdefault("media", {})["decoded"] = video["filename"]
+            row.setdefault("metadata", {})["lowres_video"] = video
+        except (FileNotFoundError, OSError, ValueError, TypeError, KeyError):
             continue

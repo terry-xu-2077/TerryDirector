@@ -2,7 +2,7 @@
 import importlib.util
 from pathlib import Path
 
-module_path = Path(__file__).resolve().parents[1] / "director_ai_core.py"
+module_path = Path(__file__).resolve().parents[1] / "nodes" / "director_ai_core.py"
 spec = importlib.util.spec_from_file_location("td_ai_core", module_path)
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)

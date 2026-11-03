@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const source=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 const moduleCode=await readFile(new URL("../web/td_preview_input_candidates.js",import.meta.url),"utf8");
 const {listPreviewInputCandidates}=await import("data:text/javascript;base64,"+
   Buffer.from(moduleCode).toString("base64"));
@@ -56,8 +56,8 @@ assert.ok(source.includes('data-action="delete-config"'));
 assert.ok(source.includes('data-action="config-name"'));
 assert.ok(source.includes("STRING 输出节点"));
 assert.ok(source.includes("INT 输出节点"));
-assert.ok(source.includes("自动绑定 H3 节点的 prompt 输入"));
-assert.ok(source.includes("原工作流中的媒体加载节点会被忽略"));
+assert.ok(source.includes("自动识别 H3 提示词线路的独立文本源"));
+assert.ok(source.includes("保留原有加载、缩放、裁切与音轨处理"));
 assert.ok(source.includes("h3_media_bindings"));
 assert.ok(!source.includes("traceH3PromptInputs"));
 console.log("Preview Stage typed source dropdowns: PASS");

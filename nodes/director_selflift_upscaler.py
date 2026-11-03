@@ -54,8 +54,9 @@ class _Residual(nn.Module):
         self.skip = _conv(state[prefix + "skip.weight"]) if prefix + "skip.weight" in state else nn.Identity()
 
     def forward(self, value, embedding):
-        scale, shift = self.emb_layers(embedding).chunk(2, dim=-1)
-        hidden = self.out_norm(self.in_layers(value))
+        hidden = self.in_layers(value)
+        scale, shift = self.emb_layers(embedding).to(hidden.dtype).chunk(2, dim=-1)
+        hidden = self.out_norm(hidden)
         hidden = hidden * (1 + scale[:, :, None, None, None]) + shift[:, :, None, None, None]
         return self.skip(value) + self.out_layers(hidden)
 
@@ -116,8 +117,8 @@ class H3LatentUpscaler(nn.Module):
         self.halo = max(kernels, default=0)
 
     def _window(self, value, target, scale):
-        scale_input = torch.full((value.shape[0], 1), scale - 1, device=value.device, dtype=value.dtype)
-        embedding = self.embed(scale_input)
+        scale_input = torch.tensor([scale - 1], device=value.device, dtype=value.dtype).unsqueeze(0)
+        embedding = self.embed(scale_input).expand(value.shape[0], -1)
         hidden = self.conv_in(value)
         for layer in self.in_blocks:
             hidden = layer(hidden, embedding) if isinstance(layer, _Residual) else layer(hidden)
@@ -143,7 +144,7 @@ class H3LatentUpscaler(nn.Module):
             return result
         # Temporal windows keep output length unchanged. Overlapping predictions
         # are feathered; this is not claimed to equal an unchunked forward pass.
-        padded = F.pad(value, (0, 0, 0, 0, halo, halo), mode="replicate") if halo else value
+        padded = F.pad(value, (0, 0, 0, 0, halo, halo), mode="reflect" if halo < frames else "replicate") if halo else value
         output = value.new_zeros((*value.shape[:3], *target))
         weight_sum = value.new_zeros((1, 1, frames, 1, 1))
         window_count = (frames + chunk - 1) // chunk
@@ -163,9 +164,9 @@ class H3LatentUpscaler(nn.Module):
             weights = value.new_ones(right - left)
             before, after = start - left, right - stop
             if before:
-                weights[:before] = torch.linspace(0, 1, before + 2, device=value.device, dtype=value.dtype)[1:-1]
+                weights[:before] = torch.arange(1, before + 1, device=value.device, dtype=value.dtype) / (before + 1)
             if after:
-                weights[-after:] = torch.linspace(1, 0, after + 2, device=value.device, dtype=value.dtype)[1:-1]
+                weights[-after:] = torch.arange(after, 0, -1, device=value.device, dtype=value.dtype) / (after + 1)
             weights = weights[None, None, :, None, None]
             output[:, :, left:right] += prediction * weights
             weight_sum[:, :, left:right] += weights

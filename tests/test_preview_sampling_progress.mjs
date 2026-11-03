@@ -5,19 +5,19 @@ import {readFile} from "node:fs/promises";
 
 const src=await readFile(new URL("../web/td_preview_sampling_progress.js",import.meta.url),"utf8");
 const m=await import("data:text/javascript;base64,"+Buffer.from(src).toString("base64"));
-const manager=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const manager=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 
 const low={mode:"pause",api_prompt:{"11":{class_type:"SamplerCustom",inputs:{}}},
   progressStartedAt:1000,busy:true};
 const high={mode:"continue",api_prompt:{"22":{class_type:"SamplerCustomAdvanced",inputs:{}},
-  "18":{class_type:"TerryDirectorSelfLiftHighres",inputs:{}}},
+  "18":{class_type:"CustomVideoDenoise",inputs:{seed:8,cfg:1,steps:3}}},
   progressStartedAt:1000,busy:true};
 const sample=m.progressFromEvent({node:"11",value:1,max:3},low);
 assert.deepEqual(sample,{nodeId:"11",value:1,max:3});
 assert.deepEqual(m.progressFromEvent({node:"22",value:1,max:3},low),null);
 assert.deepEqual(m.progressFromEvent({node:"11",value:1,max:3},high),null);
 assert.deepEqual(m.progressFromEvent({node:"18",value:1,max:3},high),
- {nodeId:"18",value:1,max:3},"SelfLift highres node must show native sampler progress");
+ {nodeId:"18",value:1,max:3},"Custom denoising nodes are recognized by inputs, independent of their name");
 const manual={mode:"pause",workflow:{nodes:[{id:44,type:"SamplerCustom"}]}};
 assert.deepEqual(m.progressFromEvent({node:"44",value:1,max:3},manual),
   {nodeId:"44",value:1,max:3});
@@ -61,6 +61,23 @@ state.root={querySelectorAll:()=>[elLow,elHigh]};
 utils.updateTaskProgress(state.jobs.get("low-prompt"));
 assert.match(elLow.textContent,/33%\|/);
 assert.equal(elHigh.textContent,"");
+const waiting={busy:true,draftId:"draft_waiting",mode:"pause"};
+state.jobs.set("waiting-prompt",waiting);
+assert.equal(utils.taskProgressText({id:"draft_waiting"}),"","Queued jobs must not show initialization");
+waiting.progressStartedAt=1000;
+assert.equal(utils.taskProgressText({id:"draft_waiting"}),"H3模型初始化中…");
+const elWaiting={dataset:{progressTaskId:"draft_waiting"},textContent:"",title:""};
+state.root={querySelectorAll:()=>[elWaiting]};
+utils.updateTaskProgress(waiting);
+assert.equal(elWaiting.textContent,"H3模型初始化中…");
+m.recordSamplerProgress(waiting,{nodeId:"11",value:0,max:6},1000);
+assert.equal(utils.taskProgressText({id:"draft_waiting"}),"H3模型初始化中…");
+m.recordSamplerProgress(waiting,{nodeId:"11",value:1,max:6},2000);
+utils.updateTaskProgress(waiting);
+assert.match(elWaiting.textContent,/^17%\|█▋        \| 1\/6/);
+waiting.busy=false;
+assert.equal(utils.taskProgressText({id:"draft_waiting"}),"");
+assert.match(manager,/\.tdm-card-progress\{[^}]*white-space:pre;/);
 const handlers=[];
 const original=manager.slice(manager.indexOf('api.addEventListener("progress",'),
   manager.indexOf('api.addEventListener("kj_preview_override",'));

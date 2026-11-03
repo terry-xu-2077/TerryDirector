@@ -34,12 +34,15 @@ class RetiredDirectors(unittest.TestCase):
         for filename in ("director_node.py", "director_h3.py",
                          "director_internal.py", "director_loop_video.py"):
             self.assertFalse((ROOT / filename).exists(), filename)
-        self.assertTrue((ROOT / "director_selflift_node.py").exists())
-        self.assertTrue((ROOT / "director_loop_resume.py").exists())
+            self.assertFalse((ROOT / "nodes" / filename).exists(), filename)
+        self.assertEqual([p.name for p in ROOT.glob("*.py")], ["__init__.py"])
+        self.assertTrue((ROOT / "nodes" / "__init__.py").is_file())
+        self.assertTrue((ROOT / "nodes" / "director_selflift_node.py").exists())
+        self.assertTrue((ROOT / "nodes" / "director_loop_resume.py").exists())
 
     def test_legacy_ui_and_routes_not_registered(self):
         ui = (ROOT / "web/terry_director.js").read_text("utf-8")
-        server = (ROOT / "server_routes.py").read_text("utf-8")
+        server = (ROOT / "nodes" / "server_routes.py").read_text("utf-8")
         self.assertNotIn("ADVANCED_NODE_CLASS", ui)
         self.assertNotIn("renderAdvancedNode(", ui)
         self.assertNotIn("bindSecondPassTakeover(", ui)

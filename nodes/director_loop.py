@@ -64,6 +64,8 @@ _DIAG_FIELDS = {
         "cfg", "transition_step", "lowres_scale", "sampling_steps",
         "upscaler_model", "highres_tiling", "tiling_mode",
     ),
+    "TerryDirectorSelfLiftLowres": ("cfg", "low_steps"),
+    "TerryDirectorSelfLiftHighresSampler": ("cfg", "high_steps", "width", "height", "upscaler_model", "highres_tiling", "tiling_mode"),
     "RAMCleanup": ("clean_file_cache", "clean_processes", "clean_dlls", "retry_times"),
     "TerryXuMemoryCleanup": ("clean_ram", "clean_vram", "unload_models"),
     "TerryDirectorH3X2LowRAMDecode": (

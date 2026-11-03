@@ -44,7 +44,7 @@ class TestLoopStorage(unittest.TestCase):
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
         spec = importlib.util.spec_from_file_location(
-            "_td_loop_storage_test", ROOT / "director_loop_storage.py",
+            "_td_loop_storage_test", ROOT / "nodes" / "director_loop_storage.py",
         )
         self.storage = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.storage)

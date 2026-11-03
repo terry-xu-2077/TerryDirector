@@ -6,11 +6,13 @@
  */
 export function isSamplingProgressNode(node) {
   const name=String(node?.class_type||node?.type||"");
-  return name==="TerryDirectorSelfLiftHighres" ||
-    name==="SamplerCustom" || name==="SamplerCustomAdvanced" ||
-    name==="KSampler" || name==="KSamplerAdvanced" ||
-    name==="TerryDirectorSelfLiftSampler" ||
-    (/sampler/i.test(name) && !/select|scheduler|config|loader/i.test(name));
+  const inputs=Array.isArray(node?.inputs)
+    ? node.inputs.map(input=>input.name) : Object.keys(node?.inputs || {});
+  const seed=inputs.some(name=>/^(seed|noise_seed|random_seed|sampling_seed)$/i.test(name));
+  const sampling=inputs.some(name=>/^(sampler|sigmas|cfg|steps|low_steps|high_steps)$/i.test(name));
+  return (/sampler/i.test(name) && !/select|scheduler|config|loader/i.test(name)) ||
+    (seed && sampling);
+
 }
 function knownSamplerId(job,id){
   if(id==null)return false;

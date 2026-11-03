@@ -17,7 +17,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 PKG = "_td_native_preview_test"
 package = types.ModuleType(PKG)
-package.__path__ = [str(ROOT)]
+package.__path__ = [str(ROOT / "nodes")]
 sys.modules.setdefault(PKG, package)
 
 # ComfyUI's V3 API need not be installed to validate the pure encoder.
@@ -31,7 +31,7 @@ except ImportError:
     sys.modules.setdefault("comfy_api.latest", latest)
 
 for name in ("director_preview_mp4", "director_preview_native"):
-    path = ROOT / (name + ".py")
+    path = ROOT / "nodes" / (name + ".py")
     spec = importlib.util.spec_from_file_location(PKG + "." + name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -42,6 +42,35 @@ native = sys.modules[PKG + ".director_preview_native"]
 
 
 class NativePreviewTests(unittest.TestCase):
+    def test_decoder_construction_preserves_workflow_rng(self):
+        import torch
+        import torch.nn as nn
+        comfy = types.ModuleType("comfy")
+        mm = types.ModuleType("comfy.model_management")
+        mm.vae_device = lambda: torch.device("cpu")
+        utils = types.ModuleType("comfy.utils")
+        utils.load_torch_file = lambda *a, **kw: {
+            "decoder.1.weight": torch.ones(3, 4, 3, 3),
+            "decoder.1.bias": torch.zeros(3),
+        }
+        comfy.utils = utils
+        taesd = types.ModuleType("comfy.taesd.taesd")
+        taesd.Block = nn.Identity
+        taesd.Clamp = nn.Identity
+        taesd.conv = lambda a, b, bias=True: nn.Conv2d(a, b, 3, padding=1, bias=bias)
+        paths = types.ModuleType("folder_paths")
+        paths.get_filename_list = lambda _: ["taeh3.safetensors"]
+        paths.get_full_path = lambda *args: "test-weights.safetensors"
+        modules = {"comfy": comfy, "comfy.utils": utils, "comfy.model_management": mm,
+                   "comfy.taesd": types.ModuleType("comfy.taesd"),
+                   "comfy.taesd.taesd": taesd, "folder_paths": paths}
+        with patch.dict(sys.modules, modules):
+            torch.manual_seed(314159)
+            before = torch.random.get_rng_state().clone()
+            decoder, *_ = native._decoder("taeh3.safetensors")
+            self.assertTrue(torch.equal(before, torch.random.get_rng_state()))
+            self.assertTrue(torch.equal(decoder[1].weight, torch.ones_like(decoder[1].weight)))
+
     def test_temporal_sampling_covers_entire_clip(self):
         points = native._indices(181, 72)
         self.assertEqual(len(points), 72)
@@ -54,7 +83,8 @@ class NativePreviewTests(unittest.TestCase):
         import torch
         shape = [1, 24, 12, 8, 8]
         size = 24 * 12 * 8 * 8
-        packed = torch.arange(size).reshape(1, 24, 12 * 8 * 8)
+        # Match ComfyUI pack_latents: each stream is flattened to B x 1 x N.
+        packed = torch.arange(size).reshape(1, 1, size)
         clip = native._video_latent(packed, [shape])
         self.assertEqual(list(clip.shape), shape)
 

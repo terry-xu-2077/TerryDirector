@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 
-SOURCE = pathlib.Path(__file__).resolve().parents[1] / "director_loop_report.py"
+SOURCE = pathlib.Path(__file__).resolve().parents[1] / "nodes" / "director_loop_report.py"
 SPEC = importlib.util.spec_from_file_location("td_loop_report_test", SOURCE)
 R = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(R)

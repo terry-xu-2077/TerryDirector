@@ -1,7 +1,7 @@
 // Run: node tests/test_asset_picker_integration.mjs
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
-const source=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const source=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 const pickerStart=source.indexOf("function openPreviewAssetPicker(");
 const pickerEnd=source.indexOf("function chooseAsset(data)",pickerStart);
 let pickerOptions;

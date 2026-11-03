@@ -11,7 +11,7 @@ import types
 from pathlib import Path
 
 
-DEFAULT = Path(__file__).with_name("TerryDirector_AI_3clips_0.2MP.json")
+DEFAULT = Path(__file__).resolve().parents[1] / "src" / "demo" / "ai_original_workflow.json"
 
 # Grounded in the previously tested 9-clip official H3 looper workflow.
 # The original prompt text and image paths must NOT be replaced by placeholders.
@@ -39,13 +39,13 @@ def _compile_offline(document: dict) -> dict:
     pkg = "_terrydirector_example_static_preflight"
     if pkg not in sys.modules:
         package = types.ModuleType(pkg)
-        package.__path__ = [str(root)]
+        package.__path__ = [str(root / "nodes")]
         sys.modules[pkg] = package
     for name in ("director_core", "director_compile"):
         module_name = f"{pkg}.{name}"
         if module_name in sys.modules:
             continue
-        spec = importlib.util.spec_from_file_location(module_name, root / f"{name}.py")
+        spec = importlib.util.spec_from_file_location(module_name, root / "nodes" / f"{name}.py")
         assert spec and spec.loader
         mod = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = mod

@@ -2,7 +2,7 @@
 // Contract: Creating a task persists it and never calls the ComfyUI queue.
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
-const script=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const script=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 const strip=script.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"");
 assert.doesNotThrow(()=>new Function(strip));
 const fragment=(from,to)=>{
@@ -17,7 +17,7 @@ const state={
  createDraft:{
    name:"Episode01",prompt:"Original shot",seed:"12",seed_min:0,seed_max:100,
    workflow_name:"Main",workflow:{nodes:[]},
-   api_prompt:{"13":{class_type:"TerryDirectorSelfLiftPauseResume",inputs:{}}},
+   api_prompt:{"13":{class_type:"TerryDirectorPauseResume",inputs:{}}},
    prompt_binding:{node_id:63,widget_name:"prompt"},
    seed_binding:{node_id:77,widget_name:"seed"},
    assets:[],previewType:"decoded",sampling_preview_enabled:false,vae_decode_enabled:true,
@@ -62,3 +62,29 @@ assert.ok(script.includes('data-action="run-draft"'));
 assert.ok(script.includes('data-action="edit-draft"'));
 assert.ok(script.includes("task.kind===\"draft\""));
 console.log("Preview Stage: create-only, manual execution, six statuses and times PASS");
+
+// Video duration is the requested output length, independent of runtime dates.
+const durationState={taskDurationCache:new Map()};
+const durationRequests=[];
+const hydrateDurations=new Function("state","request",
+ fragment("async function hydrateTaskVideoDurations(tasks) {","async function refresh() {")+";return hydrateTaskVideoDurations;")(
+ durationState,async path=>{durationRequests.push(path);return {duration_seconds:path.includes("/drafts/")?15:12};});
+const durationRows=[
+ {id:"known",kind:"draft",duration_seconds:14},
+ {id:"draft_saved",kind:"draft",low_started_at:"2026-01-01T00:00:00Z",low_finished_at:"2026-01-01T04:00:00Z"},
+ {id:"checkpoint_saved",kind:"checkpoint"},
+];
+await hydrateDurations(durationRows);
+assert.deepEqual(durationRows.map(row=>row.duration_seconds),[14,15,12]);
+assert.deepEqual(durationRequests,["/drafts/draft_saved","/tasks/checkpoint_saved/metadata"]);
+await hydrateDurations([{id:"draft_saved",kind:"draft"}]);
+assert.equal(durationRequests.length,2,"saved video duration must be cached between refreshes");
+durationState.taskDurationCache.set("draft_saved",Promise.resolve(9));
+const editedRow={id:"draft_saved",kind:"draft"};await hydrateDurations([editedRow]);
+assert.equal(editedRow.duration_seconds,9);
+const unknownState={taskDurationCache:new Map()};
+const hydrateUnknown=new Function("state","request",
+ fragment("async function hydrateTaskVideoDurations(tasks) {","async function refresh() {")+";return hydrateTaskVideoDurations;")(unknownState,async()=>({}));
+const unknownRow={id:"draft_unknown",kind:"draft"};await hydrateUnknown([unknownRow]);
+assert.equal(unknownRow.duration_seconds,undefined,"never invent output duration from elapsed time");
+console.log("Preview Stage requested video duration, legacy API fallback and cache: PASS");

@@ -40,17 +40,23 @@ def low_resolution(height: int, width: int, scale: float) -> tuple[int, int]:
     return tuple(max(2, round(value * scale / 2) * 2) for value in (height, width))
 
 
-def spatial_resize(video: torch.Tensor, size: tuple[int, int], *, mean_match=False):
+def spatial_resize(video: torch.Tensor, size: tuple[int, int], *, mean_match=False, framewise=False):
     if video.ndim != 5:
         raise ValueError("TerryDirector SelfLift: 视频 latent 必须是 [B,C,T,H,W]")
     if tuple(video.shape[-2:]) == tuple(size):
         return video
+    if not mean_match and not framewise:
+        return F.interpolate(video.float(), size=(video.shape[2], *size),
+                             mode="trilinear", align_corners=False).to(video.dtype)
+    if framewise and not mean_match:
+        return F.interpolate(video.reshape(-1, 1, *video.shape[-2:]).float(),
+                             size=size, mode="bilinear", align_corners=False).reshape(*video.shape[:-2], *size)
     b, c, t, h, w = video.shape
     frames = video.float().permute(0, 2, 1, 3, 4).reshape(b * t, c, h, w)
     resized = F.interpolate(frames, size=size, mode="bilinear", align_corners=False)
     resized = resized.reshape(b, t, c, *size).permute(0, 2, 1, 3, 4)
     if mean_match:
-        resized = resized + video.float().mean((-2, -1), keepdim=True) - resized.mean((-2, -1), keepdim=True)
+        resized = resized + (video.float().mean((-2, -1), keepdim=True) - resized.mean((-2, -1), keepdim=True))
     return resized.to(dtype=video.dtype)
 
 
@@ -72,11 +78,12 @@ def resize_guides(conditioning, size):
 
 
 def advance_euler(state, clean, sigma_from, sigma_to):
-    sigma_from = torch.as_tensor(sigma_from, device=state.device, dtype=state.dtype)
-    sigma_to = torch.as_tensor(sigma_to, device=state.device, dtype=state.dtype)
+    sigma_from = torch.as_tensor(sigma_from)
+    sigma_to = torch.as_tensor(sigma_to, device=sigma_from.device)
     if float(sigma_from) <= 0:
         raise ValueError("TerryDirector SelfLift: Euler 起始 Sigma 必须大于零")
-    return state + (state - clean.to(state)) * ((sigma_to - sigma_from) / sigma_from)
+    step = ((sigma_to - sigma_from) / sigma_from).to(device=state.device, dtype=state.dtype)
+    return state + (state - clean.to(state)) * step
 
 
 def normalize_masks(raw_mask, streams):
@@ -110,7 +117,7 @@ def normalize_masks(raw_mask, streams):
         if mask.ndim != stream.ndim:
             raise ValueError("TerryDirector SelfLift: mask 维度不匹配")
         if stream.ndim == 5 and tuple(mask.shape[-2:]) != tuple(stream.shape[-2:]):
-            mask = spatial_resize(mask.float(), tuple(stream.shape[-2:]))
+            mask = spatial_resize(mask.float(), tuple(stream.shape[-2:]), framewise=True)
         try:
             shape = torch.broadcast_shapes(mask.shape, stream.shape)
             if tuple(shape) != tuple(stream.shape):

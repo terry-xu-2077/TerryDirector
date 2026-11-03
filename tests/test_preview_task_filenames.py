@@ -16,17 +16,17 @@ class PreviewTaskFilenameTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.names = (PACKAGE, PACKAGE + ".director_selflift_checkpoint",
-                     PACKAGE + ".director_selflift_task_store", "folder_paths")
+                     PACKAGE + ".director_preview_task_store", "folder_paths")
         cls.previous = {name: sys.modules.get(name) for name in cls.names}
         package = types.ModuleType(PACKAGE)
-        package.__path__ = [str(ROOT)]
+        package.__path__ = [str(ROOT / "nodes")]
         sys.modules[PACKAGE] = package
         checkpoint = types.ModuleType(PACKAGE + ".director_selflift_checkpoint")
         checkpoint.list_checkpoints = lambda: []
         checkpoint.read_manifest = lambda _id: {"checkpoint_id": _id}
         sys.modules[PACKAGE + ".director_selflift_checkpoint"] = checkpoint
         sys.modules["folder_paths"] = types.SimpleNamespace(get_output_directory=lambda: "")
-        cls.store = importlib.import_module(PACKAGE + ".director_selflift_task_store")
+        cls.store = importlib.import_module(PACKAGE + ".director_preview_task_store")
 
     @classmethod
     def tearDownClass(cls):
@@ -45,7 +45,7 @@ class PreviewTaskFilenameTests(unittest.TestCase):
         self.folder = self.root / "TerryDirector" / "checkpoints" / self.checkpoint_id
         self.folder.mkdir(parents=True)
         (self.folder / "state.safetensors").write_bytes(b"state")
-        (self.folder / "manifest.json").write_text("{}", encoding="utf-8")
+        (self.folder / "manifest.json").write_text(json.dumps({"schema":1,"engine":"terrydirector-latent-cache","checkpoint_id":self.checkpoint_id}), encoding="utf-8")
 
     def test_filename_sanitizer_preserves_chinese_and_filters_windows_chars(self):
         safe = self.store.safe_task_filename("批次01｜场景/镜头: A?.")
@@ -65,6 +65,18 @@ class PreviewTaskFilenameTests(unittest.TestCase):
         value = json.loads((self.folder / "task.json").read_text(encoding="utf-8"))
         self.assertEqual(value["sampling_video_filename"], "批次01_低清预览.mp4")
         self.assertEqual(value["review_video_filename"], "批次01_低清解码.mp4")
+
+    def test_native_low_video_reference_survives_workflow_updates(self):
+        video=self.root/"video"/"native.mp4"
+        video.parent.mkdir()
+        video.write_bytes(b"native")
+        pointer={"filename":"native.mp4","subfolder":"video","type":"output"}
+        self.store.save_metadata(self.checkpoint_id,{"lowres_video":pointer,"lowres_prompt_id":"low-job"})
+        self.store.save_metadata(self.checkpoint_id,{"workflow_name":"updated","highres_prompt_id":"high-job"})
+        meta=self.store.load_metadata(self.checkpoint_id)
+        self.assertEqual(meta["lowres_prompt_id"],"low-job")
+        self.assertEqual(meta["lowres_video"],pointer)
+        self.assertEqual(self.store.media_path(self.checkpoint_id,"decoded"),video.resolve())
 
     def test_named_sampling_and_decoded_media_are_resolved(self):
         sampling = "批次01_低清预览.mp4"

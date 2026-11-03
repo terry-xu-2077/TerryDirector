@@ -1,5 +1,6 @@
 """Keep raw failed KJ MP4 for diagnosis; delete it if fallback succeeds."""
 import importlib
+import json
 import sys
 import tempfile
 import types
@@ -14,20 +15,21 @@ PACKAGE="td_preview_failed_sample_testpkg"
 class FailedSamplingPreviewTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        names=[PACKAGE,PACKAGE+".director_selflift_task_store",
-               PACKAGE+".director_selflift_checkpoint",
+        names=[PACKAGE,PACKAGE+".director_preview_task_store",
+               PACKAGE+".director_latent_checkpoint",
                PACKAGE+".director_preview_mp4","folder_paths"]
         cls.previous={name:sys.modules.get(name) for name in names}
         pkg=types.ModuleType(PACKAGE)
-        pkg.__path__=[str(ROOT)]
+        pkg.__path__=[str(ROOT / "nodes")]
         sys.modules[PACKAGE]=pkg
         sys.modules["folder_paths"]=types.SimpleNamespace(get_output_directory=lambda:"")
-        sys.modules[PACKAGE+".director_selflift_checkpoint"]=types.SimpleNamespace(
-            list_checkpoints=lambda:[],read_manifest=lambda _:None)
+        sys.modules[PACKAGE+".director_latent_checkpoint"]=types.SimpleNamespace(
+            ENGINE="terrydirector-latent-cache",list_checkpoints=lambda **_:[],
+            read_manifest=lambda *args,**kwargs:{"name":"预览修复"})
         cls.mp4=types.ModuleType(PACKAGE+".director_preview_mp4")
         cls.mp4.finalize_preview_mp4=lambda *_:None
         sys.modules[PACKAGE+".director_preview_mp4"]=cls.mp4
-        cls.store=importlib.import_module(PACKAGE+".director_selflift_task_store")
+        cls.store=importlib.import_module(PACKAGE+".director_preview_task_store")
 
     @classmethod
     def tearDownClass(cls):
@@ -45,7 +47,10 @@ class FailedSamplingPreviewTests(unittest.TestCase):
         self.checkpoint.mkdir()
         self.debug=self.checkpoint/"sampling_preview_failed.bin"
         self.id="a"*32
-        self.patcher=patch.object(self.store,"checkpoint_dir",return_value=self.checkpoint)
+        (self.checkpoint/"manifest.json").write_text(json.dumps({
+            "checkpoint_id":self.id,"name":"预览修复"}),encoding="utf-8")
+        (self.checkpoint/"state.safetensors").write_bytes(b"state")
+        self.patcher=patch.object(self.store,"_task_folder",return_value=self.checkpoint)
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
 
@@ -68,9 +73,9 @@ class FailedSamplingPreviewTests(unittest.TestCase):
             return path
         with patch.object(self.mp4,"finalize_preview_mp4",side_effect=success):
             self.assertEqual(self.store.save_sampling_preview(
-                self.id,"video/mp4",older,15),"sampling_preview.mp4")
+                self.id,"video/mp4",older,15),"预览修复_低清预览.mp4")
         self.assertFalse(self.debug.exists())
-        self.assertEqual((self.checkpoint/"sampling_preview.mp4").read_bytes(),
+        self.assertEqual((self.checkpoint/"预览修复_低清预览.mp4").read_bytes(),
                          b"valid-result")
 
     def test_oversized_payload_rejected_without_debug_file(self):

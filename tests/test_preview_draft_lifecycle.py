@@ -16,7 +16,7 @@ class PreviewDraftLifecycleTests(unittest.TestCase):
         cls.before = {name: sys.modules.get(name) for name in
                       [PACKAGE, PACKAGE + ".director_preview_draft_store", "folder_paths"]}
         package = types.ModuleType(PACKAGE)
-        package.__path__ = [str(ROOT)]
+        package.__path__ = [str(ROOT / "nodes")]
         sys.modules[PACKAGE] = package
         sys.modules["folder_paths"] = types.SimpleNamespace(get_output_directory=lambda: "")
         cls.store = importlib.import_module(PACKAGE + ".director_preview_draft_store")
@@ -40,8 +40,8 @@ class PreviewDraftLifecycleTests(unittest.TestCase):
             "name": "E01_S01", "prompt": "A shot of the horizon",
             "seed": "456", "seed_min": 0, "seed_max": 1125899906842624,
             "previewType": "sampling", "assets": [{"node_id": 12, "widget_name": "image", "value": "ref.png"}],
-            "workflow": {"nodes": [{"id": 13, "type": "TerryDirectorSelfLiftPauseResume"}]},
-            "api_prompt": {"13": {"class_type": "TerryDirectorSelfLiftPauseResume",
+            "workflow": {"nodes": [{"id": 13, "type": "TerryDirectorPauseResume"}]},
+            "api_prompt": {"13": {"class_type": "TerryDirectorPauseResume",
                                    "inputs": {"mode": "暂停并保存", "name": "E01_S01"}}},
             "pause_node_id": 13, "preview_node_id": 5, "pause_target": "13",
             "prompt_binding": {"node_id": 63, "widget_name": "prompt"},
@@ -63,6 +63,46 @@ class PreviewDraftLifecycleTests(unittest.TestCase):
         self.assertEqual(item["created_at"], store.list_drafts()[0]["created_at"])
         self.assertTrue((self.output / "TerryDirector" / "preview_stage" /
                          "drafts" / (created["id"] + ".json")).is_file())
+
+    def test_generic_workflow_can_keep_native_video_settings(self):
+        value = self.sample()
+        value.update(duration_seconds=None, highres_megapixels=None,
+                     video_parameter_overrides={"duration": False, "resolution": False})
+        task_id = self.store.save_draft(value)["id"]
+        saved = self.store.get_draft(task_id)
+        self.assertIsNone(saved["duration_seconds"])
+        self.assertIsNone(saved["highres_megapixels"])
+        self.assertEqual(saved["video_parameter_overrides"], {"duration": False, "resolution": False})
+        value["video_parameter_overrides"]["duration"] = True
+        with self.assertRaises(ValueError):
+            self.store.save_draft(value)
+
+    def test_batch_group_survives_listing_editing_and_generation(self):
+        value = self.sample()
+        value.update(batch_group_id="episode-one", batch_group_name="第一集", batch_index=14)
+        task_id = self.store.save_draft(value)["id"]
+        row = self.store.list_drafts()[0]
+        self.assertEqual((row["batch_group_id"], row["batch_group_name"], row["batch_index"]),
+                         ("episode-one", "第一集", 14))
+        saved = self.store.get_draft(task_id)
+        saved.update(prompt="Edited shot", duration_seconds=14, highres_megapixels=1.5)
+        self.store.save_draft(saved, task_id)
+        self.store.transition_draft(task_id, "claim_low")
+        self.store.transition_draft(task_id, "start", prompt_id="batch-low")
+        self.store.transition_draft(task_id, "checkpoint", checkpoint_id="a" * 32)
+        self.store.transition_draft(task_id, "finish")
+        self.store.transition_draft(task_id, "claim_high")
+        self.store.transition_draft(task_id, "start", prompt_id="batch-high")
+        self.store.transition_draft(task_id, "finish")
+        row = self.store.list_drafts()[0]
+        self.assertEqual(row["batch_group_id"], "episode-one")
+        self.assertEqual(row["batch_index"], 14)
+        self.assertEqual(row["status"], "high_complete")
+        self.assertEqual(row["duration_seconds"], 14)
+        self.assertEqual(row["metadata"]["workflow_name"], "Main")
+        saved = self.store.get_draft(task_id)
+        self.assertEqual(saved["duration_seconds"], 14)
+        self.assertEqual(saved["highres_megapixels"], 1.5)
 
     def test_six_states_and_two_generation_time_ranges(self):
         store = self.store

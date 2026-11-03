@@ -17,11 +17,11 @@ class NamedPreviewTemplateTests(unittest.TestCase):
     def setUpClass(cls):
         cls.saved = {name: sys.modules.get(name) for name in (
             PACKAGE, PACKAGE + ".director_selflift_checkpoint",
-            PACKAGE + ".director_selflift_task_store",
+            PACKAGE + ".director_preview_task_store",
             PACKAGE + ".director_preview_template_catalog", "folder_paths"
         )}
         package = types.ModuleType(PACKAGE)
-        package.__path__ = [str(ROOT)]
+        package.__path__ = [str(ROOT / "nodes")]
         sys.modules[PACKAGE] = package
         checkpoint = types.ModuleType(PACKAGE + ".director_selflift_checkpoint")
         checkpoint.list_checkpoints = lambda: []
@@ -46,10 +46,10 @@ class NamedPreviewTemplateTests(unittest.TestCase):
         return {
             "schema": 2,
             "workflow_name": name,
-            "workflow": {"nodes": [{"id": 13, "type": "TerryDirectorSelfLiftPauseResume"},
+            "workflow": {"nodes": [{"id": 13, "type": "TerryDirectorPauseResume"},
                                     {"id": 6, "type": "MiniMaxH3ReferenceToVideo"}], "links": []},
             "api_prompt": {
-                "13": {"class_type": "TerryDirectorSelfLiftPauseResume",
+                "13": {"class_type": "TerryDirectorPauseResume",
                        "inputs": {"mode": "暂停并保存", "checkpoint_id": "", "name": "demo"}},
                 "6": {"class_type": "MiniMaxH3ReferenceToVideo", "inputs": {"prompt": "test"}},
                 "77": {"class_type": "SeedNode", "inputs": {"seed": 8}},

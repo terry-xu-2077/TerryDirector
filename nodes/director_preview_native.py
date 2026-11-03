@@ -1,8 +1,7 @@
 """TerryDirector-owned H3 previews, independent of KJNodes' websocket MP4.
 
-The live model wrapper transports self-contained JPEG/animated WebP. At the
-SelfLift pause boundary, a fresh *ordinary* H.264 MP4 is encoded from low_clean
-latents directly on the server, not copied from an in-browser stream.
+The live model wrapper transports self-contained JPEG/animated WebP. Stored
+H3 video latents can also be encoded into a complete H.264 MP4 on the server.
 
 Original implementation using ComfyUI's built-in TAESD layer primitives.
 KJNodes is an architectural reference, not a vendored runtime dependency.
@@ -75,24 +74,27 @@ def _decoder(name: str):
     for key in indexed:
         head, _, suffix = key.partition(".")
         numbered.setdefault(int(head), set()).add(suffix)
-    layers = []
-    for i in range(max(numbered) + 1):
-        fields = numbered.get(i)
-        if fields is None:
-            layers.append(Clamp() if i == 0 else nn.ReLU() if i == 2
-                          else nn.Upsample(scale_factor=2))
-        elif "conv.0.weight" in fields:
-            weight = indexed[f"{i}.conv.0.weight"]
-            if "pool.0.weight" in fields:
-                layers.append(Block(weight.shape[1], weight.shape[0], use_midblock_gn=True))
+    # Initializers consume CPU RNG even though checkpoint weights replace them.
+    # Observing a sample must not change the random stream seen by the workflow.
+    with torch.random.fork_rng(devices=[]):
+        layers = []
+        for i in range(max(numbered) + 1):
+            fields = numbered.get(i)
+            if fields is None:
+                layers.append(Clamp() if i == 0 else nn.ReLU() if i == 2
+                              else nn.Upsample(scale_factor=2))
+            elif "conv.0.weight" in fields:
+                weight = indexed[f"{i}.conv.0.weight"]
+                if "pool.0.weight" in fields:
+                    layers.append(Block(weight.shape[1], weight.shape[0], use_midblock_gn=True))
+                else:
+                    layers.append(Block(weight.shape[1], weight.shape[0]))
+            elif "weight" in fields:
+                weight = indexed[f"{i}.weight"]
+                layers.append(conv(weight.shape[1], weight.shape[0], bias="bias" in fields))
             else:
-                layers.append(Block(weight.shape[1], weight.shape[0]))
-        elif "weight" in fields:
-            weight = indexed[f"{i}.weight"]
-            layers.append(conv(weight.shape[1], weight.shape[0], bias="bias" in fields))
-        else:
-            raise ValueError(f"预览 VAE 第 {i} 层无法识别")
-    model = nn.Sequential(*layers)
+                raise ValueError(f"预览 VAE 第 {i} 层无法识别")
+        model = nn.Sequential(*layers)
     model.load_state_dict(indexed, strict=True)
     device = mm.vae_device()
     dtype = torch.float16 if torch.device(device).type == "cuda" else torch.float32
@@ -202,12 +204,16 @@ def _encode_final(frames: list[Image.Image], destination: Path, seconds: float) 
 
 
 def save_native_video(checkpoint_id: str, video: torch.Tensor, *,
-                      tiny_vae: str, duration_seconds: float, max_resolution=768):
-    """Write from original video latents; accepts live and disk-restored x0."""
-    from .director_selflift_task_store import (
-        checkpoint_dir, safe_task_filename, save_metadata, load_metadata,
-    )
-    from .director_selflift_checkpoint import read_manifest
+                      tiny_vae: str, duration_seconds: float, max_resolution=768,
+                      checkpoint_store=None):
+    """Encode video latents with a caller-owned checkpoint store."""
+    if checkpoint_store is None:
+        from . import director_preview_task_store as checkpoint_store
+    checkpoint_dir = checkpoint_store.checkpoint_dir
+    safe_task_filename = checkpoint_store.safe_task_filename
+    read_manifest = checkpoint_store.read_manifest
+    load_metadata = checkpoint_store.load_metadata
+    save_metadata = checkpoint_store.save_metadata
     folder = checkpoint_dir(checkpoint_id)
     filename = safe_task_filename(read_manifest(checkpoint_id).get("name")) + "_低清预览.mp4"
     try:
@@ -235,39 +241,6 @@ def save_native_video(checkpoint_id: str, video: torch.Tensor, *,
     LOG.info("[TerryDirector] 原生低清预览已保存：%s, %.1fs, %d sampled frames",
              checkpoint_id, duration_seconds, len(frames))
     return filename
-
-
-def save_native_preview(checkpoint_id: str, low_clean: dict, *,
-                        tiny_vae: str, duration_seconds: float, max_resolution=768):
-    """Capture the complete temporal span at the pause boundary (server-side)."""
-    samples = low_clean.get("samples") if isinstance(low_clean, dict) else None
-    if not getattr(samples, "is_nested", False):
-        raise ValueError("原生预览需要 H3 NestedTensor 低清视频流")
-    video = list(samples.unbind())[0]
-    return save_native_video(checkpoint_id, video, tiny_vae=tiny_vae,
-                             duration_seconds=duration_seconds,
-                             max_resolution=max_resolution)
-
-
-def save_checkpoint_preview(checkpoint_id: str, low_clean: dict, tiny_vae: str | None,
-                            duration_seconds: float) -> bool:
-    """Best effort: a failed thumbnail must never erase a valid checkpoint."""
-    if not tiny_vae or tiny_vae == "none":
-        return False
-    try:
-        from .director_selflift_task_store import save_metadata
-        save_native_preview(checkpoint_id, low_clean, tiny_vae=tiny_vae,
-                            duration_seconds=duration_seconds)
-        save_metadata(checkpoint_id, {"preview_error": None, "preview_warning": None})
-        return True
-    except Exception as exc:
-        LOG.exception("[TerryDirector] 原生低清预览生成失败，检查点保留")
-        try:
-            from .director_selflift_task_store import save_metadata
-            save_metadata(checkpoint_id, {"preview_error": "原生预览失败：" + str(exc)[:900]})
-        except Exception:
-            LOG.exception("[TerryDirector] 无法记录原生预览错误")
-        return False
 
 
 class _LivePreviewWrapper:
@@ -336,8 +309,8 @@ class TerryDirectorH3Preview(io.ComfyNode):
         return io.Schema(
             node_id="TerryDirectorH3Preview",
             display_name="TerryDirector 采样预览",
-            category="TerryDirector/SelfLift",
-            description="原生采样预览：无 KJNodes 依赖，WebP/JPEG 传输，最终 MP4 由暂停节点直接保存。",
+            category="TerryDirector/Preview",
+            description="原生 H3 采样预览：WebP/JPEG 传输，供预演台记录；不影响采样输出。",
             inputs=[
                 io.Model.Input("model"),
                 io.Combo.Input("tiny_vae", options=choices, default=default_tiny_vae()),

@@ -3,7 +3,7 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-path = Path(__file__).resolve().parents[1] / "director_core.py"
+path = Path(__file__).resolve().parents[1] / "nodes" / "director_core.py"
 spec = importlib.util.spec_from_file_location("td_asset_core", path)
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)

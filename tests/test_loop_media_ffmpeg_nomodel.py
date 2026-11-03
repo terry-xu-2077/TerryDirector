@@ -72,7 +72,7 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
             }
             with mock.patch.dict(sys.modules, stubs):
                 spec = importlib.util.spec_from_file_location(
-                    "_td_media_no_torch_test", ROOT / "director_loop_media.py",
+                    "_td_media_no_torch_test", ROOT / "nodes" / "director_loop_media.py",
                 )
                 media = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(media)
@@ -184,7 +184,7 @@ class TestLoopMediaFFmpegWithoutTorch(unittest.TestCase):
             }
             with mock.patch.dict(sys.modules, stubs):
                 spec = importlib.util.spec_from_file_location(
-                    "_td_media_mp4_no_torch_test", ROOT / "director_loop_media.py",
+                    "_td_media_mp4_no_torch_test", ROOT / "nodes" / "director_loop_media.py",
                 )
                 media = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(media)

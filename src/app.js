@@ -44,8 +44,8 @@
   const initial=[];
   let assets=[],nextPoolNumber={image:1,video:1,audio:1};
   let siteDemoDocument=null;
-  const siteDemoPath='examples/TerryDirector_AI_3clips_0.2MP.json';
-  const siteDemoAiPath='examples/TerryDirector_AI_3clips_demo_prompts.json';
+  const siteDemoPath='src/demo/ai_original_workflow.json';
+  const siteDemoAiPath='src/demo/ai_enhanced_prompts.json';
   const siteDemoLabels=['人物参考','载具参考','场景遗迹','荒星地貌','避难所','货币道具','地下虫群'];
   function siteDemoThumbnail(number){
     // Explicit placeholder: the seven original source images are NOT in Git.

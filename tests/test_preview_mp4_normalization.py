@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[1] / "director_preview_mp4.py"
+SOURCE = Path(__file__).resolve().parents[1] / "nodes" / "director_preview_mp4.py"
 SPEC = importlib.util.spec_from_file_location("td_preview_mp4_test", SOURCE)
 mp4 = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(mp4)

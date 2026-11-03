@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
-    "terrydirector_resolution_math_test", ROOT / "director_resolution_math.py"
+    "terrydirector_resolution_math_test", ROOT / "nodes" / "director_resolution_math.py"
 )
 MATH = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MATH)
@@ -49,63 +49,31 @@ class DualSamplingResolutionTests(unittest.TestCase):
 
     def test_selflift_examples_share_resolution_length_and_seed(self):
         import json
-
-        files = (
-            "TerryDirector_SelfLift_01_Lowres_Checkpoint.json",
-            "TerryDirector_SelfLift_03_Pause_Continue.json",
-            "TerryDirector_SelfLift_04_Reference_2MP_Highres.json",
-        )
-        for filename in files:
-            with self.subTest(workflow=filename):
-                workflow = json.loads(
-                    (ROOT / "examples" / filename).read_text(encoding="utf-8")
-                )
-                nodes = {node["id"]: node for node in workflow["nodes"]}
-                links = {link[0]: link for link in workflow["links"]}
-
-                def node_type(name):
-                    return next(node for node in nodes.values() if node["type"] == name)
-
-                def origin(target, input_name):
-                    socket = next(item for item in target["inputs"]
-                                  if item["name"] == input_name)
-                    return links[socket["link"]][1:3]
-
-                selector = node_type("TerryDirectorDualSamplingResolutionSelector")
-                self.assertEqual([socket["name"] for socket in selector["inputs"]],
-                                 ["aspect_ratio", "highres_megapixels"])
-                self.assertEqual(len(selector["widgets_values"]), 2)
-                self.assertEqual(
-                    origin(selector, "highres_megapixels")[1], 0)
-                self.assertEqual(
-                    nodes[origin(selector, "highres_megapixels")[0]]["type"],
-                    "PrimitiveFloat",
-                )
-                self.assertFalse(any(
-                    "round(a * 10 / 4)" in str(node.get("widgets_values", []))
-                    for node in nodes.values()
-                ))
-                low = node_type("MiniMaxH3ReferenceToVideo")
-                high = node_type("EmptyMiniMaxH3LatentAV")
-                sampler = node_type("SamplerCustom")
-                checkpoint = next(node for node in nodes.values() if node["type"] in {
-                    "TerryDirectorSelfLiftPauseResume",
-                    "TerryDirectorSaveLowresCheckpoint",
-                })
-                seed_node = node_type("SeedNode")
-
-                self.assertEqual(origin(low, "width"), [selector["id"], 0])
-                self.assertEqual(origin(low, "height"), [selector["id"], 1])
-                self.assertEqual(origin(high, "width"), [selector["id"], 2])
-                self.assertEqual(origin(high, "height"), [selector["id"], 3])
-                self.assertEqual(origin(low, "length"), origin(high, "length"))
-                duration_origin = origin(low, "length")
-                self.assertEqual(nodes[duration_origin[0]]["type"], "ComfyMathExpression")
-                self.assertEqual(duration_origin[1], 1)
-                self.assertEqual(origin(sampler, "noise_seed"), [seed_node["id"], 0])
-                self.assertEqual(origin(checkpoint, "seed"), [seed_node["id"], 0])
-                self.assertEqual(len([node for node in nodes.values()
-                                      if node["type"] == "TerryDirectorDualSamplingResolutionSelector"]), 1)
+        for path in sorted((ROOT / "examples").glob("TerryDirector_SelfLift_*.json")):
+            with self.subTest(workflow=path.name):
+                graph = json.loads(path.read_text(encoding="utf-8"))
+                nodes = {n["id"]: n for n in graph["nodes"]}
+                links = {l[0]: l for l in graph["links"]}
+                def origin(node, name):
+                    inp = next(i for i in node["inputs"] if i["name"] == name)
+                    return links[inp["link"]][1:3]
+                selector = nodes[36]
+                self.assertEqual(selector["type"], "TerryDirectorDualSamplingResolutionSelector")
+                self.assertEqual(selector["widgets_values"], ["16:9 (Widescreen)", .8])
+                self.assertEqual(origin(nodes[6],"width"), [36,0])
+                self.assertEqual(origin(nodes[6],"height"), [36,1])
+                self.assertEqual(origin(nodes[6],"length"), [30,0])
+                self.assertEqual(nodes[30]["widgets_values"], [124,"fixed"])
+                self.assertEqual(nodes[33]["widgets_values"], [8,"fixed"])
+                self.assertFalse(any(i["name"] == "seed" for i in nodes[13]["inputs"]))
+                if 11 in nodes:
+                    self.assertEqual(origin(nodes[11],"latent_image"),[6,1])
+                    self.assertEqual(origin(nodes[11],"seed"),[33,0])
+                if 18 in nodes:
+                    self.assertEqual(origin(nodes[18],"width"),[36,2])
+                    self.assertEqual(origin(nodes[18],"height"),[36,3])
+                    self.assertEqual(origin(nodes[18],"seed"),[33,0])
+                    self.assertNotIn("length",[i["name"] for i in nodes[18]["inputs"]])
 
     def test_rejects_invalid_megapixels_and_ratio(self):
         for value in (0, -0.1, float("inf"), float("nan"), "not a number"):

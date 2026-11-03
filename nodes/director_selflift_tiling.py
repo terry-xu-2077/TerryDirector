@@ -2,7 +2,9 @@
 
 Tiling is approximate: video predictions are feathered, and generated audio
 uses the first tile's prediction. It is disabled by default. No global model
-monkey-patch and no external plugin classes are involved.
+monkey-patch and no external plugin classes are involved. Split-stage anchoring,
+content cuts and overlap math follow selflift-Avatar af4d501; the older
+continuous/native-checkpoint paths retain their original tiling configuration.
 """
 from __future__ import annotations
 
@@ -15,27 +17,65 @@ import torch
 from .director_selflift_math import ENGINE_ID
 
 
-def tile_regions(length, count):
+def tile_regions(length, count, *, overlap=None, scores=None):
     patches = (length + 1) // 2
     count = min(max(1, int(count)), max(1, patches // 2))
     if count == 1 or patches < 4:
         return [(0, length)]
-    halo = min(4, max(1, patches // 8))
+    halo = min(4, max(1, patches // 8)) if overlap is None else max(1, min(int(overlap), max(1, patches // 2)))
     edges = [i * patches // count for i in range(count + 1)]
+    if scores is not None and len(scores) == length:
+        radius = max(2, min(12, patches // (count * 4)))
+        cuts, previous = [], 0
+        for index in range(1, count):
+            base = int(round(index * patches / count))
+            lo, hi = max(previous + 1, base - radius), min(patches - (count - index), base + radius)
+            if hi < lo:
+                lo = max(previous + 1, 0)
+                hi = min(patches - (count - index), max(lo, base))
+            def rank(p):
+                cell = max(0, min(length - 1, p * 2))
+                left, right = max(0, cell - 1), min(length, cell + 2)
+                return float(scores[left:right].mean()), abs(p - base)
+            previous = min(range(lo, hi + 1), key=rank)
+            cuts.append(previous)
+        edges = [0, *cuts, patches]
     return [(max(0, edges[i] - halo) * 2, min(length, (edges[i + 1] + halo) * 2)) for i in range(count)]
 
 
-def tile_weights(regions, index):
+def spatial_scores(video):
+    if video.shape[2] < 1 or min(video.shape[-2:]) < 2:
+        return None
+    x = video.detach().float()
+    result = {}
+    for axis, energy in ((4, (x[...,1:] - x[...,:-1]).abs().mean((0,1,2,3))),
+                         (3, (x[...,1:,:] - x[...,:-1,:]).abs().mean((0,1,2,4)))):
+        curve = torch.zeros(video.shape[axis], dtype=torch.float32)
+        curve[1:] = energy.cpu()
+        curve = torch.nan_to_num(curve, nan=0., posinf=0., neginf=0.)
+        result[axis] = (curve / curve.median().clamp_min(1e-6)).clamp(0.,4.)
+    return result
+
+
+def append_spatial_reference(conditioning, video):
+    reference = {"kind":"video", "latent_t":int(video.shape[2]),
+                 "latent_h":int(video.shape[3]), "latent_w":int(video.shape[4]),
+                 "ref_audio_t":0, "latent":video}
+    return [[embedding, {**metadata, "minimax_refs":[*metadata.get("minimax_refs", []), reference]}]
+            for embedding, metadata in conditioning]
+
+
+def tile_weights(regions, index, *, device="cpu"):
     start, end = regions[index]
-    window = torch.ones(end - start, dtype=torch.float32)
+    window = torch.ones(end - start, dtype=torch.float32, device=device)
     if index:
         overlap = min(end, regions[index - 1][1]) - start
         if overlap > 0:
-            window[:overlap] *= (torch.arange(overlap) + 0.5) / overlap
+            window[:overlap] *= (torch.arange(overlap, device=device, dtype=torch.float32) + 0.5) / overlap
     if index < len(regions) - 1:
         overlap = end - max(start, regions[index + 1][0])
         if overlap > 0:
-            window[-overlap:] *= 1 - (torch.arange(overlap) + 0.5) / overlap
+            window[-overlap:] *= 1 - (torch.arange(overlap, device=device, dtype=torch.float32) + 0.5) / overlap
     return window
 
 
@@ -72,7 +112,9 @@ def _condition_size(conds, height, width, channels):
                 for key in ("latent", "audio_latent"):
                     tensor = reference.get(key)
                     if tensor is not None:
-                        size += math.prod(tensor.shape[1:])
+                        size += (tensor.shape[1] * tensor.shape[2] * ((tensor.shape[3] + 1) // 2 * 2)
+                                 * ((tensor.shape[4] + 1) // 2 * 2) if key == "latent"
+                                 else math.prod(tensor.shape[1:]))
             estimates.append(size)
     return max(estimates)
 
@@ -91,7 +133,8 @@ def _prepare(executor, model, noise_shape, conds, model_options=None,
     available = _workspace(model)
     counts = range(1, 9) if plan["mode"] == "auto" else (plan["requested"],)
     for count in counts:
-        regions = tile_regions(video[axis], count)
+        regions = tile_regions(video[axis], count, overlap=plan.get("overlap"),
+                               scores=(plan.get("scores") or {}).get(axis))
         shape = list(video)
         shape[axis] = max(end - start for start, end in regions)
         shape[3], shape[4] = ((n + 1) // 2 * 2 for n in shape[3:5])
@@ -140,8 +183,9 @@ def crop_payload(payload, context, video, audio, axis, start, stop):
             tile = pad_to_patch_size(latent.narrow(axis, start, stop - start), (1, 2, 2)).contiguous()
             guides.append({**guide, "latent": tile})
         cropped["keyframes"] = guides
-        if not payload.get("refs"):
-            cropped["cond_video_latents"] = [guide["latent"] for guide in guides]
+        cropped["cond_video_latents"] = [guide["latent"] for guide in guides] + [
+            reference["latent"] for reference in payload.get("refs", []) if "latent" in reference
+        ]
     th, tw = (stop - start, w) if axis == 3 else (h, stop - start)
     tile_layout = _layout((context.shape[1], video.shape[2], (th + 1) // 2 * 2, (tw + 1) // 2 * 2, audio.shape[-1]), cropped)
     if len(full.segments) != len(tile_layout.segments):
@@ -188,9 +232,9 @@ def _forward(executor, streams, timestep, context, transformer_options, minimax_
         tile = video.narrow(axis, start, stop - start).contiguous()
         payload = crop_payload(minimax_payload, context, video, audio, axis, start, stop)
         predicted, audio_prediction = executor([tile, audio], timestep, context, dict(transformer_options), minimax_payload=payload, **kwargs)
-        weights = tile_weights(regions, index)
+        weights = tile_weights(regions, index, device=video.device).cpu()
         view[axis] = stop - start
-        assembled.narrow(axis, start, stop - start).add_(predicted.float().cpu() * weights.view(view))
+        assembled.narrow(axis, start, stop - start).addcmul_(predicted.float().cpu(), weights.view(view))
         coverage[start:stop] += weights
         if first_audio is None:
             first_audio = audio_prediction.detach().float().cpu().clone()
@@ -202,7 +246,7 @@ def _forward(executor, streams, timestep, context, transformer_options, minimax_
     return [assembled.to(video), first_audio.to(audio)]
 
 
-def configure_tiling(model, shapes, mode="auto", tiles=2, axis="auto"):
+def configure_tiling(model, shapes, mode="auto", tiles=2, axis="auto", *, overlap=None, scores=None):
     import comfy.model_base
     from comfy.patcher_extension import WrappersMP
     if mode not in {"auto", "manual"} or axis not in {"auto", "height", "width"}:
@@ -213,7 +257,8 @@ def configure_tiling(model, shapes, mode="auto", tiles=2, axis="auto"):
         raise ValueError("TerryDirector SelfLift: 高清分块只支持 MiniMax H3")
     if len(shapes) != 2 or len(shapes[0]) != 5 or len(shapes[1]) != 4:
         raise ValueError("TerryDirector SelfLift: 高清分块需要 H3 AV latent")
-    plan = {"mode": mode, "requested": tiles, "axis_choice": axis, "shapes": tuple(tuple(s) for s in shapes)}
+    plan = {"mode": mode, "requested": tiles, "axis_choice": axis, "shapes": tuple(tuple(s) for s in shapes),
+            "overlap": overlap, "scores": scores}
     clone = model.clone()
     clone.add_wrapper_with_key(WrappersMP.PREPARE_SAMPLING, ENGINE_ID + ".tiling", partial(_prepare, plan=plan))
     clone.add_wrapper_with_key(WrappersMP.DIFFUSION_MODEL, ENGINE_ID + ".tiling", partial(_forward, plan=plan))

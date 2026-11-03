@@ -3,8 +3,9 @@
 > **执行对象：本机 Codex。** 请在已安装 ComfyUI 的 Windows / RTX 3090 环境完成真实运行验收，发现问题直接修复并推送开发分支。**不合并、不改动 `main`**。不能用静态检查代替 GPU 验收。
 
 **开发分支：** `feat/ai-prompt-enhancement`  
-**示例工作流：** [TerryDirector_AI_3clips_0.2MP.json](../examples/TerryDirector_AI_3clips_0.2MP.json)  
-**离线校验：** `python examples/validate_ai_3clip_workflow.py`
+**历史验收数据：** [静态演示原始数据](../src/demo/ai_original_workflow.json)
+
+**离线校验：** `python tests/validate_ai_3clip_workflow.py`
 
 ## 一、验收范围与目标
 
@@ -66,7 +67,7 @@
 
 ## 三、运行前结构预检
 
-- 运行 `python examples/validate_ai_3clip_workflow.py`，应该报告 `STATIC_STRUCTURE_VALIDATED_ONLY`、608×352、288 帧、7 张旧参考图、三段尾帧参考、AI Seed 8888、无 Self-Lift。**这仅表示 JSON 结构有效，不表示图片二进制存在、ComfyUI 已能导入或 GPU 采样成功。**
+- 运行 `python tests/validate_ai_3clip_workflow.py`，应该报告 `STATIC_STRUCTURE_VALIDATED_ONLY`、608×352、288 帧、7 张旧参考图、三段尾帧参考、AI Seed 8888、无 Self-Lift。**这仅表示 JSON 结构有效，不表示图片二进制存在、ComfyUI 已能导入或 GPU 采样成功。**
 - 在 ComfyUI 菜单导入示例 JSON，确认没有红色未识别节点、错连线、无效 Widget，Seed 控制行为为 fixed。
 - 打开导演时间线编辑窗口，确认原来三段「特瑞…… / 破损…… / 蚂蚱……」的**完整原始提示词**、七张参考图缩略图、全局 Prompt 中七个标签全部正确；第 2/3 段接缝为「尾帧参考」、各片段均启用全局提示词，顶部「生成前 AI 增强」已开启并连接 Llama 配置。
 - 如果原生 ComfyUI V3 节点/Widget 序列化不兼容当前 JSON，需**修正仓库示例 JSON**并重新运行离线检查；不能只临时手工画一条能跑的链路冒充样例导入通过。

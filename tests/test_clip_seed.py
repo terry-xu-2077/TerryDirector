@@ -12,7 +12,7 @@ PREFIX = "_td_test_clip_seed"
 
 
 def _load(path: str, name: str):
-    spec = importlib.util.spec_from_file_location(name, ROOT / path)
+    spec = importlib.util.spec_from_file_location(name, ROOT / "nodes" / path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
@@ -21,7 +21,7 @@ def _load(path: str, name: str):
 
 def test_clip_seed_round_trip_and_compile():
     package = types.ModuleType(PREFIX)
-    package.__path__ = [str(ROOT)]
+    package.__path__ = [str(ROOT / "nodes")]
     sys.modules[PREFIX] = package
     try:
         core = _load("director_core.py", PREFIX + ".director_core")
@@ -63,7 +63,7 @@ def test_clip_seed_round_trip_and_compile():
 
 def test_clip_seed_is_clamped_without_browser_precision_loss():
     package = types.ModuleType(PREFIX + "_clamp")
-    package.__path__ = [str(ROOT)]
+    package.__path__ = [str(ROOT / "nodes")]
     sys.modules[package.__name__] = package
     name = package.__name__ + ".director_core"
     try:

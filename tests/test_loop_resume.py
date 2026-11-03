@@ -23,7 +23,7 @@ class TestResume(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.output = Path(self.temp.name)
         self.pkg = types.ModuleType(PKG)
-        self.pkg.__path__ = [str(ROOT)]
+        self.pkg.__path__ = [str(ROOT / "nodes")]
         mocks = {
             PKG: self.pkg,
             "folder_paths": types.SimpleNamespace(
@@ -34,7 +34,7 @@ class TestResume(unittest.TestCase):
         self.patcher.start()
         self.addCleanup(self.patcher.stop)
         spec = importlib.util.spec_from_file_location(
-            PKG + ".director_loop_resume", ROOT / "director_loop_resume.py"
+            PKG + ".director_loop_resume", ROOT / "nodes" / "director_loop_resume.py"
         )
         self.mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.mod)

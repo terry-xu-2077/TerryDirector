@@ -7,7 +7,7 @@ const read = path => readFile(new URL(path,import.meta.url),"utf8");
 const rich=await read("../web/td_h3_rich_text.js");
 const menus=await read("../web/td_h3_shared_menus.js");
 const adapter=await read("../web/td_preview_rich_editor.js");
-const manager=await read("../web/td_selflift_task_manager.js");
+const manager=await read("../web/td_preview_task_manager.js");
 const noImports=source=>source.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")
   .replace(/\bexport\s+/gm,"");
 

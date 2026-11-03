@@ -12,7 +12,7 @@ PREFIX = "_td_test_ai_clip_seed_backend"
 
 
 def _load_module(path: str, target: str):
-    spec = importlib.util.spec_from_file_location(target, ROOT / path)
+    spec = importlib.util.spec_from_file_location(target, ROOT / "nodes" / path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[target] = module
     spec.loader.exec_module(module)
@@ -21,7 +21,7 @@ def _load_module(path: str, target: str):
 
 def test_batch_uses_clip_ai_seed_or_global_fallback():
     package = types.ModuleType(PREFIX)
-    package.__path__ = [str(ROOT)]
+    package.__path__ = [str(ROOT / "nodes")]
     sys.modules[PREFIX] = package
     old_folder_paths = sys.modules.get("folder_paths")
     fake_folder_paths = types.SimpleNamespace(

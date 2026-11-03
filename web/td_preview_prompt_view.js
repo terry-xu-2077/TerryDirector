@@ -1,4 +1,4 @@
-/** Read-only screenplay presentation. Tokens retain the exact source text. */
+/** Screenplay presentation. Tokens retain the exact source text in either view. */
 const escapeHtml = value => String(value).replace(/[&<>"']/g, char =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]));
 
@@ -18,13 +18,14 @@ export function tokenizePreviewPrompt(source) {
   return tokens;
 }
 
-export function renderPreviewPrompt(source) {
+export function renderPreviewPrompt(source, {editable=false}={}) {
   const labels = {picture:"图片",audio:"音频",video:"视频",prompt:"待生成"};
   return tokenizePreviewPrompt(source).map(token => {
     if (token.kind === "text") return escapeHtml(token.raw);
     const label = token.kind === "reference" ? labels[token.type] + " · " + token.name :
       token.kind === "section" ? token.raw.trim().slice(1,-1) : token.raw.trim();
     return '<span class="tdm-prompt-tag tdm-prompt-'+token.kind+'"'+
+      (editable ? ' contenteditable="false" data-raw="'+escapeHtml(token.raw)+'"' : '')+
       (token.type ? ' data-media-kind="'+token.type+'"' : '')+
       ' title="'+escapeHtml(token.raw)+'">'+escapeHtml(label)+'</span>';
   }).join("");

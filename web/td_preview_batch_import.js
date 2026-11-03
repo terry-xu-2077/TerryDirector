@@ -209,7 +209,7 @@ export function parsePreviewBatches(value) {
     const end = index + 1 < headings.length ? headings[index + 1].index : text.length;
     const body = text.slice(start, end).trim();
     const heading = match[1].trim();
-    const durationMatch = heading.match(/[（(]?\s*建议\s*(\d+)\s*秒\s*[）)]?\s*$/);
+    const durationMatch = heading.match(/[（(]?\s*建议\s*(?:生成\s*)?(?:时长\s*)?[:：]?\s*(\d+)\s*秒\s*[）)]?\s*$/);
     const name = durationMatch ? heading.slice(0, durationMatch.index).trim() : heading;
     const parsed = parseGlobalReferences(body);
 
@@ -227,7 +227,8 @@ export function parsePreviewBatches(value) {
       parseWarnings: parsed.parseWarnings,
       unparsedGeneratedAssets: parsed.unparsedGeneratedAssets,
     };
-  }).filter(batch => batch.body.length > 0);
+  }).filter(batch => batch.body.length > 0)
+    .sort((a,b) => a.name.localeCompare(b.name,"zh-CN",{numeric:true}));
 
   return {
     preamble,

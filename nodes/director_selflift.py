@@ -105,9 +105,9 @@ class ComfyBackend:
         clone.add_wrapper_with_key(self.extensions.WrappersMP.OUTER_SAMPLE, ENGINE_ID + ".mask", inject)
         return clone
 
-    def tiled_model(self, model, shapes, mode, tiles, axis):
+    def tiled_model(self, model, shapes, mode, tiles, axis, **options):
         from .director_selflift_tiling import configure_tiling
-        return configure_tiling(model, shapes, mode, tiles, axis)
+        return configure_tiling(model, shapes, mode, tiles, axis, **options)
 
 
 
@@ -153,7 +153,7 @@ def sample_selflift(*, model, positive, negative, latent_image, sampler, sigmas,
     low_size = low_resolution(*target, lowres_scale)
     small_video = spatial_resize(source[0], low_size)
     low_anchors = [small_video, *source[1:]]
-    low_masks = [spatial_resize(masks[0], low_size), *masks[1:]] if masks is not None else None
+    low_masks = [spatial_resize(masks[0], low_size, framewise=True), *masks[1:]] if masks is not None else None
     low_model = backend.mask_model(model, low_anchors, low_masks)
     low_latent = backend.pack(low_anchors)
     batch_index = latent_image.get("batch_index")

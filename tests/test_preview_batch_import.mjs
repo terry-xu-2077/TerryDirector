@@ -222,6 +222,14 @@ const malformed = parsePreviewBatches([
 assert.equal(malformed.batches[0].parseErrors.length, 1);
 
 assert.equal(parsePreviewBatches("没有批次标题").batches.length, 0);
+const durationVariants=parsePreviewBatches([
+  "批次10｜十（建议生成时长14秒）", "正文十",
+  "批次2｜二 (建议生成时长：12 秒)", "正文二",
+  "批次01｜一（建议9秒）", "正文一",
+].join("\n"));
+assert.deepEqual(durationVariants.batches.map(item=>[item.name,item.duration_seconds]),[
+  ["批次01｜一",9],["批次2｜二",12],["批次10｜十",14],
+]);
 assert.match(parsePreviewBatches("没有批次标题").error, /未识别到批次标题/);
 assert.equal(
   parsePreviewBatches("## **批次08｜测试标题（建议12秒）**\n[分镜脚本]\n镜头")

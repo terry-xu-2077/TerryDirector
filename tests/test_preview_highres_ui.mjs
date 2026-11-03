@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const script=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const script=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 assert.doesNotThrow(()=>new Function(
   script.replace(/^\s*import[\s\S]*?from\s*["'][^"']+["'];/gm,"")));
 const begin=script.indexOf("function details(task) {");
@@ -17,10 +17,10 @@ const kindEnd=script.indexOf("function previewJobMatchesTask(job,task) {",kindSt
 const make=new Function("state","esc","statusMarkup","livePreviewJobForTask",
   "livePreviewMarkup","mediaUrl","formatTime","duration",
   script.slice(helperStart,helperEnd)+script.slice(kindStart,kindEnd)+
-  script.slice(begin,end)+"return {details,stageElapsed,availablePreviewKinds};");
+  script.slice(script.indexOf("function canRerunLow("),script.indexOf("function batchActionInfo("))+script.slice(begin,end)+"return {details,stageElapsed,availablePreviewKinds};");
 const {details,stageElapsed,availablePreviewKinds}=make(
  state,esc,task=>'<b>'+task.status+'</b>',()=>null,()=>"",
- (id,kind)=>"/terrydirector/api/selflift/tasks/"+id+"/media/"+kind,
+ (id,kind)=>"/terrydirector/api/preview/tasks/"+id+"/media/"+kind,
  x=>x||"—",()=> "0秒");
 const task={id:"draft_a",checkpoint_id:"b".repeat(32),kind:"draft",name:"Scene A",
  status:"high_complete",media:{highres:"high_0001.mp4",sampling:"sampling_preview.mp4",decoded:"review.mp4"},

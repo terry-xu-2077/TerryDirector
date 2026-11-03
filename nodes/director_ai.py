@@ -28,7 +28,7 @@ from .director_ai_core import (
 LLM_ROOT = Path(folder_paths.models_dir) / "LLM"
 INPUT_ROOT = Path(folder_paths.get_input_directory())
 CACHE_ROOT = Path(folder_paths.get_output_directory()) / ".terrydirector_ai"
-SKILL_ROOT = Path(__file__).resolve().parent / "ai_skills" / "h3-prompt-writing"
+SKILL_ROOT = Path(__file__).resolve().parents[1] / "ai_skills" / "h3-prompt-writing"
 MEDIA_TAG = re.compile(r"<(Picture|Video|Audio)\s+(\d+)>", re.IGNORECASE)
 
 

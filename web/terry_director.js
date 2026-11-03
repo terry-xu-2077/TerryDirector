@@ -27,7 +27,7 @@ const LOOP_MEMORY_SOURCE_CLASSES = new Set([
   "PrimitiveString", "Reroute", "GetNode", "SetNode",
   "MiniMaxH3VAEDecodeFast", "TerryDirectorH3X2LowRAMDecode", "VAELoader",
   "TerryXuMemoryCleanup", "LTXVSeparateAVLatent",
-  "SelfLiftAvatarH3Sampler", "TerryDirectorSelfLiftSampler",
+  "SelfLiftAvatarH3Sampler", "TerryDirectorSelfLiftSampler", "TerryDirectorSelfLiftLowres", "TerryDirectorSelfLiftHighresSampler",
   "TerryWireBusPack", "TerryWireBusUnpack",
   "TerryWirelessBusPack", "TerryWirelessBusUnpack",
 ]);

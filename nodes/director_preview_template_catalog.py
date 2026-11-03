@@ -8,8 +8,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 import folder_paths
-from .director_selflift_task_store import save_preview_template as _save_single
-from .director_selflift_task_store import load_preview_template as _load_single
+from .director_preview_task_store import save_preview_template as _save_single
+from .director_preview_task_store import load_preview_template as _load_single
 _LOCK = threading.RLock()
 _ID = re.compile(r"^[0-9a-f]{32}$")
 def _root(): return Path(folder_paths.get_output_directory()) / "TerryDirector" / "preview_stage"
@@ -69,7 +69,7 @@ def save_preview_template(value):
     if not isinstance(graph,dict) or not isinstance(graph.get("nodes"),list) or not isinstance(api,dict) or not api:
         raise ValueError("工作流/API 数据不完整")
     pause=str(value.get("pause_node_id"))
-    if api.get(pause,{}).get("class_type")!="TerryDirectorSelfLiftPauseResume":
+    if api.get(pause,{}).get("class_type")!="TerryDirectorPauseResume":
         raise ValueError("工作流没有有效暂停节点")
     h3_id=value.get("h3_node_id")
     h3_node=next((node for node in graph["nodes"] if

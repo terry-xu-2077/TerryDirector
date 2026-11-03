@@ -89,10 +89,17 @@ def _validate_content(data: dict) -> None:
     if str(seed) != str(data["seed"]).strip() or seed < minimum or seed > maximum or seed < 0:
         raise ValueError(f"种子必须在 {minimum}～{maximum} 范围内")
     duration = data.get("duration_seconds", 15)
-    if type(duration) not in (int, float) or not float(duration).is_integer() or not 4 <= duration <= 20:
+    parameter_changes = data.get("video_parameter_overrides")
+    if parameter_changes is not None and (not isinstance(parameter_changes, dict) or
+            any(key not in ("duration", "resolution") or type(value) is not bool
+                for key, value in parameter_changes.items())):
+        raise ValueError("参数覆盖开关格式错误")
+    inherit_duration = duration is None and (parameter_changes or {}).get("duration") is False
+    if not inherit_duration and (type(duration) not in (int, float) or not float(duration).is_integer() or not 4 <= duration <= 20):
         raise ValueError("视频时长须为 4–20 秒之间的整数")
     mp = data.get("highres_megapixels", 2.0)
-    if type(mp) not in (int, float) or float(mp) not in (0.4,0.6,0.8,1.0,1.2,1.5,2.0,3.0,4.0):
+    inherit_resolution = mp is None and (parameter_changes or {}).get("resolution") is False
+    if not inherit_resolution and (type(mp) not in (int, float) or float(mp) not in (0.4,0.6,0.8,1.0,1.2,1.5,2.0,3.0,4.0)):
         raise ValueError("高清分辨率必须是预演台提供的 MP 档位")
 
 
@@ -242,6 +249,10 @@ def list_drafts() -> list[dict]:
                 "prompt_id": value.get("prompt_id"),
                 "checkpoint_id": value.get("checkpoint_id"),
                 "name": value.get("name", "未命名任务"),
+                "duration_seconds": value.get("duration_seconds", 15),
+                "batch_group_id": value.get("batch_group_id"),
+                "batch_group_name": value.get("batch_group_name"),
+                "batch_index": value.get("batch_index"),
                 "created_at": value.get("created_at"),
                 "low_started_at": value.get("low_started_at"),
                 "low_finished_at": value.get("low_finished_at"),

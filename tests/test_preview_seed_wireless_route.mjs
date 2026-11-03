@@ -21,19 +21,19 @@ const workflow={
   {id:72,type:"TerryXuWirelessBusUnpack",properties:{terry_wireless_bus_channel:"分辨率",terry_wire_bus_lane_ids:lanes.map(l=>l.id)},
    outputs:labels.map((name,index)=>({name,type:"INT",links:index===2?[141,142]:null}))},
   {id:11,type:"SamplerCustom",inputs:[{name:"noise_seed",link:142}]},
-  {id:13,type:"TerryDirectorSelfLiftPauseResume",inputs:[{name:"seed",link:141}]},
+  {id:13,type:"TerryDirectorSelfLiftHighresSampler",inputs:[{name:"seed",link:141}]},
  ],
  links:[[150,77,0,78,0,"INT"],[151,79,0,70,2,"INT"],[141,72,2,13,0,"INT"],[142,72,2,11,0,"INT"]],
 };
 const api={
  "77":{class_type:"Seed (rgthree)",inputs:{seed:8}},
  "11":{class_type:"SamplerCustom",inputs:{noise_seed:["72",2]}},
- "13":{class_type:"TerryDirectorSelfLiftPauseResume",inputs:{seed:["72",2]}},
+ "13":{class_type:"TerryDirectorSelfLiftHighresSampler",inputs:{seed:["72",2]}},
 };
 const defs={
  "Seed (rgthree)":{input:{required:{seed:["INT",{min:0,max:1125899906842624}]}}},
  SamplerCustom:{input:{required:{noise_seed:["INT",{min:0,max:999999}]}}},
- TerryDirectorSelfLiftPauseResume:{input:{required:{seed:["INT",{min:0,max:500000}]}}},
+ TerryDirectorSelfLiftHighresSampler:{input:{required:{seed:["INT",{min:0,max:500000}]}}},
 };
 const result=resolvePreviewSeedBounds(workflow,{node_id:77,widget_name:"seed"},api,defs);
 assert.deepEqual([result.min,result.max],[0,500000]);

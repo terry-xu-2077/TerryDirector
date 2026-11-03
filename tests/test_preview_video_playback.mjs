@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-const code=await readFile(new URL("../web/td_selflift_task_manager.js",import.meta.url),"utf8");
+const code=await readFile(new URL("../web/td_preview_task_manager.js",import.meta.url),"utf8");
 const section=(from,to)=>{
   const a=code.indexOf(from),b=code.indexOf(to,a);
   assert.ok(a>=0&&b>a,from);

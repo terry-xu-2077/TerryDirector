@@ -17,7 +17,7 @@ class TaskDeletionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         pkg = types.ModuleType(PACKAGE)
-        pkg.__path__ = [str(ROOT)]
+        pkg.__path__ = [str(ROOT / "nodes")]
         cls.previous_package = sys.modules.get(PACKAGE)
         cls.previous_checkpoint = sys.modules.get(PACKAGE + ".director_selflift_checkpoint")
         sys.modules[PACKAGE] = pkg
@@ -38,7 +38,7 @@ class TaskDeletionTests(unittest.TestCase):
         cls.previous_paths = sys.modules.get("folder_paths")
         fake_paths = types.ModuleType("folder_paths")
         sys.modules["folder_paths"] = fake_paths
-        cls.module = importlib.import_module(PACKAGE + ".director_selflift_task_store")
+        cls.module = importlib.import_module(PACKAGE + ".director_preview_task_store")
 
     @classmethod
     def tearDownClass(cls):
@@ -63,7 +63,7 @@ class TaskDeletionTests(unittest.TestCase):
         folder = self.root / checkpoint_id
         folder.mkdir()
         (folder / "manifest.json").write_text(
-            json.dumps({"checkpoint_id": checkpoint_id}), encoding="utf-8")
+            json.dumps({"schema": 1, "engine": "terrydirector-latent-cache", "checkpoint_id": checkpoint_id}), encoding="utf-8")
         (folder / "state.safetensors").write_bytes(b"checkpoint")
         (folder / "task.json").write_text("{}", encoding="utf-8")
         (folder / "review.mp4").write_bytes(b"video")
@@ -105,7 +105,7 @@ class TaskDeletionTests(unittest.TestCase):
 
     def test_queued_and_running_highres_protect_selected_checkpoint(self):
         cid = self.task("a")
-        prompt = {"13": {"class_type": "TerryDirectorSelfLiftPauseResume",
+        prompt = {"13": {"class_type": "TerryDirectorPauseResume",
                          "inputs": {"mode": "继续高清", "checkpoint_id": cid}}}
         item = (0, "p-1", prompt)
         self.assertEqual(self.module.checkpoint_ids_in_queue([item], {cid}), {cid})
@@ -113,7 +113,7 @@ class TaskDeletionTests(unittest.TestCase):
 
     def test_running_first_stage_blocks_all_deletion(self):
         item = (0, "p-2", {
-            "13": {"class_type": "TerryDirectorSelfLiftPauseResume",
+            "13": {"class_type": "TerryDirectorPauseResume",
                    "inputs": {"mode": "暂停并保存", "checkpoint_id": ""}},
         })
         self.assertEqual(
@@ -123,10 +123,24 @@ class TaskDeletionTests(unittest.TestCase):
         self.assertEqual(self.module.checkpoint_ids_in_queue([item], {"a" * 32}),
                          set())
 
-    def test_read_checkpoint_queue_reference_is_protected(self):
+    def test_task_media_inventory_does_not_select_a_sampling_engine(self):
+        cid=self.task("e")
+        manifest=self.root/cid/"manifest.json"
+        value=json.loads(manifest.read_text(encoding="utf-8"))
+        value["engine"]="arbitrary-external-sampler"
+        manifest.write_text(json.dumps(value),encoding="utf-8")
+        self.assertEqual(self.module.checkpoint_dir(cid).name,cid)
+        self.assertIn(cid,[item["checkpoint_id"] for item in self.module.list_checkpoints()])
+        self.assertEqual(self.module.media_path(cid,"decoded"),self.root/cid/"review.mp4")
+        # Merely listing/playing a result does not authorize decoding its state.
+        cache=importlib.import_module(PACKAGE+".director_latent_checkpoint")
+        with self.assertRaises(ValueError):
+            cache.read_manifest(cid)
+
+    def test_custom_checkpoint_reference_is_protected_without_sampler_type_checks(self):
         cid = self.task("a")
         item = (1, "p-3", {
-            "7": {"class_type": "TerryDirectorReadLowresCheckpoint",
+            "7": {"class_type": "CustomCacheReader",
                   "inputs": {"task": "S1_E1 · " + cid[:8]}},
         })
         self.assertEqual(self.module.checkpoint_ids_in_queue([item], {cid}), {cid})

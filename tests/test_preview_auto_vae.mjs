@@ -1,5 +1,5 @@
 // Run: node tests/test_preview_auto_vae.mjs
-// Mirrors a real H3 workflow where SamplerCustom #11 low_clean fans out to
+// Mirrors a real H3 workflow where SamplerCustom #11 latent fans out to
 // checkpoint #13 and VAE video/audio -> VHS_VideoCombine #100.
 // The independent high-res video ends at VHS_VideoCombine #42.
 import assert from "node:assert/strict";
@@ -18,11 +18,11 @@ const node=(id,type,inputs=[],outs=[])=>({
 });
 const workflow={nodes:[
   node(11,"SamplerCustom",[],[[],[15,193,194]]),
-  node(13,"TerryDirectorSelfLiftPauseResume",[["low_clean",15]],[[98],[]]),
+  node(13,"TerryDirectorPauseResume",[["latent",15]],[[98],[]]),
   node(99,"VAEDecode",[["samples",193]],[[195]]),
   node(98,"VAEDecodeAudio",[["samples",194]],[[196]]),
   node(100,"VHS_VideoCombine",[["images",195],["audio",196]],[[]]),
-  node(18,"TerryDirectorSelfLiftHighres",[["checkpoint",98]],[[92,93]]),
+  node(18,"TerryDirectorSelfLiftHighresSampler",[["latent",98]],[[92,93]]),
   node(19,"VAEDecode",[["samples",92]],[[59]]),
   node(20,"VAEDecodeAudio",[["samples",93]],[[60]]),
   node(42,"VHS_VideoCombine",[["images",59],["audio",60]],[[]]),
@@ -38,10 +38,10 @@ const api=Object.fromEntries(workflow.nodes.map(n=>[String(n.id),{
   class_type:n.type,inputs:{}
 }]));
 const link=(target,name,origin,slot)=>{api[String(target)].inputs[name]=[String(origin),slot];};
-link(13,"low_clean",11,1);
+link(13,"latent",11,1);
 link(99,"samples",11,1);link(98,"samples",11,1);
 link(100,"images",99,0);link(100,"audio",98,0);
-link(18,"checkpoint",13,0);
+link(18,"latent",13,0);
 link(19,"samples",18,0);link(20,"samples",18,0);
 link(42,"images",19,0);link(42,"audio",20,0);
 api["13"].inputs.mode="暂停并保存";
@@ -60,12 +60,10 @@ const template={
 // Old templates/drafts with decoded_target=null are automatically repaired.
 const low=buildPreviewJob(template,[],"pause","","decoded");
 assert.deepEqual(low.targets,["13","100"]);
-assert.equal(low.output["100"].class_type,"TerryDirectorLowresReviewSave");
-assert.deepEqual(low.output["100"].inputs,{
-  checkpoint_id:["13",1],images:["99",0],audio:["98",0],
-});
+assert.equal(low.output["100"].class_type,"VHS_VideoCombine");
+assert.deepEqual(low.output["100"].inputs,api["100"].inputs);
 assert.equal(low.output["42"].class_type,"VHS_VideoCombine");
-assert.equal(low.output["13"].inputs.preview_tiny_vae,"none");
+assert.equal(Object.hasOwn(low.output["13"].inputs,"preview_tiny_vae"),false);
 assert.equal(api["100"].class_type,"VHS_VideoCombine",
   "Conversion must never edit saved template or canvas");
 
@@ -79,7 +77,7 @@ const high=buildPreviewJob(template,[],"continue","a".repeat(32),"decoded");
 assert.deepEqual(high.targets,["42"]);
 assert.equal(high.output["100"].class_type,"VHS_VideoCombine");
 
-// Reject a VHS branch that contains only video or is not from low_clean.
+// Reject a VHS branch that contains only video or is not from latent.
 const noAudio=structuredClone(workflow),noAudioApi=structuredClone(api);
 noAudioApi["100"].inputs.audio=["20",0];
 assert.equal(detectLowresReviewSink(noAudio,noAudioApi,13),null);
@@ -87,3 +85,23 @@ const brokenTemplate={...template,api_prompt:noAudioApi};
 assert.throws(()=>buildPreviewJob(brokenTemplate,[],"pause","","decoded"),
   /未识别到低清 VAE 审片线路/);
 console.log("Preview Stage auto low-res VAE detection, checkpoint capture and isolation: PASS");
+
+// Core CreateVideo -> SaveVideo keeps its codec, FPS, output path and audio.
+const nativeWorkflow=structuredClone(workflow),nativeApi=structuredClone(api);
+const vhs=nativeWorkflow.nodes.find(n=>n.id===100);
+vhs.type="CreateVideo";vhs.outputs=[{links:[200]}];
+nativeWorkflow.nodes.push(node(101,"SaveVideo",[["video",200]],[[]]));
+nativeWorkflow.links.push([200,100,0,101,0,"VIDEO"]);
+nativeApi["100"]={class_type:"CreateVideo",inputs:{...nativeApi["100"].inputs,fps:24}};
+nativeApi["101"]={class_type:"SaveVideo",inputs:{video:["100",0],filename_prefix:"video/native",format:"mp4",codec:"h264"}};
+assert.deepEqual(detectLowresReviewSink(nativeWorkflow,{},13),{id:"101",type:"SaveVideo"});
+assert.equal(compilePreviewTargets(nativeWorkflow,nativeApi,13).decoded_target,"101");
+const nativeTemplate={...template,workflow:nativeWorkflow,api_prompt:nativeApi};
+const nativeLow=buildPreviewJob(nativeTemplate,[],"pause","","decoded");
+assert.deepEqual(nativeLow.targets,["13","101"]);
+assert.deepEqual(nativeLow.output["101"],nativeApi["101"]);
+assert.deepEqual(nativeLow.output["100"],nativeApi["100"]);
+assert.deepEqual(buildPreviewJob(nativeTemplate,[],"continue","a".repeat(32),"decoded").targets,["42"]);
+const wrong=structuredClone(nativeApi);wrong["100"].inputs.audio=["20",0];
+assert.equal(detectLowresReviewSink(nativeWorkflow,wrong,13),null);
+console.log("Native SaveVideo low review: detection, unchanged saver and stage isolation PASS");

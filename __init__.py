@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-from .director_selflift_node import TerryDirectorSelfLiftSampler
-from .director_selflift_split_node import (
+from .nodes.director_pause_resume import TerryDirectorPauseResume
+from .nodes.director_selflift_stage_nodes import TerryDirectorSelfLiftLowres, TerryDirectorSelfLiftHighresSampler
+from .nodes.director_selflift_node import TerryDirectorSelfLiftSampler
+from .nodes.director_selflift_split_node import (
     TerryDirectorSaveLowresCheckpoint,
     TerryDirectorReadLowresCheckpoint,
     TerryDirectorSelfLiftHighres,
-    TerryDirectorSelfLiftPauseResume,
 )
-from .director_selflift_review_node import TerryDirectorLowresReviewSave
-from .director_preview_native import TerryDirectorH3Preview
-from .director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
-from .director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
-from .director_dual_resolution_selector import TerryDirectorDualSamplingResolutionSelector
+from .nodes.director_preview_native import TerryDirectorH3Preview
+from .nodes.director_loop_x2_decode import TerryDirectorH3X2LowRAMDecode
+from .nodes.director_ai_node import TerryDirectorLlamaConfig, TerryDirectorPromptEnhancer
+from .nodes.director_dual_resolution_selector import TerryDirectorDualSamplingResolutionSelector
 
 from typing_extensions import override
 
 from comfy_api.latest import ComfyExtension, io
 
-from .director_loop import (
+from .nodes.director_loop import (
     TerryDirectorLooper,
     TerryDirectorLoopInfo,
     TerryDirectorLoopCondition,
@@ -26,7 +26,7 @@ from .director_loop import (
     TerryDirectorLoopFrame,
     TerryDirectorLoopReuse,
 )
-from . import server_routes as _server_routes  # noqa: F401 - register routes on import
+from .nodes import server_routes as _server_routes  # noqa: F401 - register routes on import
 
 WEB_DIRECTORY = "./web"
 
@@ -39,11 +39,12 @@ class TerryDirectorExtension(ComfyExtension):
             TerryDirectorPromptEnhancer,
             TerryDirectorDualSamplingResolutionSelector,
             TerryDirectorSelfLiftSampler,
+            TerryDirectorPauseResume,
+            TerryDirectorSelfLiftLowres,
+            TerryDirectorSelfLiftHighresSampler,
             TerryDirectorSaveLowresCheckpoint,
             TerryDirectorReadLowresCheckpoint,
             TerryDirectorSelfLiftHighres,
-            TerryDirectorSelfLiftPauseResume,
-            TerryDirectorLowresReviewSave,
             TerryDirectorH3Preview,
             TerryDirectorH3X2LowRAMDecode,
             TerryDirectorLooper,
