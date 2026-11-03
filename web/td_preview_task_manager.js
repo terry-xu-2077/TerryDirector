@@ -927,7 +927,7 @@ div.tdm-thumb{background:repeating-linear-gradient(135deg,var(--td-field) 0 8px,
 .tdm-head-sub{margin:6px 0 0;font-size:13px;color:var(--td-muted)}
 
 /* Stat cards: one compact line each */
-.tdm-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:12px 28px 14px}
+.tdm-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:24px 28px 14px}
 .tdm-stat{display:flex;align-items:center;gap:10px;padding:9px 16px 9px 10px;background:var(--td-surface);border-radius:14px;min-width:0;height:50px;box-sizing:border-box}
 .tdm-stat-icon{width:32px;height:32px;flex:none;border-radius:10px;display:grid;place-items:center;background:var(--td-card);color:var(--td-text-2)}
 .tdm-stat-label{flex:1;min-width:0;font-size:13px;color:var(--td-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1132,6 +1132,7 @@ div.tdm-thumb{background:repeating-linear-gradient(135deg,var(--td-field) 0 8px,
 .tdm-nav-item[data-action="config"]{--chip:var(--tdi-workflow)}
 .tdm-nav-item[data-action="settings"]{--chip:var(--tdi-settings)}
 .tdm-nav-item[data-action="refresh"]{--chip:var(--tdi-refresh-cw)}
+.tdm-nav-item[data-action="close"]{--chip:var(--tdi-x)}
 .tdm-nav-item{position:relative}.tdm-nav-item::after{content:"";position:absolute;left:18px;top:50%;width:16px;height:16px;margin-top:-8px;background:currentColor;-webkit-mask:var(--chip) center/contain no-repeat;mask:var(--chip) center/contain no-repeat}
 .tdm-nav-item.on::before{background:var(--td-accent);box-shadow:0 4px 14px rgba(47,124,255,.4)}.tdm-nav-item.on::after{background:#fff}
 .tdm-stat[data-stat="all"] .tdm-stat-icon::before{content:"";width:17px;height:17px;background:currentColor;-webkit-mask:var(--tdi-clapperboard) center/contain no-repeat;mask:var(--tdi-clapperboard) center/contain no-repeat}
@@ -1827,7 +1828,8 @@ function previewNavMarkup() {
     '<div class="tdm-nav-label">工作流</div>'+
     item("config","配置工作流")+
     '<div class="tdm-nav-space"></div>'+
-    item("settings","设置")+item("refresh","刷新")+'</aside>';
+    item("settings","设置")+item("refresh","刷新")+
+    (STANDALONE?'':item("close","关闭预演台"))+'</aside>';
 }
 /** Overview cards: counts only, derived from the loaded task list. */
 function previewStatsMarkup() {
@@ -1859,11 +1861,7 @@ function render() {
   const oldPlaying=oldPlayer && !oldPlayer.paused && !oldPlayer.ended;
   closePreviewRichEditor();
   state.root.innerHTML = '<div class="tdm-shell tdm-layout">' + previewNavMarkup() +
-    '<div class="tdm-workspace"><header class="tdm-head"><div class="tdm-head-copy">' +
-    '<h2>预演任务</h2><p class="tdm-head-sub">共 ' + state.tasks.length + ' 个任务 · 当前显示 ' +
-    visible.length + ' 个</p></div><div class="tdm-space"></div>' +
-    (STANDALONE ? '' : '<button class="tdm-btn close" data-action="close" aria-label="关闭">×</button>') +
-    '</header>' + previewStatsMarkup() +
+    '<div class="tdm-workspace">' + previewStatsMarkup() +
     '<div class="tdm-main"><section class="tdm-left" data-scroll-preserve="task-list"><div class="tdm-toolbar">' +
     '<label><input type="checkbox" data-action="select-all" ' +
     (visible.length && visible.every(t=>state.selected.has(t.id)) ? "checked" : "") +
