@@ -96,7 +96,7 @@ assert.ok(edit.includes("state.createDraft.seed=row.seed;"));
 assert.ok(!edit.includes("randomizeNewTaskSeed("));
 assert.ok(code.includes('new Set(visibleTasks().map(t => t.id))'));
 assert.ok(code.includes('data-action="status-filter"'));
-assert.ok(code.includes('esc(option.icon+\'  \'+option.label)'));
+assert.ok(code.includes('data-filter="\'+option.value+\'"'));
 assert.ok(code.includes('class="tdm-status-icon"'));
 assert.equal(new Set(Object.values(fns.STATUS_ICONS)).size,6);
 
