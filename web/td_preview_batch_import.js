@@ -7,7 +7,7 @@ const MEDIA_EXTENSIONS = {
 const MEDIA_TYPE_NAMES = { picture: "image", audio: "audio", video: "video" };
 
 function isNumericAssetName(name) {
-  return /^\\p{N}+$/u.test(String(name || "").trim());
+  return /^[0-9０-９]+$/u.test(String(name || "").trim());
 }
 
 function mediaKind(name) {
