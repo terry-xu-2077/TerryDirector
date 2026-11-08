@@ -221,6 +221,24 @@ const malformed = parsePreviewBatches([
 ].join("\n"));
 assert.equal(malformed.batches[0].parseErrors.length, 1);
 
+// Pure numeric asset aliases are invalid for every media type and document-level prompts.
+const numericAssetNames = parsePreviewBatches([
+  "[待生成资产]",
+  "<Prompt 123>：生成一张测试图片。",
+  "## 批次08｜纯数字资产名校验",
+  "[全局参考]",
+  "<Picture 866>：载具",
+  "<Audio 17>：角色音色",
+  "<Video 08>：运镜参考",
+  "[分镜脚本]",
+  "镜头。",
+].join("\\n"));
+assert.equal(numericAssetNames.generatedAssets.length, 0);
+assert.match(numericAssetNames.parseErrors.join("\\n"), /纯数字/);
+assert.equal(numericAssetNames.batches[0].references.length, 0);
+assert.equal(numericAssetNames.batches[0].parseErrors.length, 3);
+assert.ok(numericAssetNames.batches[0].parseErrors.every(message => /纯数字/.test(message)));
+
 assert.equal(parsePreviewBatches("没有批次标题").batches.length, 0);
 const durationVariants=parsePreviewBatches([
   "批次10｜十（建议生成时长14秒）", "正文十",
