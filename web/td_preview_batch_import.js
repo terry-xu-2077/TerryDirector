@@ -6,6 +6,10 @@ const MEDIA_EXTENSIONS = {
 };
 const MEDIA_TYPE_NAMES = { picture: "image", audio: "audio", video: "video" };
 
+function isNumericAssetName(name) {
+  return /^\\p{N}+$/u.test(String(name || "").trim());
+}
+
 function mediaKind(name) {
   const ext = (String(name || "").match(/\.[^./\\]+$/) || [])[0]?.toLowerCase();
   return Object.keys(MEDIA_EXTENSIONS).find(kind => MEDIA_EXTENSIONS[kind].includes(ext)) || null;
@@ -51,6 +55,10 @@ function parseGlobalReferences(body) {
         parseErrors.push("全局参考标签缺少名称：" + value);
         continue;
       }
+      if (isNumericAssetName(name)) {
+        parseErrors.push("资产名称不能为纯数字，请改用稳定的语义别名：" + name);
+        continue;
+      }
       if (type === "prompt") {
         activePrompt = { name, type: "image", source: "tag", parts: [content] };
         promptEntries.push(activePrompt);
@@ -73,8 +81,14 @@ function parseGlobalReferences(body) {
     if (oldGenerated) {
       const payload = oldGenerated[1].trim();
       const split = payload.match(/^(.*?)\s+生图提示词\s*[:：]\s*(.*)$/);
+      const assetName = ((split ? split[1] : payload) || "未命名资产").trim();
+      if (isNumericAssetName(assetName)) {
+        activePrompt = null;
+        parseErrors.push("待生成资产名称不能为纯数字，请改用稳定的语义别名：" + assetName);
+        continue;
+      }
       activePrompt = {
-        name: (split ? split[1] : payload) || "未命名资产",
+        name: assetName,
         type: "image",
         parts: [split ? split[2] : ""],
       };
@@ -154,7 +168,9 @@ function parseDocumentGeneratedAssets(preamble) {
       finishPrompt();
       const name = match[1].trim();
       if (!name) parseErrors.push("待生成资产标签缺少名称：" + value);
-      else activePrompt = { name, parts: [match[2] || ""] };
+      else if (isNumericAssetName(name)) {
+        parseErrors.push("待生成资产名称不能为纯数字，请改用稳定的语义别名：" + name);
+      } else activePrompt = { name, parts: [match[2] || ""] };
       continue;
     }
     if (/^<\s*Prompt\b/i.test(value)) {
