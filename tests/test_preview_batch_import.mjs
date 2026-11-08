@@ -232,9 +232,9 @@ const numericAssetNames = parsePreviewBatches([
   "<Video 08>：运镜参考",
   "[分镜脚本]",
   "镜头。",
-].join("\\n"));
+].join("\n"));
 assert.equal(numericAssetNames.generatedAssets.length, 0);
-assert.match(numericAssetNames.parseErrors.join("\\n"), /纯数字/);
+assert.match(numericAssetNames.parseErrors.join("\n"), /纯数字/);
 assert.equal(numericAssetNames.batches[0].references.length, 0);
 assert.equal(numericAssetNames.batches[0].parseErrors.length, 3);
 assert.ok(numericAssetNames.batches[0].parseErrors.every(message => /纯数字/.test(message)));
